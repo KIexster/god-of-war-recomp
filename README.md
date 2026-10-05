@@ -55,13 +55,13 @@ Este repositorio contiene todo lo específico de God of War:
 | Recompilación de `SCUS_973.99` a C++ (6 418 archivos) | ✅ |
 | Compilación del ejecutable nativo (MSVC, x64) | ✅ |
 | Arranque: inicialización de raylib/OpenGL, heap y threads | ✅ |
-| Carga de módulos IOP (HLE: `sio2man`, `dbcman`, `libsd`, `989snd`) | ✅ |
-| Enlace RPC con `dbcman` y `989snd` (respuestas silenciosas) | ✅ |
+| IRX originales del juego en el emulador del IOP (`989snd`, `smpd`, `libsd`…) | ✅ |
+| Carga de datos desde la ISO original (`smpd` → `R_PERM.WAD`, configuración) | ✅ |
 | Salida de vídeo / pantalla de título | 🔧 en progreso |
 | Audio, mando y memory card | ⏳ pendiente |
 
-Actualmente el juego arranca, supera la inicialización del IOP y avanza hasta `pc = 0x0023A978`:
-falta cargar su configuración (`HERO_HEAP_SIZE`…). Ver [`docs/ESTADO.md`](docs/ESTADO.md) para el detalle.
+Actualmente el juego arranca, ejecuta en el IOP los módulos originales (incluido el cargador de datos `smpd`),
+carga su configuración desde la ISO y avanza hasta `pc = 0x00239FD0`. Ver [`docs/ESTADO.md`](docs/ESTADO.md) para el detalle.
 
 ## Estructura del repositorio
 
@@ -102,6 +102,11 @@ falta cargar su configuración (`HERO_HEAP_SIZE`…). Ver [`docs/ESTADO.md`](doc
 
 **1. Obtén el ejecutable del juego** desde tu disco/ISO y cópialo a `game\SCUS_973.99`
 (o define la variable de entorno `GOW_ELF` con su ruta).
+
+Junto al ELF deben estar también los **módulos `.IRX`** del disco (`SMPD_IOP.IRX`, `989NOMID.IRX`,
+`LIBSD.IRX`…): el emulador del IOP ejecuta los originales y `scripts\ejecutar.ps1` los copia a `IOP_MOD\`.
+Para leer los datos del juego hace falta la **ISO original**: ponla como `God of War.iso` en la carpeta
+superior a la del ELF, o indica su ruta con la variable de entorno `GOW_ISO`.
 
 Si además quieres los datos de la segunda capa del DVD:
 

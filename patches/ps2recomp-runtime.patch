@@ -10,6 +10,363 @@ index f8d3e44..c97ddd5 100644
  )
  
  target_compile_features(ps2_iop PUBLIC cxx_std_20)
+diff --git a/ps2xIOP/src/emulator/core/iop_memory.h b/ps2xIOP/src/emulator/core/iop_memory.h
+index a932a5d..a8d7493 100644
+--- a/ps2xIOP/src/emulator/core/iop_memory.h
++++ b/ps2xIOP/src/emulator/core/iop_memory.h
+@@ -22,7 +22,10 @@ namespace ps2x::iop::detail
+         static constexpr uint32_t Spu2End = 0x1FA00000u;
+         static constexpr uint32_t SifBase = 0x1D000000u;
+         static constexpr uint32_t SifEnd = 0x1D001000u;
+-        static constexpr uint32_t HeapBase = 0x00120000u;
++        // GOW-Port: el heap empezaba en 0x120000 (832 KB hasta HeapLimit) y SMPD_IOP.IRX de God of War
++        // reserva un bloque de 0x11ADF8 bytes. En un IOP real el heap empieza tras los modulos cargados
++        // (los de GoW terminan hacia 0x56000), asi que lo bajamos a 0x70000 (1.5 MB).
++        static constexpr uint32_t HeapBase = 0x00070000u;
+         static constexpr uint32_t HeapLimit = 0x001F0000u;
+ 
+         struct Allocation
+diff --git a/ps2xIOP/src/emulator/imports/iop_format.h b/ps2xIOP/src/emulator/imports/iop_format.h
+new file mode 100644
+index 0000000..3a26c2e
+--- /dev/null
++++ b/ps2xIOP/src/emulator/imports/iop_format.h
+@@ -0,0 +1,126 @@
++#pragma once
++
++// GOW-Port: formateo estilo printf para sysclib sprintf/vsprintf y stdio printf del IOP.
++// Antes, sprintf copiaba el formato literal: SMPD_IOP.IRX de God of War hace sprintf(buf, "%s.wad", nombre)
++// para buscar sus recursos y acababa buscando "%S.WAD".
++
++#include "../core/iop_memory.h"
++
++#include <cstdint>
++#include <cstdio>
++#include <functional>
++#include <string>
++
++namespace ps2x::iop::detail
++{
++    // nextArg devuelve la siguiente palabra de 32 bits de la lista de argumentos variables
++    // (o32: a1..a3 o a2..a3 y despues la pila desde sp+16; en vsprintf, la memoria apuntada por va_list).
++    inline std::string formatGuestString(const IopMemory &memory, uint32_t formatAddress,
++                                         const std::function<uint32_t()> &nextArg, size_t limit = 4096u)
++    {
++        const std::string format = memory.readString(formatAddress, limit);
++        std::string out;
++        out.reserve(format.size() + 32u);
++        for (size_t i = 0; i < format.size(); ++i)
++        {
++            const char c = format[i];
++            if (c != '%')
++            {
++                out += c;
++                continue;
++            }
++            const size_t start = i++;
++            if (i >= format.size())
++            {
++                out += '%';
++                break;
++            }
++            if (format[i] == '%')
++            {
++                out += '%';
++                continue;
++            }
++
++            std::string spec = "%";
++            while (i < format.size() && (format[i] == '-' || format[i] == '+' || format[i] == ' ' ||
++                                         format[i] == '#' || format[i] == '0'))
++                spec += format[i++];
++            if (i < format.size() && format[i] == '*')
++            {
++                spec += std::to_string(static_cast<int32_t>(nextArg()));
++                ++i;
++            }
++            while (i < format.size() && format[i] >= '0' && format[i] <= '9')
++                spec += format[i++];
++            if (i < format.size() && format[i] == '.')
++            {
++                spec += format[i++];
++                if (i < format.size() && format[i] == '*')
++                {
++                    spec += std::to_string(static_cast<int32_t>(nextArg()));
++                    ++i;
++                }
++                while (i < format.size() && format[i] >= '0' && format[i] <= '9')
++                    spec += format[i++];
++            }
++            int longCount = 0;
++            while (i < format.size() && (format[i] == 'l' || format[i] == 'h' || format[i] == 'q' || format[i] == 'L'))
++            {
++                if (format[i] == 'l' || format[i] == 'q' || format[i] == 'L')
++                    ++longCount;
++                ++i;
++            }
++            if (i >= format.size())
++            {
++                out += format.substr(start);
++                break;
++            }
++
++            const char conversion = format[i];
++            char buffer[512];
++            buffer[0] = '\0';
++            switch (conversion)
++            {
++            case 'd':
++            case 'i':
++            {
++                long long value = static_cast<int32_t>(nextArg());
++                if (longCount >= 2)
++                    value = static_cast<long long>((static_cast<uint64_t>(nextArg()) << 32) | static_cast<uint32_t>(value));
++                std::snprintf(buffer, sizeof(buffer), (spec + "lld").c_str(), value);
++                break;
++            }
++            case 'u':
++            case 'x':
++            case 'X':
++            case 'o':
++            {
++                unsigned long long value = nextArg();
++                if (longCount >= 2)
++                    value |= static_cast<unsigned long long>(nextArg()) << 32;
++                std::snprintf(buffer, sizeof(buffer), (spec + "ll" + conversion).c_str(), value);
++                break;
++            }
++            case 'p':
++                std::snprintf(buffer, sizeof(buffer), "0x%08x", nextArg());
++                break;
++            case 'c':
++                std::snprintf(buffer, sizeof(buffer), (spec + "c").c_str(), static_cast<int>(nextArg() & 0xFFu));
++                break;
++            case 's':
++            {
++                const uint32_t address = nextArg();
++                const std::string text = address ? memory.readString(address, limit) : std::string("(null)");
++                std::snprintf(buffer, sizeof(buffer), (spec + "s").c_str(), text.c_str());
++                break;
++            }
++            default:
++                // Conversion desconocida: se deja tal cual.
++                out += format.substr(start, i - start + 1u);
++                continue;
++            }
++            out += buffer;
++        }
++        return out;
++    }
++}
+diff --git a/ps2xIOP/src/emulator/imports/iop_stdio.cpp b/ps2xIOP/src/emulator/imports/iop_stdio.cpp
+index eed2b61..d221431 100644
+--- a/ps2xIOP/src/emulator/imports/iop_stdio.cpp
++++ b/ps2xIOP/src/emulator/imports/iop_stdio.cpp
+@@ -2,6 +2,7 @@
+ 
+ #include "../core/iop_cpu.h"
+ #include "../core/iop_memory.h"
++#include "iop_format.h"
+ #include "ps2x/iop/iop_host.h"
+ 
+ #include <string>
+@@ -30,9 +31,24 @@ namespace ps2x::iop::detail
+ 
+         switch (ordinal)
+         {
+-        case 4: // printf
+-            logString("[IOP printf] ", a0);
++        case 4: // printf(fmt, ...): argumentos en a1..a3 y despues en la pila desde sp+16 (o32)
++        {
++            uint32_t argIndex = 0u;
++            const std::function<uint32_t()> nextArg = [&]() -> uint32_t
++            {
++                const uint32_t index = argIndex++;
++                if (index < 3u)
++                    return cpu.gpr[5u + index];
++                return m_memory.read32(cpu.gpr[29] + 16u + (index - 3u) * 4u);
++            };
++            std::string text = formatGuestString(m_memory, a0, nextArg, 2048u);
++            const size_t length = text.size();
++            while (!text.empty() && (text.back() == '\n' || text.back() == '\r'))
++                text.pop_back();
++            m_host.log(LogLevel::Info, std::string("[IOP printf] ") + text);
++            setV0(static_cast<uint32_t>(length));
+             return true;
++        }
+         case 5: // getchar
+         case 10:
+             setV0(0xFFFFFFFFu);
+diff --git a/ps2xIOP/src/emulator/imports/iop_sysclib.cpp b/ps2xIOP/src/emulator/imports/iop_sysclib.cpp
+index 0517478..79609fe 100644
+--- a/ps2xIOP/src/emulator/imports/iop_sysclib.cpp
++++ b/ps2xIOP/src/emulator/imports/iop_sysclib.cpp
+@@ -2,6 +2,7 @@
+ 
+ #include "../core/iop_cpu.h"
+ #include "../core/iop_memory.h"
++#include "iop_format.h"
+ 
+ #include <cctype>
+ #include <cstdlib>
+@@ -124,15 +125,30 @@ namespace ps2x::iop::detail
+         case 18: // prnt
+             setV0(0);
+             return true;
+-        case 19: // sprintf: preserve useful literal formats even before full vararg formatting.
+-        case 42: // vsprintf fallback: copy format literal.
++        case 19: // sprintf(buf, fmt, ...): argumentos en a2, a3 y despues en la pila desde sp+16 (o32)
++        case 42: // vsprintf(buf, fmt, va_list)
+         {
+-            const std::string format = m_memory.readString(a1, 4096u);
+-            for (size_t i = 0; i <= format.size(); ++i)
++            uint32_t argIndex = 0u;
++            uint32_t vaPointer = a2;
++            const std::function<uint32_t()> nextArg = [&]() -> uint32_t
+             {
+-                m_memory.write8(a0 + static_cast<uint32_t>(i), i < format.size() ? static_cast<uint8_t>(format[i]) : 0u);
+-            }
+-            setV0(static_cast<uint32_t>(format.size()));
++                if (ordinal == 42u)
++                {
++                    const uint32_t value = m_memory.read32(vaPointer);
++                    vaPointer += 4u;
++                    return value;
++                }
++                const uint32_t index = argIndex++;
++                if (index == 0u)
++                    return cpu.gpr[6];
++                if (index == 1u)
++                    return cpu.gpr[7];
++                return m_memory.read32(cpu.gpr[29] + 16u + (index - 2u) * 4u);
++            };
++            const std::string text = formatGuestString(m_memory, a1, nextArg);
++            for (size_t i = 0; i <= text.size(); ++i)
++                m_memory.write8(a0 + static_cast<uint32_t>(i), i < text.size() ? static_cast<uint8_t>(text[i]) : 0u);
++            setV0(static_cast<uint32_t>(text.size()));
+             return true;
+         }
+         case 20:
+diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_emulator.cpp
+index e5f63a9..912c81a 100644
+--- a/ps2xIOP/src/emulator/iop_emulator.cpp
++++ b/ps2xIOP/src/emulator/iop_emulator.cpp
+@@ -18,6 +18,7 @@
+ #include "iop_emulator_const.h"
+ 
+ #include <algorithm>
++#include <cstdlib>
+ #include <cctype>
+ #include <map>
+ #include <optional>
+@@ -245,6 +246,40 @@ namespace ps2x::iop::detail
+                 cpu.gpr[2] = value;
+             };
+ 
++            // GOW-Port: traza opcional de llamadas a importaciones (PS2X_IOP_TRACE=<numero de llamadas>).
++            static const long traceLimit = []
++            {
++                const char *v = std::getenv("PS2X_IOP_TRACE");
++                return v ? std::strtol(v, nullptr, 10) : 0L;
++            }();
++            // PS2X_IOP_TRACE_EVERY=<n>: muestreo, una de cada n llamadas (para ver progreso sin frenar).
++            static const long traceEvery = []
++            {
++                const char *v = std::getenv("PS2X_IOP_TRACE_EVERY");
++                return v ? std::strtol(v, nullptr, 10) : 0L;
++            }();
++            // PS2X_IOP_TRACE_NOCLIB=1: no trazar sysclib (memcpy/strncmp...), que es la mayor parte del volumen.
++            static const bool traceNoClib = std::getenv("PS2X_IOP_TRACE_NOCLIB") != nullptr;
++            static long traceCount = 0;
++            static long callCount = 0;
++            ++callCount;
++            const bool traceSkip = traceNoClib && iequals(call.library, "sysclib");
++            // PS2X_IOP_TRACE_FROM=<n>: la traza de PS2X_IOP_TRACE empieza en la llamada n.
++            static const long traceFrom = []
++            {
++                const char *v = std::getenv("PS2X_IOP_TRACE_FROM");
++                return v ? std::strtol(v, nullptr, 10) : 0L;
++            }();
++            if (!traceSkip && ((callCount >= traceFrom && traceCount < traceLimit) || (traceEvery > 0 && callCount % traceEvery == 0)))
++            {
++                ++traceCount;
++                std::ostringstream trace;
++                trace << "[IOP:trace] #" << std::dec << callCount << " " << call.library << ':' << std::dec << call.ordinal << std::hex
++                      << " a0=0x" << cpu.gpr[4] << " a1=0x" << cpu.gpr[5] << " a2=0x" << cpu.gpr[6]
++                      << " a3=0x" << cpu.gpr[7] << " ra=0x" << cpu.gpr[31];
++                log(LogLevel::Info, trace.str());
++            }
++
+             if (iequals(call.library, "sysmem") && sysmem.dispatchImport(call.ordinal, cpu))
+                 return ImportDisposition::Handled;
+ 
+@@ -390,6 +425,21 @@ namespace ps2x::iop::detail
+                 return !cpu.stopped;
+             }
+ 
++            // GOW-Port: muestreo del PC del IOP (PS2X_IOP_PC_EVERY=<instrucciones>).
++            static const unsigned long long pcEvery = []
++            {
++                const char *v = std::getenv("PS2X_IOP_PC_EVERY");
++                return v ? std::strtoull(v, nullptr, 10) : 0ULL;
++            }();
++            if (pcEvery != 0ULL && totalInstructions % pcEvery == 0ULL)
++            {
++                std::ostringstream out;
++                out << "[IOP:pc] instr=" << std::dec << totalInstructions << std::hex << " pc=0x" << cpu.pc
++                    << " ra=0x" << cpu.gpr[31] << " sp=0x" << cpu.gpr[29] << " v0=0x" << cpu.gpr[2]
++                    << " a0=0x" << cpu.gpr[4];
++                log(LogLevel::Info, out.str());
++            }
++
+             const bool running = cpuCore.executeInstruction(cpu);
+             schedulePendingDma();
+             ++totalInstructions;
+@@ -456,6 +506,14 @@ namespace ps2x::iop::detail
+             }
+             cpu.gpr[31] = kCallReturnSentinel;
+             runCpu(cpu, budget);
++            if (!cpu.stopped && !cpu.yielded)
++            {
++                // GOW-Port: avisar en vez de abandonar la llamada en silencio.
++                std::ostringstream out;
++                out << "[IOP] guest call 0x" << std::hex << address << " exceeded its budget of " << std::dec << budget
++                    << " instructions (pc=0x" << std::hex << cpu.pc << ")";
++                log(LogLevel::Warning, out.str());
++            }
+             return cpu.gpr[2];
+         }
+ 
+@@ -566,6 +624,14 @@ namespace ps2x::iop::detail
+                     IopThread *next = kernel.beginNextReady(totalCycles);
+                     if (!next)
+                     {
++                        // GOW-Port: con PS2X_IOP_PC_EVERY, avisar de vez en cuando si el IOP esta ocioso.
++                        static unsigned long long idleCount = 0ULL;
++                        if (std::getenv("PS2X_IOP_PC_EVERY") && (++idleCount % 200000ULL) == 1ULL)
++                        {
++                            std::ostringstream out;
++                            out << "[IOP:idle] sin hilos listos (veces=" << idleCount << ") instr=" << totalInstructions;
++                            log(LogLevel::Info, out.str());
++                        }
+                         uint64_t nextWake = kernel.nextWakeCycle(target);
+                         for (const auto &[irq, completionCycle] : pendingDmaInterrupts)
+                             nextWake = std::min(nextWake, completionCycle);
+diff --git a/ps2xIOP/src/emulator/iop_emulator_const.h b/ps2xIOP/src/emulator/iop_emulator_const.h
+index 7004597..7a7b687 100644
+--- a/ps2xIOP/src/emulator/iop_emulator_const.h
++++ b/ps2xIOP/src/emulator/iop_emulator_const.h
+@@ -10,6 +10,8 @@ constexpr uint64_t kIopClockHz = 36'864'000ull;
+ constexpr uint64_t kVblankPeriodCycles = (kIopClockHz * 1001ull + 30'000ull) / 60'000ull;
+ constexpr uint64_t kVblankEndPhaseCycles = kVblankPeriodCycles / 16ull;
+ constexpr uint32_t kDefaultSlice = 256u;
+-constexpr uint32_t kMaxCallInstructions = 2'000'000u;
++// GOW-Port: era 2'000'000. La inicializacion del plugin smpd de God of War (llamada desde el servidor RPC
++// de 989snd) recorre todo GODOFWAR.TOC y necesita bastante mas; al agotarse, la llamada se cortaba en silencio.
++constexpr uint32_t kMaxCallInstructions = 400'000'000u;
+ constexpr uint32_t kModuleLoadBase = 0x00010000u;
+ constexpr uint32_t kStackGuardBytes = 64u;
+\ No newline at end of file
 diff --git a/ps2xIOP/src/iop_subsystem.cpp b/ps2xIOP/src/iop_subsystem.cpp
 index b498155..fa4be18 100644
 --- a/ps2xIOP/src/iop_subsystem.cpp

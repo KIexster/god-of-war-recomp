@@ -7,16 +7,37 @@ _Última actualización: 5 de octubre de 2026_
 - La compilación completa termina sin errores (~11 min de compilación del juego en un equipo de 8+ núcleos).
 - `scripts\2_recompilar_rapido.cmd` recompila solo `src/gow_overrides.cpp` en ~1 minuto.
 - `ps2EntryRunner.exe` arranca, inicializa raylib 5.5 / OpenGL 3.3 y abre la ventana (640×448).
-- Se aplican los overrides:
-  `[gow-override] sceSifInitRpc=1 iWakeupThread=1 sceCdReadDvdDualInfo=1 snd989=1 modbuf=1 treeDiag=1 dictGuard=1`
-- El IOP carga por HLE `sio2man`, `dbcman`, `sio2d`, `libsd` y `989nomid`.
-- `dbcman` responde `check-version` (`0x310`) y los RPC de `989snd` se contestan en silencio.
-- El juego supera el antiguo cuelgue en `0x00176A80` (ver abajo) y avanza hasta `0x0023A978`.
+- **El IOP ejecuta los IRX originales del juego** en el intérprete R3000A de `ps2xIOP`: `sio2man`,
+  `dbcman`, `sio2d`, `mc2_d`, `ds2u_d`, `libsd`, `989nomid` (989snd) y **`smpd_iop`** (el cargador de
+  datos). `scripts\ejecutar.ps1` los copia a `IOP_MOD\` junto al ELF la primera vez.
+- El IOP lee la **ISO original** (`God of War.iso` junto a la carpeta del ELF, o la variable `GOW_ISO`).
+- smpd se inicializa: lee el directorio ISO9660 y `GODOFWAR.TOC`, y crea sus hilos.
+- **La configuración se carga desde el disco**: la petición `SMPD 0xF "R_Perm"` devuelve el handle 0
+  y `HERO_HEAP_SIZE` / `SLOT_HEAP_SIZE` / `UPGRADE_HEAP_SIZE` se encuentran (la guardia del diccionario
+  NULL ya no salta).
+- El juego avanza hasta `stdCList<wadCleanupData>` (`0x239FD0`), tras varias llamadas
+  `snd_DoExternCall` (cmd `0x4C`).
 
-## Investigación: el cuelgue en `0x00176A80`
+## Símbolos
 
-No era un bucle de espera. `sub_001769F8(raiz, clave)` es la búsqueda en un **árbol binario**
-de nodos de 16 bytes guardados en un pool (creado por `sub_00175CD0`, 8000 nodos):
+Los mapas de nombres de `01-retail-usa-SCUS97399/` (exportación de Ghidra, casados con la demo del E3
+y la demo europea) **coinciden con las direcciones de nuestro ELF**. Algunas confirmadas:
+
+| Dirección | Nombre |
+|---|---|
+| `0x0026BF28` | `snd_SendIOPCommandAndWait` |
+| `0x0026C940` | `snd_DoExternCall` |
+| `0x00186710` | `wadContext::FindData` |
+| `0x00175890` | `stdDynaStringDB::GetDynaStringNode` |
+| `0x0017A940` | `sys::Boot2` |
+| `0x00239F90` | `stdCList<wadCleanupData, …>` |
+
+## Cronología de la investigación del arranque
+
+### 1. El cuelgue en `0x00176A80` no era una espera
+
+`sub_001769F8(raiz, clave)` es la búsqueda en un **árbol binario** de nodos de 16 bytes guardados en un
+pool (creado por `sub_00175CD0`, 8000 nodos):
 
 | Campo | Significado |
 |---|---|
@@ -27,28 +48,15 @@ de nodos de 16 bytes guardados en un pool (creado por `sub_00175CD0`, 8000 nodos
 | `*0x29C4B4` | nodo centinela (fin de rama) |
 | `*0x29C4B8` | handle del pool |
 
-Encima hay un diccionario genérico: `sub_00175890(dicc, clave)`, que se usa a través de
-`sub_00175A70` / `sub_00175AB0` y tiene 15 llamadores. Devuelve `valor & 0x7FFFFFFF`, o 0 si la
-clave no existe.
+`GetDynaStringNode` (`0x175890`) recibía un diccionario **NULL** desde `wadContext::FindData`
+(`0x186710`), que buscaba `HERO_HEAP_SIZE`, `SLOT_HEAP_SIZE` y `UPGRADE_HEAP_SIZE`. La raíz se leía en
+la dirección `0x4` y esa basura formaba un ciclo. El diccionario es `nodo+0x4C` del contexto del WAD
+`R_Perm`, que no se había cargado.
 
-Las 36 primeras búsquedas funcionan. La 37.ª llega con **`dicc = NULL`**: la raíz se lee en la
-dirección `0x4`, que contiene basura, y esa basura forma un ciclo (`idx 0 ↔ idx 14356`).
+### 2. La configuración vive en `R_PERM.WAD` y la carga smpd
 
-El `NULL` sale de `sub_00186710(nodo, clave, &encontrado)`, que busca en una jerarquía de nodos con
-el diccionario en `nodo+0x4C` y hasta 6 hijos en `nodo+0x50`. Las claves que se buscan son
-variables de configuración:
-
-```
-HERO_HEAP_SIZE, SLOT_HEAP_SIZE, UPGRADE_HEAP_SIZE
-pila: 0x1BAED8 → 0x1BAC1C → 0x186744 → 0x175AC0   (desde 0x21CA68 ← 0x17A99C ← 0x138DC0 ← main 0x1001C8)
-```
-
-**Conclusión:** la configuración que define esas variables no se ha cargado.
-
-## Investigación: de dónde sale la configuración
-
-Las variables están en **`R_PERM.WAD`**, el primer archivo de `PART1.PAK` (sector 0, `0x378530` bytes).
-Son registros de tipo `0x18` (constante entera) dentro del grupo `WAD_R_Perm`:
+`R_PERM.WAD` es el primer archivo de `PART1.PAK` (sector 0, `0x378530` bytes). Las variables son
+registros de tipo `0x18` del grupo `WAD_R_Perm`:
 
 | Variable | Valor |
 |---|---|
@@ -59,73 +67,71 @@ Son registros de tipo `0x18` (constante entera) dentro del grupo `WAD_R_Perm`:
 `GODOFWAR.TOC` es una tabla de entradas de 24 bytes con el formato `nombre[12]`, `u32`, `u32 tamaño`,
 `u32 sector`.
 
-El juego no lee el disco directamente: en su libcdvd no hay `sceCdRead`. Los nombres `.PAK` / `.TOC`
-solo aparecen en **`SMPD_IOP.IRX`** ("smpd file streamer"). Es un módulo del IOP que se registra como
-**plugin de 989snd**: importa `snd989`, tiene `HandleInitialisePlugin` y atiende `FindResource`,
-`ReadFile`, `ReadResource`, `HandleFrameTick`, streaming de VAG/MPEG… Es uno de los módulos que el
-runtime no carga (no tiene proveedor HLE).
+El EE no lee el disco: lo hace **`SMPD_IOP.IRX`** ("smpd file streamer"), un plugin de 989snd.
 
-Recorrido de la petición de carga (en `sub_001BACC8`, el arranque de la configuración):
+### 3. Protocolo EE ↔ 989snd ↔ smpd
 
-```
-sub_00185F28(ctx, "R_Perm", 0x10000210)
-  → sub_0017AD70 → sub_0026CA18 → sub_0026BF28(cmd 0x68, tamaño, &{a0,a1,a2,a3})   ; envío a 989snd
-  → sub_0026B918 → sub_0026C4B8 → sceSifCallRpc(sid 0x123456, rpc 0x4D)            ; lote de comandos
-sub_001BE550 / sub_0017A8B8                                                        ; ¿espera/procesa?
-sub_001BABE8("HERO_HEAP_SIZE", …)                                                  ; lee la variable
-```
+`snd_SendIOPCommandAndWait(cmd, tamaño, datos)` hace `sceSifCallRpc(sid 0x123456, rpc = cmd)`: envía
+`tamaño` bytes desde `0x305640` y recibe 12 bytes en `0x305600`. Devuelve la palabra 1 de la respuesta.
 
-### Protocolo con 989snd / smpd (registro del 5 de octubre de 2026)
+El comando **`0x68`** es un mensaje para un plugin: `{u32 plugin, u32 tipo, u32 len, u32 ptr}` más `len`
+bytes copiados de `ptr`. Para smpd, `plugin = 0x534D5044` (`'SMPD'`).
 
-`sub_0026BF28(cmd, tamaño, datos)` hace `sceSifCallRpc(sid 0x123456, rpc = cmd)`: envía `tamaño`
-bytes desde el búfer `0x305640` y recibe 12 bytes en `0x305600`. Devuelve la palabra 1 de la
-respuesta.
+| # | cmd | Contenido | Significado | Respuesta |
+|---|---|---|---|---|
+| 1 | `0x0` | `{0x30A1C0, 0}` | inicialización de 989snd | 0 |
+| 2 | `0x68` SMPD `1` | `{modo, estado, 0x20, tabla, 0x280, …}` | inicializar smpd (búferes del EE, ver abajo) | 0 |
+| 3–17 | `0xA` | `{0}` … `{14}` | 15 comandos de 989snd | `0x400` |
+| 18 | `0x68` SMPD `0xF` | `"R_Perm"` + `0x10000210, 0, 1` | **cargar el WAD `R_Perm`** (flag `0x200` = síncrono) | handle `0` |
+| 19… | `0x4C` | 0x1C bytes | `snd_DoExternCall` | `0x20000` |
 
-El comando **`0x68`** es un mensaje para un plugin de 989snd. `datos` apunta a
-`{u32 plugin, u32 tipo, u32 len, u32 ptr}` y se envían los 12 primeros bytes más `len` bytes
-copiados de `ptr` (máximo 0x200 en total). Para smpd, `plugin = 0x534D5044` (`'SMPD'`).
+Búferes de smpd en el EE (`sub_001389D8`, la inicialización): `*0x29BE4C` = estado (0x20 bytes) y
+`*0x29BE50` = tabla (0x280 bytes). Se acceden sin caché (`| 0x20000000`) porque smpd los escribe por
+DMA (`sceSifSetDma`). La tabla tiene una cabecera de 0x100 bytes y 8 ranuras de 0x30 bytes. En la carga
+síncrona, `sub_0017AD70` lee `tabla + 0x12C + handle*0x30` (campo `+0x2C` de la ranura) y
+`sub_00185F28` lo guarda en `nodo+0x4C`.
 
-Comandos que envía el juego al arrancar (override `gowSnd989SendCommand`, etiqueta `[gow-snd]`):
+### 4. Ejecutar los IRX originales en lugar de reimplementarlos
 
-| # | cmd | Contenido | Interpretación |
-|---|---|---|---|
-| 1 | `0x0` | `{0x30A1C0, 0}` | inicialización de 989snd |
-| 2 | `0x68` SMPD tipo `1` | `{0, 0x4533C0, 0x20, 0x453440, 0x280, 1, 0x1FBF20}` | inicializar smpd: direcciones de búferes del EE (¿estado de 0x20 bytes y cola/resultados de 0x280?) |
-| 3–17 | `0xA` | `{0}` … `{14}` | 15 comandos de 989snd (¿reservar canales/bancos?) |
-| 18 | `0x68` SMPD tipo `0xF` | `"R_Perm"` (16 bytes) + `0x10000210, 0, 1` | **cargar el WAD `R_Perm`** |
+`ps2xIOP` está diseñado para ejecutar los IRX del juego ("Game-specific IOP code executes from IRX
+modules"). No se cargaban solo porque el juego los pide como `IOP_MOD/xxx.irx`. Una vez disponibles
+aparecieron cuatro fallos del emulador, todos corregidos en `patches/ps2recomp-runtime.patch`:
 
-smpd escribe los resultados en la memoria del EE con `SIFCopy`, previsiblemente en los búferes que
-recibe en el mensaje de tipo 1.
+| Fallo | Síntoma | Arreglo |
+|---|---|---|
+| Heap del IOP de solo 832 KB (`HeapBase = 0x120000`) | smpd: "failed to allocate memory" (pide `0x11ADF8` bytes) | `HeapBase = 0x70000` (los módulos acaban hacia `0x56000`) |
+| Tope de 2 M instrucciones por llamada síncrona (`kMaxCallInstructions`) | la inicialización de smpd, ejecutada dentro del RPC de 989snd, se cortaba **en silencio** a mitad del TOC y el EE esperaba para siempre | tope de 400 M y aviso `[IOP] guest call … exceeded its budget` |
+| `sprintf`/`vsprintf` de sysclib copiaban el formato literal | smpd hacía `sprintf("%s.wad", nombre)` y buscaba `%S.WAD` → `R_Perm` devolvía -1 | formateador real con argumentos o32 (`iop_format.h`), usado también por `printf` |
+| Sin imagen de disco | smpd lee por número de sector | `configureGowCdImage` en `src/gow_overrides.cpp` usa la ISO original |
 
-**Causa raíz:** el override `gowSnd989SendCommand` (`0x26BF28`) responde OK al instante y tira todos
-los comandos, entre ellos el `0x68` que pide cargar `R_Perm`. Y aunque llegaran al IOP, tampoco hay
-nadie que implemente smpd.
+Además, el override de `snd_SendIOPCommandAndWait` ya no descarta los comandos: los registra (`[gow-snd]`)
+y llama al original. `GOW_SND_STUB=1` recupera el comportamiento antiguo.
 
-**Arreglo provisional** (`gowDictFindGuard` en `src/gow_overrides.cpp`): si `dicc` es NULL,
-`sub_00175890` devuelve 0 ("no encontrado") y vuelca la pila. Así se evita el cuelgue, pero los heaps
-quedan con tamaño 0.
+## Herramientas de diagnóstico
+
+| Herramienta | Uso |
+|---|---|
+| `[gow-snd]` | comandos enviados a 989snd/smpd y su respuesta |
+| `[gow-dict]` | llamadas a `GetDynaStringNode` con diccionario NULL (guardia provisional) |
+| `[gow-tree]` | ciclos en el árbol de `sub_001769F8` |
+| `PS2X_IOP_TRACE=N` (+ `PS2X_IOP_TRACE_FROM=M`) | registra N llamadas a importaciones del IOP a partir de la M |
+| `PS2X_IOP_TRACE_NOCLIB=1` | omite `sysclib` en esa traza |
+| `PS2X_IOP_TRACE_EVERY=N` | muestreo: una de cada N llamadas |
+| `PS2X_IOP_PC_EVERY=N` | PC del IOP cada N instrucciones y aviso cuando no hay hilos listos |
 
 ## Problemas conocidos
 
 | Problema | Detalle |
 |---|---|
-| Configuración sin cargar | `HERO/SLOT/UPGRADE_HEAP_SIZE` no existen: el nodo de configuración tiene el diccionario a NULL |
-| Bucle en `0x0023A978` | `sub_0023A920` recorre una lista circular de objetos llamando a métodos virtuales (`ra=0x1E6004`); probablemente es consecuencia de lo anterior |
-| Rutas de IRX | El juego pide `IOP_MOD/xxx.irx`, pero en el disco están en la raíz y en mayúsculas (`SIO2MAN.IRX`) |
-| Módulos sin HLE | `mc2_d.irx`, `ds2u_d.irx` y `smpd_iop.irx` (memory card, mando, `smpd`) |
-| Sin audio | `989snd` está silenciado |
+| Bucle en `0x00239FD0` | dentro de `stdCList<wadCleanupData>` (`ra=0x23A044`), tras los `snd_DoExternCall` |
+| Errores de 989snd | 15 × `989snd Error: cause 7 -> …` al arrancar (sin investigar) |
+| Sin audio | 989snd corre, pero no hay salida de SPU2 |
 | Sin vídeo FMV | `sceMpeg*` / `sceIpu*` son stubs |
-| Dependencias de ninja | Con MSVC en español no se registran las dependencias `/showIncludes`; `2_recompilar_rapido.cmd` fuerza la recompilación |
+| Dependencias de ninja | Con MSVC en español no se registran las dependencias `/showIncludes`; `2_recompilar_rapido.cmd` fuerza la recompilación de los overrides (los cambios en cabeceras del runtime requieren tocar los `.cpp` que las incluyen) |
 
 ## Próximos pasos
 
-1. **HLE de smpd** (el cargador de datos):
-   - ~~Registrar en `gowSnd989SendCommand` los comandos y argumentos que envía el juego.~~ ✅
-   - Descifrar cómo espera el EE el resultado de `SMPD` tipo `0xF`: qué lee de `0x4533C0` /
-     `0x453440`, dónde espera recibir los datos del WAD y cómo los procesa `sub_00185F28` /
-     `sub_0017A8B8`.
-   - Implementarlo leyendo `GODOFWAR.TOC` + `PART*.PAK` del disco extraído.
-2. Con la configuración cargada, quitar la guardia `gowDictFindGuard` y comprobar si el bucle en
-   `0x0023A978` desaparece.
-4. HLE para `mc2_d` (memory card) y `ds2u_d` (DualShock 2).
-5. Audio sobre `989snd`.
+1. Investigar el bucle en `stdCList<wadCleanupData>` (`0x239FD0`) y qué piden los comandos `0x4C`.
+2. Comprobar si la guardia `gowDictFindGuard` y el diagnóstico del árbol ya pueden retirarse.
+3. Revisar los errores `cause 7` de 989snd.
+4. Audio sobre 989snd / SPU2.

@@ -5,7 +5,9 @@
 #include "ps2_runtime_macros.h"
 #include <ps2_recompiled_functions.h>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
 
 namespace
 {
@@ -64,12 +66,23 @@ namespace
     // respuesta = 0x305600 [12 bytes]) y devuelve la palabra 1 de la respuesta.
     // cmd 0x68 = mensaje para un plugin de 989snd (smpd, el cargador de datos): 'datos' apunta a
     // {u32 a, u32 b, u32 len, u32 ptr} y se envian los 12 primeros bytes + len bytes copiados de ptr.
-    // Mientras no haya sonido ni smpd, cada comando "termina bien" al instante y devuelve 0, pero
-    // registramos lo que pide el juego para poder descifrar el protocolo.
+    // Desde que el emulador del IOP ejecuta los IRX originales (989NOMID.IRX + SMPD_IOP.IRX, copiados en
+    // IOP_MOD/ junto al ELF), el comando se pasa al original; aqui solo registramos lo que pide el juego.
+    // Con GOW_SND_STUB=1 se vuelve al comportamiento antiguo (responder 0 sin pasar por el IOP).
     int g_sndCmdCount = 0;
-
-    void gowSnd989SendCommand(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+    const bool g_sndStub = []
     {
+        const char *v = std::getenv("GOW_SND_STUB");
+        return v != nullptr && v[0] == '1';
+    }();
+
+    void gowSnd989SendCommand(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+    {
+        if (ctx->pc != 0x0026BF28u) // reanudacion tras un checkpoint dentro del original
+        {
+            sub_0026BF28_0x26bf28(rdram, ctx, runtime);
+            return;
+        }
         const uint32_t cmd = GPR_U32(ctx, 4);
         const uint32_t size = GPR_U32(ctx, 5);
         const uint32_t data = GPR_U32(ctx, 6);
@@ -92,8 +105,15 @@ namespace
                 dumpGuestBytes(rdram, data, (size < 0x40u) ? size : 0x40u);
             }
         }
-        SET_GPR_U32(ctx, 2, 0u);
-        ctx->pc = GPR_U32(ctx, 31);
+        if (g_sndStub)
+        {
+            SET_GPR_U32(ctx, 2, 0u);
+            ctx->pc = GPR_U32(ctx, 31);
+            return;
+        }
+        sub_0026BF28_0x26bf28(rdram, ctx, runtime);
+        if (g_sndCmdCount <= 300 && ctx->pc == GPR_U32(ctx, 31))
+            std::fprintf(stderr, "[gow-snd]   -> v0=0x%x\n", GPR_U32(ctx, 2));
     }
 
     // sceSifLoadStartModuleBuffer(iopAddr, argLen, args, int *result) usado por el juego para cargar un
@@ -197,8 +217,46 @@ namespace
         sub_00175890_0x175890(rdram, ctx, runtime);
     }
 
+    // smpd (SMPD_IOP.IRX) lee GODOFWAR.TOC / PART*.PAK por numero de sector con sceCdRead. Sin imagen de
+    // disco, el IOP monta una ISO virtual con los archivos extraidos; con la ISO original los sectores son
+    // exactamente los del DVD. Orden: variable GOW_ISO, "../God of War.iso" respecto al ELF, o el primer
+    // .iso de la carpeta del ELF.
+    void configureGowCdImage()
+    {
+        namespace fs = std::filesystem;
+        PS2Runtime::IoPaths paths = PS2Runtime::getIoPaths();
+        if (!paths.cdImage.empty())
+            return;
+        std::error_code ec;
+        fs::path image;
+        if (const char *env = std::getenv("GOW_ISO"); env != nullptr && env[0] != '\0')
+            image = fs::u8path(env);
+        else if (!paths.elfDirectory.empty())
+        {
+            const fs::path sibling = paths.elfDirectory.parent_path() / "God of War.iso";
+            if (fs::is_regular_file(sibling, ec))
+                image = sibling;
+            else
+                for (const auto &entry : fs::directory_iterator(paths.elfDirectory, ec))
+                    if (entry.is_regular_file(ec) && entry.path().extension() == ".iso")
+                    {
+                        image = entry.path();
+                        break;
+                    }
+        }
+        if (image.empty() || !fs::is_regular_file(image, ec))
+        {
+            std::fprintf(stderr, "[gow-cd] sin imagen de disco: el IOP usara la ISO virtual de la carpeta extraida\n");
+            return;
+        }
+        paths.cdImage = image;
+        PS2Runtime::setIoPaths(paths);
+        std::fprintf(stderr, "[gow-cd] imagen de disco: %s\n", image.u8string().c_str());
+    }
+
     void applyGowOverrides(PS2Runtime &runtime)
     {
+        configureGowCdImage();
         // El recompilador descarta estas dos funciones porque empiezan en el delay slot
         // de un "jr ra" suelto de la funcion anterior.
         const bool a = ps2_game_overrides::bindAddressHandler(runtime, 0x00296C48u, "sceSifInitRpc");
