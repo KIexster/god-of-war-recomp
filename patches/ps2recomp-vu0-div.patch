@@ -1,0 +1,186 @@
+diff --git a/ps2xRecomp/src/lib/vu_translation_helpers.cpp b/ps2xRecomp/src/lib/vu_translation_helpers.cpp
+index 509fd07..399f117 100644
+--- a/ps2xRecomp/src/lib/vu_translation_helpers.cpp
++++ b/ps2xRecomp/src/lib/vu_translation_helpers.cpp
+@@ -75,21 +75,24 @@ namespace ps2recomp
+         uint8_t fs_reg = inst.rd;
+         uint8_t ft_reg = inst.rt;
+ 
+-        return fmt::format("{{ float fs = _mm_cvtss_f32(_mm_shuffle_ps(ctx->vu0_vf[{}], ctx->vu0_vf[{}], _MM_SHUFFLE(0,0,0,{}))); float ft = _mm_cvtss_f32(_mm_shuffle_ps(ctx->vu0_vf[{}], ctx->vu0_vf[{}], _MM_SHUFFLE(0,0,0,{}))); ctx->vu0_q = (ft != 0.0f) ? (fs / ft) : 0.0f; }}", fs_reg, fs_reg, fsf, ft_reg, ft_reg, ftf);
++        return fmt::format("{{ float fs = _mm_cvtss_f32(_mm_shuffle_ps(ctx->vu0_vf[{}], ctx->vu0_vf[{}], _MM_SHUFFLE(0,0,0,{}))); float ft = _mm_cvtss_f32(_mm_shuffle_ps(ctx->vu0_vf[{}], ctx->vu0_vf[{}], _MM_SHUFFLE(0,0,0,{}))); ctx->vu0_q = ps2VuDivide(ctx->vu0_status, fs, ft); }}", fs_reg, fs_reg, fsf, ft_reg, ft_reg, ftf); // GOW-Port
+     }
+ 
+     std::string CodeGenerator::translateVU_VSQRT(const Instruction &inst)
+     {
+         uint8_t ftf = inst.vectorInfo.ftf;
+         uint8_t ft_reg = inst.rt;
+-        return fmt::format("{{ float ft = _mm_cvtss_f32(_mm_shuffle_ps(ctx->vu0_vf[{}], ctx->vu0_vf[{}], _MM_SHUFFLE(0,0,0,{}))); ctx->vu0_q = sqrtf(std::max(0.0f, ft)); }}", ft_reg, ft_reg, ftf);
++        return fmt::format("{{ float ft = _mm_cvtss_f32(_mm_shuffle_ps(ctx->vu0_vf[{}], ctx->vu0_vf[{}], _MM_SHUFFLE(0,0,0,{}))); ctx->vu0_q = ps2VuSqrt(ctx->vu0_status, ft); }}", ft_reg, ft_reg, ftf); // GOW-Port
+     }
+ 
+     std::string CodeGenerator::translateVU_VRSQRT(const Instruction &inst)
+     {
++        // GOW-Port: VRSQRT es Q = fs / sqrt(|ft|); antes se ignoraba fs.
++        uint8_t fsf = inst.vectorInfo.fsf;
+         uint8_t ftf = inst.vectorInfo.ftf;
++        uint8_t fs_reg = inst.rd;
+         uint8_t ft_reg = inst.rt;
+-        return fmt::format("{{ float ft = _mm_cvtss_f32(_mm_shuffle_ps(ctx->vu0_vf[{}], ctx->vu0_vf[{}], _MM_SHUFFLE(0,0,0,{}))); ctx->vu0_q = (ft > 0.0f) ? (1.0f / sqrtf(ft)) : 0.0f; }}", ft_reg, ft_reg, ftf);
++        return fmt::format("{{ float fs = _mm_cvtss_f32(_mm_shuffle_ps(ctx->vu0_vf[{}], ctx->vu0_vf[{}], _MM_SHUFFLE(0,0,0,{}))); float ft = _mm_cvtss_f32(_mm_shuffle_ps(ctx->vu0_vf[{}], ctx->vu0_vf[{}], _MM_SHUFFLE(0,0,0,{}))); ctx->vu0_q = ps2VuRsqrt(ctx->vu0_status, fs, ft); }}", fs_reg, fs_reg, fsf, ft_reg, ft_reg, ftf);
+     }
+ 
+     std::string CodeGenerator::translateVU_VMTIR(const Instruction &inst)
+diff --git a/ps2xRuntime/include/ps2_runtime_macros.h b/ps2xRuntime/include/ps2_runtime_macros.h
+index 0f19c9f..da16c02 100644
+--- a/ps2xRuntime/include/ps2_runtime_macros.h
++++ b/ps2xRuntime/include/ps2_runtime_macros.h
+@@ -140,6 +140,78 @@ static inline uint32_t ps2_plzcw32(uint32_t x)
+ #define PS2_PXOR(a, b) _mm_xor_si128((__m128i)(a), (__m128i)(b))
+ #define PS2_PNOR(a, b) _mm_xor_si128(_mm_or_si128((__m128i)(a), (__m128i)(b)), _mm_set1_epi32(0xFFFFFFFF))
+ 
++// GOW-Port: VDIV/VSQRT/VRSQRT de VU0 en modo macro con la semantica del hardware. La VU no tiene Inf/NaN:
++// dividir por cero da +-FLT_MAX (signo fs^ft) y activa D (o I si 0/0) en el registro de estado; las raices
++// usan |ft| y activan I si ft es negativo. Los exponentes 0 cuentan como cero.
++static inline uint32_t ps2VuFloatBits(float value)
++{
++    uint32_t bits;
++    std::memcpy(&bits, &value, sizeof(bits));
++    return bits;
++}
++
++static inline bool ps2VuFloatIsZero(float value)
++{
++    return (ps2VuFloatBits(value) & 0x7F800000u) == 0u;
++}
++
++static inline float ps2VuSignedFloatMax(uint32_t signSource)
++{
++    const uint32_t bits = (signSource & 0x80000000u) | 0x7F7FFFFFu;
++    float out;
++    std::memcpy(&out, &bits, sizeof(out));
++    return out;
++}
++
++static inline float ps2VuClampScalar(float value)
++{
++    const uint32_t bits = ps2VuFloatBits(value);
++    return (bits & 0x7F800000u) == 0x7F800000u ? ps2VuSignedFloatMax(bits) : value;
++}
++
++constexpr uint16_t PS2_VU_STATUS_I = 0x0010u;
++constexpr uint16_t PS2_VU_STATUS_D = 0x0020u;
++constexpr uint16_t PS2_VU_STATUS_IS = 0x0400u;
++constexpr uint16_t PS2_VU_STATUS_DS = 0x0800u;
++
++static inline float ps2VuDivide(uint16_t &status, float dividend, float divisor)
++{
++    status &= static_cast<uint16_t>(~(PS2_VU_STATUS_I | PS2_VU_STATUS_D));
++    if (ps2VuFloatIsZero(divisor))
++    {
++        if (ps2VuFloatIsZero(dividend))
++            status |= PS2_VU_STATUS_I | PS2_VU_STATUS_IS;
++        else
++            status |= PS2_VU_STATUS_D | PS2_VU_STATUS_DS;
++        return ps2VuSignedFloatMax(ps2VuFloatBits(dividend) ^ ps2VuFloatBits(divisor));
++    }
++    return ps2VuClampScalar(dividend / divisor);
++}
++
++static inline float ps2VuSqrt(uint16_t &status, float value)
++{
++    status &= static_cast<uint16_t>(~(PS2_VU_STATUS_I | PS2_VU_STATUS_D));
++    if ((ps2VuFloatBits(value) & 0x80000000u) != 0u && !ps2VuFloatIsZero(value))
++        status |= PS2_VU_STATUS_I | PS2_VU_STATUS_IS;
++    return ps2VuClampScalar(std::sqrt(std::fabs(value)));
++}
++
++static inline float ps2VuRsqrt(uint16_t &status, float numerator, float value)
++{
++    status &= static_cast<uint16_t>(~(PS2_VU_STATUS_I | PS2_VU_STATUS_D));
++    if (ps2VuFloatIsZero(value))
++    {
++        if (ps2VuFloatIsZero(numerator))
++            status |= PS2_VU_STATUS_I | PS2_VU_STATUS_IS;
++        else
++            status |= PS2_VU_STATUS_D | PS2_VU_STATUS_DS;
++        return ps2VuSignedFloatMax(ps2VuFloatBits(numerator) ^ ps2VuFloatBits(value));
++    }
++    if ((ps2VuFloatBits(value) & 0x80000000u) != 0u)
++        status |= PS2_VU_STATUS_I | PS2_VU_STATUS_IS;
++    return ps2VuClampScalar(numerator / std::sqrt(std::fabs(value)));
++}
++
+ // PS2 VU (Vector Unit) operations
+ #define PS2_VADD(a, b) _mm_add_ps((__m128)(a), (__m128)(b))
+ #define PS2_VSUB(a, b) _mm_sub_ps((__m128)(a), (__m128)(b))
+diff --git a/ps2xTest/src/code_generator_tests.cpp b/ps2xTest/src/code_generator_tests.cpp
+index cfd45b3..aae8e6c 100644
+--- a/ps2xTest/src/code_generator_tests.cpp
++++ b/ps2xTest/src/code_generator_tests.cpp
+@@ -1713,6 +1713,36 @@ void register_code_generator_tests()
+                      "backward internal branch should still re-enter the in-function label when it keeps the current slice");
+         });
+ 
++        // GOW-Port: VRSQRT de VU0 en modo macro lee fs; palabra real del juego: vrsqrt Q, vf0w, vf1x.
++        tc.Run("VU0 macro VRSQRT uses the FS numerator", [](TestCase &t) {
++            const std::vector<Section> sections;
++            CodeGenerator gen({}, sections);
++            R5900Decoder decoder;
++            const Instruction inst = decoder.decodeInstruction(0x1000, 0x4A6103BEu, false);
++            const std::string code = gen.translateInstruction(inst);
++            t.IsTrue(code.find("_mm_shuffle_ps(ctx->vu0_vf[0], ctx->vu0_vf[0], _MM_SHUFFLE(0,0,0,3))") != std::string::npos,
++                     "VRSQRT must read fs = vf0.w");
++            t.IsTrue(code.find("_mm_shuffle_ps(ctx->vu0_vf[1], ctx->vu0_vf[1], _MM_SHUFFLE(0,0,0,0))") != std::string::npos,
++                     "VRSQRT must read ft = vf1.x");
++            t.IsTrue(code.find("ctx->vu0_q = ps2VuRsqrt(ctx->vu0_status, fs, ft);") != std::string::npos,
++                     "VRSQRT must compute Q = fs / sqrt(|ft|) with hardware flags");
++        });
++
++        tc.Run("VU0 macro VDIV and VSQRT use the hardware helpers", [](TestCase &t) {
++            const std::vector<Section> sections;
++            CodeGenerator gen({}, sections);
++            R5900Decoder decoder;
++            // VDIV Q, vf2x, vf3y y VSQRT Q, vf3y.
++            const uint32_t vdiv = 0x4A000000u | (1u << 23) | (0u << 21) | (3u << 16) | (2u << 11) | 0x3BCu;
++            const uint32_t vsqrt = 0x4A000000u | (1u << 23) | (3u << 16) | 0x3BDu;
++            const std::string divCode = gen.translateInstruction(decoder.decodeInstruction(0x1000, vdiv, false));
++            const std::string sqrtCode = gen.translateInstruction(decoder.decodeInstruction(0x1004, vsqrt, false));
++            t.IsTrue(divCode.find("ctx->vu0_q = ps2VuDivide(ctx->vu0_status, fs, ft);") != std::string::npos,
++                     "VDIV by zero must saturate instead of returning 0");
++            t.IsTrue(sqrtCode.find("ctx->vu0_q = ps2VuSqrt(ctx->vu0_status, ft);") != std::string::npos,
++                     "VSQRT must use |ft|");
++        });
++
+         // GOW-Port: BLEZ/BGTZ/BLTZ/BGEZ (y sus variantes L/AL) comparan el registro de 64 bits.
+         tc.Run("signed branches compare the full 64-bit EE register", [](TestCase &t) {
+             struct BranchCase
+diff --git a/ps2xTest/src/ps2_vu_tests.cpp b/ps2xTest/src/ps2_vu_tests.cpp
+index b96befe..99039e5 100644
+--- a/ps2xTest/src/ps2_vu_tests.cpp
++++ b/ps2xTest/src/ps2_vu_tests.cpp
+@@ -81,6 +81,25 @@ void register_ps2_vu_tests()
+ {
+     MiniTest::Case("PS2VU0Math", [](TestCase &tc)
+     {
++        // GOW-Port: semantica de hardware de VDIV/VSQRT/VRSQRT en modo macro.
++        tc.Run("VU0 macro divide and roots saturate instead of returning zero", [](TestCase &t)
++        {
++            const float fltMax = 3.40282347e38f;
++            uint16_t status = 0u;
++            t.Equals(ps2VuRsqrt(status, 1.0f, 0.0f), fltMax, "rsqrt(1, 0) is +FLT_MAX");
++            t.IsTrue((status & PS2_VU_STATUS_D) != 0u && (status & PS2_VU_STATUS_DS) != 0u, "rsqrt by zero sets D and DS");
++            t.Equals(ps2VuRsqrt(status, 3.0f, 4.0f), 1.5f, "rsqrt uses the numerator");
++            t.IsTrue((status & PS2_VU_STATUS_D) == 0u && (status & PS2_VU_STATUS_DS) != 0u, "D clears, DS is sticky");
++            t.Equals(ps2VuRsqrt(status, 1.0f, -4.0f), 0.5f, "rsqrt uses |ft|");
++            t.IsTrue((status & PS2_VU_STATUS_I) != 0u, "negative rsqrt operand sets I");
++            t.Equals(ps2VuSqrt(status, -9.0f), 3.0f, "sqrt uses |ft|");
++            t.Equals(ps2VuDivide(status, -2.0f, 0.0f), -fltMax, "x / 0 keeps the sign xor");
++            t.Equals(ps2VuDivide(status, 6.0f, 3.0f), 2.0f, "ordinary division");
++            status = 0u;
++            ps2VuDivide(status, 0.0f, 0.0f);
++            t.IsTrue((status & PS2_VU_STATUS_I) != 0u && (status & PS2_VU_STATUS_D) == 0u, "0 / 0 sets I, not D");
++        });
++
+         tc.Run("MulVector_componentwise", [](TestCase &t)
+         {
+             VuEnv env;

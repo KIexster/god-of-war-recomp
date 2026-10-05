@@ -1,0 +1,157 @@
+diff --git a/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp b/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
+index ae21a96..cca1aa4 100644
+--- a/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
++++ b/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
+@@ -1,6 +1,8 @@
+ // Based on Blackline Interactive implementation
+ #include "runtime/ps2_memory.h"
+ #include <cstring>
++#include <vector>
++#include <algorithm>
+ #include <cstdio>
+ #include <cstdlib>
+ 
+@@ -306,32 +308,8 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
+ 
+     while (pos + 4 <= sizeBytes)
+     {
+-        if (m_vif1PendingPath2ImageQwc != 0u)
+-        {
+-            const uint32_t availableQw = (sizeBytes - pos) / 16u;
+-            if (availableQw == 0u)
+-            {
+-                break;
+-            }
+-
+-            const uint32_t chunkQw = std::min<uint32_t>(m_vif1PendingPath2ImageQwc, availableQw);
+-            std::vector<uint8_t> imagePacket(16u + static_cast<size_t>(chunkQw) * 16u, 0u);
+-            const uint64_t imageTag =
+-                static_cast<uint64_t>(chunkQw & 0x7FFFu) |
+-                ((m_vif1PendingPath2ImageQwc == chunkQw) ? (1ull << 15) : 0ull) |
+-                (static_cast<uint64_t>(kGifFmtImage) << 58);
+-            std::memcpy(imagePacket.data(), &imageTag, sizeof(imageTag));
+-            std::memcpy(imagePacket.data() + 16u, data + pos, static_cast<size_t>(chunkQw) * 16u);
+-            submitGifPacket(GifPathId::Path2, imagePacket.data(), static_cast<uint32_t>(imagePacket.size()), true, m_vif1PendingPath2DirectHl);
+-
+-            pos += chunkQw * 16u;
+-            m_vif1PendingPath2ImageQwc -= chunkQw;
+-            if (m_vif1PendingPath2ImageQwc == 0u)
+-            {
+-                m_vif1PendingPath2DirectHl = false;
+-            }
+-            continue;
+-        }
++        // GOW-Port: una IMAGE pendiente de PATH2 solo continua con la carga del siguiente DIRECT/DIRECTHL.
++        // Antes se tomaban como pixeles los codigos VIF que siguen al DIRECT y el flujo se desincronizaba.
+ 
+         uint32_t cmd;
+         memcpy(&cmd, data + pos, 4);
+@@ -524,13 +502,36 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
+             if (qwCount > 0)
+             {
+                 const bool directHl = (opcode == VIF_DIRECTHL);
+-                submitGifPacket(GifPathId::Path2, data + pos, qwCount * 16, true, directHl);
++                // GOW-Port: primero se completa la IMAGE pendiente de un DIRECT anterior.
++                uint32_t imageQw = 0u;
++                if (m_vif1PendingPath2ImageQwc != 0u)
++                {
++                    imageQw = std::min<uint32_t>(m_vif1PendingPath2ImageQwc, qwCount);
++                    std::vector<uint8_t> imagePacket(16u + static_cast<size_t>(imageQw) * 16u, 0u);
++                    const uint64_t imageTag =
++                        static_cast<uint64_t>(imageQw & 0x7FFFu) |
++                        ((m_vif1PendingPath2ImageQwc == imageQw) ? (1ull << 15) : 0ull) |
++                        (static_cast<uint64_t>(kGifFmtImage) << 58);
++                    std::memcpy(imagePacket.data(), &imageTag, sizeof(imageTag));
++                    std::memcpy(imagePacket.data() + 16u, data + pos, static_cast<size_t>(imageQw) * 16u);
++                    submitGifPacket(GifPathId::Path2, imagePacket.data(), static_cast<uint32_t>(imagePacket.size()), true, m_vif1PendingPath2DirectHl);
++                    m_vif1PendingPath2ImageQwc -= imageQw;
++                    if (m_vif1PendingPath2ImageQwc == 0u)
++                        m_vif1PendingPath2DirectHl = false;
++                }
+ 
+-                const uint32_t pendingImageQw = pendingGifImageQwc(data + pos, qwCount * 16u);
+-                if (pendingImageQw != 0u)
++                if (imageQw < qwCount)
+                 {
+-                    m_vif1PendingPath2ImageQwc = pendingImageQw;
+-                    m_vif1PendingPath2DirectHl = directHl;
++                    const uint8_t *packets = data + pos + imageQw * 16u;
++                    const uint32_t packetBytes = (qwCount - imageQw) * 16u;
++                    submitGifPacket(GifPathId::Path2, packets, packetBytes, true, directHl);
++
++                    const uint32_t pendingImageQw = pendingGifImageQwc(packets, packetBytes);
++                    if (pendingImageQw != 0u)
++                    {
++                        m_vif1PendingPath2ImageQwc = pendingImageQw;
++                        m_vif1PendingPath2DirectHl = directHl;
++                    }
+                 }
+             }
+ 
+diff --git a/ps2xTest/src/ps2_memory_tests.cpp b/ps2xTest/src/ps2_memory_tests.cpp
+index 4ac7cdd..141346c 100644
+--- a/ps2xTest/src/ps2_memory_tests.cpp
++++ b/ps2xTest/src/ps2_memory_tests.cpp
+@@ -2262,7 +2262,9 @@ void register_ps2_memory_tests()
+             t.IsTrue(imageOk, "VIF1 DIRECT image should update GS VRAM through GIF path2");
+         });
+ 
+-        tc.Run("VIF1 DIRECT image tag can continue with raw image qwords", [](TestCase &t)
++        // GOW-Port: en el hardware la IMAGE continua con la carga del siguiente DIRECT, no con los codigos VIF
++        // que siguen al primero. Las dos pruebas de abajo comprobaban el comportamiento anterior.
++        tc.Run("VIF1 DIRECT image tag continues in the next DIRECT payload", [](TestCase &t)
+         {
+             PS2Memory mem;
+             t.IsTrue(mem.initialize(), "PS2Memory initialize should succeed");
+@@ -2288,9 +2290,14 @@ void register_ps2_memory_tests()
+             gs.writeRegister(GS_REG_TRXDIR, 0ull);
+ 
+             std::vector<uint8_t> packet;
++            for (uint32_t i = 0; i < 3u; ++i)
++                appendU32(packet, makeVifCmd(0x00u, 0u, 0u));
+             appendU32(packet, makeVifCmd(0x50u, 0u, 1u)); // DIRECT 1 QW payload: GIF IMAGE tag only.
+             appendU64(packet, makeGifTag(1u, GIF_FMT_IMAGE, 0u, true));
+             appendU64(packet, 0ull);
++            for (uint32_t i = 0; i < 3u; ++i)
++                appendU32(packet, makeVifCmd(0x00u, 0u, 0u));
++            appendU32(packet, makeVifCmd(0x50u, 0u, 1u)); // DIRECT 1 QW payload: the image qword.
+             for (uint32_t i = 0; i < 16u; ++i)
+             {
+                 packet.push_back(static_cast<uint8_t>(0xA0u + i));
+@@ -2312,7 +2319,7 @@ void register_ps2_memory_tests()
+                     }
+                 }
+             }
+-            t.IsTrue(imageOk, "raw qwords after a DIRECT image tag should continue the PATH2 image upload");
++            t.IsTrue(imageOk, "the next DIRECT payload should continue the PATH2 image upload");
+         });
+ 
+         tc.Run("VIF1 DIRECT finds an image continuation after packed setup", [](TestCase &t)
+@@ -2337,6 +2344,8 @@ void register_ps2_memory_tests()
+             gs.writeRegister(GS_REG_TRXDIR, 0ull);
+ 
+             std::vector<uint8_t> packet;
++            for (uint32_t i = 0; i < 3u; ++i)
++                appendU32(packet, makeVifCmd(0x00u, 0u, 0u));
+             appendU32(packet, makeVifCmd(0x50u, 0u, 3u)); // PACKED tag + A+D + IMAGE tag.
+             appendU64(packet, makeGifTag(1u, GIF_FMT_PACKED, 1u, false));
+             appendU64(packet, 0x0Eull);
+@@ -2344,6 +2353,9 @@ void register_ps2_memory_tests()
+             appendU64(packet, GS_REG_TEXA);
+             appendU64(packet, makeGifTag(1u, GIF_FMT_IMAGE, 0u, true));
+             appendU64(packet, 0ull);
++            for (uint32_t i = 0; i < 3u; ++i)
++                appendU32(packet, makeVifCmd(0x00u, 0u, 0u));
++            appendU32(packet, makeVifCmd(0x50u, 0u, 1u));
+             for (uint32_t i = 0; i < 16u; ++i)
+                 packet.push_back(static_cast<uint8_t>(0xC0u + i));
+ 
+@@ -2363,7 +2375,7 @@ void register_ps2_memory_tests()
+                     }
+                 }
+             }
+-            t.IsTrue(imageOk, "raw image continuation after packed setup should not be decoded as VIF/GIF registers");
++            t.IsTrue(imageOk, "image continuation after packed setup should come from the next DIRECT payload");
+         });
+ 
+         tc.Run("unaligned accesses throw", [](TestCase &t)

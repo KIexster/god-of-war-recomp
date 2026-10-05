@@ -534,3 +534,26 @@ Hallazgos concretos para la siguiente etapa:
 
 Prioridad: contrastar los datos y la salida del renderizado con una referencia correcta; después
 adaptar backend GS y mejoras genéricas en parches independientes, con pruebas y comparación visual.
+
+### Arreglos de exactitud portados del fork de SotC (2026-10-05)
+
+Se portaron, como parches independientes y con licencia GPL-3.0 compatible, cuatro correcciones del fork
+de PS2Recomp usado por sotc-vibe-pc ([`TaylorNAlbarnaz/PS2Recomp@ac9efa0`](https://github.com/TaylorNAlbarnaz/PS2Recomp/tree/ac9efa070638ad3b3accd284de6f898d5ab271d1)).
+Ninguna estaba en nuestra revisión fijada ni en los parches anteriores. Informe completo de la revisión:
+`informes/sotc-vibe-pc.md` en los archivos del proyecto.
+
+| Parche | Origen | Qué corrige |
+|---|---|---|
+| `ps2recomp-dma-chain.patch` | `e36fbf1` | El recorrido de cadenas DMA (GIF, VIF0, VIF1) se detenía en silencio a los 4096 tags y descartaba el resto. Tope de 2^20 y aviso `[dma] chain ... stopped` si se alcanza. |
+| `ps2recomp-vif-direct.patch` | `dca8c80` | Tras un DIRECT que deja una IMAGE de PATH2 a medias, los códigos VIF siguientes se tomaban como píxeles y el flujo se desincronizaba. Ahora la IMAGE continúa con la carga del siguiente DIRECT/DIRECTHL, como en el hardware. |
+| `ps2recomp-ee-branches.patch` | `3c46932` | `BLEZ`, `BGTZ`, `BLTZ`, `BGEZ` y sus variantes L/AL comparaban solo los 32 bits bajos; el R5900 compara el registro de 64 bits. Requiere regenerar el C++ del juego. |
+| `ps2recomp-vu0-div.patch` | `8b51cb9` | `VDIV`, `VSQRT` y `VRSQRT` de VU0 en modo macro devolvían 0 al dividir por cero o con radicando negativo, y `VRSQRT` ignoraba fs. Ahora: ±FLT_MAX con flags D/I, `sqrt(|ft|)` y `Q = fs / sqrt(|ft|)`. Requiere regenerar el C++ del juego. |
+
+Las dos pruebas existentes de continuación de DIRECT comprobaban el comportamiento anterior (datos crudos
+tras el DIRECT); se ajustaron para que la continuación llegue en el siguiente DIRECT, como en el fork.
+Las seis pruebas nuevas o ajustadas fallan sin los arreglos y pasan con ellos. La suite pasa **472/472** en
+Linux; los 18 parches aplican en orden sobre la revisión fijada.
+
+**Sin probar con el juego.** Hace falta `scripts\2_compilar.cmd` completo (dos parches cambian el
+recompilador) y repetir la prueba de la partida. Qué mirar: si cambian
+los vértices `(0,0,0,32768)` del lote preparado por el EE y si las fuentes del menú se completan.

@@ -27,6 +27,10 @@ $fpuRootsPatch = Join-Path $RepoRoot 'patches\ps2recomp-fpu-roots.patch'
 $spu2OutputPatch = Join-Path $RepoRoot 'patches\ps2recomp-spu2-output.patch'
 $sio2Patch = Join-Path $RepoRoot 'patches\ps2recomp-sio2.patch'
 $perfPatch = Join-Path $RepoRoot 'patches\ps2recomp-perf.patch'
+$dmaChainPatch = Join-Path $RepoRoot 'patches\ps2recomp-dma-chain.patch'
+$vifDirectPatch = Join-Path $RepoRoot 'patches\ps2recomp-vif-direct.patch'
+$eeBranchesPatch = Join-Path $RepoRoot 'patches\ps2recomp-ee-branches.patch'
+$vu0DivPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-div.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -78,6 +82,10 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $fpuRootsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $spu2OutputPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $sio2Patch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $perfPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $dmaChainPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vifDirectPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $eeBranchesPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu0DivPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
