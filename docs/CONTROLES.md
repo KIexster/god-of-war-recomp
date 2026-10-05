@@ -133,3 +133,36 @@ extensión con/sin signo, máscaras, protección de escritura, suma por componen
 encendido/apagado. La suite cambia de 436/441 a 439/441; los dos fallos restantes son los previos.
 La ejecución del juego con FMV omitidos sigue alcanzando el estado 11, con defectos del menú
 y la imagen de partida negra. No se atribuye una mejora visual a estas correcciones.
+
+## Diagnóstico de VIF y buffers de dibujo
+
+`patches/ps2recomp-vif-diagnostic.patch` añade trazas optativas y acotadas; no altera la ejecución
+de VIF ni de VU. Para repetirlas:
+
+```powershell
+$env:GOW_SKIP_FMV = '1'
+$env:GOW_FAST_BOOT = '1'
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\probar_menu.ps1 -Segundos 140 -DiagnosticoVif
+Remove-Item Env:GOW_SKIP_FMV, Env:GOW_FAST_BOOT
+```
+
+El script restaura las variables de diagnóstico al terminar. En `logs\ejecutar_err.log`:
+
+- `[gow-vif]` cuenta comandos y solicitudes de interrupción (bit I).
+- `[gow-vif-launch]` compara TOP/ITOP y la cabecera en memoria antes de los primeros 24 MSCAL.
+- `[gow-xgkick]` muestra las primeras 96 cabeceras GIF y una muestra cada 4096.
+- `[gow-xgkick:reject]` identifica los primeros 32 rechazos por formato, longitud o búfer lleno.
+  Una cabecera con NLOOP=0 puede ser válida; no debe contarse como un rechazo por sí sola.
+- `[gow-gs:buffer]` registra formato, dirección y píxeles con RGB distinto de cero de cada contexto.
+
+Al alcanzar por primera vez el estado 11, `GOW_RENDER_DIAG` guarda también `gow_render_vram.bin`
+y `gow_render_context_0.ppm` / `gow_render_context_1.ppm` junto al ejecutable. Las imágenes de
+contextos solo se generan para PSMCT32/24 y FBW distinto de cero. Leen la memoria con el direccionamiento
+del GS, sin cambiar el framebuffer presentado. Los archivos contienen datos del juego: conservarlos
+localmente y no publicarlos.
+
+La prueba de 140 segundos registró 196608 comandos VIF1 sin solicitudes de interrupción y llegó
+al estado 11. Los dos contextos dibujaban en FBP=0, FBW=8, PSMCT32, mientras la pantalla presentaba
+FBP=208. Sus capturas tenían 212992 píxeles con RGB distinto de cero, pero solo mostraban un fondo
+oscuro y puntos dispersos: no apareció una escena 3D oculta en esos buffers. La pantalla seguía negra.
+La suite conserva 439/441 pruebas aprobadas y los mismos dos fallos conocidos.

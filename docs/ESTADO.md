@@ -218,10 +218,16 @@ siguen en el historial de git por si hiciera falta recuperarlos.
    `GOW_XGKICK_IMMEDIATE=1` alcanza el estado 11, pero no resuelve la imagen negra y siguen
    los errores XGKICK. El parche queda opcional; la transferencia por ciclos sigue siendo el valor
    por defecto. Ver la comparación en [CONTROLES.md](CONTROLES.md#prueba-aislada-de-xgkick).
-   Próxima comprobación: bit I e interrupciones VIF1. El intérprete actual extrae el opcode
-   con `& 0x7F` y no entrega esa interrupción. [SOCOM Unzipped](https://github.com/Scotho/socom-unzipped/blob/main/third_party/ps2recomp/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp#L15-L20)
-   la usa para ordenar uploads de texturas y dibujo. Falta verificar su uso por God of War
-   antes de adoptar el mecanismo de pausa/reanudación.
+   La comprobación del bit I registró **196608 comandos y cero solicitudes de interrupción VIF1**
+   hasta el estado 11 (FMV omitidos, entrada rápida). El mecanismo de pausa/reanudación de
+   [SOCOM Unzipped](https://github.com/Scotho/socom-unzipped/blob/main/third_party/ps2recomp/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp#L15-L20)
+   no explica el fallo observado en esa prueba. No se ha habilitado.
+   `-DiagnosticoVif` compara las cabeceras antes de MSCAL y durante XGKICK, distingue los paquetes
+   vacíos de los rechazos reales y guarda los buffers de dibujo al alcanzar la partida.
+   Los contextos FBP=0 tienen datos, pero sus capturas no muestran una escena 3D; FBP=208 sigue
+   negro. La próxima comprobación es seguir las escrituras UNPACK y las del microcódigo que
+   modifican las cabeceras rechazadas, con sus direcciones y offsets ya registrados.
+   Ver [CONTROLES.md](CONTROLES.md#diagnóstico-de-vif-y-buffers-de-dibujo).
 2. Resolver la espera de MPEG (`sceMpegGetPicture`, `0x0018A3D8`) y corregir el renderizado de
    fuentes/3D. `GOW_SKIP_FMV=1` permite investigar la partida mientras el decodificador está pendiente.
 3. Memory card (SIO2 / `MC2_D.IRX`).

@@ -150,6 +150,28 @@ namespace
                             data.write(reinterpret_cast<const char *>(runtime->memory().getVU1Data()), 0x4000);
                             std::ofstream ram("gow_render_ram.bin", std::ios::binary);
                             ram.write(reinterpret_cast<const char *>(rdram), 0x02000000u);
+                            std::ofstream vram("gow_render_vram.bin", std::ios::binary);
+                            vram.write(reinterpret_cast<const char *>(runtime->memory().getGSVRAM()), PS2_GS_VRAM_SIZE);
+                            const auto gsState = runtime->gs().getDebugSnapshot();
+                            for (unsigned context = 0; context < 2; ++context)
+                            {
+                                const auto &frame = gsState.ctx[context].frame;
+                                if (!frame.fbw || (frame.psm != 0u && frame.psm != 1u)) continue;
+                                const std::string name = "gow_render_context_" + std::to_string(context) + ".ppm";
+                                std::ofstream image(name, std::ios::binary);
+                                image << "P6\n" << width << ' ' << height << "\n255\n";
+                                uint32_t nonBlack = 0u;
+                                for (uint32_t y = 0; y < height; ++y)
+                                    for (uint32_t x = 0; x < width; ++x)
+                                    {
+                                        const uint32_t color = runtime->gs().ReadVram(frame.psm, frame.fbp * 32u, frame.fbw, x, y);
+                                        const uint8_t rgb[] = {uint8_t(color), uint8_t(color >> 8), uint8_t(color >> 16)};
+                                        image.write(reinterpret_cast<const char *>(rgb), 3);
+                                        nonBlack += (color & 0xFFFFFFu) != 0u;
+                                    }
+                                std::fprintf(stderr, "[gow-gs:buffer] context=%u fbp=%u fbw=%u psm=%u nonBlack=%u file=%s\n",
+                                             context, frame.fbp, frame.fbw, frame.psm, nonBlack, name.c_str());
+                            }
                         }
                         const auto snapshot = runtime->gs().getDebugSnapshot();
                         std::fprintf(stderr, "[gow-gs] ctxFbp=%u,%u display=%u source=%u\n", snapshot.ctx[0].frame.fbp,
