@@ -218,6 +218,10 @@ siguen en el historial de git por si hiciera falta recuperarlos.
    `GOW_XGKICK_IMMEDIATE=1` alcanza el estado 11, pero no resuelve la imagen negra y siguen
    los errores XGKICK. El parche queda opcional; la transferencia por ciclos sigue siendo el valor
    por defecto. Ver la comparación en [CONTROLES.md](CONTROLES.md#prueba-aislada-de-xgkick).
+   Próxima comprobación: bit I e interrupciones VIF1. El intérprete actual extrae el opcode
+   con `& 0x7F` y no entrega esa interrupción. [SOCOM Unzipped](https://github.com/Scotho/socom-unzipped/blob/main/third_party/ps2recomp/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp#L15-L20)
+   la usa para ordenar uploads de texturas y dibujo. Falta verificar su uso por God of War
+   antes de adoptar el mecanismo de pausa/reanudación.
 2. Resolver la espera de MPEG (`sceMpegGetPicture`, `0x0018A3D8`) y corregir el renderizado de
    fuentes/3D. `GOW_SKIP_FMV=1` permite investigar la partida mientras el decodificador está pendiente.
 3. Memory card (SIO2 / `MC2_D.IRX`).
@@ -241,3 +245,7 @@ siguen en el historial de git por si hiciera falta recuperarlos.
 - Con el parche experimental XGKICK, la suite completa da **436/438**: pasa la nueva prueba
   de sobrescritura del buffer y permanecen los mismos dos fallos previos de heap/DMA.
 - `ps2recomp-xgkick.patch` aplica correctamente sobre la revisión fijada del runtime.
+- `ps2recomp-vif-unpack.patch` corrige la expansión XYXY de V2 y los bits de color/alfa V4-5.
+  Sus tres regresiones fallan antes del arreglo (**436/441**) y pasan después (**439/441**),
+  manteniendo los dos fallos previos. El parche aplica sobre la revisión fijada.
+  La prueba del juego alcanza el estado 11; los defectos del menú y la imagen negra permanecen.
