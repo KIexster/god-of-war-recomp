@@ -70,7 +70,8 @@ Per-library and per-component breakdown: [`docs/estado/detalle.en.md`](docs/esta
 | Correct text/font and 3D rendering | 🔧 in progress |
 | Controller/keyboard through libpad2 HLE; menu and difficulty selection | ✅ |
 | Starting a playable game | 🔧 in progress |
-| Audio and memory card | ⏳ pending |
+| Audio: emulated SPU2 with output to the PC (not verified in-game yet) | 🔧 in progress |
+| Memory card | ⏳ pending |
 
 The game boots, runs the original IOP modules (including the `smpd` data streamer), streams its data from
 the ISO, enters its main loop and **renders its first screens**: the *"Sony Computer Entertainment America

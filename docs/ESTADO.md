@@ -198,7 +198,7 @@ siguen en el historial de git por si hiciera falta recuperarlos.
 | Imagen de partida | se alcanza el estado 11 con los FMV omitidos, pero el framebuffer queda negro |
 | Mando | libpad2 funciona por HLE para el primer puerto; presiones 0/255 y sin vibración. SIO2 sigue pendiente |
 | Memory card | `MC2_D.IRX` corre en el IOP, pero el bus SIO2 no está emulado |
-| Sin audio | 989snd corre, pero no hay salida de SPU2 |
+| Audio sin verificar | el SPU2 emulado ya sale por el audio del PC (`ps2recomp-spu2-output.patch`), pero falta probarlo con el juego; sin reverb ni ADMA |
 | Sin vídeo FMV | `sceMpeg*` / `sceIpu*` son stubs |
 | Dependencias de ninja | Con MSVC en español no se registran las dependencias `/showIncludes`: `2_recompilar_rapido.cmd` toca el archivo unity de los overrides y `compilar.ps1` borra los objetos unity tras regenerar (los cambios en cabeceras del runtime requieren tocar los `.cpp` que las incluyen) |
 | Rutas con acentos | `ps2_recomp` no abre rutas no ASCII: `compilar.ps1` copia el ELF y el mapa a la carpeta de trabajo |
@@ -249,7 +249,14 @@ siguen en el historial de git por si hiciera falta recuperarlos.
    copia los datos (antes solo marcaba la transferencia como hecha; el bit `STATX` 0x80 y la interrupción
    diferida no cambian), voces ADPCM con tono, ADSR, volumen fijo y mezcla seca, `ENDX`/`ENVX`/`NAX` legibles
    e IRQ 9 al alcanzar `IRQA`. `GOW_SPU2_IRQ=0` desactiva esa IRQ por si el juego cambia de comportamiento.
-   Falta: salida al PC (fase 2), reverb, barrido de volumen, ADMA (PCM en streaming) e interpolación gaussiana.
+   **Fase 2 (`ps2recomp-spu2-output.patch`):** la mezcla de 48 kHz del SPU2 sale por un `AudioStream` de raylib
+   (estéreo, 16 bits). El IOP produce las muestras en el hilo del EE y el hilo de audio las consume con un mutex;
+   si se acumulan más de 100 ms se descartan las más antiguas, y si faltan se rellena con silencio (si la
+   emulación va más lenta que el tiempo real se oirán cortes). `runCycles` avanza el SPU2 hasta el último ciclo
+   ejecutado aunque el IOP esté en espera. `GOW_AUDIO=0` desactiva la salida (el SPU2 sigue emulándose). En el
+   registro aparece `[SPU2] salida de audio a 48 kHz activa`. Sin verificar con el juego: hay que comprobar si se
+   oye la música del menú y si suena a la velocidad correcta.
+   Falta: reverb, barrido de volumen, ADMA (PCM en streaming) e interpolación gaussiana.
 
 ## Auditoría del intérprete de VU1
 

@@ -23,6 +23,7 @@ $vuEfuPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu-efu.patch'
 $mpegNodataPatch = Join-Path $RepoRoot 'patches\ps2recomp-mpeg-nodata.patch'
 $spu2Patch = Join-Path $RepoRoot 'patches\ps2recomp-spu2.patch'
 $fpuRootsPatch = Join-Path $RepoRoot 'patches\ps2recomp-fpu-roots.patch'
+$spu2OutputPatch = Join-Path $RepoRoot 'patches\ps2recomp-spu2-output.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -71,6 +72,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $vuEfuPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $mpegNodataPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $spu2Patch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $fpuRootsPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $spu2OutputPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner

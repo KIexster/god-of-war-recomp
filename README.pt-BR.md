@@ -70,7 +70,8 @@ Detalhamento por biblioteca e por componente: [`docs/estado/detalle.pt-BR.md`](d
 | Renderização correta de textos/fontes e 3D | 🔧 em andamento |
 | Controle/teclado por HLE de libpad2; menu e seleção de dificuldade | ✅ |
 | Início de uma partida jogável | 🔧 em andamento |
-| Áudio e memory card | ⏳ pendente |
+| Áudio: SPU2 emulado com saída para o PC (ainda não verificado no jogo) | 🔧 em progresso |
+| Memory card | ⏳ pendente |
 
 O jogo inicializa, executa os módulos originais no IOP (incluindo o streamer de dados `smpd`), carrega
 seus dados a partir da ISO, entra no loop principal e **renderiza suas primeiras telas**: a tela legal

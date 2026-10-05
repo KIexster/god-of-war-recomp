@@ -71,7 +71,8 @@ Desglose por librería y por componente: [`docs/estado/detalle.es.md`](docs/esta
 | Texto, fuentes y renderizado 3D correctos | 🔧 en progreso |
 | Mando/teclado por HLE de libpad2; menú y selección de dificultad | ✅ |
 | Inicio de una partida jugable | 🔧 en progreso |
-| Audio y memory card | ⏳ pendiente |
+| Audio: SPU2 emulado con salida al PC (aún sin verificar con el juego) | 🔧 en progreso |
+| Memory card | ⏳ pendiente |
 
 El juego arranca, ejecuta en el IOP los módulos originales (incluido el cargador de datos `smpd`), carga
 sus datos desde la ISO, entra en su bucle principal y **dibuja sus primeras pantallas**: la pantalla legal
