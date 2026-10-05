@@ -43,7 +43,7 @@ Gerado por `tools/estado/generar.py` a partir de `docs/estado/datos.toml` e `con
 | GS / VU | GIF (PATH1-3) | 2 | ✅ Funciona |  |
 | GS / VU | IPU: vídeo FMV | 2 | ⏳ Pendente | O carregamento do FMV é alcançado, mas fica esperando o MPEG |
 | IOP | CPU R3000A (interpretador) | 3 | ✅ Funciona |  |
-| IOP | SPU2: saída de áudio | 3 | ⏳ Pendente | 989snd roda, mas não há saída de SPU2 |
+| IOP | SPU2: saída de áudio | 3 | ⏳ Pendente | SPU2 emulado (RAM, DMA, vozes ADPCM com ADSR, mixagem e IRQ), mas ainda sem saída para o PC |
 | IOP | Módulos IRX originais | 2 | ✅ Funciona |  |
 | IOP | SIF: RPC e DMA EE ↔ IOP | 2 | ✅ Funciona |  |
 | IOP | CDVD: leitura da ISO original | 2 | ✅ Funciona |  |

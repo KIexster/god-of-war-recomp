@@ -244,7 +244,12 @@ siguen en el historial de git por si hiciera falta recuperarlos.
    juego:** ejecutar sin `GOW_SKIP_FMV` y buscar en `ejecutar_err.log` las líneas
    `[MPEG:AddCallback] ... type=1` (el juego registra el callback) y si la espera desaparece.
 3. Memory card (SIO2 / `MC2_D.IRX`).
-4. Audio sobre 989snd / SPU2.
+4. Audio sobre 989snd / SPU2. **Fase 1 (`ps2recomp-spu2.patch`):** el IOP emula el SPU2: 2 MB de RAM de
+   sonido, registros de 16 bits de los dos núcleos, puerto de datos manual, DMA de los canales 4 y 7 que ahora
+   copia los datos (antes solo marcaba la transferencia como hecha; el bit `STATX` 0x80 y la interrupción
+   diferida no cambian), voces ADPCM con tono, ADSR, volumen fijo y mezcla seca, `ENDX`/`ENVX`/`NAX` legibles
+   e IRQ 9 al alcanzar `IRQA`. `GOW_SPU2_IRQ=0` desactiva esa IRQ por si el juego cambia de comportamiento.
+   Falta: salida al PC (fase 2), reverb, barrido de volumen, ADMA (PCM en streaming) e interpolación gaussiana.
 
 ## Auditoría del intérprete de VU1
 

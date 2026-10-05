@@ -216,7 +216,7 @@ nombre = "IOP"
   nombre = { es = "SPU2: salida de audio", en = "SPU2: audio output", pt = "SPU2: saída de áudio" }
   estado = "pendiente"
   peso = 3
-  nota = { es = "989snd corre, pero no hay salida de SPU2", en = "989snd runs, but there is no SPU2 output", pt = "989snd roda, mas não há saída de SPU2" }
+  nota = { es = "SPU2 emulado (RAM, DMA, voces ADPCM con ADSR, mezcla e IRQ), pero aún sin salida al PC", en = "SPU2 emulated (RAM, DMA, ADPCM voices with ADSR, mixing and IRQ), but no output to the PC yet", pt = "SPU2 emulado (RAM, DMA, vozes ADPCM com ADSR, mixagem e IRQ), mas ainda sem saída para o PC" }
 
   [[hardware.grupo.componente]]
   corto = "IRX"
