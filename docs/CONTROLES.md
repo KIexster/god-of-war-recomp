@@ -114,3 +114,22 @@ todos sus píxeles son negros. Persisten errores de paquetes XGKICK y los defect
 La opción queda como experimento desactivado por defecto.
 Una regresión sintética comprueba que un SQ posterior sobrescribe la memoria VU, mientras el paquete
 ya enviado conserva sus bytes originales. La prueba existente del modo por ciclos sigue pasando.
+
+## Correcciones de UNPACK VIF
+
+`patches/ps2recomp-vif-unpack.patch` corrige dos formatos del intérprete:
+
+- V2-32/16/8 escribe `X,Y,X,Y` en lugar de conservar las componentes Z/W anteriores.
+  La expansión ocurre antes de aplicar las máscaras y las sumas STMOD.
+- V4-5 expande RGB a los bits 3..7 y alfa al bit 7. Por ejemplo, `31,17,9,1`
+  produce `248,136,72,128`. Este formato sigue ignorando STMOD.
+
+Referencias: [PCSX2 Vif_Unpack.cpp](https://github.com/PCSX2/pcsx2/blob/master/pcsx2/Vif_Unpack.cpp)
+y [SOCOM Unzipped](https://github.com/Scotho/socom-unzipped/blob/main/third_party/ps2recomp/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp).
+Estas correcciones se aplican en la compilación normal.
+
+Tres pruebas sintéticas fallaban antes del arreglo y pasan después: cubren las tres anchuras V2,
+extensión con/sin signo, máscaras, protección de escritura, suma por componente y alfa V4-5
+encendido/apagado. La suite cambia de 436/441 a 439/441; los dos fallos restantes son los previos.
+La ejecución del juego con FMV omitidos sigue alcanzando el estado 11, con defectos del menú
+y la imagen de partida negra. No se atribuye una mejora visual a estas correcciones.
