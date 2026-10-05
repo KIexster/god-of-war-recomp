@@ -235,6 +235,14 @@ siguen en el historial de git por si hiciera falta recuperarlos.
    Ver [CONTROLES.md](CONTROLES.md#diagnóstico-de-vif-y-buffers-de-dibujo).
 2. Resolver la espera de MPEG (`sceMpegGetPicture`, `0x0018A3D8`) y corregir el renderizado de
    fuentes/3D. `GOW_SKIP_FMV=1` permite investigar la partida mientras el decodificador está pendiente.
+   Hipótesis en curso (`ps2recomp-mpeg-nodata.patch`): el stub de `sceMpegGetPicture` esperaba
+   fotogramas sin llamar nunca al callback `sceMpegCbNodata` que el juego registra con
+   `sceMpegAddCallback`. En la libmpeg original ese callback es el que lee del anillo y llama a
+   `sceMpegDemuxPssRing`, así que nadie alimentaba al decodificador (bloqueo mutuo). El parche lo llama
+   en el hilo que pide la imagen; si no aporta datos, reintenta en el siguiente VSync. Dos pruebas de
+   regresión lo cubren (sin el parche la suite se cuelga en la primera). **Falta comprobarlo con el
+   juego:** ejecutar sin `GOW_SKIP_FMV` y buscar en `ejecutar_err.log` las líneas
+   `[MPEG:AddCallback] ... type=1` (el juego registra el callback) y si la espera desaparece.
 3. Memory card (SIO2 / `MC2_D.IRX`).
 4. Audio sobre 989snd / SPU2.
 
