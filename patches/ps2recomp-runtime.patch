@@ -823,6 +823,213 @@ index 9614016..4a4aafd 100644
              return;
          }
  
+diff --git a/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp b/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
+index f0ad507..5a70830 100644
+--- a/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
+@@ -7,6 +7,11 @@
+ #include "runtime/gs/ps2_gs_memory.h"
+ #include "ps2_log.h"
+ #include <atomic>
++#include <chrono>
++#include <cstdlib>
++#include <map>
++#include <string>
++#include <vector>
+ #include <algorithm>
+ #include <cmath>
+ #include <cstdio>
+@@ -708,10 +713,142 @@ GSTransferSnapshot GSCpuBackend::GetTransferSnapshot() const
+     return result;
+ }
+ 
++namespace
++{
++    // GOW-Port: diagnostico del GS por variables de entorno.
++    //   PS2X_GS_DIAG=1            resumen cada 3 s de los estados de textura usados por las primitivas.
++    //   PS2X_GS_DUMP_SECONDS=a,b  volcado de la VRAM a gs_vram_<s>.bin a los a, b... segundos de la primera primitiva.
++    struct GsDiagState
++    {
++        bool enabled = std::getenv("PS2X_GS_DIAG") != nullptr;
++        std::vector<int> dumpSeconds;
++        size_t nextDump = 0u;
++        std::chrono::steady_clock::time_point start{};
++        std::chrono::steady_clock::time_point lastReport{};
++        std::map<std::string, uint64_t> textureStates;
++        std::map<uint64_t, GSTex0Reg> textures; // tbp0/psm/cbp -> TEX0, para decodificar en el volcado
++        uint64_t prims = 0u;
++        GsDiagState()
++        {
++            if (const char *v = std::getenv("PS2X_GS_DUMP_SECONDS"))
++            {
++                std::string text(v);
++                size_t pos = 0u;
++                while (pos < text.size())
++                {
++                    const size_t comma = text.find(',', pos);
++                    dumpSeconds.push_back(std::atoi(text.substr(pos, comma - pos).c_str()));
++                    if (comma == std::string::npos)
++                        break;
++                    pos = comma + 1u;
++                }
++            }
++        }
++    };
++
++    GsDiagState &gsDiag()
++    {
++        static GsDiagState state;
++        return state;
++    }
++}
++
+ void GSCpuBackend::DrawPrimitive(const GSPrimitiveBatch &batch)
+ {
+     const GSDrawState &state = batch.state;
+     const auto &ctx = state.context;
++    {
++        GsDiagState &diag = gsDiag();
++        if (diag.enabled || !diag.dumpSeconds.empty())
++        {
++            const auto now = std::chrono::steady_clock::now();
++            if (diag.start == std::chrono::steady_clock::time_point{})
++                diag.start = diag.lastReport = now;
++            const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - diag.start).count();
++            if (diag.enabled)
++            {
++                ++diag.prims;
++                if (state.prim.tme)
++                {
++                    char key[320];
++                    std::snprintf(key, sizeof(key),
++                                  "type=%u tbp0=%u tbw=%u psm=0x%x tw=%u th=%u tcc=%u tfx=%u cbp=%u cpsm=0x%x csm=%u csa=%u "
++                                  "texa=(%u,%u,%u) clamp=0x%llx abe=%u alpha=0x%llx test=0x%llx fst=%u fbp=%u fpsm=0x%x",
++                                  static_cast<unsigned>(state.prim.type), ctx.tex0.tbp0, static_cast<unsigned>(ctx.tex0.tbw),
++                                  static_cast<unsigned>(ctx.tex0.psm), static_cast<unsigned>(ctx.tex0.tw), static_cast<unsigned>(ctx.tex0.th),
++                                  static_cast<unsigned>(ctx.tex0.tcc), static_cast<unsigned>(ctx.tex0.tfx), ctx.tex0.cbp,
++                                  static_cast<unsigned>(ctx.tex0.cpsm), static_cast<unsigned>(ctx.tex0.csm), static_cast<unsigned>(ctx.tex0.csa),
++                                  static_cast<unsigned>(state.texa.ta0), static_cast<unsigned>(state.texa.aem), static_cast<unsigned>(state.texa.ta1),
++                                  static_cast<unsigned long long>(ctx.clamp), static_cast<unsigned>(state.prim.abe),
++                                  static_cast<unsigned long long>(ctx.alpha), static_cast<unsigned long long>(ctx.test),
++                                  static_cast<unsigned>(state.prim.fst), ctx.frame.fbp, static_cast<unsigned>(ctx.frame.psm));
++                    ++diag.textureStates[key];
++                    const uint64_t texKey = (static_cast<uint64_t>(ctx.tex0.tbp0) << 32) |
++                                            (static_cast<uint64_t>(ctx.tex0.psm) << 24) | ctx.tex0.cbp;
++                    diag.textures[texKey] = ctx.tex0;
++                }
++                if (now - diag.lastReport >= std::chrono::seconds(3))
++                {
++                    std::cerr << "[gs:diag] t=" << elapsed << "s prims=" << diag.prims << " estados de textura:" << std::endl;
++                    for (const auto &[key, count] : diag.textureStates)
++                        std::cerr << "[gs:diag]   " << count << " x " << key << std::endl;
++                    diag.textureStates.clear();
++                    diag.prims = 0u;
++                    diag.lastReport = now;
++                }
++            }
++            if (diag.nextDump < diag.dumpSeconds.size() && elapsed >= diag.dumpSeconds[diag.nextDump])
++            {
++                const std::string name = "gs_vram_" + std::to_string(diag.dumpSeconds[diag.nextDump]) + ".bin";
++                std::ofstream file(name, std::ios::binary);
++                if (m_vram && file)
++                    file.write(reinterpret_cast<const char *>(m_vram), static_cast<std::streamsize>(m_vramSize));
++                std::cerr << "[gs:diag] VRAM volcada en " << name << " (" << m_vramSize << " bytes)" << std::endl;
++                // Decodificar con las lecturas del propio runtime cada textura indexada vista.
++                for (const auto &[texKey, tex0] : diag.textures)
++                {
++                    const bool four = isFourBitIndexedPsm(tex0.psm);
++                    const bool eight = isEightBitIndexedPsm(tex0.psm);
++                    if (!four && !eight)
++                        continue;
++                    const uint32_t w = 1u << std::min<uint32_t>(tex0.tw, 10u);
++                    const uint32_t h = 1u << std::min<uint32_t>(tex0.th, 10u);
++                    const uint32_t entries = four ? 16u : 256u;
++                    std::vector<uint32_t> palette(entries, 0u);
++                    for (uint32_t e = 0; e < entries; ++e)
++                    {
++                        uint32_t sx = e & 0x0Fu, sy = e >> 4u;
++                        if (tex0.csm == 0u && !four)
++                        {
++                            const uint32_t si = swizzleClutIndexCSM1(e);
++                            sx = si & 0x0Fu;
++                            sy = si >> 4u;
++                        }
++                        palette[e] = ReadTextureVramUnlocked(tex0.cpsm, tex0.cbp, 1u, sx, sy);
++                    }
++                    const std::string base = "tex_" + std::to_string(diag.dumpSeconds[diag.nextDump]) + "s_" + std::to_string(tex0.tbp0);
++                    std::ofstream idx(base + "_idx.pgm", std::ios::binary);
++                    std::ofstream rgb(base + "_rgb.ppm", std::ios::binary);
++                    idx << "P5\n" << w << " " << h << "\n255\n";
++                    rgb << "P6\n" << w << " " << h << "\n255\n";
++                    for (uint32_t y = 0; y < h; ++y)
++                        for (uint32_t x = 0; x < w; ++x)
++                        {
++                            const uint32_t index = ReadTextureVramUnlocked(tex0.psm, tex0.tbp0, tex0.tbw, x, y) & (four ? 0x0Fu : 0xFFu);
++                            idx.put(static_cast<char>(four ? index * 17u : index));
++                            const uint32_t c = palette[index];
++                            const uint32_t a = std::min<uint32_t>((c >> 24) & 0xFFu, 0x80u);
++                            const uint32_t bg = (((x >> 3) ^ (y >> 3)) & 1u) ? 96u : 48u;
++                            for (int sh = 0; sh < 24; sh += 8)
++                                rgb.put(static_cast<char>((((c >> sh) & 0xFFu) * a + bg * (0x80u - a)) / 0x80u));
++                        }
++                    std::cerr << "[gs:diag]   textura " << base << " psm=0x" << std::hex << static_cast<unsigned>(tex0.psm)
++                              << std::dec << " " << w << "x" << h << " cbp=" << tex0.cbp << std::endl;
++                }
++                ++diag.nextDump;
++            }
++        }
++    }
+     PS2_IF_AGRESSIVE_LOGS({
+         const uint32_t primitiveIndex = s_debugPrimitiveCount.fetch_add(1u, std::memory_order_relaxed);
+         if (primitiveIndex < 64u)
+diff --git a/ps2xRuntime/src/lib/gs/gs_frontend.cpp b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+index 5658928..ea9171b 100644
+--- a/ps2xRuntime/src/lib/gs/gs_frontend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+@@ -4,8 +4,10 @@
+ #include "runtime/ps2_memory.h"
+ #include <atomic>
+ #include <algorithm>
++#include <chrono>
+ #include <cmath>
+ #include <cstdio>
++#include <cstdlib>
+ #include <cstring>
+ #include <iostream>
+ #include <sstream>
+@@ -1526,6 +1528,32 @@ void GS::writeRegisterUnlocked(uint8_t regAddr, uint64_t value)
+ 
+ void GS::vertexKick(bool drawing)
+ {
++    // GOW-Port: PS2X_GS_TRACE_TBP=<tbp0> registra los vertices que llegan con esa textura activa.
++    {
++        static const long traceTbp = []
++        {
++            const char *v = std::getenv("PS2X_GS_TRACE_TBP");
++            return v ? std::strtol(v, nullptr, 10) : -1L;
++        }();
++        static int traced = 0;
++        // PS2X_GS_TRACE_AFTER=<segundos>: empezar la traza pasados esos segundos desde el primer vertice.
++        static const long traceAfter = []
++        {
++            const char *v = std::getenv("PS2X_GS_TRACE_AFTER");
++            return v ? std::strtol(v, nullptr, 10) : 0L;
++        }();
++        static const auto traceStart = std::chrono::steady_clock::now();
++        const GSContext &tc = m_ctx[m_prim.ctxt ? 1 : 0];
++        if (traceTbp >= 0 && m_prim.tme && static_cast<long>(tc.tex0.tbp0) == traceTbp && traced < 400 &&
++            std::chrono::steady_clock::now() - traceStart >= std::chrono::seconds(traceAfter))
++        {
++            ++traced;
++            const GSVertex &v = m_vtxQueue[m_vtxCount % kMaxVerts];
++            std::cerr << "[gs:trace] prim=" << static_cast<unsigned>(m_prim.type) << " draw=" << drawing
++                      << " cnt=" << m_vtxCount << " xy=(" << v.x << "," << v.y << ") stq=(" << v.s << "," << v.t
++                      << "," << v.q << ") uv=(" << (v.u >> 4) << "," << (v.v >> 4) << ")" << std::endl;
++        }
++    }
+     ++m_vtxCount;
+     ++m_vtxIndex;
+ 
 diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
 index 45cb9d2..b505b2d 100644
 --- a/ps2xRuntime/src/lib/ps2_runtime.cpp
