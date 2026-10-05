@@ -8,8 +8,8 @@
 2. **PS2Recomp** — clona `ran-j/PS2Recomp` en `<unidad>:\gowport\PS2Recomp`, hace checkout del commit
    `c5a9d02573410a2085a4b4b831b0b68ba3515440` e inicializa submódulos.
 3. **Parches** — aplica, en este orden, `patches/ps2recomp-runtime.patch`, `ps2recomp-checkpoint.patch`
-   (checkpoints que ceden en la entrada de una función) y `ps2recomp-xgkick.patch` (`GOW_XGKICK_IMMEDIATE`,
-   opcional) con `git apply --ignore-whitespace`.
+   (checkpoints que ceden en la entrada de una función), `ps2recomp-xgkick.patch` (`GOW_XGKICK_IMMEDIATE`,
+   opcional) y `ps2recomp-vif-unpack.patch` (UNPACK V2 y V4-5) con `git apply --ignore-whitespace`.
 4. **Ajustes de CMake** — añade `src/runner` a los includes de `ps2EntryRunner` y desactiva `/GL` y `/LTCG`
    para compilar en paralelo (con LTCG el enlazado de ~6 400 archivos es inviable).
 5. **Recompilador** — compila el objetivo `ps2_recomp`.
@@ -56,8 +56,9 @@ Se registran con `PS2_REGISTER_GAME_OVERRIDE` para el ELF `SCUS_973.99` (entry `
 `.github/workflows/pruebas.yml` se ejecuta en cada push a `main` y en cada PR, sin necesitar el juego:
 
 - **Pruebas de `src/`**: compila y ejecuta `tests/pad2_packet_test.cpp` con GCC.
-- **Parches y suite del runtime**: descarga PS2Recomp en el commit de `scripts/common.ps1`, aplica los tres
-  parches como `compilar.ps1`, compila `ps2x_tests` en Linux y ejecuta la suite.
+- **Parches y suite del runtime**: descarga PS2Recomp en el commit de `scripts/common.ps1`, aplica los
+  parches en el orden de `compilar.ps1` (`tools/ci/parches.py` los lee de ahí y falla si algún
+  `patches/*.patch` no se aplica), compila `ps2x_tests` en Linux y ejecuta la suite.
   `tools/ci/comprobar_pruebas.py` solo falla por pruebas que no estén en `tests/fallos_conocidos.txt`
   (hoy, los dos fallos previos de heap/DMA). Cuando una de ellas pase, la CI lo avisa para quitarla de la lista.
 

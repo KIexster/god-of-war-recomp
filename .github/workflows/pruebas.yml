@@ -48,13 +48,14 @@ jobs:
           git -C PS2Recomp fetch -q --depth 1 https://github.com/ran-j/PS2Recomp.git ${{ steps.ps2recomp.outputs.commit }}
           git -C PS2Recomp checkout -q FETCH_HEAD
 
-      # Mismo orden y opciones que scripts/compilar.ps1
+      # Mismos parches, orden y opciones que scripts/compilar.ps1 (tools/ci/parches.py los lee de ahi)
       - name: Aplicar los parches
         working-directory: PS2Recomp
         run: |
-          for p in runtime checkpoint xgkick; do
-            echo "::group::ps2recomp-$p.patch"
-            git apply --ignore-whitespace --verbose "../gow/patches/ps2recomp-$p.patch"
+          parches=$(python3 ../gow/tools/ci/parches.py)
+          for p in $parches; do
+            echo "::group::$(basename "$p")"
+            git apply --ignore-whitespace --verbose "$p"
             echo "::endgroup::"
           done
 
