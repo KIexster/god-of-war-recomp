@@ -6,8 +6,8 @@ diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_lower.cpp b/ps2xRuntime/src/lib/vu/p
      {
          uint8_t is = VIS(instr);
 -        uint32_t target = ((uint32_t)(uint16_t)readBranchVi(is) * 8u) & pcMask;
-+        // Register jumps use the current VI value; the delayed comparison
-+        // value is only for conditional integer branches.
++        // GOW-Port: JR/JALR leen el VI actual; el valor retrasado se usa
++        // solo en las comparaciones de ramas condicionales.
 +        uint32_t target = ((uint32_t)(uint16_t)m_state.vi[is] * 8u) & pcMask;
          m_state.branchPending = true;
          m_state.branchTarget = target;
@@ -17,8 +17,8 @@ diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_lower.cpp b/ps2xRuntime/src/lib/vu/p
          uint8_t it = VIT(instr);
          uint8_t is = VIS(instr);
 -        uint32_t target = ((uint32_t)(uint16_t)readBranchVi(is) * 8u) & pcMask;
-+        // Register jumps use the current VI value; the delayed comparison
-+        // value is only for conditional integer branches.
++        // GOW-Port: JR/JALR leen el VI actual; el valor retrasado se usa
++        // solo en las comparaciones de ramas condicionales.
 +        uint32_t target = ((uint32_t)(uint16_t)m_state.vi[is] * 8u) & pcMask;
          if (it != 0)
              m_state.vi[it] = (int32_t)((m_state.pc + 16) / 8);

@@ -268,3 +268,22 @@ siguen en el historial de git por si hiciera falta recuperarlos.
   con los mismos dos fallos conocidos. El parche aplica sobre la revisión fijada más los anteriores.
   El ejecutable se compiló y la prueba de 140 s confirmó el avance al estado 11 sin rechazos GIF
   ni instrucciones VU reservadas; las capturas siguen sin acreditar una partida jugable.
+
+- Al integrar los cambios publicados en paralelo de `ps2recomp-heap.patch`, la suite pasa
+  **443/443**. El heap privado conserva el rango de God of War y la prueba de DMA usa el límite
+  real del heap del IOP. Los resultados 440/442 anteriores corresponden al árbol previo a esa integración.
+- Se corrigió la recompilación completa repetida: `checkout -f` no eliminaba `iop_format.h`, creado
+  por el parche del runtime, y `git apply` fallaba con `already exists in working directory`.
+  `compilar.ps1` retira ahora ese archivo junto a `gow_stub_services.cpp` antes de reaplicar los parches.
+
+- La compilación completa (`scripts\2_compilar.cmd`) regeneró las 6418 unidades del juego,
+  reaplicó los siete parches y enlazó `ps2EntryRunner.exe` correctamente. Se verificó por separado
+  que los siete parches aplican, en ese orden, sobre la revisión fijada y producen las fuentes usadas
+  por la compilación. Tras reconstruir, la suite sigue pasando **443/443**; la configuración tiene
+  cero errores (cuatro avisos conocidos), los ocho scripts PowerShell se analizan sin errores y la
+  prueba independiente de libpad2 pasa.
+
+- Con el ejecutable completo y el heap integrado, la segunda prueba de 140 s volvió a alcanzar
+  el estado 11 en 70,32 s desde la lectura del mando. Registró 217088 comandos VIF1 sin rechazos
+  XGKICK ni instrucciones VU reservadas. Las capturas de 90 y 110 s son negras; los contextos de
+  dibujo conservan el fondo oscuro. La partida todavía no es jugable.

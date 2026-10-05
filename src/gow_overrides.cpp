@@ -499,6 +499,9 @@ namespace
     void applyGowOverrides(PS2Runtime &runtime)
     {
         configureGowCdImage();
+        // El heap interno del runtime va bajo el ELF (memoria libre) para no pisar el heap propio del juego,
+        // que este crea con SetupHeap al final del .bss (patches/ps2recomp-heap.patch).
+        runtime.setPrivateGuestHeap(0x000A0000u, 0x000FF000u);
         runtime.replaceFunction(0x00279600u, gowIpuInit);
         if (std::getenv("GOW_PATH_DIAG") || std::getenv("GOW_ANM_DIAG") || std::getenv("GOW_FAST_BOOT"))
         {

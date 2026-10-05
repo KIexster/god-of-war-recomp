@@ -9,7 +9,11 @@
    `c5a9d02573410a2085a4b4b831b0b68ba3515440` e inicializa submódulos.
 3. **Parches** — aplica, en este orden, `patches/ps2recomp-runtime.patch`, `ps2recomp-checkpoint.patch`
    (checkpoints que ceden en la entrada de una función), `ps2recomp-xgkick.patch` (`GOW_XGKICK_IMMEDIATE`,
-   opcional) y `ps2recomp-vif-unpack.patch` (UNPACK V2 y V4-5) con `git apply --ignore-whitespace`.
+   opcional), `ps2recomp-vif-unpack.patch` (UNPACK V2 y V4-5), `ps2recomp-vif-diagnostic.patch`
+   (diagnósticos acotados de VIF y XGKICK), `ps2recomp-heap.patch` (heap privado del runtime configurable
+   con `setPrivateGuestHeap`) y `ps2recomp-vu-jump.patch` (JR/JALR leen el destino VI actual)
+   con `git apply --ignore-whitespace`. Antes de reaplicarlos retira los archivos nuevos que dejó
+   la compilación anterior (`gow_stub_services.cpp` e `iop_format.h`).
 4. **Ajustes de CMake** — añade `src/runner` a los includes de `ps2EntryRunner` y desactiva `/GL` y `/LTCG`
    para compilar en paralelo (con LTCG el enlazado de ~6 400 archivos es inviable).
 5. **Recompilador** — compila el objetivo `ps2_recomp`.
@@ -55,11 +59,19 @@ Se registran con `PS2_REGISTER_GAME_OVERRIDE` para el ELF `SCUS_973.99` (entry `
 
 `.github/workflows/pruebas.yml` se ejecuta en cada push a `main` y en cada PR, sin necesitar el juego:
 
-- **Pruebas de `src/`**: compila y ejecuta `tests/pad2_packet_test.cpp` con GCC.
+- **Comprobaciones rápidas** (segundos):
+  - `tools/ci/validar_config.py` valida `config/funcmap.csv` (orden, solapes, tamaños, nombres) y
+    `config/recomp.template.toml` (marcadores `@ELF@/@MAP@/@OUT@`, formato `nombre@0xDIRECCION`, direcciones
+    dentro de alguna función). Los stubs que no empiezan una función y las direcciones repetidas son avisos.
+  - `tools/ci/analizar_ps1.ps1` analiza sintácticamente todos los `.ps1` con el parser de PowerShell.
+  - Compila y ejecuta `tests/pad2_packet_test.cpp` con GCC.
 - **Parches y suite del runtime**: descarga PS2Recomp en el commit de `scripts/common.ps1`, aplica los
   parches en el orden de `compilar.ps1` (`tools/ci/parches.py` los lee de ahí y falla si algún
-  `patches/*.patch` no se aplica), compila `ps2x_tests` en Linux y ejecuta la suite.
+  `patches/*.patch` no se aplica), comprueba que cada stub de `recomp.template.toml` tiene handler en
+  `ps2_call_list.h` (`validar_config.py --runtime`), compila `ps2x_tests` en Linux y ejecuta la suite. También compila
+  `src/*.cpp` contra las cabeceras del runtime ya parcheado (declarando las `sub_*` que usan), así un override
+  que use una función del runtime que ningún parche define falla aquí y no solo en Windows.
   `tools/ci/comprobar_pruebas.py` solo falla por pruebas que no estén en `tests/fallos_conocidos.txt`
-  (hoy, los dos fallos previos de heap/DMA). Cuando una de ellas pase, la CI lo avisa para quitarla de la lista.
+  (hoy vacía: la suite pasa entera). Cuando una prueba de la lista pase, la CI lo avisa para quitarla.
 
 `.github/workflows/estado.yml` regenera el mapa de estado (`docs/estado/`) cuando cambian sus datos.

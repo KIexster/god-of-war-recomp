@@ -17,6 +17,7 @@ $checkpointPatch = Join-Path $RepoRoot 'patches\ps2recomp-checkpoint.patch'
 $xgkickPatch = Join-Path $RepoRoot 'patches\ps2recomp-xgkick.patch'
 $vifUnpackPatch = Join-Path $RepoRoot 'patches\ps2recomp-vif-unpack.patch'
 $vifDiagnosticPatch = Join-Path $RepoRoot 'patches\ps2recomp-vif-diagnostic.patch'
+$heapPatch = Join-Path $RepoRoot 'patches\ps2recomp-heap.patch'
 $vuJumpPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu-jump.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
@@ -43,13 +44,17 @@ Push-Location $rec
 Run $git @('fetch', 'origin', $PS2RecompCommit)
 Run $git @('checkout', '-f', $PS2RecompCommit)
 Run $git @('submodule', 'update', '--init', '--recursive')
-$extra = Join-Path $rec 'ps2xIOP\src\modules\gow_stub_services.cpp'
-if (Test-Path -LiteralPath $extra) { Remove-Item -LiteralPath $extra -Force }
+# checkout -f no retira los archivos nuevos que crearon los parches en una compilacion anterior.
+foreach ($relative in @('ps2xIOP\src\modules\gow_stub_services.cpp', 'ps2xIOP\src\emulator\imports\iop_format.h')) {
+    $extra = Join-Path $rec $relative
+    if (Test-Path -LiteralPath $extra) { Remove-Item -LiteralPath $extra -Force }
+}
 Run $git @('apply', '--ignore-whitespace', '--verbose', $patch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $checkpointPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $xgkickPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vifUnpackPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vifDiagnosticPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $heapPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vuJumpPatch)
 Pop-Location
 

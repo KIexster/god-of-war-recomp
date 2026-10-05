@@ -184,3 +184,6 @@ La pantalla presentada sigue negra. El contexto 0 conserva 212992 píxeles no ne
 imagen sigue siendo un fondo oscuro con puntos. Esta corrección elimina un fallo de ejecución
 VU1; todavía hay que resolver el renderizado de la escena. La suite queda en 440/442, con los
 dos fallos previos de heap/DMA. Las trazas temporales de escrituras se han retirado del runtime.
+
+Tras integrar también `ps2recomp-heap.patch`, el conjunto pasa 443/443 pruebas. Los resultados
+440/442 de arriba documentan la comparación antes de integrar esa corrección de heap/DMA.
