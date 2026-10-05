@@ -397,96 +397,186 @@
 <rect class="ok" x="305.6" y="212.7" width="11.2" height="11.4"><title>libkernel · sub_0029A970 (200 B)</title></rect>
 <rect class="ok" x="183.3" y="225.1" width="11.2" height="11.4"><title>libkernel · sub_0029AA38 (80 B)</title></rect>
 <rect class="ok" x="195.5" y="225.1" width="11.2" height="11.4"><title>libkernel · sub_0029AA88 (856 B)</title></rect>
-<rect class="pendiente" x="319.8" y="113.5" width="12.3" height="11.4"><title>libmc2 · sub_0027C100 (416 B)</title></rect>
-<rect class="pendiente" x="333.1" y="113.5" width="12.3" height="11.4"><title>libmc2 · sub_0027C2A0 (224 B)</title></rect>
-<rect class="pendiente" x="346.4" y="113.5" width="12.3" height="11.4"><title>libmc2 · sub_0027C380 (144 B)</title></rect>
-<rect class="pendiente" x="359.7" y="113.5" width="12.3" height="11.4"><title>libmc2 · sub_0027C410 (176 B)</title></rect>
-<rect class="pendiente" x="373" y="113.5" width="12.3" height="11.4"><title>libmc2 · sub_0027C4C0 (192 B)</title></rect>
-<rect class="pendiente" x="386.3" y="113.5" width="12.3" height="11.4"><title>libmc2 · sub_0027C580 (288 B)</title></rect>
-<rect class="pendiente" x="399.6" y="113.5" width="12.3" height="11.4"><title>libmc2 · sub_0027C6A0 (288 B)</title></rect>
-<rect class="pendiente" x="412.9" y="113.5" width="12.3" height="11.4"><title>libmc2 · sub_0027C7C0 (248 B)</title></rect>
-<rect class="pendiente" x="426.2" y="113.5" width="12.3" height="11.4"><title>libmc2 · sub_0027C8B8 (232 B)</title></rect>
-<rect class="pendiente" x="319.8" y="125.9" width="12.3" height="11.4"><title>libmc2 · sub_0027C9A0 (304 B)</title></rect>
-<rect class="pendiente" x="333.1" y="125.9" width="12.3" height="11.4"><title>libmc2 · sub_0027CAD0 (256 B)</title></rect>
-<rect class="pendiente" x="346.4" y="125.9" width="12.3" height="11.4"><title>libmc2 · sub_0027CBD0 (704 B)</title></rect>
-<rect class="pendiente" x="359.7" y="125.9" width="12.3" height="11.4"><title>libmc2 · sub_0027CE90 (168 B)</title></rect>
-<rect class="pendiente" x="373" y="125.9" width="12.3" height="11.4"><title>libmc2 · sub_0027CF38 (48 B)</title></rect>
-<rect class="pendiente" x="386.3" y="125.9" width="12.3" height="11.4"><title>libmc2 · sub_0027CF68 (176 B)</title></rect>
-<rect class="pendiente" x="399.6" y="125.9" width="12.3" height="11.4"><title>libmc2 · sub_0027D018 (96 B)</title></rect>
-<rect class="pendiente" x="412.9" y="125.9" width="12.3" height="11.4"><title>libmc2 · sub_0027D078 (112 B)</title></rect>
-<rect class="pendiente" x="426.2" y="125.9" width="12.3" height="11.4"><title>libmc2 · sub_0027D0E8 (96 B)</title></rect>
-<rect class="pendiente" x="319.8" y="138.3" width="12.3" height="11.4"><title>libmc2 · sub_0027D148 (384 B)</title></rect>
-<rect class="pendiente" x="333.1" y="138.3" width="12.3" height="11.4"><title>libmc2 · sub_0027D2C8 (288 B)</title></rect>
-<rect class="pendiente" x="346.4" y="138.3" width="12.3" height="11.4"><title>libmc2 · sub_0027D3E8 (72 B)</title></rect>
-<rect class="pendiente" x="359.7" y="138.3" width="12.3" height="11.4"><title>libmc2 · sub_0027D430 (392 B)</title></rect>
-<rect class="pendiente" x="373" y="138.3" width="12.3" height="11.4"><title>libmc2 · sub_0027D5B8 (96 B)</title></rect>
-<rect class="pendiente" x="386.3" y="138.3" width="12.3" height="11.4"><title>libmc2 · sub_0027D618 (288 B)</title></rect>
-<rect class="pendiente" x="399.6" y="138.3" width="12.3" height="11.4"><title>libmc2 · sub_0027D738 (144 B)</title></rect>
-<rect class="pendiente" x="412.9" y="138.3" width="12.3" height="11.4"><title>libmc2 · sub_0027D7C8 (280 B)</title></rect>
-<rect class="pendiente" x="426.2" y="138.3" width="12.3" height="11.4"><title>libmc2 · sub_0027D8E0 (72 B)</title></rect>
-<rect class="pendiente" x="319.8" y="150.7" width="12.3" height="11.4"><title>libmc2 · sub_0027D928 (104 B)</title></rect>
-<rect class="pendiente" x="333.1" y="150.7" width="12.3" height="11.4"><title>libmc2 · sub_0027D990 (304 B)</title></rect>
-<rect class="pendiente" x="346.4" y="150.7" width="12.3" height="11.4"><title>libmc2 · sub_0027DAC0 (304 B)</title></rect>
-<rect class="pendiente" x="359.7" y="150.7" width="12.3" height="11.4"><title>libmc2 · sub_0027DBF0 (216 B)</title></rect>
-<rect class="pendiente" x="373" y="150.7" width="12.3" height="11.4"><title>libmc2 · sub_0027DCC8 (384 B)</title></rect>
-<rect class="pendiente" x="386.3" y="150.7" width="12.3" height="11.4"><title>libmc2 · sub_0027DE48 (144 B)</title></rect>
-<rect class="pendiente" x="399.6" y="150.7" width="12.3" height="11.4"><title>libmc2 · sub_0027DED8 (88 B)</title></rect>
-<rect class="pendiente" x="412.9" y="150.7" width="12.3" height="11.4"><title>libmc2 · sub_0027DF30 (920 B)</title></rect>
-<rect class="pendiente" x="426.2" y="150.7" width="12.3" height="11.4"><title>libmc2 · sub_0027E2C8 (2352 B)</title></rect>
-<rect class="pendiente" x="319.8" y="163.1" width="12.3" height="11.4"><title>libmc2 · sub_0027EBF8 (256 B)</title></rect>
-<rect class="pendiente" x="333.1" y="163.1" width="12.3" height="11.4"><title>libmc2 · sub_0027ECF8 (232 B)</title></rect>
-<rect class="pendiente" x="346.4" y="163.1" width="12.3" height="11.4"><title>libmc2 · sub_0027EDE0 (632 B)</title></rect>
-<rect class="pendiente" x="359.7" y="163.1" width="12.3" height="11.4"><title>libmc2 · sub_0027F058 (1080 B)</title></rect>
-<rect class="pendiente" x="373" y="163.1" width="12.3" height="11.4"><title>libmc2 · sub_0027F490 (424 B)</title></rect>
-<rect class="pendiente" x="386.3" y="163.1" width="12.3" height="11.4"><title>libmc2 · sub_0027F638 (304 B)</title></rect>
-<rect class="pendiente" x="399.6" y="163.1" width="12.3" height="11.4"><title>libmc2 · sub_0027F768 (1304 B)</title></rect>
-<rect class="pendiente" x="412.9" y="163.1" width="12.3" height="11.4"><title>libmc2 · sub_0027FC80 (1360 B)</title></rect>
-<rect class="pendiente" x="426.2" y="163.1" width="12.3" height="11.4"><title>libmc2 · sub_002801D0 (496 B)</title></rect>
-<rect class="pendiente" x="319.8" y="175.5" width="12.3" height="11.4"><title>libmc2 · sub_002803C0 (1472 B)</title></rect>
-<rect class="pendiente" x="333.1" y="175.5" width="12.3" height="11.4"><title>libmc2 · sub_00280980 (536 B)</title></rect>
-<rect class="pendiente" x="346.4" y="175.5" width="12.3" height="11.4"><title>libmc2 · sub_00280B98 (280 B)</title></rect>
-<rect class="pendiente" x="359.7" y="175.5" width="12.3" height="11.4"><title>libmc2 · sub_00280CB0 (1312 B)</title></rect>
-<rect class="pendiente" x="373" y="175.5" width="12.3" height="11.4"><title>libmc2 · sub_002811D0 (208 B)</title></rect>
-<rect class="pendiente" x="386.3" y="175.5" width="12.3" height="11.4"><title>libmc2 · sub_002812A0 (464 B)</title></rect>
-<rect class="pendiente" x="399.6" y="175.5" width="12.3" height="11.4"><title>libmc2 · sub_00281470 (160 B)</title></rect>
-<rect class="pendiente" x="412.9" y="175.5" width="12.3" height="11.4"><title>libmc2 · sub_00281510 (56 B)</title></rect>
-<rect class="pendiente" x="426.2" y="175.5" width="12.3" height="11.4"><title>libmc2 · sub_00281548 (32 B)</title></rect>
-<rect class="pendiente" x="319.8" y="187.9" width="12.3" height="11.4"><title>libmc2 · sub_00281568 (32 B)</title></rect>
-<rect class="pendiente" x="333.1" y="187.9" width="12.3" height="11.4"><title>libmc2 · sub_00281588 (32 B)</title></rect>
-<rect class="pendiente" x="346.4" y="187.9" width="12.3" height="11.4"><title>libmc2 · sub_002815A8 (280 B)</title></rect>
-<rect class="pendiente" x="359.7" y="187.9" width="12.3" height="11.4"><title>libmc2 · sub_002816C0 (288 B)</title></rect>
-<rect class="pendiente" x="373" y="187.9" width="12.3" height="11.4"><title>libmc2 · sub_002817E0 (64 B)</title></rect>
-<rect class="pendiente" x="386.3" y="187.9" width="12.3" height="11.4"><title>libmc2 · sub_00281820 (64 B)</title></rect>
-<rect class="pendiente" x="399.6" y="187.9" width="12.3" height="11.4"><title>libmc2 · sub_00281860 (112 B)</title></rect>
-<rect class="pendiente" x="412.9" y="187.9" width="12.3" height="11.4"><title>libmc2 · sub_002818D0 (920 B)</title></rect>
-<rect class="pendiente" x="426.2" y="187.9" width="12.3" height="11.4"><title>libmc2 · sub_00281C68 (320 B)</title></rect>
-<rect class="pendiente" x="319.8" y="200.3" width="12.3" height="11.4"><title>libmc2 · sub_00281DA8 (32 B)</title></rect>
-<rect class="pendiente" x="333.1" y="200.3" width="12.3" height="11.4"><title>libmc2 · sub_00281DC8 (32 B)</title></rect>
-<rect class="pendiente" x="346.4" y="200.3" width="12.3" height="11.4"><title>libmc2 · sub_00281DE8 (72 B)</title></rect>
-<rect class="pendiente" x="359.7" y="200.3" width="12.3" height="11.4"><title>libmc2 · sub_00281E30 (72 B)</title></rect>
-<rect class="pendiente" x="373" y="200.3" width="12.3" height="11.4"><title>libmc2 · sub_00281E78 (376 B)</title></rect>
-<rect class="pendiente" x="386.3" y="200.3" width="12.3" height="11.4"><title>libmc2 · sub_00281FF0 (208 B)</title></rect>
-<rect class="pendiente" x="399.6" y="200.3" width="12.3" height="11.4"><title>libmc2 · sub_002820C0 (88 B)</title></rect>
-<rect class="pendiente" x="412.9" y="200.3" width="12.3" height="11.4"><title>libmc2 · sub_00282118 (48 B)</title></rect>
-<rect class="pendiente" x="426.2" y="200.3" width="12.3" height="11.4"><title>libmc2 · sub_00282148 (144 B)</title></rect>
-<rect class="pendiente" x="319.8" y="212.7" width="12.3" height="11.4"><title>libmc2 · sub_002821D8 (48 B)</title></rect>
-<rect class="pendiente" x="333.1" y="212.7" width="12.3" height="11.4"><title>libmc2 · sub_00282208 (40 B)</title></rect>
-<rect class="pendiente" x="346.4" y="212.7" width="12.3" height="11.4"><title>libmc2 · sub_00282230 (64 B)</title></rect>
-<rect class="pendiente" x="359.7" y="212.7" width="12.3" height="11.4"><title>libmc2 · sub_00282270 (472 B)</title></rect>
-<rect class="pendiente" x="373" y="212.7" width="12.3" height="11.4"><title>libmc2 · sub_00282448 (256 B)</title></rect>
-<rect class="pendiente" x="386.3" y="212.7" width="12.3" height="11.4"><title>libmc2 · sub_00282548 (216 B)</title></rect>
-<rect class="pendiente" x="399.6" y="212.7" width="12.3" height="11.4"><title>libmc2 · sub_00282620 (240 B)</title></rect>
-<rect class="pendiente" x="412.9" y="212.7" width="12.3" height="11.4"><title>libmc2 · sub_00282710 (312 B)</title></rect>
-<rect class="pendiente" x="426.2" y="212.7" width="12.3" height="11.4"><title>libmc2 · sub_00282848 (264 B)</title></rect>
-<rect class="pendiente" x="319.8" y="225.1" width="12.3" height="11.4"><title>libmc2 · sub_00282950 (408 B)</title></rect>
-<rect class="pendiente" x="333.1" y="225.1" width="12.3" height="11.4"><title>libmc2 · sub_00282AE8 (32 B)</title></rect>
-<rect class="pendiente" x="346.4" y="225.1" width="12.3" height="11.4"><title>libmc2 · sub_00282B08 (408 B)</title></rect>
-<rect class="pendiente" x="359.7" y="225.1" width="12.3" height="11.4"><title>libmc2 · sub_00282CA0 (304 B)</title></rect>
-<rect class="pendiente" x="373" y="225.1" width="12.3" height="11.4"><title>libmc2 · sub_00282DD0 (56 B)</title></rect>
-<rect class="pendiente" x="386.3" y="225.1" width="12.3" height="11.4"><title>libmc2 · sub_00282E08 (56 B)</title></rect>
-<rect class="pendiente" x="399.6" y="225.1" width="12.3" height="11.4"><title>libmc2 · sub_00282E40 (288 B)</title></rect>
-<rect class="pendiente" x="412.9" y="225.1" width="12.3" height="11.4"><title>libmc2 · sub_00282F60 (72 B)</title></rect>
-<rect class="pendiente" x="426.2" y="225.1" width="12.3" height="11.4"><title>libmc2 · sub_00282FA8 (48 B)</title></rect>
+<rect class="parcial" x="319.8" y="113.5" width="12.3" height="11.4"><title>libmc2 · sub_0027C100 (416 B)</title></rect>
+<rect x="319.8" y="113.5" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="333.1" y="113.5" width="12.3" height="11.4"><title>libmc2 · sub_0027C2A0 (224 B)</title></rect>
+<rect x="333.1" y="113.5" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="346.4" y="113.5" width="12.3" height="11.4"><title>libmc2 · sub_0027C380 (144 B)</title></rect>
+<rect x="346.4" y="113.5" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="359.7" y="113.5" width="12.3" height="11.4"><title>libmc2 · sub_0027C410 (176 B)</title></rect>
+<rect x="359.7" y="113.5" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="373" y="113.5" width="12.3" height="11.4"><title>libmc2 · sub_0027C4C0 (192 B)</title></rect>
+<rect x="373" y="113.5" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="386.3" y="113.5" width="12.3" height="11.4"><title>libmc2 · sub_0027C580 (288 B)</title></rect>
+<rect x="386.3" y="113.5" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="399.6" y="113.5" width="12.3" height="11.4"><title>libmc2 · sub_0027C6A0 (288 B)</title></rect>
+<rect x="399.6" y="113.5" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="412.9" y="113.5" width="12.3" height="11.4"><title>libmc2 · sub_0027C7C0 (248 B)</title></rect>
+<rect x="412.9" y="113.5" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="426.2" y="113.5" width="12.3" height="11.4"><title>libmc2 · sub_0027C8B8 (232 B)</title></rect>
+<rect x="426.2" y="113.5" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="319.8" y="125.9" width="12.3" height="11.4"><title>libmc2 · sub_0027C9A0 (304 B)</title></rect>
+<rect x="319.8" y="125.9" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="333.1" y="125.9" width="12.3" height="11.4"><title>libmc2 · sub_0027CAD0 (256 B)</title></rect>
+<rect x="333.1" y="125.9" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="346.4" y="125.9" width="12.3" height="11.4"><title>libmc2 · sub_0027CBD0 (704 B)</title></rect>
+<rect x="346.4" y="125.9" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="359.7" y="125.9" width="12.3" height="11.4"><title>libmc2 · sub_0027CE90 (168 B)</title></rect>
+<rect x="359.7" y="125.9" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="373" y="125.9" width="12.3" height="11.4"><title>libmc2 · sub_0027CF38 (48 B)</title></rect>
+<rect x="373" y="125.9" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="386.3" y="125.9" width="12.3" height="11.4"><title>libmc2 · sub_0027CF68 (176 B)</title></rect>
+<rect x="386.3" y="125.9" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="399.6" y="125.9" width="12.3" height="11.4"><title>libmc2 · sub_0027D018 (96 B)</title></rect>
+<rect x="399.6" y="125.9" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="412.9" y="125.9" width="12.3" height="11.4"><title>libmc2 · sub_0027D078 (112 B)</title></rect>
+<rect x="412.9" y="125.9" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="426.2" y="125.9" width="12.3" height="11.4"><title>libmc2 · sub_0027D0E8 (96 B)</title></rect>
+<rect x="426.2" y="125.9" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="319.8" y="138.3" width="12.3" height="11.4"><title>libmc2 · sub_0027D148 (384 B)</title></rect>
+<rect x="319.8" y="138.3" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="333.1" y="138.3" width="12.3" height="11.4"><title>libmc2 · sub_0027D2C8 (288 B)</title></rect>
+<rect x="333.1" y="138.3" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="346.4" y="138.3" width="12.3" height="11.4"><title>libmc2 · sub_0027D3E8 (72 B)</title></rect>
+<rect x="346.4" y="138.3" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="359.7" y="138.3" width="12.3" height="11.4"><title>libmc2 · sub_0027D430 (392 B)</title></rect>
+<rect x="359.7" y="138.3" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="373" y="138.3" width="12.3" height="11.4"><title>libmc2 · sub_0027D5B8 (96 B)</title></rect>
+<rect x="373" y="138.3" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="386.3" y="138.3" width="12.3" height="11.4"><title>libmc2 · sub_0027D618 (288 B)</title></rect>
+<rect x="386.3" y="138.3" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="399.6" y="138.3" width="12.3" height="11.4"><title>libmc2 · sub_0027D738 (144 B)</title></rect>
+<rect x="399.6" y="138.3" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="412.9" y="138.3" width="12.3" height="11.4"><title>libmc2 · sub_0027D7C8 (280 B)</title></rect>
+<rect x="412.9" y="138.3" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="426.2" y="138.3" width="12.3" height="11.4"><title>libmc2 · sub_0027D8E0 (72 B)</title></rect>
+<rect x="426.2" y="138.3" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="319.8" y="150.7" width="12.3" height="11.4"><title>libmc2 · sub_0027D928 (104 B)</title></rect>
+<rect x="319.8" y="150.7" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="333.1" y="150.7" width="12.3" height="11.4"><title>libmc2 · sub_0027D990 (304 B)</title></rect>
+<rect x="333.1" y="150.7" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="346.4" y="150.7" width="12.3" height="11.4"><title>libmc2 · sub_0027DAC0 (304 B)</title></rect>
+<rect x="346.4" y="150.7" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="359.7" y="150.7" width="12.3" height="11.4"><title>libmc2 · sub_0027DBF0 (216 B)</title></rect>
+<rect x="359.7" y="150.7" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="373" y="150.7" width="12.3" height="11.4"><title>libmc2 · sub_0027DCC8 (384 B)</title></rect>
+<rect x="373" y="150.7" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="386.3" y="150.7" width="12.3" height="11.4"><title>libmc2 · sub_0027DE48 (144 B)</title></rect>
+<rect x="386.3" y="150.7" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="399.6" y="150.7" width="12.3" height="11.4"><title>libmc2 · sub_0027DED8 (88 B)</title></rect>
+<rect x="399.6" y="150.7" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="412.9" y="150.7" width="12.3" height="11.4"><title>libmc2 · sub_0027DF30 (920 B)</title></rect>
+<rect x="412.9" y="150.7" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="426.2" y="150.7" width="12.3" height="11.4"><title>libmc2 · sub_0027E2C8 (2352 B)</title></rect>
+<rect x="426.2" y="150.7" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="319.8" y="163.1" width="12.3" height="11.4"><title>libmc2 · sub_0027EBF8 (256 B)</title></rect>
+<rect x="319.8" y="163.1" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="333.1" y="163.1" width="12.3" height="11.4"><title>libmc2 · sub_0027ECF8 (232 B)</title></rect>
+<rect x="333.1" y="163.1" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="346.4" y="163.1" width="12.3" height="11.4"><title>libmc2 · sub_0027EDE0 (632 B)</title></rect>
+<rect x="346.4" y="163.1" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="359.7" y="163.1" width="12.3" height="11.4"><title>libmc2 · sub_0027F058 (1080 B)</title></rect>
+<rect x="359.7" y="163.1" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="373" y="163.1" width="12.3" height="11.4"><title>libmc2 · sub_0027F490 (424 B)</title></rect>
+<rect x="373" y="163.1" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="386.3" y="163.1" width="12.3" height="11.4"><title>libmc2 · sub_0027F638 (304 B)</title></rect>
+<rect x="386.3" y="163.1" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="399.6" y="163.1" width="12.3" height="11.4"><title>libmc2 · sub_0027F768 (1304 B)</title></rect>
+<rect x="399.6" y="163.1" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="412.9" y="163.1" width="12.3" height="11.4"><title>libmc2 · sub_0027FC80 (1360 B)</title></rect>
+<rect x="412.9" y="163.1" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="426.2" y="163.1" width="12.3" height="11.4"><title>libmc2 · sub_002801D0 (496 B)</title></rect>
+<rect x="426.2" y="163.1" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="319.8" y="175.5" width="12.3" height="11.4"><title>libmc2 · sub_002803C0 (1472 B)</title></rect>
+<rect x="319.8" y="175.5" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="333.1" y="175.5" width="12.3" height="11.4"><title>libmc2 · sub_00280980 (536 B)</title></rect>
+<rect x="333.1" y="175.5" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="346.4" y="175.5" width="12.3" height="11.4"><title>libmc2 · sub_00280B98 (280 B)</title></rect>
+<rect x="346.4" y="175.5" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="359.7" y="175.5" width="12.3" height="11.4"><title>libmc2 · sub_00280CB0 (1312 B)</title></rect>
+<rect x="359.7" y="175.5" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="373" y="175.5" width="12.3" height="11.4"><title>libmc2 · sub_002811D0 (208 B)</title></rect>
+<rect x="373" y="175.5" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="386.3" y="175.5" width="12.3" height="11.4"><title>libmc2 · sub_002812A0 (464 B)</title></rect>
+<rect x="386.3" y="175.5" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="399.6" y="175.5" width="12.3" height="11.4"><title>libmc2 · sub_00281470 (160 B)</title></rect>
+<rect x="399.6" y="175.5" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="412.9" y="175.5" width="12.3" height="11.4"><title>libmc2 · sub_00281510 (56 B)</title></rect>
+<rect x="412.9" y="175.5" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="426.2" y="175.5" width="12.3" height="11.4"><title>libmc2 · sub_00281548 (32 B)</title></rect>
+<rect x="426.2" y="175.5" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="319.8" y="187.9" width="12.3" height="11.4"><title>libmc2 · sub_00281568 (32 B)</title></rect>
+<rect x="319.8" y="187.9" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="333.1" y="187.9" width="12.3" height="11.4"><title>libmc2 · sub_00281588 (32 B)</title></rect>
+<rect x="333.1" y="187.9" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="346.4" y="187.9" width="12.3" height="11.4"><title>libmc2 · sub_002815A8 (280 B)</title></rect>
+<rect x="346.4" y="187.9" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="359.7" y="187.9" width="12.3" height="11.4"><title>libmc2 · sub_002816C0 (288 B)</title></rect>
+<rect x="359.7" y="187.9" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="373" y="187.9" width="12.3" height="11.4"><title>libmc2 · sub_002817E0 (64 B)</title></rect>
+<rect x="373" y="187.9" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="386.3" y="187.9" width="12.3" height="11.4"><title>libmc2 · sub_00281820 (64 B)</title></rect>
+<rect x="386.3" y="187.9" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="399.6" y="187.9" width="12.3" height="11.4"><title>libmc2 · sub_00281860 (112 B)</title></rect>
+<rect x="399.6" y="187.9" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="412.9" y="187.9" width="12.3" height="11.4"><title>libmc2 · sub_002818D0 (920 B)</title></rect>
+<rect x="412.9" y="187.9" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="426.2" y="187.9" width="12.3" height="11.4"><title>libmc2 · sub_00281C68 (320 B)</title></rect>
+<rect x="426.2" y="187.9" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="319.8" y="200.3" width="12.3" height="11.4"><title>libmc2 · sub_00281DA8 (32 B)</title></rect>
+<rect x="319.8" y="200.3" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="333.1" y="200.3" width="12.3" height="11.4"><title>libmc2 · sub_00281DC8 (32 B)</title></rect>
+<rect x="333.1" y="200.3" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="346.4" y="200.3" width="12.3" height="11.4"><title>libmc2 · sub_00281DE8 (72 B)</title></rect>
+<rect x="346.4" y="200.3" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="359.7" y="200.3" width="12.3" height="11.4"><title>libmc2 · sub_00281E30 (72 B)</title></rect>
+<rect x="359.7" y="200.3" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="373" y="200.3" width="12.3" height="11.4"><title>libmc2 · sub_00281E78 (376 B)</title></rect>
+<rect x="373" y="200.3" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="386.3" y="200.3" width="12.3" height="11.4"><title>libmc2 · sub_00281FF0 (208 B)</title></rect>
+<rect x="386.3" y="200.3" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="399.6" y="200.3" width="12.3" height="11.4"><title>libmc2 · sub_002820C0 (88 B)</title></rect>
+<rect x="399.6" y="200.3" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="412.9" y="200.3" width="12.3" height="11.4"><title>libmc2 · sub_00282118 (48 B)</title></rect>
+<rect x="412.9" y="200.3" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="426.2" y="200.3" width="12.3" height="11.4"><title>libmc2 · sub_00282148 (144 B)</title></rect>
+<rect x="426.2" y="200.3" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="319.8" y="212.7" width="12.3" height="11.4"><title>libmc2 · sub_002821D8 (48 B)</title></rect>
+<rect x="319.8" y="212.7" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="333.1" y="212.7" width="12.3" height="11.4"><title>libmc2 · sub_00282208 (40 B)</title></rect>
+<rect x="333.1" y="212.7" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="346.4" y="212.7" width="12.3" height="11.4"><title>libmc2 · sub_00282230 (64 B)</title></rect>
+<rect x="346.4" y="212.7" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="359.7" y="212.7" width="12.3" height="11.4"><title>libmc2 · sub_00282270 (472 B)</title></rect>
+<rect x="359.7" y="212.7" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="373" y="212.7" width="12.3" height="11.4"><title>libmc2 · sub_00282448 (256 B)</title></rect>
+<rect x="373" y="212.7" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="386.3" y="212.7" width="12.3" height="11.4"><title>libmc2 · sub_00282548 (216 B)</title></rect>
+<rect x="386.3" y="212.7" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="399.6" y="212.7" width="12.3" height="11.4"><title>libmc2 · sub_00282620 (240 B)</title></rect>
+<rect x="399.6" y="212.7" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="412.9" y="212.7" width="12.3" height="11.4"><title>libmc2 · sub_00282710 (312 B)</title></rect>
+<rect x="412.9" y="212.7" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="426.2" y="212.7" width="12.3" height="11.4"><title>libmc2 · sub_00282848 (264 B)</title></rect>
+<rect x="426.2" y="212.7" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="319.8" y="225.1" width="12.3" height="11.4"><title>libmc2 · sub_00282950 (408 B)</title></rect>
+<rect x="319.8" y="225.1" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="333.1" y="225.1" width="12.3" height="11.4"><title>libmc2 · sub_00282AE8 (32 B)</title></rect>
+<rect x="333.1" y="225.1" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="346.4" y="225.1" width="12.3" height="11.4"><title>libmc2 · sub_00282B08 (408 B)</title></rect>
+<rect x="346.4" y="225.1" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="359.7" y="225.1" width="12.3" height="11.4"><title>libmc2 · sub_00282CA0 (304 B)</title></rect>
+<rect x="359.7" y="225.1" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="373" y="225.1" width="12.3" height="11.4"><title>libmc2 · sub_00282DD0 (56 B)</title></rect>
+<rect x="373" y="225.1" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="386.3" y="225.1" width="12.3" height="11.4"><title>libmc2 · sub_00282E08 (56 B)</title></rect>
+<rect x="386.3" y="225.1" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="399.6" y="225.1" width="12.3" height="11.4"><title>libmc2 · sub_00282E40 (288 B)</title></rect>
+<rect x="399.6" y="225.1" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="412.9" y="225.1" width="12.3" height="11.4"><title>libmc2 · sub_00282F60 (72 B)</title></rect>
+<rect x="412.9" y="225.1" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
+<rect class="parcial" x="426.2" y="225.1" width="12.3" height="11.4"><title>libmc2 · sub_00282FA8 (48 B)</title></rect>
+<rect x="426.2" y="225.1" width="12.3" height="11.4" fill="url(#rayas)" pointer-events="none"/>
 <rect class="ok" x="183.3" y="239.5" width="10.7" height="12.4"><title>C++ EH · sub_00285490 (40 B)</title></rect>
 <rect class="ok" x="195" y="239.5" width="10.7" height="12.4"><title>C++ EH · sub_002854B8 (48 B)</title></rect>
 <rect class="ok" x="206.7" y="239.5" width="10.7" height="12.4"><title>C++ EH · sub_002854E8 (8 B)</title></rect>
@@ -736,11 +826,12 @@
 <rect class="parcial" x="461.5" y="258.6" width="65.8" height="111.9"><title>SPU2: audio output — SPU2 emulated with output to the PC, not verified in-game yet; reverb and ADMA are missing</title></rect>
 <rect x="461.5" y="258.6" width="65.8" height="111.9" fill="url(#rayas)" pointer-events="none"/>
 <text class="badge-v-oscuro" x="494.4" y="318.4" font-size="11" text-anchor="middle" pointer-events="none">SPU2</text>
-<rect class="parcial" x="528.3" y="258.6" width="88" height="55.4"><title>DualShock 2 controller — libpad2 via HLE (first port); the SIO2 bus is still not emulated</title></rect>
+<rect class="parcial" x="528.3" y="258.6" width="88" height="55.4"><title>DualShock 2 controller — libpad2 via HLE (first port); controllers read as disconnected on the emulated SIO2</title></rect>
 <rect x="528.3" y="258.6" width="88" height="55.4" fill="url(#rayas)" pointer-events="none"/>
 <text class="badge-v-oscuro" x="572.3" y="290.2" font-size="11" text-anchor="middle" pointer-events="none">Pad</text>
-<rect class="pendiente" x="528.3" y="315.1" width="88" height="55.4"><title>SIO2: memory card</title></rect>
-<text class="txt-pendiente" x="572.3" y="346.6" font-size="11" text-anchor="middle" pointer-events="none">MC</text>
+<rect class="parcial" x="528.3" y="315.1" width="88" height="55.4"><title>SIO2: memory card — SIO2 and card protocol emulated; PCSX2-compatible Mcd001.ps2 file; not verified in-game yet</title></rect>
+<rect x="528.3" y="315.1" width="88" height="55.4" fill="url(#rayas)" pointer-events="none"/>
+<text class="badge-v-oscuro" x="572.3" y="346.6" font-size="11" text-anchor="middle" pointer-events="none">MC</text>
 <rect class="ok" x="619.3" y="113.5" width="144.9" height="85"><title>R5900 CPU (recompiled to C++)</title></rect>
 <text class="badge-t" x="691.7" y="159.8" font-size="11" text-anchor="middle" pointer-events="none">R5900</text>
 <rect class="ok" x="619.3" y="199.5" width="86.5" height="85"><title>Kernel: threads, semaphores and alarms</title></rect>
