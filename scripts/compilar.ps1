@@ -21,6 +21,7 @@ $heapPatch = Join-Path $RepoRoot 'patches\ps2recomp-heap.patch'
 $vuJumpPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu-jump.patch'
 $vuEfuPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu-efu.patch'
 $mpegNodataPatch = Join-Path $RepoRoot 'patches\ps2recomp-mpeg-nodata.patch'
+$spu2Patch = Join-Path $RepoRoot 'patches\ps2recomp-spu2.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -46,10 +47,17 @@ Push-Location $rec
 Run $git @('fetch', 'origin', $PS2RecompCommit)
 Run $git @('checkout', '-f', $PS2RecompCommit)
 Run $git @('submodule', 'update', '--init', '--recursive')
-# checkout -f no retira los archivos nuevos que crearon los parches en una compilacion anterior.
-foreach ($relative in @('ps2xIOP\src\modules\gow_stub_services.cpp', 'ps2xIOP\src\emulator\imports\iop_format.h')) {
-    $extra = Join-Path $rec $relative
-    if (Test-Path -LiteralPath $extra) { Remove-Item -LiteralPath $extra -Force }
+# checkout -f no retira los archivos nuevos que crearon los parches en una compilacion anterior, y git apply
+# fallaria al volver a crearlos. Se borran todos los que crea algun parche de patches\ ("new file mode").
+foreach ($patchFile in Get-ChildItem -LiteralPath (Join-Path $RepoRoot 'patches') -Filter '*.patch' -File) {
+    $created = $null
+    foreach ($line in Get-Content -LiteralPath $patchFile.FullName) {
+        if ($line -match '^diff --git a/(\S+) b/') { $created = $Matches[1] }
+        elseif ($created -and $line -like 'new file mode*') {
+            $extra = Join-Path $rec ($created -replace '/', '\')
+            if (Test-Path -LiteralPath $extra) { Remove-Item -LiteralPath $extra -Force }
+        }
+    }
 }
 Run $git @('apply', '--ignore-whitespace', '--verbose', $patch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $checkpointPatch)
@@ -60,6 +68,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $heapPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vuJumpPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vuEfuPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $mpegNodataPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $spu2Patch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner

@@ -12,10 +12,11 @@
    opcional), `ps2recomp-vif-unpack.patch` (UNPACK V2 y V4-5), `ps2recomp-vif-diagnostic.patch`
    (diagnósticos acotados de VIF y XGKICK), `ps2recomp-heap.patch` (heap privado del runtime configurable
    con `setPrivateGuestHeap`), `ps2recomp-vu-jump.patch` (JR/JALR leen el destino VI actual),
-   `ps2recomp-vu-efu.patch` (coeficiente de la serie de `EATAN`) y
-   `ps2recomp-mpeg-nodata.patch` (`sceMpegGetPicture` llama al callback `sceMpegCbNodata`)
-   con `git apply --ignore-whitespace`. Antes de reaplicarlos retira los archivos nuevos que dejó
-   la compilación anterior (`gow_stub_services.cpp` e `iop_format.h`).
+   `ps2recomp-vu-efu.patch` (coeficiente de la serie de `EATAN`),
+   `ps2recomp-mpeg-nodata.patch` (`sceMpegGetPicture` llama al callback `sceMpegCbNodata`) y
+   `ps2recomp-spu2.patch` (emulación del SPU2 en el IOP, fase 1)
+   con `git apply --ignore-whitespace`. Antes de reaplicarlos borra los archivos que dejó la compilación
+   anterior y que algún parche crea (`new file mode`), así un parche nuevo no necesita tocar esa limpieza.
 4. **Ajustes de CMake** — añade `src/runner` a los includes de `ps2EntryRunner` y desactiva `/GL` y `/LTCG`
    para compilar en paralelo (con LTCG el enlazado de ~6 400 archivos es inviable).
 5. **Recompilador** — compila el objetivo `ps2_recomp`.
