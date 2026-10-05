@@ -67,9 +67,15 @@ Paso 'Generando C++ desde SCUS_973.99'
 if (Test-Path $gen) { Remove-Item $gen -Recurse -Force }
 New-Item -ItemType Directory $gen | Out-Null
 $fw = { param($p) $p -replace '\\', '/' }
+# ps2_recomp no abre rutas con caracteres no ASCII (p. ej. acentos en la carpeta del repositorio):
+# copiamos el ELF y el mapa de funciones a la carpeta de trabajo, que tiene una ruta corta.
+$elfWork = Join-Path $work 'SCUS_973.99'
+$mapWork = Join-Path $work 'funcmap.csv'
+Copy-Item -LiteralPath $elf -Destination $elfWork -Force
+Copy-Item -LiteralPath $funcmap -Destination $mapWork -Force
 (Get-Content -LiteralPath $template -Raw) `
-    -replace '@ELF@', (& $fw $elf) `
-    -replace '@MAP@', (& $fw $funcmap) `
+    -replace '@ELF@', (& $fw $elfWork) `
+    -replace '@MAP@', (& $fw $mapWork) `
     -replace '@OUT@', ((& $fw $gen) + '/') |
     Set-Content -LiteralPath (Join-Path $work 'config.toml') -Encoding ASCII
 $recompExe = Get-ChildItem $bld -Recurse -Filter 'ps2_recomp.exe' | Select-Object -First 1
@@ -81,6 +87,11 @@ $runner = Join-Path $rec 'ps2xRuntime\src\runner'
 Get-ChildItem $runner -File | Remove-Item -Force
 Get-ChildItem -LiteralPath $gen -File | Copy-Item -Destination $runner
 Copy-Item -LiteralPath $overrides -Destination (Join-Path $runner 'gow_overrides.cpp')
+# Con MSVC en espanol ninja no registra las dependencias /showIncludes: los .cpp incluidos desde los
+# archivos unity (codigo generado, register_functions.cpp, overrides) no fuerzan recompilacion. Borramos
+# los objetos unity para que se recompilen siempre con el codigo recien generado.
+$unityDir = Join-Path $bld 'ps2xRuntime\CMakeFiles\ps2EntryRunner.dir\Unity'
+if (Test-Path -LiteralPath $unityDir) { Get-ChildItem -LiteralPath $unityDir -Filter '*.obj' | Remove-Item -Force }
 Run 'cmake' @('-S', $rec, '-B', $bld)
 
 Paso 'Compilando el juego optimizado en paralelo'

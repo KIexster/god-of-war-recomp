@@ -15,8 +15,11 @@ _Última actualización: 5 de octubre de 2026_
 - **La configuración se carga desde el disco**: la petición `SMPD 0xF "R_Perm"` devuelve el handle 0
   y `HERO_HEAP_SIZE` / `SLOT_HEAP_SIZE` / `UPGRADE_HEAP_SIZE` se encuentran (la guardia del diccionario
   NULL ya no salta).
-- El juego avanza hasta `stdCList<wadCleanupData>` (`0x239FD0`), tras varias llamadas
-  `snd_DoExternCall` (cmd `0x4C`).
+- **`R_PERM.WAD` se carga entero en streaming** (smpd lee 16 sectores por llamada a `sceCdRead` y los
+  envía al EE en bloques de `0x20000` que se alternan entre `0x530640` y `0x550640`).
+- 989snd arranca sin errores (antes, 15 × `cause 7` por un `argv` mal construido).
+- El hilo principal llega a construir objetos gráficos (`fxCameraFilter`) y espera en
+  **`vid::WaitForDMAComplete`** (`0x183878`): ya estamos en la parte de vídeo.
 
 ## Símbolos
 
@@ -31,6 +34,12 @@ y la demo europea) **coinciden con las direcciones de nuestro ELF**. Algunas con
 | `0x00175890` | `stdDynaStringDB::GetDynaStringNode` |
 | `0x0017A940` | `sys::Boot2` |
 | `0x00239F90` | `stdCList<wadCleanupData, …>` |
+| `0x00299D08` | `cbTimerHandler` (alarmas de libkernel) |
+| `0x0016AFD8` | `memcpy_asm` |
+| `0x0016B120` | `ringBuffer::GetBytes` |
+| `0x00183878` | `vid::WaitForDMAComplete` |
+
+`GOW-Port/sym.py <direcciones>` (fuera del repositorio) traduce direcciones con estos mapas.
 
 ## Cronología de la investigación del arranque
 
@@ -104,6 +113,35 @@ aparecieron cuatro fallos del emulador, todos corregidos en `patches/ps2recomp-r
 | `sprintf`/`vsprintf` de sysclib copiaban el formato literal | smpd hacía `sprintf("%s.wad", nombre)` y buscaba `%S.WAD` → `R_Perm` devolvía -1 | formateador real con argumentos o32 (`iop_format.h`), usado también por `printf` |
 | Sin imagen de disco | smpd lee por número de sector | `configureGowCdImage` en `src/gow_overrides.cpp` usa la ISO original |
 
+### 5. Métodos virtuales sin punto de entrada
+
+`sub_0023A000` hace una llamada virtual a `0x239FD0`, un método vacío (`jr ra`) al que solo se llega
+por vtable. Ni nuestro mapa de funciones ni Ghidra lo tenían como función: quedaba dentro de
+`sub_00239F90` y el runtime lo daba por inexistente (`[guest-branch:missing-target]`). Recorriendo las
+vtables del ELF (entradas `{s16 ajuste, s16 índice, u32 función}`) salieron **24 destinos** así. Ahora
+están en `entry_points` de `config/recomp.template.toml` (`vfunc_XXXXXXXX`), y el recompilador les crea
+un punto de entrada dentro de la función que los contiene.
+
+### 6. El hilo principal moría: una copia de 205 MB
+
+Con lo anterior, el juego avanzaba hasta que **el hilo principal moría** (`Dormant`, `pc=0`) por una
+llamada a un callback NULL en `cbTimerHandler`. La lista de alarmas de libkernel (`0x2A5B08`–`0x2A5B14`)
+aparecía llena de datos de `R_PERM.WAD`. El culpable era
+`memcpy_asm(dst=0x6C190, src=0x530640, n=0xC478000)`, llamado desde `ringBuffer::GetBytes` por el
+cargador de WAD: el búfer de streaming estaba **a cero**, así que el cargador leía un tamaño basura.
+
+Los datos sí llegaban por `sceSifSetDma`, pero **al búfer de la petición siguiente**. En el IOP real,
+el servidor RPC de 989snd despierta al hilo lector de smpd (de más prioridad), que se ejecuta y apunta
+el destino antes de que el hilo RPC conteste. El emulador ejecutaba el servidor RPC como una llamada
+síncrona y contestaba en el acto, así que el hilo lector tomaba el destino de la petición siguiente.
+**Arreglo:** tras cada RPC, el emulador deja correr a los hilos del IOP que estén listos
+(`runReadyThreads`, tope de 4 M ciclos) antes de copiar la respuesta.
+
+### 7. Otros arreglos del emulador del IOP
+
+- Los módulos arrancaban con `start(tamaño, texto)` en lugar de `start(argc, argv)`; ahora `argv` es
+  `[ruta, arg1, …, NULL]`, como en `loadcore`.
+
 Además, el override de `snd_SendIOPCommandAndWait` ya no descarta los comandos: los registra (`[gow-snd]`)
 y llama al original. `GOW_SND_STUB=1` recupera el comportamiento antiguo.
 
@@ -118,20 +156,24 @@ y llama al original. `GOW_SND_STUB=1` recupera el comportamiento antiguo.
 | `PS2X_IOP_TRACE_NOCLIB=1` | omite `sysclib` en esa traza |
 | `PS2X_IOP_TRACE_EVERY=N` | muestreo: una de cada N llamadas |
 | `PS2X_IOP_PC_EVERY=N` | PC del IOP cada N instrucciones y aviso cuando no hay hilos listos |
+| `PS2X_IOP_TRACE_DMA=1` | cada transferencia `sceSifSetDma` IOP → EE (origen, destino, tamaño, primeros bytes) |
+| `[run:thread]` | estado de todos los hilos del EE cada ~10 s (en `ejecutar.log`) |
+| `[gow-timer]`, `[gow-watch]`, `[gow-23a000]` | alarmas de libkernel, copias de `memcpy_asm` sospechosas, llamada virtual de `sub_0023A000` |
 
 ## Problemas conocidos
 
 | Problema | Detalle |
 |---|---|
-| Bucle en `0x00239FD0` | dentro de `stdCList<wadCleanupData>` (`ra=0x23A044`), tras los `snd_DoExternCall` |
-| Errores de 989snd | 15 × `989snd Error: cause 7 -> …` al arrancar (sin investigar) |
+| Espera en `vid::WaitForDMAComplete` | el hilo principal espera a que termine una DMA hacia el GS |
+| Memory card | `MC2_D.IRX` corre en el IOP, pero el bus SIO2 no está emulado |
 | Sin audio | 989snd corre, pero no hay salida de SPU2 |
 | Sin vídeo FMV | `sceMpeg*` / `sceIpu*` son stubs |
-| Dependencias de ninja | Con MSVC en español no se registran las dependencias `/showIncludes`; `2_recompilar_rapido.cmd` fuerza la recompilación de los overrides (los cambios en cabeceras del runtime requieren tocar los `.cpp` que las incluyen) |
+| Dependencias de ninja | Con MSVC en español no se registran las dependencias `/showIncludes`: `2_recompilar_rapido.cmd` toca el archivo unity de los overrides y `compilar.ps1` borra los objetos unity tras regenerar (los cambios en cabeceras del runtime requieren tocar los `.cpp` que las incluyen) |
+| Rutas con acentos | `ps2_recomp` no abre rutas no ASCII: `compilar.ps1` copia el ELF y el mapa a la carpeta de trabajo |
 
 ## Próximos pasos
 
-1. Investigar el bucle en `stdCList<wadCleanupData>` (`0x239FD0`) y qué piden los comandos `0x4C`.
-2. Comprobar si la guardia `gowDictFindGuard` y el diagnóstico del árbol ya pueden retirarse.
-3. Revisar los errores `cause 7` de 989snd.
+1. Investigar la espera en `vid::WaitForDMAComplete`: qué canal DMA y qué condición espera.
+2. Retirar los diagnósticos que ya no hacen falta (`gowDictFindGuard`, árbol, `memcpy` vigilado).
+3. Memory card (SIO2 / `MC2_D.IRX`).
 4. Audio sobre 989snd / SPU2.

@@ -61,7 +61,7 @@ Este repositorio contiene todo lo específico de God of War:
 | Audio, mando y memory card | ⏳ pendiente |
 
 Actualmente el juego arranca, ejecuta en el IOP los módulos originales (incluido el cargador de datos `smpd`),
-carga su configuración desde la ISO y avanza hasta `pc = 0x00239FD0`. Ver [`docs/ESTADO.md`](docs/ESTADO.md) para el detalle.
+carga su configuración desde la ISO y avanza hasta la inicialización de vídeo (`vid::WaitForDMAComplete`). Ver [`docs/ESTADO.md`](docs/ESTADO.md) para el detalle.
 
 ## Estructura del repositorio
 

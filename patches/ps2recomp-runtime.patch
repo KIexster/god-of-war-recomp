@@ -10,6 +10,25 @@ index f8d3e44..c97ddd5 100644
  )
  
  target_compile_features(ps2_iop PUBLIC cxx_std_20)
+diff --git a/ps2xIOP/src/emulator/core/iop_kernel.h b/ps2xIOP/src/emulator/core/iop_kernel.h
+index 4977102..a5b7f7a 100644
+--- a/ps2xIOP/src/emulator/core/iop_kernel.h
++++ b/ps2xIOP/src/emulator/core/iop_kernel.h
+@@ -67,6 +67,14 @@ namespace ps2x::iop::detail
+         void terminateThreadsInRange(uint32_t base, uint32_t size);
+ 
+         [[nodiscard]] size_t threadCount() const noexcept { return m_threads.size(); }
++        // GOW-Port: hay algun hilo listo para ejecutar (lo usa IopRpcBridge tras cada RPC).
++        [[nodiscard]] bool hasReadyThread() const noexcept
++        {
++            for (const auto &[id, thread] : m_threads)
++                if (thread.state == IopThreadState::Ready)
++                    return true;
++            return false;
++        }
+ 
+     private:
+         struct Semaphore
 diff --git a/ps2xIOP/src/emulator/core/iop_memory.h b/ps2xIOP/src/emulator/core/iop_memory.h
 index a932a5d..a8d7493 100644
 --- a/ps2xIOP/src/emulator/core/iop_memory.h
@@ -248,10 +267,10 @@ index 0517478..79609fe 100644
          }
          case 20:
 diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_emulator.cpp
-index e5f63a9..912c81a 100644
+index e5f63a9..df79786 100644
 --- a/ps2xIOP/src/emulator/iop_emulator.cpp
 +++ b/ps2xIOP/src/emulator/iop_emulator.cpp
-@@ -18,6 +18,7 @@
+@@ -18,12 +18,15 @@
  #include "iop_emulator_const.h"
  
  #include <algorithm>
@@ -259,7 +278,15 @@ index e5f63a9..912c81a 100644
  #include <cctype>
  #include <map>
  #include <optional>
-@@ -245,6 +246,40 @@ namespace ps2x::iop::detail
+ #include <span>
+ #include <sstream>
++#include <string>
+ #include <utility>
++#include <vector>
+ 
+ namespace ps2x::iop::detail
+ {
+@@ -245,6 +248,40 @@ namespace ps2x::iop::detail
                  cpu.gpr[2] = value;
              };
  
@@ -300,7 +327,7 @@ index e5f63a9..912c81a 100644
              if (iequals(call.library, "sysmem") && sysmem.dispatchImport(call.ordinal, cpu))
                  return ImportDisposition::Handled;
  
-@@ -390,6 +425,21 @@ namespace ps2x::iop::detail
+@@ -390,6 +427,21 @@ namespace ps2x::iop::detail
                  return !cpu.stopped;
              }
  
@@ -322,7 +349,7 @@ index e5f63a9..912c81a 100644
              const bool running = cpuCore.executeInstruction(cpu);
              schedulePendingDma();
              ++totalInstructions;
-@@ -456,6 +506,14 @@ namespace ps2x::iop::detail
+@@ -456,9 +508,30 @@ namespace ps2x::iop::detail
              }
              cpu.gpr[31] = kCallReturnSentinel;
              runCpu(cpu, budget);
@@ -337,7 +364,23 @@ index e5f63a9..912c81a 100644
              return cpu.gpr[2];
          }
  
-@@ -566,6 +624,14 @@ namespace ps2x::iop::detail
++        void runReadyThreads(uint64_t maxCycles) override
++        {
++            // Solo desde fuera de la ejecucion del IOP (una RPC del EE), y sin reentrar.
++            if (activeCpu != nullptr || settlingThreads)
++                return;
++            settlingThreads = true;
++            const uint64_t start = totalCycles;
++            while (kernel.hasReadyThread() && totalCycles - start < maxCycles)
++                runCycles(kDefaultSlice * 16u);
++            settlingThreads = false;
++        }
++        bool settlingThreads = false;
++
+         uint32_t executeGuestFunction(uint32_t address,
+                                       uint32_t a0,
+                                       uint32_t a1,
+@@ -566,6 +639,14 @@ namespace ps2x::iop::detail
                      IopThread *next = kernel.beginNextReady(totalCycles);
                      if (!next)
                      {
@@ -352,6 +395,57 @@ index e5f63a9..912c81a 100644
                          uint64_t nextWake = kernel.nextWakeCycle(target);
                          for (const auto &[irq, completionCycle] : pendingDmaInterrupts)
                              nextWake = std::min(nextWake, completionCycle);
+@@ -614,17 +695,44 @@ namespace ps2x::iop::detail
+             module.entry = loaded.entry;
+             module.gp = loaded.gp;
+ 
+-            uint32_t args = 0u;
++            // GOW-Port: como el loadcore real, el modulo arranca con start(argc, argv): argv[0] es la ruta del
++            // modulo y los argumentos vienen separados por '\0' ("rpc_priority=64\0..."). Antes se pasaba
++            // (tamano en bytes, puntero al texto) y 989snd leia el texto como punteros ("989snd Error: cause 7").
++            std::vector<std::string> argStrings;
++            argStrings.push_back(module.path);
+             if (arguments && argumentSize)
+             {
+-                args = allocate(argumentSize + 1u, 16u);
+-                if (args)
++                const char *text = static_cast<const char *>(arguments);
++                size_t begin = 0u;
++                for (size_t i = 0u; i <= argumentSize; ++i)
++                {
++                    if (i == argumentSize || text[i] == '\0')
++                    {
++                        if (i > begin)
++                            argStrings.emplace_back(text + begin, i - begin);
++                        begin = i + 1u;
++                    }
++                }
++            }
++            uint32_t stringBytes = 0u;
++            for (const std::string &value : argStrings)
++                stringBytes += static_cast<uint32_t>(value.size()) + 1u;
++            const uint32_t pointerBytes = static_cast<uint32_t>(argStrings.size() + 1u) * 4u;
++            const uint32_t args = allocate(pointerBytes + stringBytes, 16u);
++            const uint32_t argc = static_cast<uint32_t>(argStrings.size());
++            if (args)
++            {
++                uint32_t cursor = args + pointerBytes;
++                for (size_t i = 0u; i < argStrings.size(); ++i)
+                 {
+-                    writeRam(args, arguments, argumentSize);
+-                    write8(args + argumentSize, 0u);
++                    memory.write32(args + static_cast<uint32_t>(i) * 4u, cursor);
++                    writeRam(cursor, argStrings[i].data(), static_cast<uint32_t>(argStrings[i].size()));
++                    write8(cursor + static_cast<uint32_t>(argStrings[i].size()), 0u);
++                    cursor += static_cast<uint32_t>(argStrings[i].size()) + 1u;
+                 }
++                memory.write32(args + pointerBytes - 4u, 0u);
+             }
+-            const uint32_t startResult = callFunction(module.entry, argumentSize, args, 0u, 0u, module.gp);
++            const uint32_t startResult = callFunction(module.entry, args ? argc : 0u, args, 0u, 0u, module.gp);
+             if (args)
+                 freeAllocation(args);
+             module.resident = startResult == 0u || startResult == 2u;
 diff --git a/ps2xIOP/src/emulator/iop_emulator_const.h b/ps2xIOP/src/emulator/iop_emulator_const.h
 index 7004597..7a7b687 100644
 --- a/ps2xIOP/src/emulator/iop_emulator_const.h
@@ -367,6 +461,82 @@ index 7004597..7a7b687 100644
  constexpr uint32_t kModuleLoadBase = 0x00010000u;
  constexpr uint32_t kStackGuardBytes = 64u;
 \ No newline at end of file
+diff --git a/ps2xIOP/src/emulator/services/iop_rpc.cpp b/ps2xIOP/src/emulator/services/iop_rpc.cpp
+index cf4fdc6..46b82e5 100644
+--- a/ps2xIOP/src/emulator/services/iop_rpc.cpp
++++ b/ps2xIOP/src/emulator/services/iop_rpc.cpp
+@@ -6,6 +6,8 @@
+ #include "ps2x/iop/iop_host.h"
+ 
+ #include <algorithm>
++#include <cstdlib>
++#include <sstream>
+ #include <array>
+ #include <cstring>
+ #include <limits>
+@@ -13,6 +15,9 @@
+ 
+ namespace ps2x::iop::detail
+ {
++    // GOW-Port: tope de ciclos del IOP que se dejan correr tras cada RPC (~0.1 s a 36.864 MHz).
++    constexpr uint64_t kRpcSettleCycles = 4000000u;
++
+     IopRpcBridge::IopRpcBridge(IopHost &host, IopMemory &memory, IopKernel &kernel) noexcept
+         : m_host(host), m_memory(memory), m_kernel(kernel)
+     {
+@@ -101,10 +106,23 @@ namespace ps2x::iop::detail
+                 }
+             }
+ 
++            // GOW-Port: PS2X_IOP_TRACE_DMA=1 registra cada transferencia IOP -> EE (origen, destino, tamano, datos).
++            static const bool traceDma = std::getenv("PS2X_IOP_TRACE_DMA") != nullptr;
+             for (uint32_t i = 0u; i < pendingCount; ++i)
+             {
+                 const PendingTransfer &transfer = pending[i];
+-                if (!m_memory.readRam(transfer.source, scratch.data(), transfer.size) || !m_host.writeGuest(transfer.destination, scratch.data(), transfer.size))
++                const bool readOk = m_memory.readRam(transfer.source, scratch.data(), transfer.size);
++                const bool writeOk = readOk && m_host.writeGuest(transfer.destination, scratch.data(), transfer.size);
++                if (traceDma)
++                {
++                    std::ostringstream out;
++                    out << "[IOP:sifdma] src=0x" << std::hex << transfer.source << " dst=0x" << transfer.destination
++                        << " size=0x" << transfer.size << " read=" << readOk << " write=" << writeOk << " bytes=";
++                    for (uint32_t b = 0u; b < std::min<uint32_t>(16u, transfer.size); ++b)
++                        out << ' ' << static_cast<uint32_t>(scratch[b]);
++                    m_host.log(LogLevel::Info, out.str());
++                }
++                if (!writeOk)
+                 {
+                     setV0(0u);
+                     return true;
+@@ -298,6 +316,10 @@ namespace ps2x::iop::detail
+                                                                request.send.size,
+                                                                0u,
+                                                                server.gp);
++        // GOW-Port: en el IOP real, si el servidor despierta a un hilo de mas prioridad (smpd: su hilo lector),
++        // ese hilo se ejecuta antes de que el hilo RPC conteste. Sin esto, smpd tomaba el destino de la lectura
++        // de la peticion siguiente y los datos acababan en el bufer equivocado.
++        executor.runReadyThreads(kRpcSettleCycles);
+         if (returnPointer == 0u)
+             returnPointer = server.buffer;
+         if (request.receive.address != 0u && request.receive.size != 0u && returnPointer != 0u)
+diff --git a/ps2xIOP/src/emulator/services/iop_rpc.h b/ps2xIOP/src/emulator/services/iop_rpc.h
+index a4286ba..57abc7e 100644
+--- a/ps2xIOP/src/emulator/services/iop_rpc.h
++++ b/ps2xIOP/src/emulator/services/iop_rpc.h
+@@ -38,6 +38,12 @@ namespace ps2x::iop::detail
+         {
+             return executeGuestFunction(address, a0, a1, a2, a3, gp);
+         }
++        // GOW-Port: deja correr a los hilos del IOP que esten listos (p. ej. despertados por un servidor RPC),
++        // como haria la expulsion por prioridad del IOP real antes de que el hilo RPC conteste.
++        virtual void runReadyThreads(uint64_t maxCycles)
++        {
++            (void)maxCycles;
++        }
+     };
+ 
+     class IopRpcBridge
 diff --git a/ps2xIOP/src/iop_subsystem.cpp b/ps2xIOP/src/iop_subsystem.cpp
 index b498155..fa4be18 100644
 --- a/ps2xIOP/src/iop_subsystem.cpp
@@ -565,7 +735,7 @@ index 9614016..6697d48 100644
          }
  
 diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
-index 45cb9d2..847f9ee 100644
+index 45cb9d2..bd0043b 100644
 --- a/ps2xRuntime/src/lib/ps2_runtime.cpp
 +++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
 @@ -1342,6 +1342,19 @@ void PS2Runtime::reportMissingFunction(uint8_t *rdram,
@@ -608,3 +778,28 @@ index 45cb9d2..847f9ee 100644
      uint32_t base = alignGuestHeapValue(clampGuestHeapBase(guestBase), kGuestHeapDefaultAlignment);
      uint32_t limit = clampGuestHeapLimit(guestLimit);
      if (base == 0u)
+@@ -2418,6 +2437,24 @@ void PS2Runtime::run()
+                                                << " vif=" << curVif
+                                                << std::endl);
+ 
++                // GOW-Port: estado de cada hilo del EE (cada 600 marcas, ~10 s).
++                if ((tick % 600) == 0)
++                {
++                    for (const auto &thread : eeSnapshot.threads)
++                    {
++                        RUNTIME_LOG("[run:thread] id=" << thread.id
++                                                       << " status=" << static_cast<int>(thread.status)
++                                                       << " wait=" << static_cast<int>(thread.waitReason)
++                                                       << " waitId=" << thread.waitId
++                                                       << " prio=" << thread.currentPriority
++                                                       << " pc=0x" << std::hex << thread.pc
++                                                       << " ra=0x" << thread.ra
++                                                       << " sp=0x" << thread.sp
++                                                       << " entry=0x" << thread.entry << std::dec
++                                                       << (thread.id == eeSnapshot.runningThreadId ? " (corriendo)" : "")
++                                                       << std::endl);
++                    }
++                }
+             }
+         });
+         uint32_t presentWidth = FB_WIDTH;
