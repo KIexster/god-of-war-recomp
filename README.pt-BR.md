@@ -52,6 +52,10 @@ Este repositório contém tudo o que é específico de God of War:
 
 ## Status atual
 
+<a href="docs/estado/detalle.pt-BR.md"><img src="docs/estado/mapa.pt-BR.svg" alt="Mapa de status do port: funções das bibliotecas do SDK da Sony e componentes do hardware do PS2, coloridos por status" width="100%"></a>
+
+Detalhamento por biblioteca e por componente: [`docs/estado/detalle.pt-BR.md`](docs/estado/detalle.pt-BR.md). Regenerado a partir de `docs/estado/datos.toml` por `tools/estado/generar.py` (e automaticamente ao enviar para `main`).
+
 | Marco | Status |
 |---|:---:|
 | Extração das duas camadas do DVD-9 | ✅ |
@@ -79,6 +83,7 @@ letras, e o jogo pede um DualShock 2 porque o controle (SIO2) ainda não é emul
 │   ├── funcmap.csv               # Mapa de funções (nome, início, fim, tamanho)
 │   └── recomp.template.toml      # Configuração do PS2Recomp (@ELF@, @MAP@, @OUT@)
 ├── docs/                         # Documentação técnica (em espanhol)
+│   └── estado/                   # Dados do mapa de status e SVG/tabelas gerados
 ├── game/                         # O SEU SCUS_973.99 vai aqui (ignorado pelo git)
 ├── patches/
 │   └── ps2recomp-runtime.patch   # Alterações sobre o PS2Recomp @ c5a9d02
@@ -93,7 +98,8 @@ letras, e o jogo pede um DualShock 2 porque o controle (SIO2) ainda não é emul
 ├── src/
 │   └── gow_overrides.cpp         # Overrides específicos do jogo
 └── tools/
-    └── extraer_capa2.ps1         # Extrai a camada 1 de uma ISO DVD-9 de PS2
+    ├── extraer_capa2.ps1         # Extrai a camada 1 de uma ISO DVD-9 de PS2
+    └── estado/generar.py         # Gerador do mapa de status
 ```
 
 > Os nomes de scripts e pastas estão em espanhol, o idioma original do projeto.

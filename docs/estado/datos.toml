@@ -1,0 +1,248 @@
+# Datos del mapa de estado (docs/estado/mapa.*.svg y docs/estado/detalle.*.md).
+# Tras editar este archivo, regenera con:  python tools/estado/generar.py
+# (La accion de GitHub "Mapa de estado" lo hace sola al subir cambios a main.)
+#
+# Estados: "ok" (funciona), "parcial" (funciona con fallos o sin verificar), "pendiente" (no funciona / no emulado).
+
+# ---------------------------------------------------------------------------------------------------------
+# Panel 1: librerias estaticas del SDK de Sony enlazadas en SCUS_973.99.
+# Cada funcion de config/funcmap.csv entre `desde` y `hasta` es una celda. Una libreria empieza en `inicio`
+# y llega hasta el inicio de la siguiente (el enlazador las coloca seguidas). Los inicios salen de las
+# funciones con nombre de config/recomp.template.toml. Varias entradas con el mismo `nombre` se juntan.
+# ---------------------------------------------------------------------------------------------------------
+[librerias]
+desde = 0x0026F228
+hasta = 0x0029BBA4
+
+[[librerias.grupo]]
+nombre = "libmpeg"
+inicio = 0x0026F228
+estado = "pendiente"
+nota = { es = "Vídeo FMV: sceMpeg* son stubs", en = "FMV video: sceMpeg* are stubs", pt = "Vídeo FMV: sceMpeg* são stubs" }
+
+[[librerias.grupo]]
+nombre = "libipu"
+inicio = 0x002792E8
+estado = "pendiente"
+nota = { es = "Vídeo FMV: sceIpu* son stubs", en = "FMV video: sceIpu* are stubs", pt = "Vídeo FMV: sceIpu* são stubs" }
+
+[[librerias.grupo]]
+nombre = "libgraph"
+inicio = 0x00279838
+estado = "ok"
+
+[[librerias.grupo]]
+nombre = "libdma"
+inicio = 0x00279E50
+estado = "ok"
+
+[[librerias.grupo]]
+nombre = "libcdvd"
+inicio = 0x0027A340
+estado = "ok"
+nota = { es = "Lee la ISO original", en = "Reads the original ISO", pt = "Lê a ISO original" }
+
+[[librerias.grupo]]
+nombre = "libdbc"
+inicio = 0x0027ACA8
+estado = "pendiente"
+nota = { es = "SIO2 sin emular", en = "SIO2 not emulated", pt = "SIO2 não emulado" }
+
+[[librerias.grupo]]
+nombre = "libpad2"
+inicio = 0x0027B7E8
+estado = "pendiente"
+nota = { es = "Mando: SIO2 sin emular", en = "Controller: SIO2 not emulated", pt = "Controle: SIO2 não emulado" }
+
+[[librerias.grupo]]
+nombre = "libvib"
+inicio = 0x0027BF90
+estado = "pendiente"
+nota = { es = "Vibración: SIO2 sin emular", en = "Vibration: SIO2 not emulated", pt = "Vibração: SIO2 não emulado" }
+
+[[librerias.grupo]]
+nombre = "libmc2"
+inicio = 0x0027C100
+estado = "pendiente"
+nota = { es = "Memory card: SIO2 sin emular", en = "Memory card: SIO2 not emulated", pt = "Memory card: SIO2 não emulado" }
+
+[[librerias.grupo]]
+nombre = "libscf"
+inicio = 0x00282FD8
+estado = "ok"
+
+[[librerias.grupo]]
+nombre = "libgcc"
+inicio = 0x00283790
+estado = "ok"
+
+[[librerias.grupo]]
+nombre = "C++ EH"
+inicio = 0x00285490
+estado = "ok"
+
+[[librerias.grupo]]
+nombre = "libm"
+inicio = 0x00287378
+estado = "ok"
+
+[[librerias.grupo]]
+nombre = "libc"
+inicio = 0x00289200
+estado = "ok"
+
+[[librerias.grupo]]
+nombre = "libkernel"
+inicio = 0x002940B0
+estado = "ok"
+
+[[librerias.grupo]]
+nombre = "sif"
+inicio = 0x00296518
+estado = "ok"
+nota = { es = "Comandos y RPC del SIF", en = "SIF commands and RPC", pt = "Comandos e RPC do SIF" }
+
+[[librerias.grupo]]
+nombre = "fileio"
+inicio = 0x002976C8
+estado = "ok"
+
+[[librerias.grupo]]
+nombre = "loadfile"
+inicio = 0x00298770
+estado = "ok"
+nota = { es = "Heap del IOP y carga de módulos", en = "IOP heap and module loading", pt = "Heap do IOP e carga de módulos" }
+
+[[librerias.grupo]]
+nombre = "libkernel"
+inicio = 0x00299230
+estado = "ok"
+
+[[librerias.grupo]]
+nombre = "libgcc"
+inicio = 0x0029ADE0
+estado = "ok"
+
+# ---------------------------------------------------------------------------------------------------------
+# Panel 2: hardware de la PS2. Cada componente es un rectangulo de tamano `peso`.
+# `corto` es la etiqueta que se dibuja; `nombre` aparece en la tabla de detalle y al pasar el raton.
+# ---------------------------------------------------------------------------------------------------------
+[[hardware.grupo]]
+nombre = "EE"
+
+  [[hardware.grupo.componente]]
+  corto = "R5900"
+  nombre = { es = "CPU R5900 (recompilada a C++)", en = "R5900 CPU (recompiled to C++)", pt = "CPU R5900 (recompilada para C++)" }
+  estado = "ok"
+  peso = 5
+
+  [[hardware.grupo.componente]]
+  corto = "Kernel"
+  nombre = { es = "Kernel: hilos, semáforos y alarmas", en = "Kernel: threads, semaphores and alarms", pt = "Kernel: threads, semáforos e alarmes" }
+  estado = "ok"
+  peso = 3
+
+  [[hardware.grupo.componente]]
+  corto = "FPU/MMI"
+  nombre = { es = "FPU (COP1) e instrucciones MMI", en = "FPU (COP1) and MMI instructions", pt = "FPU (COP1) e instruções MMI" }
+  estado = "ok"
+  peso = 2
+
+  [[hardware.grupo.componente]]
+  corto = "INTC"
+  nombre = { es = "INTC: VSync e interrupción del GS", en = "INTC: VSync and GS interrupt", pt = "INTC: VSync e interrupção do GS" }
+  estado = "ok"
+  peso = 2
+
+  [[hardware.grupo.componente]]
+  corto = "DMAC"
+  nombre = { es = "Controlador DMA", en = "DMA controller", pt = "Controlador DMA" }
+  estado = "ok"
+  peso = 2
+
+  [[hardware.grupo.componente]]
+  corto = "Timers"
+  nombre = { es = "Temporizadores", en = "Timers", pt = "Temporizadores" }
+  estado = "ok"
+  peso = 1
+
+[[hardware.grupo]]
+nombre = "GS / VU"
+
+  [[hardware.grupo.componente]]
+  corto = "GS"
+  nombre = { es = "GS: primitivas y framebuffer", en = "GS: primitives and framebuffer", pt = "GS: primitivas e framebuffer" }
+  estado = "ok"
+  peso = 3
+
+  [[hardware.grupo.componente]]
+  corto = "VIF1/VU1"
+  nombre = { es = "VIF1 y VU1", en = "VIF1 and VU1", pt = "VIF1 e VU1" }
+  estado = "parcial"
+  peso = 3
+  nota = { es = "Sin verificar más allá de las primeras pantallas", en = "Not verified beyond the first screens", pt = "Não verificado além das primeiras telas" }
+
+  [[hardware.grupo.componente]]
+  corto = "Tex/CLUT"
+  nombre = { es = "GS: texturas, CLUT y fuentes", en = "GS: textures, CLUT and fonts", pt = "GS: texturas, CLUT e fontes" }
+  estado = "parcial"
+  peso = 2
+  nota = { es = "Faltan letras en algunos textos", en = "Some text glyphs are missing", pt = "Faltam letras em alguns textos" }
+
+  [[hardware.grupo.componente]]
+  corto = "GIF"
+  nombre = { es = "GIF (PATH1-3)", en = "GIF (PATH1-3)", pt = "GIF (PATH1-3)" }
+  estado = "ok"
+  peso = 2
+
+  [[hardware.grupo.componente]]
+  corto = "IPU"
+  nombre = { es = "IPU: vídeo FMV", en = "IPU: FMV video", pt = "IPU: vídeo FMV" }
+  estado = "pendiente"
+  peso = 2
+
+[[hardware.grupo]]
+nombre = "IOP"
+
+  [[hardware.grupo.componente]]
+  corto = "R3000A"
+  nombre = { es = "CPU R3000A (intérprete)", en = "R3000A CPU (interpreter)", pt = "CPU R3000A (interpretador)" }
+  estado = "ok"
+  peso = 3
+
+  [[hardware.grupo.componente]]
+  corto = "SPU2"
+  nombre = { es = "SPU2: salida de audio", en = "SPU2: audio output", pt = "SPU2: saída de áudio" }
+  estado = "pendiente"
+  peso = 3
+  nota = { es = "989snd corre, pero no hay salida de SPU2", en = "989snd runs, but there is no SPU2 output", pt = "989snd roda, mas não há saída de SPU2" }
+
+  [[hardware.grupo.componente]]
+  corto = "IRX"
+  nombre = { es = "Módulos IRX originales", en = "Original IRX modules", pt = "Módulos IRX originais" }
+  estado = "ok"
+  peso = 2
+
+  [[hardware.grupo.componente]]
+  corto = "SIF"
+  nombre = { es = "SIF: RPC y DMA EE ↔ IOP", en = "SIF: EE ↔ IOP RPC and DMA", pt = "SIF: RPC e DMA EE ↔ IOP" }
+  estado = "ok"
+  peso = 2
+
+  [[hardware.grupo.componente]]
+  corto = "CDVD"
+  nombre = { es = "CDVD: lectura de la ISO original", en = "CDVD: reading the original ISO", pt = "CDVD: leitura da ISO original" }
+  estado = "ok"
+  peso = 2
+
+  [[hardware.grupo.componente]]
+  corto = "Pad"
+  nombre = { es = "SIO2: mando DualShock 2", en = "SIO2: DualShock 2 controller", pt = "SIO2: controle DualShock 2" }
+  estado = "pendiente"
+  peso = 2
+
+  [[hardware.grupo.componente]]
+  corto = "MC"
+  nombre = { es = "SIO2: memory card", en = "SIO2: memory card", pt = "SIO2: memory card" }
+  estado = "pendiente"
+  peso = 2

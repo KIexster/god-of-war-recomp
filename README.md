@@ -52,6 +52,10 @@ This repository holds everything that is specific to God of War:
 
 ## Current status
 
+<a href="docs/estado/detalle.en.md"><img src="docs/estado/mapa.en.svg" alt="Port status map: Sony SDK library functions and PS2 hardware components, colored by status" width="100%"></a>
+
+Per-library and per-component breakdown: [`docs/estado/detalle.en.md`](docs/estado/detalle.en.md). Regenerated from `docs/estado/datos.toml` by `tools/estado/generar.py` (and automatically on push to `main`).
+
 | Milestone | Status |
 |---|:---:|
 | Extracting both layers of the DVD-9 | ✅ |
@@ -79,6 +83,7 @@ asks for a DualShock 2 because the controller (SIO2) is not emulated yet. See
 │   ├── funcmap.csv               # Function map (name, start, end, size)
 │   └── recomp.template.toml      # PS2Recomp configuration (@ELF@, @MAP@, @OUT@)
 ├── docs/                         # Technical documentation (Spanish)
+│   └── estado/                   # Status map data and generated SVG/tables
 ├── game/                         # YOUR SCUS_973.99 goes here (ignored by git)
 ├── patches/
 │   └── ps2recomp-runtime.patch   # Changes on top of PS2Recomp @ c5a9d02
@@ -93,7 +98,8 @@ asks for a DualShock 2 because the controller (SIO2) is not emulated yet. See
 ├── src/
 │   └── gow_overrides.cpp         # Game-specific overrides
 └── tools/
-    └── extraer_capa2.ps1         # Extracts layer 1 of a PS2 DVD-9 ISO
+    ├── extraer_capa2.ps1         # Extracts layer 1 of a PS2 DVD-9 ISO
+    └── estado/generar.py         # Status map generator
 ```
 
 > Script and folder names are in Spanish, the project's original language.
