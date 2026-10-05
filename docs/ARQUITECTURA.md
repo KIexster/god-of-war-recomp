@@ -57,10 +57,16 @@ Se registran con `PS2_REGISTER_GAME_OVERRIDE` para el ELF `SCUS_973.99` (entry `
 
 `.github/workflows/pruebas.yml` se ejecuta en cada push a `main` y en cada PR, sin necesitar el juego:
 
-- **Pruebas de `src/`**: compila y ejecuta `tests/pad2_packet_test.cpp` con GCC.
+- **Comprobaciones rápidas** (segundos):
+  - `tools/ci/validar_config.py` valida `config/funcmap.csv` (orden, solapes, tamaños, nombres) y
+    `config/recomp.template.toml` (marcadores `@ELF@/@MAP@/@OUT@`, formato `nombre@0xDIRECCION`, direcciones
+    dentro de alguna función). Los stubs que no empiezan una función y las direcciones repetidas son avisos.
+  - `tools/ci/analizar_ps1.ps1` analiza sintácticamente todos los `.ps1` con el parser de PowerShell.
+  - Compila y ejecuta `tests/pad2_packet_test.cpp` con GCC.
 - **Parches y suite del runtime**: descarga PS2Recomp en el commit de `scripts/common.ps1`, aplica los
   parches en el orden de `compilar.ps1` (`tools/ci/parches.py` los lee de ahí y falla si algún
-  `patches/*.patch` no se aplica), compila `ps2x_tests` en Linux y ejecuta la suite. También compila
+  `patches/*.patch` no se aplica), comprueba que cada stub de `recomp.template.toml` tiene handler en
+  `ps2_call_list.h` (`validar_config.py --runtime`), compila `ps2x_tests` en Linux y ejecuta la suite. También compila
   `src/*.cpp` contra las cabeceras del runtime ya parcheado (declarando las `sub_*` que usan), así un override
   que use una función del runtime que ningún parche define falla aquí y no solo en Windows.
   `tools/ci/comprobar_pruebas.py` solo falla por pruebas que no estén en `tests/fallos_conocidos.txt`
