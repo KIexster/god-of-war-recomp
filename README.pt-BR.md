@@ -11,6 +11,7 @@
 ![Build](https://img.shields.io/badge/build-CMake%20%2B%20Ninja-064F8C?logo=cmake&logoColor=white)
 ![Baseado em](https://img.shields.io/badge/baseado%20em-PS2Recomp-8A2BE2)
 ![Status](https://img.shields.io/badge/status-experimental-orange)
+[![Testes](https://github.com/KIexster/god-of-war-recomp/actions/workflows/pruebas.yml/badge.svg)](https://github.com/KIexster/god-of-war-recomp/actions/workflows/pruebas.yml)
 
 </div>
 
@@ -82,6 +83,8 @@ a imagem fica preta; ainda não foi verificada uma partida jogável. Veja [contr
 
 ```
 .
+├── .github/workflows/            # CI: testes (pruebas.yml) e mapa de status (estado.yml)
+├── AGENTS.md                     # Convenções do projeto para colaboradores e agentes
 ├── config/
 │   ├── funcmap.csv               # Mapa de funções (nome, início, fim, tamanho)
 │   └── recomp.template.toml      # Configuração do PS2Recomp (@ELF@, @MAP@, @OUT@)
@@ -89,18 +92,23 @@ a imagem fica preta; ainda não foi verificada uma partida jogável. Veja [contr
 │   └── estado/                   # Dados do mapa de status e SVG/tabelas gerados
 ├── game/                         # O SEU SCUS_973.99 vai aqui (ignorado pelo git)
 ├── patches/
-│   └── ps2recomp-runtime.patch   # Alterações sobre o PS2Recomp @ c5a9d02
+│   └── ps2recomp-*.patch         # Alterações sobre o PS2Recomp @ c5a9d02, aplicadas em ordem
 ├── scripts/
 │   ├── 1_instalar_herramientas.cmd  # Instala as ferramentas
 │   ├── 2_compilar.cmd               # Pipeline completo de compilação
 │   ├── 2_recompilar_rapido.cmd      # Recompila só src/gow_overrides.cpp (~1 min)
 │   ├── 3_ejecutar.cmd               # Executa por 60 s e guarda os logs
 │   ├── 3_ejecutar_manual.cmd        # Executa sem limite de tempo
+│   ├── probar_menu.ps1              # Teste do menu com capturas do GS
+│   ├── probar_pad2.cmd              # Compila e executa o teste de pacotes da libpad2
 │   ├── monitor.cmd                  # Monitora CPU/RAM durante a compilação
 │   └── *.ps1                        # Lógica dos scripts
 ├── src/
-│   └── gow_overrides.cpp         # Overrides específicos do jogo
+│   ├── gow_overrides.cpp         # Overrides específicos do jogo
+│   └── gow_pad2_packet.h         # Formato do pacote da libpad2 (testado)
+├── tests/                        # Testes independentes do jogo e falhas conhecidas da suíte
 └── tools/
+    ├── ci/                       # Auxiliares da CI (ordem dos patches, config, testes)
     ├── extraer_capa2.ps1         # Extrai a camada 1 de uma ISO DVD-9 de PS2
     └── estado/generar.py         # Gerador do mapa de status
 ```
@@ -146,7 +154,7 @@ scripts\2_compilar.cmd
 ```
 
 O script clona o PS2Recomp em `<unidade>:\gowport` (um caminho curto para evitar o limite de 260
-caracteres; configurável com `GOW_WORK`), fixa o commit `c5a9d02`, aplica o patch, gera o código C++ e
+caracteres; configurável com `GOW_WORK`), fixa o commit `c5a9d02`, aplica os patches de `patches/`, gera o código C++ e
 compila o `ps2EntryRunner.exe`. O log fica em `logs\2_compilar.log`.
 
 **4. Execute:**
@@ -166,7 +174,7 @@ flowchart LR
     B --> D[~6.400 arquivos C++]
     D --> E[MSVC + Ninja]
     O[gow_overrides.cpp] --> E
-    P[Runtime do PS2Recomp<br/>+ ps2recomp-runtime.patch] --> E
+    P["Runtime do PS2Recomp<br/>+ patches/*.patch"] --> E
     E --> F[ps2EntryRunner.exe]
     I[Módulos IRX originais] --> G[Emulador do IOP<br/>R3000A]
     ISO[God of War.iso] --> G
@@ -179,7 +187,9 @@ Mais detalhes em [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) (em espanhol).
 
 A documentação técnica está atualmente em espanhol:
 
-- [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) — pipeline, overrides e patch do runtime
+- [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) — pipeline, overrides, patches do runtime e integração contínua
+- [`docs/CONTROLES.md`](docs/CONTROLES.md) — controles e testes do controle e do menu
+- [`AGENTS.md`](AGENTS.md) — convenções do projeto para colaboradores e agentes
 - [`docs/ESTADO.md`](docs/ESTADO.md) — status atual, registro da investigação, problemas conhecidos e próximos passos
 
 ## Créditos e licença

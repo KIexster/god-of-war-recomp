@@ -11,6 +11,7 @@
 ![Build](https://img.shields.io/badge/build-CMake%20%2B%20Ninja-064F8C?logo=cmake&logoColor=white)
 ![Based on](https://img.shields.io/badge/based%20on-PS2Recomp-8A2BE2)
 ![Status](https://img.shields.io/badge/status-experimental-orange)
+[![Tests](https://github.com/KIexster/god-of-war-recomp/actions/workflows/pruebas.yml/badge.svg)](https://github.com/KIexster/god-of-war-recomp/actions/workflows/pruebas.yml)
 
 </div>
 
@@ -82,6 +83,8 @@ remains black; playable gameplay has not been verified. See [controls and tests]
 
 ```
 .
+├── .github/workflows/            # CI: tests (pruebas.yml) and status map (estado.yml)
+├── AGENTS.md                     # Project conventions for contributors and agents
 ├── config/
 │   ├── funcmap.csv               # Function map (name, start, end, size)
 │   └── recomp.template.toml      # PS2Recomp configuration (@ELF@, @MAP@, @OUT@)
@@ -89,18 +92,23 @@ remains black; playable gameplay has not been verified. See [controls and tests]
 │   └── estado/                   # Status map data and generated SVG/tables
 ├── game/                         # YOUR SCUS_973.99 goes here (ignored by git)
 ├── patches/
-│   └── ps2recomp-runtime.patch   # Changes on top of PS2Recomp @ c5a9d02
+│   └── ps2recomp-*.patch         # Changes on top of PS2Recomp @ c5a9d02, applied in order
 ├── scripts/
 │   ├── 1_instalar_herramientas.cmd  # Install the tools
 │   ├── 2_compilar.cmd               # Full build pipeline
 │   ├── 2_recompilar_rapido.cmd      # Rebuild only src/gow_overrides.cpp (~1 min)
 │   ├── 3_ejecutar.cmd               # Run for 60 s and keep the logs
 │   ├── 3_ejecutar_manual.cmd        # Run with no time limit
+│   ├── probar_menu.ps1              # Menu smoke test with GS frame captures
+│   ├── probar_pad2.cmd              # Builds and runs the libpad2 packet test
 │   ├── monitor.cmd                  # Monitor CPU/RAM while building
 │   └── *.ps1                        # Script logic
 ├── src/
-│   └── gow_overrides.cpp         # Game-specific overrides
+│   ├── gow_overrides.cpp         # Game-specific overrides
+│   └── gow_pad2_packet.h         # libpad2 packet format (tested)
+├── tests/                        # Game-independent tests and known runtime-suite failures
 └── tools/
+    ├── ci/                       # CI helpers (patch order, config/test checks)
     ├── extraer_capa2.ps1         # Extracts layer 1 of a PS2 DVD-9 ISO
     └── estado/generar.py         # Status map generator
 ```
@@ -146,7 +154,7 @@ scripts\2_compilar.cmd
 ```
 
 The script clones PS2Recomp into `<drive>:\gowport` (a short path to avoid the 260-character limit;
-configurable with `GOW_WORK`), pins commit `c5a9d02`, applies the patch, generates the C++ code and builds
+configurable with `GOW_WORK`), pins commit `c5a9d02`, applies the patches in `patches/`, generates the C++ code and builds
 `ps2EntryRunner.exe`. The log is written to `logs\2_compilar.log`.
 
 **4. Run:**
@@ -166,7 +174,7 @@ flowchart LR
     B --> D[~6,400 C++ files]
     D --> E[MSVC + Ninja]
     O[gow_overrides.cpp] --> E
-    P[PS2Recomp runtime<br/>+ ps2recomp-runtime.patch] --> E
+    P["PS2Recomp runtime<br/>+ patches/*.patch"] --> E
     E --> F[ps2EntryRunner.exe]
     I[Original IRX modules] --> G[IOP emulator<br/>R3000A]
     ISO[God of War.iso] --> G
@@ -179,7 +187,9 @@ More details in [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md).
 
 The technical documentation is currently written in Spanish:
 
-- [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) — pipeline, overrides and runtime patch
+- [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) — pipeline, overrides, runtime patches and CI
+- [`docs/CONTROLES.md`](docs/CONTROLES.md) — controls and menu/input tests
+- [`AGENTS.md`](AGENTS.md) — project conventions for contributors and coding agents
 - [`docs/ESTADO.md`](docs/ESTADO.md) — current status, investigation log, known issues and next steps
 
 ## Credits and license
