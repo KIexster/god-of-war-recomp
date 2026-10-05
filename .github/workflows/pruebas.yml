@@ -1,0 +1,86 @@
+# Comprobaciones que no necesitan el juego: pruebas de src/, parches sobre PS2Recomp y suite del runtime.
+name: Pruebas
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pruebas-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  overrides:
+    name: Pruebas de src/ (libpad2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compilar y ejecutar tests/pad2_packet_test.cpp
+        run: |
+          g++ -std=c++20 -Wall -Wextra -Werror tests/pad2_packet_test.cpp -o pad2_packet_test
+          ./pad2_packet_test
+
+  runtime:
+    name: Parches y suite del runtime (PS2Recomp)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: gow
+
+      # El commit fijado vive en scripts/common.ps1, igual que en la compilacion de Windows
+      - name: Leer el commit fijado de PS2Recomp
+        id: ps2recomp
+        run: |
+          commit=$(grep -oP "PS2RecompCommit\s*=\s*'\K[0-9a-f]{40}" gow/scripts/common.ps1)
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "PS2Recomp @ $commit"
+
+      - name: Descargar PS2Recomp
+        run: |
+          git init -q PS2Recomp
+          git -C PS2Recomp fetch -q --depth 1 https://github.com/ran-j/PS2Recomp.git ${{ steps.ps2recomp.outputs.commit }}
+          git -C PS2Recomp checkout -q FETCH_HEAD
+
+      # Mismo orden y opciones que scripts/compilar.ps1
+      - name: Aplicar los parches
+        working-directory: PS2Recomp
+        run: |
+          for p in runtime checkpoint xgkick; do
+            echo "::group::ps2recomp-$p.patch"
+            git apply --ignore-whitespace --verbose "../gow/patches/ps2recomp-$p.patch"
+            echo "::endgroup::"
+          done
+
+      - name: Instalar dependencias
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ninja-build libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
+            libgl1-mesa-dev libavcodec-dev libavformat-dev libavutil-dev libswresample-dev libswscale-dev
+
+      # -march=x86-64-v2: el runtime usa intrinsecos SSE4.1 que GCC solo acepta con ese objetivo
+      - name: Compilar ps2x_tests
+        working-directory: PS2Recomp
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPS2X_BUILD_STUDIO=OFF \
+            -DCMAKE_C_FLAGS=-march=x86-64-v2 -DCMAKE_CXX_FLAGS=-march=x86-64-v2
+          ninja -C build ps2x_tests
+
+      - name: Ejecutar la suite
+        working-directory: PS2Recomp
+        run: |
+          set +e
+          timeout 1200 ./build/ps2xTest/ps2x_tests 2> ../ps2x_tests.err | python3 ../gow/tools/ci/comprobar_pruebas.py ../gow/tests/fallos_conocidos.txt
+          estado=${PIPESTATUS[1]}
+          if [ "$estado" -ne 0 ]; then
+            echo "::group::stderr de la suite (ultimas 200 lineas)"
+            tail -n 200 ../ps2x_tests.err
+            echo "::endgroup::"
+          fi
+          exit "$estado"

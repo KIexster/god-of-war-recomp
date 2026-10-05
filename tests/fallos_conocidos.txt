@@ -1,0 +1,4 @@
+# Pruebas de ps2x_tests (PS2Recomp + patches/) que ya fallaban; formato "suite :: prueba".
+# tools/ci/comprobar_pruebas.py no falla por ellas, pero si por cualquier otra. Quita una linea cuando se arregle.
+PS2RuntimeKernel :: setup heap and allocator primitives track end-of-heap
+PS2SifDma :: IOP heap DMA uses private backing instead of aliasing EE RDRAM
