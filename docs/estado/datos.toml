@@ -46,7 +46,7 @@ nota = { es = "Lee la ISO original", en = "Reads the original ISO", pt = "Lê a 
 nombre = "libdbc"
 inicio = 0x0027ACA8
 estado = "pendiente"
-nota = { es = "SIO2 sin emular", en = "SIO2 not emulated", pt = "SIO2 não emulado" }
+nota = { es = "El SIO2 está emulado, pero los mandos se ven desconectados en él", en = "SIO2 is emulated, but controllers read as disconnected on it", pt = "O SIO2 é emulado, mas os controles aparecem desconectados nele" }
 
 [[librerias.grupo]]
 nombre = "libpad2"
@@ -63,8 +63,8 @@ nota = { es = "Sin vibración: el HLE no anuncia actuadores", en = "No rumble: t
 [[librerias.grupo]]
 nombre = "libmc2"
 inicio = 0x0027C100
-estado = "pendiente"
-nota = { es = "Memory card: SIO2 sin emular", en = "Memory card: SIO2 not emulated", pt = "Memory card: SIO2 não emulado" }
+estado = "parcial"
+nota = { es = "SIO2 y tarjeta emulados (Mcd001.ps2), sin verificar con el juego", en = "SIO2 and card emulated (Mcd001.ps2), not verified in-game yet", pt = "SIO2 e cartão emulados (Mcd001.ps2), ainda não verificados no jogo" }
 
 [[librerias.grupo]]
 nombre = "libscf"
@@ -241,10 +241,11 @@ nombre = "IOP"
   nombre = { es = "Mando DualShock 2", en = "DualShock 2 controller", pt = "Controle DualShock 2" }
   estado = "parcial"
   peso = 2
-  nota = { es = "libpad2 por HLE (primer puerto); el bus SIO2 sigue sin emular", en = "libpad2 via HLE (first port); the SIO2 bus is still not emulated", pt = "libpad2 por HLE (primeira porta); o barramento SIO2 ainda não é emulado" }
+  nota = { es = "libpad2 por HLE (primer puerto); en el SIO2 emulado los mandos se ven desconectados", en = "libpad2 via HLE (first port); controllers read as disconnected on the emulated SIO2", pt = "libpad2 por HLE (primeira porta); no SIO2 emulado os controles aparecem desconectados" }
 
   [[hardware.grupo.componente]]
   corto = "MC"
   nombre = { es = "SIO2: memory card", en = "SIO2: memory card", pt = "SIO2: memory card" }
-  estado = "pendiente"
+  estado = "parcial"
   peso = 2
+  nota = { es = "SIO2 y protocolo de la tarjeta emulados; archivo Mcd001.ps2 compatible con PCSX2; sin verificar con el juego", en = "SIO2 and card protocol emulated; PCSX2-compatible Mcd001.ps2 file; not verified in-game yet", pt = "SIO2 e protocolo do cartão emulados; arquivo Mcd001.ps2 compatível com o PCSX2; ainda não verificado no jogo" }

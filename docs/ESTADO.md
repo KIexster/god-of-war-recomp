@@ -196,8 +196,8 @@ siguen en el historial de git por si hiciera falta recuperarlos.
 |---|---|
 | Texto con letras de menos | algunas fuentes/texturas se dibujan incompletas (pantalla del mando, menú) |
 | Imagen de partida | se alcanza el estado 11 con los FMV omitidos, pero el framebuffer queda negro |
-| Mando | libpad2 funciona por HLE para el primer puerto; presiones 0/255 y sin vibración. SIO2 sigue pendiente |
-| Memory card | `MC2_D.IRX` corre en el IOP, pero el bus SIO2 no está emulado |
+| Mando | libpad2 funciona por HLE para el primer puerto; presiones 0/255 y sin vibración. En el SIO2 emulado los puertos de mando se ven vacíos |
+| Memory card sin verificar | el SIO2 y la tarjeta están emulados (`ps2recomp-sio2.patch`, archivo `Mcd001.ps2`), pero falta probarlo con el juego |
 | Audio sin verificar | el SPU2 emulado ya sale por el audio del PC (`ps2recomp-spu2-output.patch`), pero falta probarlo con el juego; sin reverb ni ADMA |
 | Sin vídeo FMV | `sceMpeg*` / `sceIpu*` son stubs |
 | Dependencias de ninja | Con MSVC en español no se registran las dependencias `/showIncludes`: `2_recompilar_rapido.cmd` toca el archivo unity de los overrides y `compilar.ps1` borra los objetos unity tras regenerar (los cambios en cabeceras del runtime requieren tocar los `.cpp` que las incluyen) |
@@ -243,7 +243,22 @@ siguen en el historial de git por si hiciera falta recuperarlos.
    regresión lo cubren (sin el parche la suite se cuelga en la primera). **Falta comprobarlo con el
    juego:** ejecutar sin `GOW_SKIP_FMV` y buscar en `ejecutar_err.log` las líneas
    `[MPEG:AddCallback] ... type=1` (el juego registra el callback) y si la espera desaparece.
-3. Memory card (SIO2 / `MC2_D.IRX`).
+3. Memory card (SIO2 / `MC2_D.IRX`). **`ps2recomp-sio2.patch`:** antes los registros del SIO2
+   (0x1F808200-0x1F8082FF) eran simples latches, `dmacman` no hacía nada y no había interrupción 17, así que
+   `sio2man` esperaba para siempre cada transferencia. Ahora el IOP emula el SIO2: cola de comandos (SEND3),
+   FIFO de entrada y salida, DMA 11/12 (`sceSetSliceDMA`/`sceStartDMA` de `dmacman` para esos dos canales),
+   `RECV1-3`, `ISTAT` e IRQ 17 al poner `CTRL` bit 0. Los comandos de mando y multitap responden como puerto
+   vacío (libpad2 sigue por HLE en el EE). La memory card implementa el protocolo de PS2 de PCSX2 (sondeo,
+   páginas de 512 + 16 bytes, borrado de bloques de 16 páginas, lectura/escritura, terminador, especificaciones
+   y los pasos de autenticación sin cifrado); `SecrAuthCard` de secrman devuelve éxito. Las páginas se guardan
+   en bruto en `Mcd001.ps2` junto al ELF, el mismo formato de 8 MB que usa PCSX2 (se pueden intercambiar
+   partidas). Si el archivo no existe, la tarjeta empieza sin formatear y se crea en la primera escritura.
+   Variables: `GOW_MC0=<ruta>` (otra tarjeta; `GOW_MC0=0` deja el puerto vacío), `GOW_MC1=<ruta>` (segundo
+   puerto, vacío por defecto), `GOW_SIO2_DIAG=1` (registra cada comando de tarjeta como `[SIO2] mc0 cmd=0x..`)
+   y `GOW_SIO2=0` (vuelve al comportamiento anterior). El protocolo se probó contra `mcman` de ps2sdk; God of
+   War usa `MC2_D.IRX` de Sony, que no se ha podido revisar. **Falta comprobarlo con el juego:** si al guardar o
+   al arrancar aparece el aviso de tarjeta sin formatear, si el formateo y el guardado terminan, y si
+   `Mcd001.ps2` se puede abrir en PCSX2.
 4. Audio sobre 989snd / SPU2. **Fase 1 (`ps2recomp-spu2.patch`):** el IOP emula el SPU2: 2 MB de RAM de
    sonido, registros de 16 bits de los dos núcleos, puerto de datos manual, DMA de los canales 4 y 7 que ahora
    copia los datos (antes solo marcaba la transferencia como hecha; el bit `STATX` 0x80 y la interrupción

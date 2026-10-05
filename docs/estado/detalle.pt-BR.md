@@ -13,10 +13,10 @@ Gerado por `tools/estado/generar.py` a partir de `docs/estado/datos.toml` e `con
 | `libgraph` | 7 | ✅ Funciona |  |
 | `libdma` | 8 | ✅ Funciona |  |
 | `libcdvd` | 10 | ✅ Funciona | Lê a ISO original |
-| `libdbc` | 11 | ⏳ Pendente | SIO2 não emulado |
+| `libdbc` | 11 | ⏳ Pendente | O SIO2 é emulado, mas os controles aparecem desconectados nele |
 | `libpad2` | 13 | 🔧 Parcial | HLE da primeira porta (teclado ou gamepad); pressões 0/255 |
 | `libvib` | 2 | ⏳ Pendente | Sem vibração: o HLE não anuncia atuadores |
-| `libmc2` | 90 | ⏳ Pendente | Memory card: SIO2 não emulado |
+| `libmc2` | 90 | 🔧 Parcial | SIO2 e cartão emulados (Mcd001.ps2), ainda não verificados no jogo |
 | `libscf` | 14 | ✅ Funciona |  |
 | `libgcc` | 32 | ✅ Funciona |  |
 | `C++ EH` | 34 | ✅ Funciona |  |
@@ -47,7 +47,7 @@ Gerado por `tools/estado/generar.py` a partir de `docs/estado/datos.toml` e `con
 | IOP | Módulos IRX originais | 2 | ✅ Funciona |  |
 | IOP | SIF: RPC e DMA EE ↔ IOP | 2 | ✅ Funciona |  |
 | IOP | CDVD: leitura da ISO original | 2 | ✅ Funciona |  |
-| IOP | Controle DualShock 2 | 2 | 🔧 Parcial | libpad2 por HLE (primeira porta); o barramento SIO2 ainda não é emulado |
-| IOP | SIO2: memory card | 2 | ⏳ Pendente |  |
+| IOP | Controle DualShock 2 | 2 | 🔧 Parcial | libpad2 por HLE (primeira porta); no SIO2 emulado os controles aparecem desconectados |
+| IOP | SIO2: memory card | 2 | 🔧 Parcial | SIO2 e protocolo do cartão emulados; arquivo Mcd001.ps2 compatível com o PCSX2; ainda não verificado no jogo |
 
 * Funções das bibliotecas estáticas da Sony ligadas em SCUS_973.99 (config/funcmap.csv). Hardware: ponderado por componente.
