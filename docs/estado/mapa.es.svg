@@ -736,7 +736,7 @@
 <rect class="parcial" x="461.5" y="258.6" width="110.3" height="44.1"><title>Mando DualShock 2 — libpad2 por HLE (primer puerto); el bus SIO2 sigue sin emular</title></rect>
 <rect x="461.5" y="258.6" width="110.3" height="44.1" fill="url(#rayas)" pointer-events="none"/>
 <text class="badge-v-oscuro" x="516.6" y="284.6" font-size="11" text-anchor="middle" pointer-events="none">Pad</text>
-<rect class="pendiente" x="461.5" y="303.8" width="110.3" height="66.7"><title>SPU2: salida de audio — 989snd corre, pero no hay salida de SPU2</title></rect>
+<rect class="pendiente" x="461.5" y="303.8" width="110.3" height="66.7"><title>SPU2: salida de audio — SPU2 emulado (RAM, DMA, voces ADPCM con ADSR, mezcla e IRQ), pero aún sin salida al PC</title></rect>
 <text class="txt-pendiente" x="516.6" y="341" font-size="11" text-anchor="middle" pointer-events="none">SPU2</text>
 <rect class="pendiente" x="572.8" y="258.6" width="43.5" height="111.9"><title>SIO2: memory card</title></rect>
 <text class="txt-pendiente" x="594.5" y="318.4" font-size="11" text-anchor="middle" pointer-events="none">MC</text>
