@@ -24,7 +24,7 @@ nota = { es = "Vídeo FMV: sceMpeg* son stubs", en = "FMV video: sceMpeg* are st
 nombre = "libipu"
 inicio = 0x002792E8
 estado = "pendiente"
-nota = { es = "Vídeo FMV: sceIpu* son stubs", en = "FMV video: sceIpu* are stubs", pt = "Vídeo FMV: sceIpu* são stubs" }
+nota = { es = "sceIpuInit corregido (gowIpuInit); el FMV aún no se decodifica", en = "sceIpuInit fixed (gowIpuInit); FMV is not decoded yet", pt = "sceIpuInit corrigido (gowIpuInit); o FMV ainda não é decodificado" }
 
 [[librerias.grupo]]
 nombre = "libgraph"
@@ -51,14 +51,14 @@ nota = { es = "SIO2 sin emular", en = "SIO2 not emulated", pt = "SIO2 não emula
 [[librerias.grupo]]
 nombre = "libpad2"
 inicio = 0x0027B7E8
-estado = "pendiente"
-nota = { es = "Mando: SIO2 sin emular", en = "Controller: SIO2 not emulated", pt = "Controle: SIO2 não emulado" }
+estado = "parcial"
+nota = { es = "HLE del primer puerto (teclado o gamepad); presiones 0/255", en = "HLE for the first port (keyboard or gamepad); pressures 0/255", pt = "HLE da primeira porta (teclado ou gamepad); pressões 0/255" }
 
 [[librerias.grupo]]
 nombre = "libvib"
 inicio = 0x0027BF90
 estado = "pendiente"
-nota = { es = "Vibración: SIO2 sin emular", en = "Vibration: SIO2 not emulated", pt = "Vibração: SIO2 não emulado" }
+nota = { es = "Sin vibración: el HLE no anuncia actuadores", en = "No rumble: the HLE reports no actuators", pt = "Sem vibração: o HLE não anuncia atuadores" }
 
 [[librerias.grupo]]
 nombre = "libmc2"
@@ -180,7 +180,7 @@ nombre = "GS / VU"
   nombre = { es = "VIF1 y VU1", en = "VIF1 and VU1", pt = "VIF1 e VU1" }
   estado = "parcial"
   peso = 3
-  nota = { es = "Sin verificar más allá de las primeras pantallas", en = "Not verified beyond the first screens", pt = "Não verificado além das primeiras telas" }
+  nota = { es = "XGKICK rechaza paquetes: la imagen de partida queda negra", en = "XGKICK rejects packets: the gameplay framebuffer stays black", pt = "XGKICK rejeita pacotes: a imagem da partida fica preta" }
 
   [[hardware.grupo.componente]]
   corto = "Tex/CLUT"
@@ -200,6 +200,7 @@ nombre = "GS / VU"
   nombre = { es = "IPU: vídeo FMV", en = "IPU: FMV video", pt = "IPU: vídeo FMV" }
   estado = "pendiente"
   peso = 2
+  nota = { es = "Se alcanza la carga del FMV, pero se queda esperando a MPEG", en = "FMV loading is reached, but it waits on MPEG", pt = "O carregamento do FMV é alcançado, mas fica esperando o MPEG" }
 
 [[hardware.grupo]]
 nombre = "IOP"
@@ -237,9 +238,10 @@ nombre = "IOP"
 
   [[hardware.grupo.componente]]
   corto = "Pad"
-  nombre = { es = "SIO2: mando DualShock 2", en = "SIO2: DualShock 2 controller", pt = "SIO2: controle DualShock 2" }
-  estado = "pendiente"
+  nombre = { es = "Mando DualShock 2", en = "DualShock 2 controller", pt = "Controle DualShock 2" }
+  estado = "parcial"
   peso = 2
+  nota = { es = "libpad2 por HLE (primer puerto); el bus SIO2 sigue sin emular", en = "libpad2 via HLE (first port); the SIO2 bus is still not emulated", pt = "libpad2 por HLE (primeira porta); o barramento SIO2 ainda não é emulado" }
 
   [[hardware.grupo.componente]]
   corto = "MC"

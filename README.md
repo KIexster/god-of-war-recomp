@@ -66,13 +66,16 @@ Per-library and per-component breakdown: [`docs/estado/detalle.en.md`](docs/esta
 | Streaming data from the original ISO (`smpd` → `R_PERM.WAD`, game configuration) | ✅ |
 | Main game loop (`sys::GameLoop`) | ✅ |
 | Video output: legal screen and title logo | ✅ |
-| Correct text/font rendering | 🔧 in progress |
-| Audio, controller and memory card | ⏳ pending |
+| Correct text/font and 3D rendering | 🔧 in progress |
+| Controller/keyboard through libpad2 HLE; menu and difficulty selection | ✅ |
+| Starting a playable game | 🔧 in progress |
+| Audio and memory card | ⏳ pending |
 
 The game boots, runs the original IOP modules (including the `smpd` data streamer), streams its data from
 the ISO, enters its main loop and **renders its first screens**: the *"Sony Computer Entertainment America
-presents"* legal screen and the *God of War* title logo. Some text glyphs are still missing, and the game
-asks for a DualShock 2 because the controller (SIO2) is not emulated yet. See
+presents"* legal screen and the *God of War* title logo. Keyboard and controller input now reach the menu
+and difficulty selection. With `GOW_SKIP_FMV=1`, the game reaches its gameplay state, but the framebuffer
+remains black; playable gameplay has not been verified. See [controls and tests](docs/CONTROLES.md) and
 [`docs/ESTADO.md`](docs/ESTADO.md) for the detailed investigation log.
 
 ## Repository layout
