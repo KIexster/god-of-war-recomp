@@ -380,3 +380,42 @@ fijada. La nueva ejecución con SPU2 vuelve a alcanzar el estado 11. La traza de
 13264 confirma que llegan coordenadas finitas al GS, pero incluye vértices con `draw=0`; habrá que
 correlacionarlos con el recorte y con las primitivas que sí se dibujan, sin asumir que todo descarte sea
 un error (pueden estar fuera de la vista).
+
+### Seguimiento de las posiciones antes de la proyección (2026-10-05)
+
+Se integraron las publicaciones de Claude hasta `a401182` (salida SPU2 y SIO2) antes de editar el
+proyecto. Los diagnósticos siguientes se ejecutaron con el binario anterior a esas dos integraciones,
+con la corrección COP1 y SPU2 fase 1, para conservar una referencia comparable.
+
+Tres ejecuciones de 135/140 segundos, con `GOW_SKIP_FMV=1` y `GOW_FAST_BOOT=1`, alcanzaron el estado 11.
+Se instrumentaron temporalmente CLIP/FCGET y la entrada de las transformaciones VU1:
+
+- CLIP recibe coordenadas finitas; en la muestra examinada, los puntos exceden los límites de los
+  planos. FCGET observa las actualizaciones con la latencia esperada. Esto no demuestra que todo el
+  recorte sea correcto, pero no justifica borrar ADC ni forzar el dibujo de los vértices descartados.
+- La prueba de inicializar `VF0.w=1` en hilos EE nuevos se repitió con las raíces COP1 ya corregidas.
+  No cambió el resultado visual; se retiró nuevamente.
+- Un flujo VIF1 completo capturado durante el estado 11 contiene 141 lanzamientos y usa UNPACK S,
+  V2 y V4 en modos 0 y 1. No contiene V3 ni STMOD modo 3. Las diferencias detectadas en esos dos
+  caminos del runtime no explican este flujo y no se modificaron como supuesto arreglo del juego.
+- En un lote de la rutina situada en `0x3230`, las posiciones XYZ cargadas para `ITOF4` ya están en
+  cero. La matriz de cámara es finita y la transformación posterior repite su término de traslación.
+  Se conservó un volcado anterior a la entrada de esa rutina para distinguir los datos de entrada de
+  los paquetes sobrescritos durante su ejecución. Falta identificar la escritura que produce esos
+  ceros; todavía no se atribuyen a un fallo concreto del intérprete ni del juego.
+
+El export de Ghidra de GoW2 Europe Demo proporcionado como referencia sirve para identificar las
+funciones de cámara, viewport y recorte; sus tipos y pseudocódigo se contrastan con las instrucciones
+de GoW1. No se publica el export, el código generado, los flujos VIF ni los volcados de memoria.
+Las trazas temporales se retiraron del runtime. La escena sigue sin ser reconocible: no se acredita
+una partida jugable. El siguiente paso es rastrear el productor del buffer de posiciones de ese lote,
+incluyendo las escrituras anteriores a la proyección, antes de cambiar su consumidor.
+
+Después se aplicaron SPU2 salida y SIO2 al runtime local, se recompilaron las fuentes afectadas y
+se enlazaron el ejecutable y las pruebas. La suite integrada pasa **465/465**. Los **13 parches**
+aplican en orden sobre la revisión fijada; las **41 fuentes** `.cpp`/`.h` comparadas coinciden con
+el runtime local (se excluye el registro de funciones específico de la compilación del juego).
+La ejecución integrada de 150 segundos vuelve a alcanzar el estado 11; la captura presentada
+mantiene el fondo oscuro y no muestra una escena 3D reconocible. La configuración pasa sin errores,
+con los cuatro avisos ya documentados. El merge de Claude `a401182` tiene sus verificaciones de
+GitHub completadas correctamente.
