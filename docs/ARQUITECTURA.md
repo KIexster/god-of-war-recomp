@@ -14,7 +14,8 @@
    con `setPrivateGuestHeap`), `ps2recomp-vu-jump.patch` (JR/JALR leen el destino VI actual),
    `ps2recomp-vu-efu.patch` (coeficiente de la serie de `EATAN`),
    `ps2recomp-mpeg-nodata.patch` (`sceMpegGetPicture` llama al callback `sceMpegCbNodata`),
-   `ps2recomp-spu2.patch` (emulación del SPU2 en el IOP, fase 1) y
+   `ps2recomp-spu2.patch` (emulación del SPU2 en el IOP, fase 1),
+   `ps2recomp-fpu-roots.patch` (operandos de `SQRT.S` y `RSQRT.S` en el recompilador de COP1) y
    `ps2recomp-spu2-output.patch` (salida del SPU2 por el audio del PC)
    con `git apply --ignore-whitespace`. Antes de reaplicarlos borra los archivos que dejó la compilación
    anterior y que algún parche crea (`new file mode`), así un parche nuevo no necesita tocar esa limpieza.

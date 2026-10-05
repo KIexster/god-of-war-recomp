@@ -180,7 +180,7 @@ nombre = "GS / VU"
   nombre = { es = "VIF1 y VU1", en = "VIF1 and VU1", pt = "VIF1 e VU1" }
   estado = "parcial"
   peso = 3
-  nota = { es = "Sin rechazos de XGKICK desde ps2recomp-vu-jump.patch, pero la partida sigue en negro: no se ve escena 3D", en = "No XGKICK rejections since ps2recomp-vu-jump.patch, but gameplay stays black: no 3D scene is visible", pt = "Sem rejeições de XGKICK desde ps2recomp-vu-jump.patch, mas a partida continua preta: nenhuma cena 3D aparece" }
+  nota = { es = "SQRT/RSQRT corregidas: matrices de cámara finitas y triángulos enviados al GS; aún falta la escena 3D completa", en = "SQRT/RSQRT corrected: finite camera matrices and triangles sent to GS; the complete 3D scene is still missing", pt = "SQRT/RSQRT corrigidas: matrizes de câmera finitas e triângulos enviados ao GS; a cena 3D completa ainda não aparece" }
 
   [[hardware.grupo.componente]]
   corto = "Tex/CLUT"

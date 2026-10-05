@@ -318,3 +318,50 @@ de la partida. Fuera de esta revisión quedan las latencias por instrucción y l
   el estado 11 en 70,32 s desde la lectura del mando. Registró 217088 comandos VIF1 sin rechazos
   XGKICK ni instrucciones VU reservadas. Las capturas de 90 y 110 s son negras; los contextos de
   dibujo conservan el fondo oscuro. La partida todavía no es jugable.
+
+## Investigación del renderizado 3D: raíces de COP1 (5 de octubre de 2026)
+
+El diagnóstico local de VU1 en el estado 11 encontró una matriz de transformación que ya llegaba
+con `NaN` en sus componentes XYZ. Después de transformarse, los paquetes de geometría contenían
+coordenadas XYZ nulas y el bit ADC de descarte activado. Los registros del GS mostraban las copias
+entre buffers, pero no acreditaban que los triángulos de la partida se dibujaran correctamente.
+
+Al seguir los cálculos de cámara se identificaron dos errores del recompilador COP1:
+
+- `SQRT.S` del R5900 obtiene el radicando de **FT**, pero se emitía una lectura de FS. Con FS=0,
+  las funciones de cámara calculaban raíces del registro F0 en lugar de sus sumas de cuadrados.
+- `RSQRT.S` calcula **FS / sqrt(FT)**; se emitía **1 / sqrt(FS)**, perdiendo ambos operandos.
+
+`ps2recomp-fpu-roots.patch` corrige la selección de operandos y añade dos regresiones que decodifican
+las instrucciones binarias y comprueban el código emitido, incluyendo destinos que coinciden con
+las fuentes. Ambas fallan antes del arreglo (**443/445**) y pasan después (**445/445**, antes de
+integrar las nuevas pruebas EFU/MPEG). Referencia de contraste:
+[implementación COP1 de PCSX2](https://github.com/PCSX2/pcsx2/blob/master/pcsx2/FPU.cpp#L316-L344).
+Este parche no implementa todavía las particularidades de flags y saturación de la FPU del R5900.
+
+Una prueba separada inicializando `VF0.w=1` en los hilos EE nuevos no eliminó los `NaN` de la matriz.
+Se retiró ese cambio experimental. Los volcados de memoria, microcódigo y capturas usados para
+este diagnóstico permanecen locales en las carpetas ignoradas; no forman parte del parche.
+
+La reconstrucción completa con los diez parches regeneró las 6418 unidades y enlazó correctamente
+el ejecutable. La suite integrada, incluidas las pruebas EFU/MPEG publicadas en paralelo, pasa
+**448/448**. Los diez parches aplican en orden sobre la revisión fijada; configuración y handlers
+sin errores (cuatro avisos conocidos), ocho scripts PowerShell sin errores de sintaxis y prueba
+independiente de libpad2 correcta.
+
+Dos ejecuciones de 140 y 165 segundos con `GOW_SKIP_FMV=1` y `GOW_FAST_BOOT=1` alcanzaron el estado 11.
+La matriz que antes contenía `NaN` ahora contiene valores finitos y aparecen coordenadas de vértices
+distintas de cero. El GS registra miles de primitivas de triángulos durante la partida. La captura
+presentada a los 90 segundos muestra un fondo oscuro, sin una escena reconocible ni Kratos: esto
+**no acredita una partida jugable**. Los buffers de geometría inspeccionados todavía contienen
+vértices con ADC activado; el siguiente paso es correlacionar proyección/recorte VU1 con los paquetes
+que realmente recibe el GS. Las trazas temporales añadidas para inspeccionar las matrices se retiraron
+y se volvió a enlazar el ejecutable; el parche publicado solo cambia los operandos COP1 y sus pruebas.
+
+Antes de publicar se integró mediante merge `ps2recomp-spu2.patch`, publicado por Opus durante estas
+pruebas. Se conservaron ambos parches en `compilar.ps1`; se reconstruyeron el IOP, el ejecutable y las
+pruebas afectadas. La suite pasa **456/456** y los once parches aplican en una copia aislada de la revisión
+fijada. La nueva ejecución con SPU2 vuelve a alcanzar el estado 11. La traza de vértices de la textura
+13264 confirma que llegan coordenadas finitas al GS, pero incluye vértices con `draw=0`; habrá que
+correlacionarlos con el recorte y con las primitivas que sí se dibujan, sin asumir que todo descarte sea
+un error (pueden estar fuera de la vista).
