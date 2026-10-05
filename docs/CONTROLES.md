@@ -86,3 +86,31 @@ varios minutos; no es necesario usarla para completar esa transición.
 los contextos y las primitivas recientes del GS, y al entrar en el estado de partida guarda
 `gow_vu1_code.bin`, `gow_vu1_data.bin` y `gow_render_ram.bin` junto al ejecutable. Esos volcados
 contienen datos del juego y no deben publicarse.
+
+## Prueba aislada de XGKICK
+
+`patches/ps2recomp-xgkick.patch` añade `GOW_XGKICK_IMMEDIATE=1`: copia y envía el paquete GIF
+al emitir XGKICK, antes de que instrucciones posteriores sobrescriban el buffer VU.
+Con la variable ausente o con `0` se conserva la transferencia por ciclos.
+La idea procede del [runtime de SOCOM Unzipped](https://github.com/Scotho/socom-unzipped/blob/main/third_party/ps2recomp/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp#L1074-L1083).
+La adaptación usa el parser acotado y el manejo de memoria circular existentes; no importa
+programas VU nativos ni direcciones específicas de SOCOM.
+
+```powershell
+$env:GOW_SKIP_FMV = '1'
+$env:GOW_FAST_BOOT = '1'
+$env:GOW_RENDER_DIAG = '1'
+$env:GOW_XGKICK_IMMEDIATE = '1'
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\probar_menu.ps1 -Segundos 140
+# Guardar los logs/capturas antes de repetir: la siguiente ejecución los reemplaza.
+$env:GOW_XGKICK_IMMEDIATE = '0'
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\probar_menu.ps1 -Segundos 140
+Remove-Item Env:GOW_XGKICK_IMMEDIATE, Env:GOW_SKIP_FMV, Env:GOW_FAST_BOOT, Env:GOW_RENDER_DIAG
+```
+
+Las ejecuciones de 140 segundos con el mismo ejecutable, opción `1` y `0`, llegan al estado 11.
+Las capturas de partida a los 90 segundos desde la primera lectura del mando son idénticas:
+todos sus píxeles son negros. Persisten errores de paquetes XGKICK y los defectos del menú.
+La opción queda como experimento desactivado por defecto.
+Una regresión sintética comprueba que un SQ posterior sobrescribe la memoria VU, mientras el paquete
+ya enviado conserva sus bytes originales. La prueba existente del modo por ciclos sigue pasando.

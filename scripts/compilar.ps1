@@ -14,6 +14,7 @@ $template  = Join-Path $RepoRoot 'config\recomp.template.toml'
 $funcmap   = Join-Path $RepoRoot 'config\funcmap.csv'
 $patch     = Join-Path $RepoRoot 'patches\ps2recomp-runtime.patch'
 $checkpointPatch = Join-Path $RepoRoot 'patches\ps2recomp-checkpoint.patch'
+$xgkickPatch = Join-Path $RepoRoot 'patches\ps2recomp-xgkick.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -43,6 +44,7 @@ $extra = Join-Path $rec 'ps2xIOP\src\modules\gow_stub_services.cpp'
 if (Test-Path -LiteralPath $extra) { Remove-Item -LiteralPath $extra -Force }
 Run $git @('apply', '--ignore-whitespace', '--verbose', $patch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $checkpointPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $xgkickPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner

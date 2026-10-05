@@ -213,6 +213,10 @@ y llama al original. `GOW_SND_STUB=1` recupera el comportamiento antiguo.
    paquetes correctos al principio y luego datos de vértices interpretados como cabeceras
    (`source=0x2AB0`, segunda cabecera en `offset=0x10`). Revisar preparación/rotación de buffers
    y UNPACK antes de ampliar el búfer del runtime.
+   Se probó por separado la transferencia inmediata usada por SOCOM Unzipped:
+   `GOW_XGKICK_IMMEDIATE=1` alcanza el estado 11, pero no resuelve la imagen negra y siguen
+   los errores XGKICK. El parche queda opcional; la transferencia por ciclos sigue siendo el valor
+   por defecto. Ver la comparación en [CONTROLES.md](CONTROLES.md#prueba-aislada-de-xgkick).
 2. Resolver la espera de MPEG (`sceMpegGetPicture`, `0x0018A3D8`) y corregir el renderizado de
    fuentes/3D. `GOW_SKIP_FMV=1` permite investigar la partida mientras el decodificador está pendiente.
 3. Retirar los diagnósticos que ya no hacen falta (`gowDictFindGuard`, árbol, `memcpy` vigilado).
@@ -234,3 +238,6 @@ y llama al original. `GOW_SND_STUB=1` recupera el comportamiento antiguo.
 - La prueba de 600 segundos omitiendo FMV llegó al estado 11 sin omitir la animación de entrada,
   con `pending=0`; las capturas de partida son negras. `GOW_FAST_BOOT=1` repite la transición
   en aproximadamente 70 s desde la primera lectura del mando.
+- Con el parche experimental XGKICK, la suite completa da **436/438**: pasa la nueva prueba
+  de sobrescritura del buffer y permanecen los mismos dos fallos previos de heap/DMA.
+- `ps2recomp-xgkick.patch` aplica correctamente sobre la revisión fijada del runtime.
