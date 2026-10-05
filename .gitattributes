@@ -1,0 +1,10 @@
+* text=auto
+*.cmd   text eol=crlf
+*.bat   text eol=crlf
+*.ps1   text eol=crlf
+*.patch text eol=lf
+*.cpp   text eol=lf
+*.h     text eol=lf
+*.toml  text eol=lf
+*.csv   text eol=lf
+*.md    text eol=lf

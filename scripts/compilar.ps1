@@ -1,0 +1,90 @@
+# Clona PS2Recomp, recompila SCUS_973.99 a C++ y compila el ejecutable para PC.
+# Lo llama scripts\2_compilar.cmd, que antes carga el entorno de Visual Studio (vcvars64).
+$ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'common.ps1')
+
+$elf  = Get-GowElf
+$work = Get-GowWorkDir
+New-Item -ItemType Directory -Force -Path $work | Out-Null
+$rec  = Join-Path $work 'PS2Recomp'
+$gen  = Join-Path $work 'generado'
+$bld  = Join-Path $rec 'out\build'
+
+$template  = Join-Path $RepoRoot 'config\recomp.template.toml'
+$funcmap   = Join-Path $RepoRoot 'config\funcmap.csv'
+$patch     = Join-Path $RepoRoot 'patches\ps2recomp-runtime.patch'
+$overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
+
+$git = 'git'
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) { $git = Join-Path $env:ProgramFiles 'Git\cmd\git.exe' }
+
+function Run([string]$exe, [string[]]$a) {
+    Write-Host ">> $exe $($a -join ' ')"
+    & $exe @a
+    if ($LASTEXITCODE -ne 0) { throw "Fallo ($LASTEXITCODE): $exe" }
+}
+function Paso([string]$t) { Write-Host ''; Write-Host "==== [$(Get-Date -Format HH:mm:ss)] $t ====" }
+
+Paso 'Herramientas'
+Write-Host "ELF:     $elf"
+Write-Host "Trabajo: $work"
+Run $git @('--version'); Run 'cmake' @('--version'); Run 'ninja' @('--version')
+
+if (-not (Test-Path -LiteralPath (Join-Path $rec '.git'))) {
+    Paso 'Clonando PS2Recomp'
+    Run $git @('clone', $PS2RecompUrl, $rec)
+}
+Push-Location $rec
+Run $git @('fetch', 'origin', $PS2RecompCommit)
+Run $git @('checkout', '-f', $PS2RecompCommit)
+Run $git @('submodule', 'update', '--init', '--recursive')
+$extra = Join-Path $rec 'ps2xIOP\src\modules\gow_stub_services.cpp'
+if (Test-Path -LiteralPath $extra) { Remove-Item -LiteralPath $extra -Force }
+Run $git @('apply', '--ignore-whitespace', '--verbose', $patch)
+Pop-Location
+
+# El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
+$cm = Join-Path $rec 'ps2xRuntime\CMakeLists.txt'
+if (-not (Select-String -LiteralPath $cm -Pattern 'GOW-Port include' -Quiet)) {
+    Add-Content -LiteralPath $cm "`n# GOW-Port include`ntarget_include_directories(ps2EntryRunner PRIVATE `${CMAKE_CURRENT_SOURCE_DIR}/src/runner)"
+}
+
+# Optimizado en paralelo: /O2 en cada archivo, sin optimizacion global del enlazador (/GL, /LTCG)
+$rm = Join-Path $rec 'ps2xRuntime\cmake\ReleaseMode.cmake'
+$t = Get-Content -LiteralPath $rm -Raw
+$t2 = $t -replace '(?m)^\s*/GL\b.*\r?\n', '' -replace '(?m)^\s*/LTCG\b.*\r?\n', '' `
+         -replace 'set_property\(TARGET \$\{TargetName\} PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE\)', '# IPO desactivado (GOW-Port)'
+if ($t2 -ne $t) { Set-Content -LiteralPath $rm -Value $t2 -NoNewline; Write-Host 'ReleaseMode.cmake: LTCG desactivado' }
+
+Paso 'Configurando CMake'
+Run 'cmake' @('-S', $rec, '-B', $bld, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF',
+              '-DPS2X_ENABLE_RUNNER_UNITY_BUILD=ON', '-DPS2X_ENABLE_RUNNER_PCH=ON')
+
+Paso 'Compilando el recompilador'
+Run 'cmake' @('--build', $bld, '--target', 'ps2_recomp')
+
+Paso 'Generando C++ desde SCUS_973.99'
+if (Test-Path $gen) { Remove-Item $gen -Recurse -Force }
+New-Item -ItemType Directory $gen | Out-Null
+$fw = { param($p) $p -replace '\\', '/' }
+(Get-Content -LiteralPath $template -Raw) `
+    -replace '@ELF@', (& $fw $elf) `
+    -replace '@MAP@', (& $fw $funcmap) `
+    -replace '@OUT@', ((& $fw $gen) + '/') |
+    Set-Content -LiteralPath (Join-Path $work 'config.toml') -Encoding ASCII
+$recompExe = Get-ChildItem $bld -Recurse -Filter 'ps2_recomp.exe' | Select-Object -First 1
+Run $recompExe.FullName @((Join-Path $work 'config.toml')) | Select-Object -Last 5
+Write-Host ("Archivos generados: {0}" -f (Get-ChildItem $gen).Count)
+
+Paso 'Copiando codigo generado al runtime'
+$runner = Join-Path $rec 'ps2xRuntime\src\runner'
+Get-ChildItem $runner -File | Remove-Item -Force
+Get-ChildItem -LiteralPath $gen -File | Copy-Item -Destination $runner
+Copy-Item -LiteralPath $overrides -Destination (Join-Path $runner 'gow_overrides.cpp')
+Run 'cmake' @('-S', $rec, '-B', $bld)
+
+Paso 'Compilando el juego optimizado en paralelo'
+Run 'cmake' @('--build', $bld, '--target', 'ps2EntryRunner')
+
+$exe = Get-ChildItem $bld -Recurse -Filter 'ps2EntryRunner.exe' | Select-Object -First 1
+Paso "OK: $($exe.FullName)"

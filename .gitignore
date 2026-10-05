@@ -1,0 +1,40 @@
+# --- Material con copyright: NUNCA subir ---
+*.iso
+*.ISO
+*.bin
+*.img
+*.IMG
+*.pak
+*.PAK
+*.irx
+*.IRX
+*.TOC
+SCUS_*
+SYSTEM.CNF
+game/*
+!game/README.md
+GOW ISO extraida/
+mc0/
+mc1/
+
+# --- Codigo generado y dependencias externas (se regeneran con scripts/2_compilar.cmd) ---
+generado/
+gowport/
+PS2Recomp/
+out/
+build/
+
+# --- Logs y archivos locales ---
+logs/
+*.log
+ps2_log.txt
+imgui.ini
+trozos/
+
+# --- Editores / sistema ---
+.vs/
+.vscode/
+*.user
+Thumbs.db
+desktop.ini
+.DS_Store

@@ -1,0 +1,253 @@
+diff --git a/ps2xIOP/CMakeLists.txt b/ps2xIOP/CMakeLists.txt
+index f8d3e44..c97ddd5 100644
+--- a/ps2xIOP/CMakeLists.txt
++++ b/ps2xIOP/CMakeLists.txt
+@@ -28,6 +28,7 @@ add_library(ps2_iop STATIC
+     src/modules/dbcman.cpp
+     src/modules/libsd.cpp
+     src/modules/mcserv.cpp
++    src/modules/gow_stub_services.cpp
+ )
+ 
+ target_compile_features(ps2_iop PUBLIC cxx_std_20)
+diff --git a/ps2xIOP/src/iop_subsystem.cpp b/ps2xIOP/src/iop_subsystem.cpp
+index b498155..fa4be18 100644
+--- a/ps2xIOP/src/iop_subsystem.cpp
++++ b/ps2xIOP/src/iop_subsystem.cpp
+@@ -23,6 +23,7 @@ namespace ps2x::iop
+             coreServices.emplace_back(detail::createMcservService(host));
+             coreServices.emplace_back(detail::createDbcmanService(host));
+             coreServices.emplace_back(detail::createLibSdService(host));
++            coreServices.emplace_back(detail::createGow989SndService(host));
+             refreshServiceModuleKeys();
+             rebuildRoutes();
+         }
+diff --git a/ps2xIOP/src/module_factories.h b/ps2xIOP/src/module_factories.h
+index f0da295..57f6847 100644
+--- a/ps2xIOP/src/module_factories.h
++++ b/ps2xIOP/src/module_factories.h
+@@ -7,4 +7,5 @@ namespace ps2x::iop::detail
+     std::unique_ptr<IopService> createDbcmanService(IopHost &host);
+     std::unique_ptr<IopService> createLibSdService(IopHost &host);
+     std::unique_ptr<IopService> createMcservService(IopHost &host);
++    std::unique_ptr<IopService> createGow989SndService(IopHost &host);
+ }
+diff --git a/ps2xIOP/src/modules/dbcman.cpp b/ps2xIOP/src/modules/dbcman.cpp
+index c698a34..b040523 100644
+--- a/ps2xIOP/src/modules/dbcman.cpp
++++ b/ps2xIOP/src/modules/dbcman.cpp
+@@ -6,6 +6,8 @@
+ #include <mutex>
+ #include <sstream>
+ #include <string>
++#include <vector>
++#include <algorithm>
+ 
+ namespace ps2x::iop::detail
+ {
+@@ -54,6 +56,30 @@ namespace ps2x::iop::detail
+                 RpcResult result;
+                 if (request.sid != kDbcManSid)
+                 {
++                    // GOW-Port: servidores secundarios de dbcman (puertos/sockets del DualShock).
++                    // Responden con un buffer en cero para que libdbc pueda enlazarse y seguir.
++                    if (request.sid == 0x8000131cu || request.sid == 0x8000131eu || request.sid == 0x8000131fu)
++                    {
++                        result.handled = true;
++                        result.resultAddress = request.receive.address;
++                        if (request.receive.address != 0u && request.receive.size != 0u)
++                        {
++                            std::vector<uint32_t> zeros(std::min<uint32_t>(request.receive.size / 4u, 256u), 0u);
++                            (void)writeRpcWords(m_host, request.receive, zeros);
++                        }
++                        bool shouldLog = false;
++                        {
++                            std::lock_guard<std::mutex> lock(m_mutex);
++                            if (m_unknownRpcLogCount < kMaxUnknownRpcLogs) { ++m_unknownRpcLogCount; shouldLog = true; }
++                        }
++                        if (shouldLog)
++                        {
++                            std::ostringstream message;
++                            message << "[DBCMAN:sub] sid=0x" << std::hex << request.sid << " rpc=0x" << request.function
++                                    << " sendSize=0x" << request.send.size << " recvSize=0x" << request.receive.size;
++                            m_host.log(LogLevel::Info, message.str());
++                        }
++                    }
+                     return result;
+                 }
+ 
+@@ -120,7 +146,7 @@ namespace ps2x::iop::detail
+             }
+ 
+         private:
+-            inline static constexpr std::array<uint32_t, 1> kSids{kDbcManSid};
++            inline static constexpr std::array<uint32_t, 4> kSids{kDbcManSid, 0x8000131cu, 0x8000131eu, 0x8000131fu};
+             inline static constexpr std::array<std::string_view, 3> kModuleAliases{"dbcman", "dbcm", "dbcmserv"};
+ 
+             IopHost &m_host;
+diff --git a/ps2xIOP/src/modules/gow_stub_services.cpp b/ps2xIOP/src/modules/gow_stub_services.cpp
+new file mode 100644
+index 0000000..dd0c0db
+--- /dev/null
++++ b/ps2xIOP/src/modules/gow_stub_services.cpp
+@@ -0,0 +1,88 @@
++// GOW-Port: servicios IOP "mudos" para modulos que God of War carga y que el runtime
++// todavia no simula. Aceptan el enlace RPC y responden con un buffer en cero, para que
++// el juego no se quede esperando. No reproducen sonido ni guardan nada todavia.
++#include "module_factories.h"
++#include "rpc_reply.h"
++
++#include <algorithm>
++#include <array>
++#include <cstdint>
++#include <mutex>
++#include <sstream>
++#include <string>
++#include <vector>
++
++namespace ps2x::iop::detail
++{
++    namespace
++    {
++        template <size_t NSids, size_t NAliases>
++        class SilentService final : public IopService
++        {
++        public:
++            SilentService(IopHost &host, std::string_view name, uint32_t fill,
++                          std::array<uint32_t, NSids> sids,
++                          std::array<std::string_view, NAliases> aliases)
++                : m_host(host), m_name(name), m_fill(fill), m_sids(sids), m_aliases(aliases) {}
++
++            std::string_view name() const override { return m_name; }
++            std::span<const uint32_t> sids() const override { return m_sids; }
++            std::span<const std::string_view> moduleAliases() const override { return m_aliases; }
++            void reset() override { std::lock_guard<std::mutex> l(m_mutex); m_logs = 0; m_calls = 0; }
++
++            RpcResult handleRpc(const RpcRequest &request) override
++            {
++                RpcResult result;
++                result.handled = true;
++                result.resultAddress = request.receive.address;
++                if (request.receive.address != 0u && request.receive.size != 0u)
++                {
++                    std::vector<uint32_t> zeros(std::min<uint32_t>(request.receive.size / 4u, 1024u), 0u);
++                    // 989snd: la primera y la ultima palabra son marcas de "terminado" (-1);
++                    // las del medio son el resultado del comando (0 = OK / handle valido).
++                    if (m_fill != 0u && !zeros.empty()) { zeros.front() = m_fill; zeros.back() = m_fill; }
++                    (void)writeRpcWords(m_host, request.receive, zeros);
++                }
++                bool log = false;
++                {
++                    std::lock_guard<std::mutex> l(m_mutex);
++                    ++m_calls;
++                    if (m_logs < 24u) { ++m_logs; log = true; }
++                }
++                if (log)
++                {
++                    std::ostringstream m;
++                    m << "[" << m_name << ":silent] sid=0x" << std::hex << request.sid
++                      << " rpc=0x" << request.function << " sendSize=0x" << request.send.size
++                      << " recvSize=0x" << request.receive.size;
++                    m_host.log(LogLevel::Info, m.str());
++                }
++                return result;
++            }
++
++            void appendDebugMetrics(std::vector<DebugMetric> &metrics) const override
++            {
++                std::lock_guard<std::mutex> l(m_mutex);
++                metrics.push_back({"calls", m_calls, false});
++            }
++
++        private:
++            IopHost &m_host;
++            std::string_view m_name;
++            uint32_t m_fill;
++            std::array<uint32_t, NSids> m_sids;
++            std::array<std::string_view, NAliases> m_aliases;
++            mutable std::mutex m_mutex;
++            uint32_t m_logs = 0;
++            uint64_t m_calls = 0;
++        };
++    }
++
++    // Motor de sonido 989snd de Sony (989nomid.irx).
++    std::unique_ptr<IopService> createGow989SndService(IopHost &host)
++    {
++        return std::make_unique<SilentService<2, 3>>(host, "989snd", 0xFFFFFFFFu, // el driver marca "comando terminado" escribiendo -1
++            std::array<uint32_t, 2>{0x00123456u, 0x00123457u},
++            std::array<std::string_view, 3>{"989nomid", "989snd", "989err"});
++    }
++}
+diff --git a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+index c5e31c4..e47569f 100644
+--- a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
++++ b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+@@ -1638,8 +1638,10 @@ void EeScheduler::makeRunning(GuestThread &item)
+     renewTimeSlice();
+ }
+ 
++void gowDumpBranchRing(const char *why);
+ void EeScheduler::makeDormant(GuestThread &item)
+ {
++    { static int n = 0; if (item.id == 1 && n++ < 1) gowDumpBranchRing("main thread dormant"); }
+     removeReady(item);
+     removeFromWaitObject(item);
+     item.status = EeThreadStatus::Dormant;
+diff --git a/ps2xRuntime/src/lib/Kernel/Syscalls/System.cpp b/ps2xRuntime/src/lib/Kernel/Syscalls/System.cpp
+index 9614016..6697d48 100644
+--- a/ps2xRuntime/src/lib/Kernel/Syscalls/System.cpp
++++ b/ps2xRuntime/src/lib/Kernel/Syscalls/System.cpp
+@@ -571,7 +571,7 @@ namespace ps2_syscalls
+                           << std::dec << std::endl;
+             });
+ 
+-            setReturnU32(ctx, runtime->guestHeapBase());
++            setReturnU32(ctx, heapBase); // GOW-Port: el juego recibe su propio heap
+             return;
+         }
+ 
+diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
+index 45cb9d2..847f9ee 100644
+--- a/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -1342,6 +1342,19 @@ void PS2Runtime::reportMissingFunction(uint8_t *rdram,
+     }
+ }
+ 
++// GOW-Port branch trace ring
++struct GowBranchRec { uint32_t src, dst, ra, kind; };
++GowBranchRec g_gowRing[256]; std::atomic<uint32_t> g_gowRingPos{0};
++void gowDumpBranchRing(const char *why)
++{
++    uint32_t pos = g_gowRingPos.load();
++    std::fprintf(stderr, "[gow-trace] %s, last branches (oldest first):\n", why);
++    for (uint32_t i = 0; i < 256; ++i) {
++        const GowBranchRec &r = g_gowRing[(pos + i) & 255u];
++        if (r.src == 0 && r.dst == 0) continue;
++        std::fprintf(stderr, "  src=%08x dst=%08x ra=%08x kind=%u\n", r.src, r.dst, r.ra, r.kind);
++    }
++}
+ bool PS2Runtime::dispatchGuestBranch(uint8_t *rdram,
+                                      R5900Context *ctx,
+                                      uint32_t targetPc,
+@@ -1350,6 +1363,8 @@ bool PS2Runtime::dispatchGuestBranch(uint8_t *rdram,
+                                      GuestBranchKind kind,
+                                      const char *debugName)
+ {
++    { uint32_t k = g_gowRingPos.fetch_add(1) & 255u; g_gowRing[k] = {sourcePc, targetPc, ctx ? (uint32_t)_mm_cvtsi128_si32(ctx->r[31]) : 0u, (uint32_t)kind}; }
++
+     ctx->pc = targetPc;
+     const bool isCall = (kind == GuestBranchKind::DirectCall || kind == GuestBranchKind::IndirectCall);
+ 
+@@ -1638,6 +1653,10 @@ uint32_t PS2Runtime::clampGuestHeapLimit(uint32_t guestLimit) const
+ 
+ void PS2Runtime::resetGuestHeapLocked(uint32_t guestBase, uint32_t guestLimit)
+ {
++    // GOW-Port: el heap privado del runtime vive en 0x000A0000-0x000FF000 (memoria libre
++    // bajo el ELF) para no pisar el heap propio del juego, que empieza al final del .bss.
++    guestBase = 0x000A0000u;
++    guestLimit = 0x000FF000u;
+     uint32_t base = alignGuestHeapValue(clampGuestHeapBase(guestBase), kGuestHeapDefaultAlignment);
+     uint32_t limit = clampGuestHeapLimit(guestLimit);
+     if (base == 0u)
