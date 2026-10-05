@@ -53,6 +53,10 @@ Este repositorio contiene todo lo específico de God of War:
 
 ## Estado actual
 
+<a href="docs/estado/detalle.es.md"><img src="docs/estado/mapa.es.svg" alt="Mapa de estado del port: funciones de las librerías del SDK de Sony y componentes del hardware de la PS2, coloreados por estado" width="100%"></a>
+
+Desglose por librería y por componente: [`docs/estado/detalle.es.md`](docs/estado/detalle.es.md). Se regenera a partir de `docs/estado/datos.toml` con `tools/estado/generar.py` (y automáticamente al subir a `main`).
+
 | Hito | Estado |
 |---|:---:|
 | Extracción de ambas capas del DVD-9 | ✅ |
@@ -83,6 +87,7 @@ queda negra; todavía no se ha verificado una partida jugable. Ver [controles y 
 │   ├── funcmap.csv               # Mapa de funciones (nombre, inicio, fin, tamaño)
 │   └── recomp.template.toml      # Configuración de PS2Recomp (@ELF@, @MAP@, @OUT@)
 ├── docs/                         # Documentación técnica
+│   └── estado/                   # Datos del mapa de estado y SVG/tablas generados
 ├── game/                         # Aquí va TU SCUS_973.99 (ignorado por git)
 ├── patches/
 │   └── ps2recomp-runtime.patch   # Cambios sobre PS2Recomp @ c5a9d02
@@ -97,7 +102,8 @@ queda negra; todavía no se ha verificado una partida jugable. Ver [controles y 
 ├── src/
 │   └── gow_overrides.cpp         # Overrides específicos del juego
 └── tools/
-    └── extraer_capa2.ps1         # Extrae la capa 1 de una ISO DVD-9 de PS2
+    ├── extraer_capa2.ps1         # Extrae la capa 1 de una ISO DVD-9 de PS2
+    └── estado/generar.py         # Generador del mapa de estado
 ```
 
 ## Requisitos

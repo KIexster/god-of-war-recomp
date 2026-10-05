@@ -1,0 +1,46 @@
+# Regenera el mapa de estado (docs/estado/) cuando cambian sus datos y sube el resultado.
+name: Mapa de estado
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/estado/datos.toml
+      - config/funcmap.csv
+      - tools/estado/**
+      - .github/workflows/estado.yml
+  pull_request:
+    paths:
+      - docs/estado/**
+      - config/funcmap.csv
+      - tools/estado/**
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  generar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # En una PR solo se avisa si los archivos generados no estan al dia
+      - name: Comprobar
+        if: github.event_name == 'pull_request'
+        run: python tools/estado/generar.py --comprobar
+
+      - name: Generar y subir
+        if: github.event_name != 'pull_request'
+        run: |
+          python tools/estado/generar.py
+          if [ -n "$(git status --porcelain docs/estado)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add docs/estado
+            git commit -m "Actualizar el mapa de estado"
+            git push
+          fi
