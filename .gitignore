@@ -9,6 +9,8 @@
 *.irx
 *.IRX
 *.TOC
+*.wad
+*.WAD
 SCUS_*
 SYSTEM.CNF
 game/*
