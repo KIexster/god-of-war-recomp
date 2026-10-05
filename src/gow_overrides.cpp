@@ -41,10 +41,57 @@ namespace
         ctx->pc = GPR_U32(ctx, 31);
     }
 
-    // Envio de comandos al driver de sonido 989snd (version EE). Mientras no haya sonido real,
-    // cada comando "termina bien" al instante y devuelve 0, sin pasar por el IOP.
-    void gowSnd989SendCommand(uint8_t *, R5900Context *ctx, PS2Runtime *)
+    // Volcado hex + ASCII de memoria del EE para el registro de comandos.
+    void dumpGuestBytes(const uint8_t *rdram, uint32_t addr, uint32_t len)
     {
+        for (uint32_t off = 0; off < len; off += 16u)
+        {
+            char hex[16 * 3 + 1] = {};
+            char asc[17] = {};
+            const uint32_t n = (len - off < 16u) ? (len - off) : 16u;
+            for (uint32_t i = 0; i < n; ++i)
+            {
+                const uint8_t c = rdram[(addr + off + i) & 0x01FFFFFFu];
+                std::snprintf(hex + i * 3, 4, "%02x ", c);
+                asc[i] = (c >= 0x20 && c < 0x7F) ? static_cast<char>(c) : '.';
+            }
+            std::fprintf(stderr, "[gow-snd]     +%03x: %-48s %s\n", off, hex, asc);
+        }
+    }
+
+    // sub_0026BF28(cmd, tamano, datos): envio de comandos al driver de sonido 989snd (version EE).
+    // El original hace sceSifCallRpc(sid 0x123456, rpc = cmd, envio = 0x305640 [tamano bytes],
+    // respuesta = 0x305600 [12 bytes]) y devuelve la palabra 1 de la respuesta.
+    // cmd 0x68 = mensaje para un plugin de 989snd (smpd, el cargador de datos): 'datos' apunta a
+    // {u32 a, u32 b, u32 len, u32 ptr} y se envian los 12 primeros bytes + len bytes copiados de ptr.
+    // Mientras no haya sonido ni smpd, cada comando "termina bien" al instante y devuelve 0, pero
+    // registramos lo que pide el juego para poder descifrar el protocolo.
+    int g_sndCmdCount = 0;
+
+    void gowSnd989SendCommand(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+    {
+        const uint32_t cmd = GPR_U32(ctx, 4);
+        const uint32_t size = GPR_U32(ctx, 5);
+        const uint32_t data = GPR_U32(ctx, 6);
+        if (++g_sndCmdCount <= 300)
+        {
+            if (cmd == 0x68u)
+            {
+                const uint32_t a = readGuest32(rdram, data);
+                const uint32_t b = readGuest32(rdram, data + 4u);
+                const uint32_t len = readGuest32(rdram, data + 8u);
+                const uint32_t ptr = readGuest32(rdram, data + 12u);
+                std::fprintf(stderr, "[gow-snd] #%d cmd=0x68 (plugin) tamano=0x%x a=0x%x b=0x%x len=0x%x ptr=0x%x ra=0x%x\n",
+                             g_sndCmdCount, size, a, b, len, ptr, GPR_U32(ctx, 31));
+                dumpGuestBytes(rdram, ptr, (len < 0x80u) ? len : 0x80u);
+            }
+            else
+            {
+                std::fprintf(stderr, "[gow-snd] #%d cmd=0x%x tamano=0x%x datos=0x%x ra=0x%x\n",
+                             g_sndCmdCount, cmd, size, data, GPR_U32(ctx, 31));
+                dumpGuestBytes(rdram, data, (size < 0x40u) ? size : 0x40u);
+            }
+        }
         SET_GPR_U32(ctx, 2, 0u);
         ctx->pc = GPR_U32(ctx, 31);
     }

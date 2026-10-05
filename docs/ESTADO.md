@@ -43,9 +43,63 @@ HERO_HEAP_SIZE, SLOT_HEAP_SIZE, UPGRADE_HEAP_SIZE
 pila: 0x1BAED8 → 0x1BAC1C → 0x186744 → 0x175AC0   (desde 0x21CA68 ← 0x17A99C ← 0x138DC0 ← main 0x1001C8)
 ```
 
-**Conclusión:** la configuración que define esas variables no se ha cargado, probablemente porque
-viene de un archivo del disco (`GODOFWAR.TOC` / `PART*.PAK`). No aparece en los logs ninguna lectura
-del disco: ni `sceCdSearchFile` ni `sceCdRead`, tampoco con error.
+**Conclusión:** la configuración que define esas variables no se ha cargado.
+
+## Investigación: de dónde sale la configuración
+
+Las variables están en **`R_PERM.WAD`**, el primer archivo de `PART1.PAK` (sector 0, `0x378530` bytes).
+Son registros de tipo `0x18` (constante entera) dentro del grupo `WAD_R_Perm`:
+
+| Variable | Valor |
+|---|---|
+| `HERO_HEAP_SIZE` | `0x1EC800` |
+| `SLOT_HEAP_SIZE` | `0x100000` |
+| `UPGRADE_HEAP_SIZE` | `0x14BC00` |
+
+`GODOFWAR.TOC` es una tabla de entradas de 24 bytes con el formato `nombre[12]`, `u32`, `u32 tamaño`,
+`u32 sector`.
+
+El juego no lee el disco directamente: en su libcdvd no hay `sceCdRead`. Los nombres `.PAK` / `.TOC`
+solo aparecen en **`SMPD_IOP.IRX`** ("smpd file streamer"). Es un módulo del IOP que se registra como
+**plugin de 989snd**: importa `snd989`, tiene `HandleInitialisePlugin` y atiende `FindResource`,
+`ReadFile`, `ReadResource`, `HandleFrameTick`, streaming de VAG/MPEG… Es uno de los módulos que el
+runtime no carga (no tiene proveedor HLE).
+
+Recorrido de la petición de carga (en `sub_001BACC8`, el arranque de la configuración):
+
+```
+sub_00185F28(ctx, "R_Perm", 0x10000210)
+  → sub_0017AD70 → sub_0026CA18 → sub_0026BF28(cmd 0x68, tamaño, &{a0,a1,a2,a3})   ; envío a 989snd
+  → sub_0026B918 → sub_0026C4B8 → sceSifCallRpc(sid 0x123456, rpc 0x4D)            ; lote de comandos
+sub_001BE550 / sub_0017A8B8                                                        ; ¿espera/procesa?
+sub_001BABE8("HERO_HEAP_SIZE", …)                                                  ; lee la variable
+```
+
+### Protocolo con 989snd / smpd (registro del 5 de octubre de 2026)
+
+`sub_0026BF28(cmd, tamaño, datos)` hace `sceSifCallRpc(sid 0x123456, rpc = cmd)`: envía `tamaño`
+bytes desde el búfer `0x305640` y recibe 12 bytes en `0x305600`. Devuelve la palabra 1 de la
+respuesta.
+
+El comando **`0x68`** es un mensaje para un plugin de 989snd. `datos` apunta a
+`{u32 plugin, u32 tipo, u32 len, u32 ptr}` y se envían los 12 primeros bytes más `len` bytes
+copiados de `ptr` (máximo 0x200 en total). Para smpd, `plugin = 0x534D5044` (`'SMPD'`).
+
+Comandos que envía el juego al arrancar (override `gowSnd989SendCommand`, etiqueta `[gow-snd]`):
+
+| # | cmd | Contenido | Interpretación |
+|---|---|---|---|
+| 1 | `0x0` | `{0x30A1C0, 0}` | inicialización de 989snd |
+| 2 | `0x68` SMPD tipo `1` | `{0, 0x4533C0, 0x20, 0x453440, 0x280, 1, 0x1FBF20}` | inicializar smpd: direcciones de búferes del EE (¿estado de 0x20 bytes y cola/resultados de 0x280?) |
+| 3–17 | `0xA` | `{0}` … `{14}` | 15 comandos de 989snd (¿reservar canales/bancos?) |
+| 18 | `0x68` SMPD tipo `0xF` | `"R_Perm"` (16 bytes) + `0x10000210, 0, 1` | **cargar el WAD `R_Perm`** |
+
+smpd escribe los resultados en la memoria del EE con `SIFCopy`, previsiblemente en los búferes que
+recibe en el mensaje de tipo 1.
+
+**Causa raíz:** el override `gowSnd989SendCommand` (`0x26BF28`) responde OK al instante y tira todos
+los comandos, entre ellos el `0x68` que pide cargar `R_Perm`. Y aunque llegaran al IOP, tampoco hay
+nadie que implemente smpd.
 
 **Arreglo provisional** (`gowDictFindGuard` en `src/gow_overrides.cpp`): si `dicc` es NULL,
 `sub_00175890` devuelve 0 ("no encontrado") y vuelca la pila. Así se evita el cuelgue, pero los heaps
@@ -65,9 +119,13 @@ quedan con tamaño 0.
 
 ## Próximos pasos
 
-1. Averiguar de dónde carga el juego la configuración (`HERO_HEAP_SIZE`…): buscar la cadena en
-   `GODOFWAR.TOC` / `PART*.PAK` y localizar quién rellena `nodo+0x4C`.
-2. Comprobar si el juego llega a leer el disco: poner trazas en `sceCdSearchFile` / `sceCdRead` / `sceCdInit`.
-3. Si la configuración se carga bien, revisar si el bucle en `0x0023A978` desaparece.
+1. **HLE de smpd** (el cargador de datos):
+   - ~~Registrar en `gowSnd989SendCommand` los comandos y argumentos que envía el juego.~~ ✅
+   - Descifrar cómo espera el EE el resultado de `SMPD` tipo `0xF`: qué lee de `0x4533C0` /
+     `0x453440`, dónde espera recibir los datos del WAD y cómo los procesa `sub_00185F28` /
+     `sub_0017A8B8`.
+   - Implementarlo leyendo `GODOFWAR.TOC` + `PART*.PAK` del disco extraído.
+2. Con la configuración cargada, quitar la guardia `gowDictFindGuard` y comprobar si el bucle en
+   `0x0023A978` desaparece.
 4. HLE para `mc2_d` (memory card) y `ds2u_d` (DualShock 2).
 5. Audio sobre `989snd`.
