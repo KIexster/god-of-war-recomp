@@ -2,167 +2,182 @@
 
 # God of War — PS2 Static Recompilation
 
-**Port nativo para PC de *God of War* (PS2, NTSC-U `SCUS-97399`) mediante recompilación estática de MIPS R5900 a C++.**
+**English** · [Español](README.es.md) · [Português (Brasil)](README.pt-BR.md)
 
-![Plataforma](https://img.shields.io/badge/plataforma-Windows%20x64-0078D6?logo=windows&logoColor=white)
-![Lenguaje](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white)
+**A native PC port of *God of War* (PS2, NTSC-U `SCUS-97399`) built by statically recompiling MIPS R5900 code to C++.**
+
+![Platform](https://img.shields.io/badge/platform-Windows%20x64-0078D6?logo=windows&logoColor=white)
+![Language](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white)
 ![Build](https://img.shields.io/badge/build-CMake%20%2B%20Ninja-064F8C?logo=cmake&logoColor=white)
-![Basado en](https://img.shields.io/badge/basado%20en-PS2Recomp-8A2BE2)
-![Estado](https://img.shields.io/badge/estado-experimental-orange)
+![Based on](https://img.shields.io/badge/based%20on-PS2Recomp-8A2BE2)
+![Status](https://img.shields.io/badge/status-experimental-orange)
 
 </div>
 
 ---
 
 > [!IMPORTANT]
-> Este repositorio **no contiene ningún archivo del juego** (ISO, ejecutable, módulos IRX ni datos `.PAK`)
-> ni el código C++ generado a partir de él. Necesitas **tu propia copia legal** de God of War para PS2.
+> This repository **does not contain any game files** (ISO, executable, IRX modules or `.PAK` data),
+> nor the C++ code generated from them. You need **your own legal copy** of God of War for the PS2.
 
-## Índice
+## Contents
 
-- [Qué es](#qué-es)
-- [Estado actual](#estado-actual)
-- [Estructura del repositorio](#estructura-del-repositorio)
-- [Requisitos](#requisitos)
-- [Compilar y ejecutar](#compilar-y-ejecutar)
-- [Cómo funciona](#cómo-funciona)
-- [Documentación](#documentación)
-- [Créditos y licencia](#créditos-y-licencia)
+- [What is this?](#what-is-this)
+- [Current status](#current-status)
+- [Repository layout](#repository-layout)
+- [Requirements](#requirements)
+- [Building and running](#building-and-running)
+- [How it works](#how-it-works)
+- [Documentation](#documentation)
+- [Credits and license](#credits-and-license)
 
-## Qué es
+## What is this?
 
-En lugar de emular la PlayStation 2 instrucción por instrucción, este proyecto **traduce el ejecutable
-original del juego (`SCUS_973.99`) a código C++** con [PS2Recomp](https://github.com/ran-j/PS2Recomp),
-y lo compila como un programa nativo de Windows enlazado contra un runtime que reimplementa el hardware
-y el sistema operativo de la PS2 (EE kernel, IOP, GS, DMA, CD/DVD…).
+Instead of emulating the PlayStation 2 one instruction at a time, this project **translates the game's
+original executable (`SCUS_973.99`) into C++** with [PS2Recomp](https://github.com/ran-j/PS2Recomp) and
+compiles it as a native Windows program, linked against a runtime that reimplements the PS2 hardware and
+operating system (EE kernel, GS, DMA, CD/DVD…). The I/O processor (IOP) runs the game's **original IRX
+modules** (sound driver, data streamer…) on PS2Recomp's R3000A interpreter.
 
-Este repositorio contiene todo lo específico de God of War:
+This repository holds everything that is specific to God of War:
 
-| Componente | Descripción |
+| Component | Description |
 |---|---|
-| **Mapa de funciones** | 6 414 funciones identificadas en el ELF (`config/funcmap.csv`) |
-| **Configuración del recompilador** | Stubs, funciones omitidas y parches de instrucciones (`config/recomp.template.toml`) |
-| **Overrides del juego** | Reemplazos manuales de funciones que el runtime aún no soporta (`src/gow_overrides.cpp`) |
-| **Parche del runtime** | Servicios IOP adicionales y ajustes de heap/scheduler para PS2Recomp (`patches/`) |
-| **Scripts de compilación** | Pipeline completo y reproducible en Windows (`scripts/`) |
-| **Herramientas** | Extractor de la capa 1 de DVD-9 (`tools/`) |
+| **Function map** | 6,414 functions identified in the ELF (`config/funcmap.csv`) |
+| **Recompiler configuration** | Stubs, entry points (including vtable-only virtual methods) and instruction patches (`config/recomp.template.toml`) |
+| **Game overrides** | Hand-written replacements and diagnostics for game functions (`src/gow_overrides.cpp`) |
+| **Runtime patch** | Fixes to PS2Recomp's IOP emulator and EE runtime needed by this game (`patches/`) |
+| **Build scripts** | A complete, reproducible Windows pipeline (`scripts/`) |
+| **Tools** | DVD-9 layer 1 extractor (`tools/`) |
 
-## Estado actual
+## Current status
 
-| Hito | Estado |
+| Milestone | Status |
 |---|:---:|
-| Extracción de ambas capas del DVD-9 | ✅ |
-| Recompilación de `SCUS_973.99` a C++ (6 418 archivos) | ✅ |
-| Compilación del ejecutable nativo (MSVC, x64) | ✅ |
-| Arranque: inicialización de raylib/OpenGL, heap y threads | ✅ |
-| IRX originales del juego en el emulador del IOP (`989snd`, `smpd`, `libsd`…) | ✅ |
-| Carga de datos desde la ISO original (`smpd` → `R_PERM.WAD`, configuración) | ✅ |
-| Salida de vídeo / pantalla de título | 🔧 en progreso |
-| Audio, mando y memory card | ⏳ pendiente |
+| Extracting both layers of the DVD-9 | ✅ |
+| Recompiling `SCUS_973.99` to C++ (6,418 files) | ✅ |
+| Building the native executable (MSVC, x64) | ✅ |
+| Boot: raylib/OpenGL, heap and thread initialization | ✅ |
+| The game's original IRX modules on the IOP emulator (`989snd`, `smpd`, `libsd`…) | ✅ |
+| Streaming data from the original ISO (`smpd` → `R_PERM.WAD`, game configuration) | ✅ |
+| Main game loop (`sys::GameLoop`) | ✅ |
+| Video output: legal screen and title logo | ✅ |
+| Correct text/font rendering | 🔧 in progress |
+| Audio, controller and memory card | ⏳ pending |
 
-Actualmente el juego arranca, ejecuta en el IOP los módulos originales (incluido el cargador de datos `smpd`),
-carga su configuración desde la ISO y avanza hasta la inicialización de vídeo (`vid::WaitForDMAComplete`). Ver [`docs/ESTADO.md`](docs/ESTADO.md) para el detalle.
+The game boots, runs the original IOP modules (including the `smpd` data streamer), streams its data from
+the ISO, enters its main loop and **renders its first screens**: the *"Sony Computer Entertainment America
+presents"* legal screen and the *God of War* title logo. Some text glyphs are still missing, and the game
+asks for a DualShock 2 because the controller (SIO2) is not emulated yet. See
+[`docs/ESTADO.md`](docs/ESTADO.md) for the detailed investigation log.
 
-## Estructura del repositorio
+## Repository layout
 
 ```
 .
 ├── config/
-│   ├── funcmap.csv               # Mapa de funciones (nombre, inicio, fin, tamaño)
-│   └── recomp.template.toml      # Configuración de PS2Recomp (@ELF@, @MAP@, @OUT@)
-├── docs/                         # Documentación técnica
-├── game/                         # Aquí va TU SCUS_973.99 (ignorado por git)
+│   ├── funcmap.csv               # Function map (name, start, end, size)
+│   └── recomp.template.toml      # PS2Recomp configuration (@ELF@, @MAP@, @OUT@)
+├── docs/                         # Technical documentation (Spanish)
+├── game/                         # YOUR SCUS_973.99 goes here (ignored by git)
 ├── patches/
-│   └── ps2recomp-runtime.patch   # Cambios sobre PS2Recomp @ c5a9d02
+│   └── ps2recomp-runtime.patch   # Changes on top of PS2Recomp @ c5a9d02
 ├── scripts/
-│   ├── 1_instalar_herramientas.cmd
-│   ├── 2_compilar.cmd            # Pipeline completo de compilación
-│   ├── 2_recompilar_rapido.cmd   # Recompila solo src/gow_overrides.cpp (~1 min)
-│   ├── 3_ejecutar.cmd            # Ejecuta 60 s y guarda logs
-│   ├── 3_ejecutar_manual.cmd     # Ejecuta sin límite de tiempo
-│   ├── monitor.cmd               # Monitoriza CPU/RAM durante la compilación
-│   └── *.ps1                     # Lógica de los scripts
+│   ├── 1_instalar_herramientas.cmd  # Install the tools
+│   ├── 2_compilar.cmd               # Full build pipeline
+│   ├── 2_recompilar_rapido.cmd      # Rebuild only src/gow_overrides.cpp (~1 min)
+│   ├── 3_ejecutar.cmd               # Run for 60 s and keep the logs
+│   ├── 3_ejecutar_manual.cmd        # Run with no time limit
+│   ├── monitor.cmd                  # Monitor CPU/RAM while building
+│   └── *.ps1                        # Script logic
 ├── src/
-│   └── gow_overrides.cpp         # Overrides específicos del juego
+│   └── gow_overrides.cpp         # Game-specific overrides
 └── tools/
-    └── extraer_capa2.ps1         # Extrae la capa 1 de una ISO DVD-9 de PS2
+    └── extraer_capa2.ps1         # Extracts layer 1 of a PS2 DVD-9 ISO
 ```
 
-## Requisitos
+> Script and folder names are in Spanish, the project's original language.
+
+## Requirements
 
 - Windows 10/11 x64
-- [Visual Studio 2022 Build Tools](https://visualstudio.microsoft.com/downloads/) con la carga de trabajo **C++** (incluye CMake y Ninja)
+- [Visual Studio 2022 Build Tools](https://visualstudio.microsoft.com/downloads/) with the **C++** workload (includes CMake and Ninja)
 - [Git](https://git-scm.com/)
-- ~10 GB libres y 16 GB de RAM recomendados (la compilación usa todos los núcleos)
-- Una copia propia de **God of War (NTSC-U, SCUS-97399)**
+- ~10 GB of free space; 16 GB of RAM recommended (the build uses every core)
+- Your own copy of **God of War (NTSC-U, SCUS-97399)**
 
-`scripts\1_instalar_herramientas.cmd` instala Git y las Build Tools con `winget`.
+`scripts\1_instalar_herramientas.cmd` installs Git and the Build Tools with `winget`.
 
-## Compilar y ejecutar
+## Building and running
 
-**1. Obtén el ejecutable del juego** desde tu disco/ISO y cópialo a `game\SCUS_973.99`
-(o define la variable de entorno `GOW_ELF` con su ruta).
+**1. Get the game files.** Copy the executable from your disc/ISO to `game\SCUS_973.99`
+(or point the `GOW_ELF` environment variable at it).
 
-Junto al ELF deben estar también los **módulos `.IRX`** del disco (`SMPD_IOP.IRX`, `989NOMID.IRX`,
-`LIBSD.IRX`…): el emulador del IOP ejecuta los originales y `scripts\ejecutar.ps1` los copia a `IOP_MOD\`.
-Para leer los datos del juego hace falta la **ISO original**: ponla como `God of War.iso` en la carpeta
-superior a la del ELF, o indica su ruta con la variable de entorno `GOW_ISO`.
+Place the disc's **`.IRX` modules** (`SMPD_IOP.IRX`, `989NOMID.IRX`, `LIBSD.IRX`…) next to the ELF: the IOP
+emulator runs the originals, and `scripts\ejecutar.ps1` copies them into `IOP_MOD\` on first run.
+Reading the game data requires the **original ISO**: name it `God of War.iso` and put it in the folder
+above the ELF's folder, or set the `GOW_ISO` environment variable to its path.
 
-Si además quieres los datos de la segunda capa del DVD:
+To also extract the data on the second layer of the DVD:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\extraer_capa2.ps1 -Iso "D:\God of War.iso" -Salida "D:\GOW ISO extraida"
 ```
 
-**2. Instala las herramientas** (solo la primera vez):
+**2. Install the tools** (first time only):
 
 ```bat
 scripts\1_instalar_herramientas.cmd
 ```
 
-**3. Compila** (20–40 min la primera vez):
+**3. Build** (20–40 min the first time):
 
 ```bat
 scripts\2_compilar.cmd
 ```
 
-El script clona PS2Recomp en `<unidad>:\gowport` (ruta corta para esquivar el límite de 260 caracteres;
-configurable con `GOW_WORK`), fija el commit `c5a9d02`, aplica el parche, genera el C++ y compila
-`ps2EntryRunner.exe`. El registro queda en `logs\2_compilar.log`.
+The script clones PS2Recomp into `<drive>:\gowport` (a short path to avoid the 260-character limit;
+configurable with `GOW_WORK`), pins commit `c5a9d02`, applies the patch, generates the C++ code and builds
+`ps2EntryRunner.exe`. The log is written to `logs\2_compilar.log`.
 
-**4. Ejecuta:**
+**4. Run:**
 
 ```bat
-scripts\3_ejecutar.cmd          :: 60 segundos, salida en logs\
-scripts\3_ejecutar_manual.cmd   :: sin límite
+scripts\3_ejecutar.cmd          :: 60 seconds, output in logs\
+scripts\3_ejecutar_manual.cmd   :: no time limit
 ```
 
-## Cómo funciona
+## How it works
 
 ```mermaid
 flowchart LR
-    A[SCUS_973.99<br/>ELF MIPS R5900] --> B[ps2_recomp]
+    A[SCUS_973.99<br/>MIPS R5900 ELF] --> B[ps2_recomp]
     M[funcmap.csv] --> B
     C[recomp.template.toml] --> B
-    B --> D[~6 400 archivos C++]
+    B --> D[~6,400 C++ files]
     D --> E[MSVC + Ninja]
     O[gow_overrides.cpp] --> E
     P[PS2Recomp runtime<br/>+ ps2recomp-runtime.patch] --> E
     E --> F[ps2EntryRunner.exe]
+    I[Original IRX modules] --> G[IOP emulator<br/>R3000A]
+    ISO[God of War.iso] --> G
+    F <--> G
 ```
 
-Más detalles en [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md).
+More details in [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md).
 
-## Documentación
+## Documentation
 
-- [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) — pipeline, overrides y parche del runtime
-- [`docs/ESTADO.md`](docs/ESTADO.md) — estado actual, problemas conocidos y próximos pasos
+The technical documentation is currently written in Spanish:
 
-## Créditos y licencia
+- [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) — pipeline, overrides and runtime patch
+- [`docs/ESTADO.md`](docs/ESTADO.md) — current status, investigation log, known issues and next steps
 
-- [**PS2Recomp**](https://github.com/ran-j/PS2Recomp) de ran-j y colaboradores — recompilador y runtime (GPL-3.0).
-- *God of War* © Sony Interactive Entertainment / Santa Monica Studio. Este proyecto no está afiliado
-  ni respaldado por Sony. No se distribuye ningún contenido del juego.
+## Credits and license
 
-El código de este repositorio se publica bajo la licencia **GPL-3.0**, en coherencia con PS2Recomp.
-Ver [`LICENSE`](LICENSE).
+- [**PS2Recomp**](https://github.com/ran-j/PS2Recomp) by ran-j and contributors — recompiler and runtime (GPL-3.0).
+- *God of War* © Sony Interactive Entertainment / Santa Monica Studio. This project is not affiliated with
+  or endorsed by Sony. No game content is distributed.
+
+The code in this repository is released under the **GPL-3.0** license, consistent with PS2Recomp.
+See [`LICENSE`](LICENSE).

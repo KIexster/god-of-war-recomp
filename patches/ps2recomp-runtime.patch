@@ -706,8 +706,37 @@ index 0000000..dd0c0db
 +            std::array<std::string_view, 3>{"989nomid", "989snd", "989err"});
 +    }
 +}
+diff --git a/ps2xRuntime/include/ps2_runtime.h b/ps2xRuntime/include/ps2_runtime.h
+index 4b9242c..7d7ebc6 100644
+--- a/ps2xRuntime/include/ps2_runtime.h
++++ b/ps2xRuntime/include/ps2_runtime.h
+@@ -383,7 +383,10 @@ public:
+     uint32_t guestHeapBase() const;
+     uint32_t guestHeapEnd() const;
+     uint32_t guestHeapLimit() const;
+-    uint32_t reserveAsyncCallbackStack(uint32_t size, uint32_t alignment = 16u);
++    uint32_t reserveAsyncCallbackStack(uint32_t size, uint32_t alignment);
++    // GOW-Port: las pilas de interrupciones/callbacks se reservan desde lo alto de la RAM hacia abajo; este
++    // limite las mantiene por debajo de la pila del hilo principal (que SetupThread coloca tambien arriba).
++    void limitAsyncCallbackStackTop(uint32_t top);
+ 
+     void drainCompletedDmacHandlers(uint8_t *rdram);
+ 
+diff --git a/ps2xRuntime/include/runtime/ee_scheduler.h b/ps2xRuntime/include/runtime/ee_scheduler.h
+index f247ff9..c8a77c8 100644
+--- a/ps2xRuntime/include/runtime/ee_scheduler.h
++++ b/ps2xRuntime/include/runtime/ee_scheduler.h
+@@ -383,6 +383,8 @@ private:
+     void requestPreemptionIfHigher(const GuestThread &readyThread, bool interruptSafe);
+     void applyPendingPreemption();
+     void processPendingEvents();
++    // GOW-Port: interrupcion INTC 0 (GS) en el flanco de subida de CSR.SIGNAL/FINISH no enmascarados en IMR.
++    void pollGsInterrupt();
+     void processDueDeadlines();
+     void processEvent(const EeEvent &event);
+     void finishEventWaiters(EeEventFlag &flag, bool interruptSafe);
 diff --git a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
-index c5e31c4..e47569f 100644
+index c5e31c4..a3cba9e 100644
 --- a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
 +++ b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
 @@ -1638,8 +1638,10 @@ void EeScheduler::makeRunning(GuestThread &item)
@@ -721,11 +750,71 @@ index c5e31c4..e47569f 100644
      removeReady(item);
      removeFromWaitObject(item);
      item.status = EeThreadStatus::Dormant;
+@@ -1740,6 +1742,31 @@ void EeScheduler::applyPendingPreemption()
+     m_timeSliceExpired = false;
+ }
+ 
++namespace
++{
++    // GOW-Port: estado del flanco de la interrupcion del GS (solo se usa en el hilo ejecutor). Se guarda
++    // aqui y no en EeScheduler para no cambiar el tamano de la clase.
++    uint32_t g_gsIrqLatched = 0u;
++}
++
++void EeScheduler::pollGsInterrupt()
++{
++    // GOW-Port: el runtime marcaba CSR.FINISH/SIGNAL pero nunca lanzaba la interrupcion del GS (INTC 0).
++    // God of War espera el fin de cada cadena DMA con un manejador de esa interrupcion
++    // (vid::WaitForDMAComplete se queda esperando una bandera que solo pone ese manejador).
++    // IMR: bit 8 = SIGMSK, bit 9 = FINISHMSK (1 = enmascarada). El manejador borra el bit escribiendo CSR.
++    auto &gs = m_runtime.memory().gs();
++    const uint32_t csr = static_cast<uint32_t>(gs.csr.load(std::memory_order_acquire)) & 0x3u;
++    const uint32_t masked = static_cast<uint32_t>(gs.imr >> 8) & 0x3u;
++    const uint32_t active = csr & ~masked;
++    const uint32_t rising = active & ~g_gsIrqLatched;
++    g_gsIrqLatched = active;
++    if (rising != 0u)
++    {
++        dispatchIrq(false, 0u);
++    }
++}
++
+ void EeScheduler::processPendingEvents()
+ {
+     assertExecutor();
+@@ -1753,6 +1780,7 @@ void EeScheduler::processPendingEvents()
+             dispatchIrq(false, 9u + timer);
+         }
+     }
++    pollGsInterrupt();
+     std::deque<EeEvent> pending;
+     {
+         std::lock_guard lock(m_eventMutex);
 diff --git a/ps2xRuntime/src/lib/Kernel/Syscalls/System.cpp b/ps2xRuntime/src/lib/Kernel/Syscalls/System.cpp
-index 9614016..6697d48 100644
+index 9614016..4a4aafd 100644
 --- a/ps2xRuntime/src/lib/Kernel/Syscalls/System.cpp
 +++ b/ps2xRuntime/src/lib/Kernel/Syscalls/System.cpp
-@@ -571,7 +571,7 @@ namespace ps2_syscalls
+@@ -531,6 +531,19 @@ namespace ps2_syscalls
+         }
+ 
+         scheduler.setupCurrentThread(initialStack, stackSize, getRegU32(ctx, 28));
++
++        // GOW-Port: reservar la pila del hilo principal para que las pilas de interrupciones (que se toman
++        // desde lo alto de la RAM) no la pisen. Sin esto, cada interrupcion machacaba los marcos mas
++        // antiguos del hilo principal y este acababa saltando a basura (God of War: pc=0xF82).
++        if (runtime)
++        {
++            const uint32_t reserved = std::max<uint32_t>(stackSize, 0x10000u);
++            const uint32_t low = std::min(sp, initialStack != 0u ? initialStack : sp);
++            if (low > reserved)
++            {
++                runtime->limitAsyncCallbackStackTop(low - reserved);
++            }
++        }
+         setReturnU32(ctx, sp);
+     }
+ 
+@@ -571,7 +584,7 @@ namespace ps2_syscalls
                            << std::dec << std::endl;
              });
  
@@ -735,7 +824,7 @@ index 9614016..6697d48 100644
          }
  
 diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
-index 45cb9d2..bd0043b 100644
+index 45cb9d2..b505b2d 100644
 --- a/ps2xRuntime/src/lib/ps2_runtime.cpp
 +++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
 @@ -1342,6 +1342,19 @@ void PS2Runtime::reportMissingFunction(uint8_t *rdram,
@@ -778,7 +867,26 @@ index 45cb9d2..bd0043b 100644
      uint32_t base = alignGuestHeapValue(clampGuestHeapBase(guestBase), kGuestHeapDefaultAlignment);
      uint32_t limit = clampGuestHeapLimit(guestLimit);
      if (base == 0u)
-@@ -2418,6 +2437,24 @@ void PS2Runtime::run()
+@@ -1975,6 +1994,18 @@ uint32_t PS2Runtime::guestHeapLimit() const
+     return m_guestHeapConfigured ? m_guestHeapLimit : m_guestHeapSuggestedBase;
+ }
+ 
++void PS2Runtime::limitAsyncCallbackStackTop(uint32_t top)
++{
++    std::lock_guard<std::mutex> lock(m_asyncCallbackStackMutex);
++    top &= ~(kGuestHeapDefaultAlignment - 1u);
++    if (top > m_asyncCallbackStackFloor && top < m_asyncCallbackStackTop)
++    {
++        m_asyncCallbackStackTop = top;
++    }
++    std::cerr << "[stack] pilas de interrupciones por debajo de 0x" << std::hex << m_asyncCallbackStackTop
++              << " (suelo 0x" << m_asyncCallbackStackFloor << ")" << std::dec << std::endl;
++}
++
+ uint32_t PS2Runtime::reserveAsyncCallbackStack(uint32_t size, uint32_t alignment)
+ {
+     if (size == 0u)
+@@ -2418,6 +2449,24 @@ void PS2Runtime::run()
                                                 << " vif=" << curVif
                                                 << std::endl);
  

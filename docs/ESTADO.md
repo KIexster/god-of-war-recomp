@@ -18,8 +18,10 @@ _Última actualización: 5 de octubre de 2026_
 - **`R_PERM.WAD` se carga entero en streaming** (smpd lee 16 sectores por llamada a `sceCdRead` y los
   envía al EE en bloques de `0x20000` que se alternan entre `0x530640` y `0x550640`).
 - 989snd arranca sin errores (antes, 15 × `cause 7` por un `argv` mal construido).
-- El hilo principal llega a construir objetos gráficos (`fxCameraFilter`) y espera en
-  **`vid::WaitForDMAComplete`** (`0x183878`): ya estamos en la parte de vídeo.
+- **El juego entra en su bucle principal (`sys::GameLoop`) y dibuja sus primeras pantallas**: la pantalla
+  legal *"Sony Computer Entertainment America presents"*, la de *"Please insert a DUALSHOCK®2…"* y el logo
+  de *God of War* de la pantalla de título. A algunos textos les faltan letras.
+- El depurador del runtime se muestra/oculta con **F1**.
 
 ## Símbolos
 
@@ -137,7 +139,24 @@ síncrona y contestaba en el acto, así que el hilo lector tomaba el destino de 
 **Arreglo:** tras cada RPC, el emulador deja correr a los hilos del IOP que estén listos
 (`runReadyThreads`, tope de 4 M ciclos) antes de copiar la respuesta.
 
-### 7. Otros arreglos del emulador del IOP
+### 7. La espera de vídeo: la interrupción del GS
+
+`vid::WaitForDMAComplete` (`0x183878`) espera mientras `*0x29C7D0 == 1`. La bandera la pone a 1 quien lanza
+la cadena DMA (`svrEpilogue::FlipAndKick`, `fxCameraFilter`…) y solo la cambia el **manejador de la
+interrupción del GS** (`0x182DD8`, código que Ghidra no marcó como función): lee `GS_CSR`, y si `FINISH`
+está activo pone la bandera a 2 y borra el bit. El runtime marcaba `CSR.FINISH` pero **nunca lanzaba la
+interrupción INTC 0**. Arreglo: `EeScheduler::pollGsInterrupt()` la lanza en el flanco de subida de
+`CSR.SIGNAL/FINISH` no enmascarados en `IMR`.
+
+### 8. Las interrupciones pisaban la pila del hilo principal
+
+Con la interrupción del GS activa, el hilo principal moría saltando a `0xF82`. Las pilas de los manejadores
+de interrupción se reservan desde lo alto de la RAM (`0x1FFFFF0`) hacia abajo, **justo donde
+`SetupThread` coloca la pila del hilo principal**: cada interrupción machacaba sus marcos más antiguos.
+Arreglo: `SetupThread` baja el techo de esa zona por debajo de la pila principal
+(`PS2Runtime::limitAsyncCallbackStackTop`; ahora empiezan en `0x1FE8000`).
+
+### 9. Otros arreglos del emulador del IOP
 
 - Los módulos arrancaban con `start(tamaño, texto)` en lugar de `start(argc, argv)`; ahora `argv` es
   `[ruta, arg1, …, NULL]`, como en `loadcore`.
@@ -164,7 +183,8 @@ y llama al original. `GOW_SND_STUB=1` recupera el comportamiento antiguo.
 
 | Problema | Detalle |
 |---|---|
-| Espera en `vid::WaitForDMAComplete` | el hilo principal espera a que termine una DMA hacia el GS |
+| Texto con letras de menos | algunas fuentes/texturas se dibujan incompletas (pantalla del mando, menú) |
+| Mando | el juego pide un DualShock 2: `DS2U_D.IRX` corre, pero el bus SIO2 no está emulado |
 | Memory card | `MC2_D.IRX` corre en el IOP, pero el bus SIO2 no está emulado |
 | Sin audio | 989snd corre, pero no hay salida de SPU2 |
 | Sin vídeo FMV | `sceMpeg*` / `sceIpu*` son stubs |
@@ -173,7 +193,8 @@ y llama al original. `GOW_SND_STUB=1` recupera el comportamiento antiguo.
 
 ## Próximos pasos
 
-1. Investigar la espera en `vid::WaitForDMAComplete`: qué canal DMA y qué condición espera.
-2. Retirar los diagnósticos que ya no hacen falta (`gowDictFindGuard`, árbol, `memcpy` vigilado).
-3. Memory card (SIO2 / `MC2_D.IRX`).
-4. Audio sobre 989snd / SPU2.
+1. Investigar las letras que faltan en los textos (texturas de fuentes, CLUT, caché de texturas del GS).
+2. Mando: SIO2 / `DS2U_D.IRX`, o HLE del pad.
+3. Retirar los diagnósticos que ya no hacen falta (`gowDictFindGuard`, árbol, `memcpy` vigilado).
+4. Memory card (SIO2 / `MC2_D.IRX`).
+5. Audio sobre 989snd / SPU2.
