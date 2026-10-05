@@ -13,8 +13,8 @@ _Última actualización: 5 de octubre de 2026_
 - El IOP lee la **ISO original** (`God of War.iso` junto a la carpeta del ELF, o la variable `GOW_ISO`).
 - smpd se inicializa: lee el directorio ISO9660 y `GODOFWAR.TOC`, y crea sus hilos.
 - **La configuración se carga desde el disco**: la petición `SMPD 0xF "R_Perm"` devuelve el handle 0
-  y `HERO_HEAP_SIZE` / `SLOT_HEAP_SIZE` / `UPGRADE_HEAP_SIZE` se encuentran (la guardia del diccionario
-  NULL ya no salta).
+  y `HERO_HEAP_SIZE` / `SLOT_HEAP_SIZE` / `UPGRADE_HEAP_SIZE` se encuentran (la guardia provisional del
+  diccionario NULL dejó de saltar y se ha retirado).
 - **`R_PERM.WAD` se carga entero en streaming** (smpd lee 16 sectores por llamada a `sceCdRead` y los
   envía al EE en bloques de `0x20000` que se alternan entre `0x530640` y `0x550640`).
 - 989snd arranca sin errores (antes, 15 × `cause 7` por un `argv` mal construido).
@@ -169,15 +169,16 @@ y llama al original. `GOW_SND_STUB=1` recupera el comportamiento antiguo.
 | Herramienta | Uso |
 |---|---|
 | `[gow-snd]` | comandos enviados a 989snd/smpd y su respuesta |
-| `[gow-dict]` | llamadas a `GetDynaStringNode` con diccionario NULL (guardia provisional) |
-| `[gow-tree]` | ciclos en el árbol de `sub_001769F8` |
 | `PS2X_IOP_TRACE=N` (+ `PS2X_IOP_TRACE_FROM=M`) | registra N llamadas a importaciones del IOP a partir de la M |
 | `PS2X_IOP_TRACE_NOCLIB=1` | omite `sysclib` en esa traza |
 | `PS2X_IOP_TRACE_EVERY=N` | muestreo: una de cada N llamadas |
 | `PS2X_IOP_PC_EVERY=N` | PC del IOP cada N instrucciones y aviso cuando no hay hilos listos |
 | `PS2X_IOP_TRACE_DMA=1` | cada transferencia `sceSifSetDma` IOP → EE (origen, destino, tamaño, primeros bytes) |
 | `[run:thread]` | estado de todos los hilos del EE cada ~10 s (en `ejecutar.log`) |
-| `[gow-timer]`, `[gow-watch]`, `[gow-23a000]` | alarmas de libkernel, copias de `memcpy_asm` sospechosas, llamada virtual de `sub_0023A000` |
+
+Los diagnósticos provisionales de las secciones 1, 5 y 6 (`[gow-tree]`, `[gow-dict]`, `[gow-23a000]`,
+`[gow-timer]`, `[gow-watch]`) se retiraron de `src/gow_overrides.cpp` una vez resueltos esos problemas;
+siguen en el historial de git por si hiciera falta recuperarlos.
 
 ## Problemas conocidos
 
@@ -195,6 +196,5 @@ y llama al original. `GOW_SND_STUB=1` recupera el comportamiento antiguo.
 
 1. Investigar las letras que faltan en los textos (texturas de fuentes, CLUT, caché de texturas del GS).
 2. Mando: SIO2 / `DS2U_D.IRX`, o HLE del pad.
-3. Retirar los diagnósticos que ya no hacen falta (`gowDictFindGuard`, árbol, `memcpy` vigilado).
-4. Memory card (SIO2 / `MC2_D.IRX`).
-5. Audio sobre 989snd / SPU2.
+3. Memory card (SIO2 / `MC2_D.IRX`).
+4. Audio sobre 989snd / SPU2.
