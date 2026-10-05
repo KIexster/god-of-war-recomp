@@ -20,6 +20,7 @@ $vifDiagnosticPatch = Join-Path $RepoRoot 'patches\ps2recomp-vif-diagnostic.patc
 $heapPatch = Join-Path $RepoRoot 'patches\ps2recomp-heap.patch'
 $vuJumpPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu-jump.patch'
 $vuEfuPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu-efu.patch'
+$mpegNodataPatch = Join-Path $RepoRoot 'patches\ps2recomp-mpeg-nodata.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -58,6 +59,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $vifDiagnosticPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $heapPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vuJumpPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vuEfuPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $mpegNodataPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
