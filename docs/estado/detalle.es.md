@@ -38,7 +38,7 @@ Generado por `tools/estado/generar.py` a partir de `docs/estado/datos.toml` y `c
 | EE | Controlador DMA | 2 | ✅ Funciona |  |
 | EE | Temporizadores | 1 | ✅ Funciona |  |
 | GS / VU | GS: primitivas y framebuffer | 3 | ✅ Funciona |  |
-| GS / VU | VIF1 y VU1 | 3 | 🔧 Parcial | Sin rechazos de XGKICK desde ps2recomp-vu-jump.patch, pero la partida sigue en negro: no se ve escena 3D |
+| GS / VU | VIF1 y VU1 | 3 | 🔧 Parcial | SQRT/RSQRT corregidas: matrices de cámara finitas y triángulos enviados al GS; aún falta la escena 3D completa |
 | GS / VU | GS: texturas, CLUT y fuentes | 2 | 🔧 Parcial | Faltan letras en algunos textos |
 | GS / VU | GIF (PATH1-3) | 2 | ✅ Funciona |  |
 | GS / VU | IPU: vídeo FMV | 2 | ⏳ Pendiente | Se alcanza la carga del FMV, pero se queda esperando a MPEG |

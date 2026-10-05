@@ -350,3 +350,11 @@ presentada a los 90 segundos muestra un fondo oscuro, sin una escena reconocible
 vértices con ADC activado; el siguiente paso es correlacionar proyección/recorte VU1 con los paquetes
 que realmente recibe el GS. Las trazas temporales añadidas para inspeccionar las matrices se retiraron
 y se volvió a enlazar el ejecutable; el parche publicado solo cambia los operandos COP1 y sus pruebas.
+
+Antes de publicar se integró mediante merge `ps2recomp-spu2.patch`, publicado por Opus durante estas
+pruebas. Se conservaron ambos parches en `compilar.ps1`; se reconstruyeron el IOP, el ejecutable y las
+pruebas afectadas. La suite pasa **456/456** y los once parches aplican en una copia aislada de la revisión
+fijada. La nueva ejecución con SPU2 vuelve a alcanzar el estado 11. La traza de vértices de la textura
+13264 confirma que llegan coordenadas finitas al GS, pero incluye vértices con `draw=0`; habrá que
+correlacionarlos con el recorte y con las primitivas que sí se dibujan, sin asumir que todo descarte sea
+un error (pueden estar fuera de la vista).
