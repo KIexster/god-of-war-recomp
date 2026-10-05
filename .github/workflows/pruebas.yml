@@ -16,10 +16,15 @@ concurrency:
 
 jobs:
   overrides:
-    name: Pruebas de src/ (libpad2)
+    name: Comprobaciones rapidas (config, scripts y src/)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - name: Validar config/funcmap.csv y config/recomp.template.toml
+        run: python3 tools/ci/validar_config.py
+      - name: Analizar los scripts de PowerShell
+        shell: pwsh
+        run: ./tools/ci/analizar_ps1.ps1
       - name: Compilar y ejecutar tests/pad2_packet_test.cpp
         run: |
           g++ -std=c++20 -Wall -Wextra -Werror tests/pad2_packet_test.cpp -o pad2_packet_test
@@ -58,6 +63,10 @@ jobs:
             git apply --ignore-whitespace --verbose "$p"
             echo "::endgroup::"
           done
+
+      # Con el runtime ya parcheado: cada stub de recomp.template.toml debe tener handler
+      - name: Comprobar los handlers de los stubs
+        run: python3 gow/tools/ci/validar_config.py --runtime PS2Recomp
 
       - name: Instalar dependencias
         run: |
