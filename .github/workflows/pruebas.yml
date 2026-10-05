@@ -19,7 +19,7 @@ jobs:
     name: Pruebas de src/ (libpad2)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Compilar y ejecutar tests/pad2_packet_test.cpp
         run: |
           g++ -std=c++20 -Wall -Wextra -Werror tests/pad2_packet_test.cpp -o pad2_packet_test
@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           path: gow
 
@@ -72,6 +72,24 @@ jobs:
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPS2X_BUILD_STUDIO=OFF \
             -DCMAKE_C_FLAGS=-march=x86-64-v2 -DCMAKE_CXX_FLAGS=-march=x86-64-v2
           ninja -C build ps2x_tests
+
+      # src/gow_overrides.cpp solo se compila de verdad junto al codigo generado del juego (Windows). Aqui se
+      # comprueba contra las cabeceras del runtime ya parcheado, declarando las sub_* que usa.
+      - name: Compilar src/ contra el runtime parcheado
+        run: |
+          mkdir -p generado
+          {
+            echo '#pragma once'
+            echo '#include "ps2_runtime.h"'
+            grep -ho 'sub_[0-9A-F]\{8\}_0x[0-9a-f]\+' gow/src/*.cpp | sort -u |
+              sed 's/.*/void &(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime);/'
+          } > generado/ps2_recompiled_functions.h
+          for f in gow/src/*.cpp; do
+            echo "$f"
+            g++ -std=c++20 -march=x86-64-v2 -fsyntax-only \
+              -IPS2Recomp/ps2xRuntime/include -IPS2Recomp/ps2xRuntime/src/lib -IPS2Recomp/ps2xIOP/include \
+              -IPS2Recomp/build/_deps/raylib-src/src -Igenerado -Igow/src "$f"
+          done
 
       - name: Ejecutar la suite
         working-directory: PS2Recomp
