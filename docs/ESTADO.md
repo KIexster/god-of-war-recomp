@@ -22,6 +22,16 @@ _Última actualización: 5 de octubre de 2026_
   legal *"Sony Computer Entertainment America presents"*, la de *"Please insert a DUALSHOCK®2…"* y el logo
   de *God of War* de la pantalla de título. A algunos textos les faltan letras.
 - El depurador del runtime se muestra/oculta con **F1**.
+- El HLE de **libpad2** conecta el primer puerto al backend del runtime: teclado o gamepad, botones,
+  ambos sticks y presiones digitales. La navegación llega al **menú principal y la selección de dificultad**.
+  Los controles y la prueba reproducible están en [CONTROLES.md](CONTROLES.md).
+- El dispatcher conserva los checkpoints que ceden en la entrada de una función. Esto elimina la copia
+  parcial de `Animation/goHero` y la llamada virtual a NULL al avanzar desde el menú.
+- `gowIpuInit` corrige la inicialización del IPU: el stub genérico saltaba a una dirección de otro
+  ejecutable y ejecutaba `FilteredCopyTile` con registros incorrectos. Ahora se alcanza la carga del FMV.
+- Con `GOW_SKIP_FMV=1`, la prueba de 600 segundos alcanzó el **estado 11 de partida**, con
+  `pending=0` y el hilo principal activo. La animación previa de 13,33 s de juego tardó varios minutos
+  reales. La imagen de partida permanece negra: todavía no hay gameplay visible verificado.
 
 ## Símbolos
 
@@ -184,7 +194,8 @@ y llama al original. `GOW_SND_STUB=1` recupera el comportamiento antiguo.
 | Problema | Detalle |
 |---|---|
 | Texto con letras de menos | algunas fuentes/texturas se dibujan incompletas (pantalla del mando, menú) |
-| Mando | el juego pide un DualShock 2: `DS2U_D.IRX` corre, pero el bus SIO2 no está emulado |
+| Imagen de partida | se alcanza el estado 11 con los FMV omitidos, pero el framebuffer queda negro |
+| Mando | libpad2 funciona por HLE para el primer puerto; presiones 0/255 y sin vibración. SIO2 sigue pendiente |
 | Memory card | `MC2_D.IRX` corre en el IOP, pero el bus SIO2 no está emulado |
 | Sin audio | 989snd corre, pero no hay salida de SPU2 |
 | Sin vídeo FMV | `sceMpeg*` / `sceIpu*` son stubs |
@@ -193,8 +204,33 @@ y llama al original. `GOW_SND_STUB=1` recupera el comportamiento antiguo.
 
 ## Próximos pasos
 
-1. Investigar las letras que faltan en los textos (texturas de fuentes, CLUT, caché de texturas del GS).
-2. Mando: SIO2 / `DS2U_D.IRX`, o HLE del pad.
+1. Investigar VIF/VU→GIF: en el estado 11 los contextos del GS siguen con `FBP=0`, sin primitivas
+   en la traza reciente, mientras se presenta `FBP=208`. XGKICK rechaza paquetes por exceder
+   su búfer o por el formato de la cabecera. Los avisos `0xFFFFFFFB` y `0xFFFFFFF8` son códigos
+   internos del runtime, no instrucciones inválidas del microcódigo. `GOW_RENDER_DIAG=1`
+   permite guardar el microcódigo y la RAM para compararlos.
+   La recompilación completa reproduce el problema. Una traza temporal de XGKICK confirmó
+   paquetes correctos al principio y luego datos de vértices interpretados como cabeceras
+   (`source=0x2AB0`, segunda cabecera en `offset=0x10`). Revisar preparación/rotación de buffers
+   y UNPACK antes de ampliar el búfer del runtime.
+2. Resolver la espera de MPEG (`sceMpegGetPicture`, `0x0018A3D8`) y corregir el renderizado de
+   fuentes/3D. `GOW_SKIP_FMV=1` permite investigar la partida mientras el decodificador está pendiente.
 3. Retirar los diagnósticos que ya no hacen falta (`gowDictFindGuard`, árbol, `memcpy` vigilado).
 4. Memory card (SIO2 / `MC2_D.IRX`).
 5. Audio sobre 989snd / SPU2.
+
+## Validación del avance al menú
+
+- `scripts\probar_pad2.cmd`: pasa la prueba de bytes de botones, sticks y las doce presiones.
+- Compilación de `ps2EntryRunner` y `ps2x_tests`: correcta.
+- Suite del runtime desde su directorio raíz: **435/437**. Fallan dos pruebas previas:
+  `setup heap and allocator primitives track end-of-heap` y
+  `IOP heap DMA uses private backing instead of aliasing EE RDRAM`.
+- Al retirar únicamente la corrección del dispatcher, la nueva prueba de checkpoint falla y el total
+  baja a **434/437**; los mismos dos fallos de heap/DMA permanecen.
+- `ps2recomp-checkpoint.patch` se comprobó sobre la revisión fijada más el parche original del proyecto.
+- La prueba de 200 segundos con el IPU corregido llegó a elegir dificultad y después esperó en MPEG.
+  Las capturas y registros son evidencia del menú, **no de una partida jugable**.
+- La prueba de 600 segundos omitiendo FMV llegó al estado 11 sin omitir la animación de entrada,
+  con `pending=0`; las capturas de partida son negras. `GOW_FAST_BOOT=1` repite la transición
+  en aproximadamente 70 s desde la primera lectura del mando.

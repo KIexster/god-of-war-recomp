@@ -13,6 +13,7 @@ $bld  = Join-Path $rec 'out\build'
 $template  = Join-Path $RepoRoot 'config\recomp.template.toml'
 $funcmap   = Join-Path $RepoRoot 'config\funcmap.csv'
 $patch     = Join-Path $RepoRoot 'patches\ps2recomp-runtime.patch'
+$checkpointPatch = Join-Path $RepoRoot 'patches\ps2recomp-checkpoint.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -41,6 +42,7 @@ Run $git @('submodule', 'update', '--init', '--recursive')
 $extra = Join-Path $rec 'ps2xIOP\src\modules\gow_stub_services.cpp'
 if (Test-Path -LiteralPath $extra) { Remove-Item -LiteralPath $extra -Force }
 Run $git @('apply', '--ignore-whitespace', '--verbose', $patch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $checkpointPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
@@ -87,6 +89,7 @@ $runner = Join-Path $rec 'ps2xRuntime\src\runner'
 Get-ChildItem $runner -File | Remove-Item -Force
 Get-ChildItem -LiteralPath $gen -File | Copy-Item -Destination $runner
 Copy-Item -LiteralPath $overrides -Destination (Join-Path $runner 'gow_overrides.cpp')
+Get-ChildItem -LiteralPath (Join-Path $RepoRoot 'src') -Filter '*.h' -File | Copy-Item -Destination $runner
 # Con MSVC en espanol ninja no registra las dependencias /showIncludes: los .cpp incluidos desde los
 # archivos unity (codigo generado, register_functions.cpp, overrides) no fuerzan recompilacion. Borramos
 # los objetos unity para que se recompilen siempre con el codigo recien generado.

@@ -35,6 +35,11 @@ elseif ($irx.Count -eq 0 -and -not (Test-Path -LiteralPath $iopMod)) {
 
 $out = Join-Path $LogsDir 'ejecutar.log'
 $err = Join-Path $LogsDir 'ejecutar_err.log'
+if ($env:GOW_PAD_TEST -eq '1') {
+    # No mezclar capturas antiguas con una prueba que se detenga antes de producirlas todas.
+    Get-ChildItem -LiteralPath $exe.DirectoryName -Filter 'gow_pad_test_*.ppm' -File |
+        Remove-Item -Force
+}
 $p = Start-Process -FilePath $exe.FullName -ArgumentList ('"' + $elf + '"') -WorkingDirectory $exe.DirectoryName `
         -RedirectStandardOutput $out -RedirectStandardError $err -PassThru
 if ($Segundos -le 0) { $p.WaitForExit(); Write-Host "Terminado (codigo $($p.ExitCode))" }

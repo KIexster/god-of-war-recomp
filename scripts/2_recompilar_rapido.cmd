@@ -15,10 +15,14 @@ call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat" > logs\vcvars.log 2>&1
 rem Misma carpeta de trabajo que scripts\common.ps1 (Get-GowWorkDir)
 if defined GOW_WORK (set "WORK=%GOW_WORK%") else (set "WORK=%~d0\gowport")
 copy /y "src\gow_overrides.cpp" "%WORK%\PS2Recomp\ps2xRuntime\src\runner\gow_overrides.cpp" >nul
+if errorlevel 1 exit /b 1
+copy /y "src\*.h" "%WORK%\PS2Recomp\ps2xRuntime\src\runner\" >nul
+if errorlevel 1 exit /b 1
 rem Con MSVC en espanol ("Nota: inclusion del archivo:") ninja no registra las dependencias de /showIncludes,
 rem asi que un cambio en gow_overrides.cpp (incluido desde un archivo unity) no recompila nada.
 rem Tocamos el archivo unity que lo incluye para forzarlo.
-for /f "delims=" %%u in ('findstr /m /c:"gow_overrides.cpp" "%WORK%\PS2Recomp\out\build\ps2xRuntime\CMakeFiles\ps2EntryRunner.dir\Unity\*.cxx"') do copy /b "%%u" +,, "%%u" >nul
+powershell -NoProfile -Command "$unityDir = Join-Path $env:WORK 'PS2Recomp\out\build\ps2xRuntime\CMakeFiles\ps2EntryRunner.dir\Unity'; Get-ChildItem -LiteralPath $unityDir -Filter '*.cxx' -File | Where-Object { Select-String -LiteralPath $_.FullName -SimpleMatch 'gow_overrides.cpp' -Quiet } | ForEach-Object { $_.LastWriteTime = Get-Date }"
+if errorlevel 1 exit /b 1
 cmake --build "%WORK%\PS2Recomp\out\build" --target ps2EntryRunner > logs\2_recompilar_rapido.log 2>&1
 set "RC=%errorlevel%"
 echo [codigo final %RC%] >> logs\2_recompilar_rapido.log

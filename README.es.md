@@ -63,13 +63,16 @@ Este repositorio contiene todo lo específico de God of War:
 | Carga de datos desde la ISO original (`smpd` → `R_PERM.WAD`, configuración) | ✅ |
 | Bucle principal del juego (`sys::GameLoop`) | ✅ |
 | Salida de vídeo: pantalla legal y logo del título | ✅ |
-| Texto y fuentes correctos | 🔧 en progreso |
-| Audio, mando y memory card | ⏳ pendiente |
+| Texto, fuentes y renderizado 3D correctos | 🔧 en progreso |
+| Mando/teclado por HLE de libpad2; menú y selección de dificultad | ✅ |
+| Inicio de una partida jugable | 🔧 en progreso |
+| Audio y memory card | ⏳ pendiente |
 
 El juego arranca, ejecuta en el IOP los módulos originales (incluido el cargador de datos `smpd`), carga
 sus datos desde la ISO, entra en su bucle principal y **dibuja sus primeras pantallas**: la pantalla legal
-*"Sony Computer Entertainment America presents"* y el logo de *God of War*. A algunos textos todavía les
-faltan letras, y el juego pide un DualShock 2 porque el mando (SIO2) aún no está emulado. Ver
+*"Sony Computer Entertainment America presents"* y el logo de *God of War*. El teclado y el mando permiten
+avanzar al menú y elegir dificultad. Con `GOW_SKIP_FMV=1` se alcanza el estado de partida, pero la imagen
+queda negra; todavía no se ha verificado una partida jugable. Ver [controles y pruebas](docs/CONTROLES.md) y
 [`docs/ESTADO.md`](docs/ESTADO.md) para el registro detallado de la investigación.
 
 ## Estructura del repositorio
