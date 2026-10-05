@@ -214,9 +214,9 @@ nombre = "IOP"
   [[hardware.grupo.componente]]
   corto = "SPU2"
   nombre = { es = "SPU2: salida de audio", en = "SPU2: audio output", pt = "SPU2: saída de áudio" }
-  estado = "pendiente"
+  estado = "parcial"
   peso = 3
-  nota = { es = "SPU2 emulado (RAM, DMA, voces ADPCM con ADSR, mezcla e IRQ), pero aún sin salida al PC", en = "SPU2 emulated (RAM, DMA, ADPCM voices with ADSR, mixing and IRQ), but no output to the PC yet", pt = "SPU2 emulado (RAM, DMA, vozes ADPCM com ADSR, mixagem e IRQ), mas ainda sem saída para o PC" }
+  nota = { es = "SPU2 emulado con salida al PC, sin verificar con el juego; faltan reverb y ADMA", en = "SPU2 emulated with output to the PC, not verified in-game yet; reverb and ADMA are missing", pt = "SPU2 emulado com saída para o PC, ainda não verificado no jogo; faltam reverb e ADMA" }
 
   [[hardware.grupo.componente]]
   corto = "IRX"

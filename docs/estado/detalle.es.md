@@ -43,7 +43,7 @@ Generado por `tools/estado/generar.py` a partir de `docs/estado/datos.toml` y `c
 | GS / VU | GIF (PATH1-3) | 2 | ✅ Funciona |  |
 | GS / VU | IPU: vídeo FMV | 2 | ⏳ Pendiente | Se alcanza la carga del FMV, pero se queda esperando a MPEG |
 | IOP | CPU R3000A (intérprete) | 3 | ✅ Funciona |  |
-| IOP | SPU2: salida de audio | 3 | ⏳ Pendiente | SPU2 emulado (RAM, DMA, voces ADPCM con ADSR, mezcla e IRQ), pero aún sin salida al PC |
+| IOP | SPU2: salida de audio | 3 | 🔧 Parcial | SPU2 emulado con salida al PC, sin verificar con el juego; faltan reverb y ADMA |
 | IOP | Módulos IRX originales | 2 | ✅ Funciona |  |
 | IOP | SIF: RPC y DMA EE ↔ IOP | 2 | ✅ Funciona |  |
 | IOP | CDVD: lectura de la ISO original | 2 | ✅ Funciona |  |
