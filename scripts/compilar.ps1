@@ -16,6 +16,7 @@ $patch     = Join-Path $RepoRoot 'patches\ps2recomp-runtime.patch'
 $checkpointPatch = Join-Path $RepoRoot 'patches\ps2recomp-checkpoint.patch'
 $xgkickPatch = Join-Path $RepoRoot 'patches\ps2recomp-xgkick.patch'
 $vifUnpackPatch = Join-Path $RepoRoot 'patches\ps2recomp-vif-unpack.patch'
+$vifDiagnosticPatch = Join-Path $RepoRoot 'patches\ps2recomp-vif-diagnostic.patch'
 $heapPatch = Join-Path $RepoRoot 'patches\ps2recomp-heap.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
@@ -48,6 +49,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $patch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $checkpointPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $xgkickPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vifUnpackPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vifDiagnosticPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $heapPatch)
 Pop-Location
 

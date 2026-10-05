@@ -9,8 +9,9 @@
    `c5a9d02573410a2085a4b4b831b0b68ba3515440` e inicializa submódulos.
 3. **Parches** — aplica, en este orden, `patches/ps2recomp-runtime.patch`, `ps2recomp-checkpoint.patch`
    (checkpoints que ceden en la entrada de una función), `ps2recomp-xgkick.patch` (`GOW_XGKICK_IMMEDIATE`,
-   opcional), `ps2recomp-vif-unpack.patch` (UNPACK V2 y V4-5) y `ps2recomp-heap.patch` (heap privado del
-   runtime configurable con `setPrivateGuestHeap`) con `git apply --ignore-whitespace`.
+   opcional), `ps2recomp-vif-unpack.patch` (UNPACK V2 y V4-5), `ps2recomp-vif-diagnostic.patch`
+   (diagnósticos acotados de VIF y XGKICK) y `ps2recomp-heap.patch` (heap privado del runtime configurable
+   con `setPrivateGuestHeap`) con `git apply --ignore-whitespace`.
 4. **Ajustes de CMake** — añade `src/runner` a los includes de `ps2EntryRunner` y desactiva `/GL` y `/LTCG`
    para compilar en paralelo (con LTCG el enlazado de ~6 400 archivos es inviable).
 5. **Recompilador** — compila el objetivo `ps2_recomp`.
