@@ -225,8 +225,13 @@ siguen en el historial de git por si hiciera falta recuperarlos.
    `-DiagnosticoVif` compara las cabeceras antes de MSCAL y durante XGKICK, distingue los paquetes
    vacíos de los rechazos reales y guarda los buffers de dibujo al alcanzar la partida.
    Los contextos FBP=0 tienen datos, pero sus capturas no muestran una escena 3D; FBP=208 sigue
-   negro. La próxima comprobación es seguir las escrituras UNPACK y las del microcódigo que
-   modifican las cabeceras rechazadas, con sus direcciones y offsets ya registrados.
+   negro. La traza de escrituras encontró bucles de transformación que recorrían los buffers y
+   sobrescribían sus cabeceras. `ps2recomp-vu-jump.patch` corrige la lectura de JR/JALR: usaban
+   el valor anterior de VI, aunque ese retraso corresponde a las comparaciones de ramas condicionales.
+   Con el arreglo, la prueba de 140 s llegó al estado 11 y registró 212992 comandos VIF sin
+   rechazos XGKICK ni instrucciones VU reservadas. La pantalla de partida todavía es negra y los
+   contextos de dibujo no muestran una escena 3D. La siguiente comprobación es la transformación
+   de coordenadas y la interpretación de los registros/paquetes GIF ahora que sus cabeceras se conservan.
    Ver [CONTROLES.md](CONTROLES.md#diagnóstico-de-vif-y-buffers-de-dibujo).
 2. Resolver la espera de MPEG (`sceMpegGetPicture`, `0x0018A3D8`) y corregir el renderizado de
    fuentes/3D. `GOW_SKIP_FMV=1` permite investigar la partida mientras el decodificador está pendiente.
@@ -255,3 +260,11 @@ siguen en el historial de git por si hiciera falta recuperarlos.
   Sus tres regresiones fallan antes del arreglo (**436/441**) y pasan después (**439/441**),
   manteniendo los dos fallos previos. El parche aplica sobre la revisión fijada.
   La prueba del juego alcanza el estado 11; los defectos del menú y la imagen negra permanecen.
+
+- `ps2recomp-vu-jump.patch` conserva el valor actual de VI para JR/JALR, incluido el caso en que
+  JALR reutiliza el registro de destino para su enlace. Mantiene la ranura de retardo y las reglas
+  existentes de ramas condicionales. Se sustituyó una expectativa incorrecta del test JR y se añadió
+  cobertura JALR: ambas regresiones fallan antes (**438/442**) y pasan después (**440/442**),
+  con los mismos dos fallos conocidos. El parche aplica sobre la revisión fijada más los anteriores.
+  El ejecutable se compiló y la prueba de 140 s confirmó el avance al estado 11 sin rechazos GIF
+  ni instrucciones VU reservadas; las capturas siguen sin acreditar una partida jugable.

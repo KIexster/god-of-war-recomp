@@ -166,3 +166,21 @@ al estado 11. Los dos contextos dibujaban en FBP=0, FBW=8, PSMCT32, mientras la 
 FBP=208. Sus capturas tenían 212992 píxeles con RGB distinto de cero, pero solo mostraban un fondo
 oscuro y puntos dispersos: no apareció una escena 3D oculta en esos buffers. La pantalla seguía negra.
 La suite conserva 439/441 pruebas aprobadas y los mismos dos fallos conocidos.
+
+### Corrección de saltos por registro de VU1
+
+`patches/ps2recomp-vu-jump.patch` corrige JR y JALR para leer el valor actual del registro VI.
+La copia anterior usada para comparar ramas condicionales no debe determinar estos destinos.
+El comportamiento se contrastó con [JR/JALR de PCSX2](https://github.com/PCSX2/pcsx2/blob/master/pcsx2/x86/microVU_Lower.inl)
+y su [análisis de saltos](https://github.com/PCSX2/pcsx2/blob/master/pcsx2/x86/microVU_Analyze.inl).
+La regresión también cubre JALR cuando el registro de destino y el de enlace coinciden.
+
+Repetir la prueba anterior de 140 s con este parche registra 212992 comandos VIF1, llega al
+estado 11 en aproximadamente 70 s desde la primera lectura del mando y no produce mensajes
+`[gow-xgkick:reject]` ni `[VU1 reserved lower]`. Antes se observaban paquetes rechazados por
+longitud y bucles de vértices que sobrescribían las cabeceras en 0xF60 y 0x24B0.
+
+La pantalla presentada sigue negra. El contexto 0 conserva 212992 píxeles no negros, pero su
+imagen sigue siendo un fondo oscuro con puntos. Esta corrección elimina un fallo de ejecución
+VU1; todavía hay que resolver el renderizado de la escena. La suite queda en 440/442, con los
+dos fallos previos de heap/DMA. Las trazas temporales de escrituras se han retirado del runtime.

@@ -17,6 +17,7 @@ $checkpointPatch = Join-Path $RepoRoot 'patches\ps2recomp-checkpoint.patch'
 $xgkickPatch = Join-Path $RepoRoot 'patches\ps2recomp-xgkick.patch'
 $vifUnpackPatch = Join-Path $RepoRoot 'patches\ps2recomp-vif-unpack.patch'
 $vifDiagnosticPatch = Join-Path $RepoRoot 'patches\ps2recomp-vif-diagnostic.patch'
+$vuJumpPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu-jump.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -49,6 +50,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $checkpointPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $xgkickPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vifUnpackPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vifDiagnosticPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vuJumpPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
