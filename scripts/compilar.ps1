@@ -1,5 +1,6 @@
 # Clona PS2Recomp, recompila SCUS_973.99 a C++ y compila el ejecutable para PC.
 # Lo llama scripts\2_compilar.cmd, que antes carga el entorno de Visual Studio (vcvars64).
+param([switch]$Trazas)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'common.ps1')
 
@@ -25,6 +26,7 @@ $spu2Patch = Join-Path $RepoRoot 'patches\ps2recomp-spu2.patch'
 $fpuRootsPatch = Join-Path $RepoRoot 'patches\ps2recomp-fpu-roots.patch'
 $spu2OutputPatch = Join-Path $RepoRoot 'patches\ps2recomp-spu2-output.patch'
 $sio2Patch = Join-Path $RepoRoot 'patches\ps2recomp-sio2.patch'
+$perfPatch = Join-Path $RepoRoot 'patches\ps2recomp-perf.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -75,6 +77,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $spu2Patch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $fpuRootsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $spu2OutputPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $sio2Patch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $perfPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
@@ -91,7 +94,10 @@ $t2 = $t -replace '(?m)^\s*/GL\b.*\r?\n', '' -replace '(?m)^\s*/LTCG\b.*\r?\n', 
 if ($t2 -ne $t) { Set-Content -LiteralPath $rm -Value $t2 -NoNewline; Write-Host 'ReleaseMode.cmake: LTCG desactivado' }
 
 Paso 'Configurando CMake'
+# Las trazas por función vacían el archivo en cada entrada/salida. Activarlas solo para investigar.
+$logsEnabled = if ($Trazas) { 'ON' } else { 'OFF' }
 Run 'cmake' @('-S', $rec, '-B', $bld, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF',
+              "-DPS2X_ENABLE_RUNTIME_LOGS=$logsEnabled", "-DPS2X_ENABLE_AGRESSIVE_LOGS=$logsEnabled", "-DPS2X_ENABLE_IOP_RPC_TRACE=$logsEnabled",
               '-DPS2X_ENABLE_RUNNER_UNITY_BUILD=ON', '-DPS2X_ENABLE_RUNNER_PCH=ON')
 
 Paso 'Compilando el recompilador'

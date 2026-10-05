@@ -158,6 +158,11 @@ O script clona o PS2Recomp em `<unidade>:\gowport` (um caminho curto para evitar
 caracteres; configurável com `GOW_WORK`), fixa o commit `c5a9d02`, aplica os patches de `patches/`, gera o código C++ e
 compila o `ps2EntryRunner.exe`. O log fica em `logs\2_compilar.log`.
 
+As compilações Release desativam por padrão as trilhas de funções e RPC do IOP. Para investigar,
+use `scripts\2_compilar.cmd -Trazas`. Para medir as chamadas a `vid::Flip` do jogo separadamente
+da atualização da janela, execute `powershell -File scripts\probar_rendimiento.ps1`;
+consulte [as notas do perfil](docs/ESTADO.md#medicion-de-rendimiento-2026-10-05).
+
 **4. Execute:**
 
 ```bat

@@ -110,6 +110,20 @@ namespace
         if (smokeTest)
         {
             const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - testStart).count();
+            // GOW-Port: comprobar el estado durante el perfil sin escribir capturas ni volcados.
+            static const bool noCapture = [] {
+                const char *value = std::getenv("GOW_PAD_TEST_NO_CAPTURE");
+                return value && std::strcmp(value, "1") == 0;
+            }();
+            static double nextStateReport = 0;
+            if (noCapture && seconds >= nextStateReport)
+            {
+                nextStateReport = seconds + 5;
+                std::fprintf(stderr, "[gow-pad2:state] seconds=%.2f state=%u pending=%u stage=%u levelReady=%u flashReady=%u movie=%u\n",
+                             seconds, readGuest32(rdram, 0x29E560u), readGuest32(rdram, 0x29E574u),
+                             readGuest32(rdram, 0x29E5A0u), readGuest32(rdram, 0x29E584u),
+                             readGuest32(rdram, 0x29CAB4u), readGuest32(rdram, 0x29C838u));
+            }
             constexpr double presses[] = {5, 12, 20, 28, 36, 52, 60, 68, 76, 84, 100, 116, 132};
             for (size_t i = 0; i < std::size(presses); ++i)
                 if (seconds >= presses[i] && seconds < presses[i] + 0.7)
@@ -119,7 +133,7 @@ namespace
                 }
             static size_t capture = 0;
             constexpr double captures[] = {4, 10, 18, 26, 34, 44, 56, 70, 90, 110, 130, 160, 190, 240, 360, 480, 580};
-            if (capture < std::size(captures) && seconds >= captures[capture])
+            if (!noCapture && capture < std::size(captures) && seconds >= captures[capture])
             {
                 std::vector<uint8_t> pixels;
                 uint32_t width = 0, height = 0, display = 0, source = 0;

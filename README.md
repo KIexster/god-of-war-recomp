@@ -158,6 +158,10 @@ The script clones PS2Recomp into `<drive>:\gowport` (a short path to avoid the 2
 configurable with `GOW_WORK`), pins commit `c5a9d02`, applies the patches in `patches/`, generates the C++ code and builds
 `ps2EntryRunner.exe`. The log is written to `logs\2_compilar.log`.
 
+Release builds disable function and IOP RPC traces by default. For diagnostics, use
+`scripts\2_compilar.cmd -Trazas`. To measure game `vid::Flip` calls separately from window refreshes,
+run `powershell -File scripts\probar_rendimiento.ps1`; see [the profiling notes](docs/ESTADO.md#medicion-de-rendimiento-2026-10-05).
+
 **4. Run:**
 
 ```bat

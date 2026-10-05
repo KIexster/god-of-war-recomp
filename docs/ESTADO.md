@@ -419,3 +419,118 @@ La ejecución integrada de 150 segundos vuelve a alcanzar el estado 11; la captu
 mantiene el fondo oscuro y no muestra una escena 3D reconocible. La configuración pasa sin errores,
 con los cuatro avisos ya documentados. El merge de Claude `a401182` tiene sus verificaciones de
 GitHub completadas correctamente.
+
+<a id="medicion-de-rendimiento-2026-10-05"></a>
+
+## Medición de rendimiento (2026-10-05)
+
+La compilación Release conservaba activadas las trazas generales, las entradas/salidas de cada
+función y las trazas RPC del IOP. El registro de funciones vacía el archivo en cada mensaje; una
+ejecución de 150 segundos dejó unos 204 MB. `compilar.ps1` configura ahora las tres opciones en
+`OFF` por defecto. `scripts\2_compilar.cmd -Trazas` permite activarlas para investigar.
+
+`ps2recomp-perf.patch` añade un perfil opcional, independiente de esas trazas:
+
+- `GOW_PERF_DIAG=1`: emite una línea `[gow-perf]` cada cinco segundos con tiempos transcurridos
+  exclusivos de EE, VU, procesamiento GIF/GS, llamadas al IOP y espera del scheduler. Las llamadas
+  al GS anidadas en VU se descuentan de VU; no se suman dos veces.
+- Los tiempos de subida de imagen y `EndDrawing` pertenecen al hilo de presentación y se informan
+  por separado. `EndDrawing` incluye la limitación de refresco y las esperas del host.
+- `GOW_PERF_FRAME_PC=0x001837B8` cuenta entradas a `vid::Flip` de este ELF, tanto desde el scheduler
+  como desde llamadas directas. Sus reanudaciones no cuentan. `guest_flip_hz` mide esas entradas;
+  `host_hz` mide los refrescos de la ventana. Ninguno acredita por sí mismo cuadros 3D correctos.
+- `GOW_PERF_DIAG=frames` conserva ambos contadores sin temporizadores por subsistema, para comprobar
+  el coste del perfil; los campos de tiempo quedan en cero porque no se miden. Sin `GOW_PERF_DIAG`,
+  no lee relojes ni acumula estos contadores.
+- Los tiempos incluyen esperas de mutex y del sistema operativo; **no son porcentajes de uso de
+  CPU**. El trabajo de un scope todavía abierto se contabiliza al cambiar de scope, por lo que
+  conviene comparar varias ventanas completas, no una sola línea.
+
+Prueba reproducible, sin volcados VIF/RAM/VRAM ni capturas periódicas:
+
+```powershell
+powershell -File scripts\probar_rendimiento.ps1 -Segundos 150 -Etiqueta limpio
+python tools\rendimiento\resumir.py logs\perf_limpio.log --desde 100 --hasta 145
+powershell -File scripts\probar_rendimiento.ps1 -Segundos 150 -SoloCuadros -Etiqueta cuadros
+python tools\rendimiento\resumir.py logs\perf_cuadros.log --desde 100 --hasta 145
+```
+
+El script conserva las pulsaciones de `GOW_PAD_TEST`, desactiva las capturas con
+`GOW_PAD_TEST_NO_CAPTURE=1` y restaura el entorno al terminar. Usa `GOW_SKIP_FMV=1` y `GOW_FAST_BOOT=1`;
+estas mediciones no evalúan reproducción FMV ni una partida completa. Los registros quedan locales
+en `logs/`. Una línea `[gow-pad2:state]` informa del estado aproximadamente cada cinco segundos
+sin escribir imágenes. El resumen separa el hilo del juego del de presentación.
+
+Se compararon tres ejecuciones de 150 s, resumiendo ocho ventanas completas entre los segundos
+100 y 145 del reloj del perfil (unos 40 s por muestra). En ese tramo se verificó el estado 11:
+
+| Compilación / medición | Entradas a `vid::Flip` por segundo | Refrescos de ventana por segundo |
+|---|---:|---:|
+| Trazas activadas, perfil completo | 2,19 | 57,25 |
+| Trazas desactivadas, perfil completo | 2,37 | 56,60 |
+| Trazas desactivadas, solo contadores | 2,40 | 56,45 |
+
+La diferencia observada respecto a la referencia es de aproximadamente un 8 %. La referencia
+conservaba las capturas periódicas del mando; las dos mediciones nuevas las desactivan. Son muestras
+individuales y no aíslan toda la variación entre ejecuciones, por lo que no acreditan una mejora
+garantizada de FPS. La diferencia entre perfil completo y solo contadores ronda el 1 % en esta
+muestra: el coste de los temporizadores no parece explicar el bajo rendimiento observado.
+
+Con trazas desactivadas, el tiempo exclusivo contabilizado en el hilo del juego se reparte en
+**IOP 61,26 %, GIF/GS 27,94 %, VU 8,72 % y EE 2,08 %**. La espera del scheduler es nula en esas
+ventanas. Es un reparto de tiempo transcurrido de los caminos instrumentados, no uso de CPU ni
+una separación interna de CPU/SPU2 dentro del IOP. El próximo perfil del IOP debe distinguir
+intérprete, servicios y mezcla SPU2; optimizar únicamente VU tendría un margen pequeño en esta escena.
+
+La reconstrucción completa regeneró las 6418 unidades del juego. Los 14 parches aplican en orden
+en una copia aislada y sus 42 fuentes `.cpp`/`.h` comparadas coinciden con el runtime compilado.
+La suite integrada pasa **467/467**, incluidas dos comprobaciones de contabilidad exclusiva y
+anidamiento del perfil. Configuración y handlers sin errores (cuatro avisos conocidos), scripts
+PowerShell sin errores y prueba independiente de libpad2 correcta.
+
+La comprobación visual final, separada de las mediciones y usando el mismo salto de FMV/arranque
+rápido, vuelve a alcanzar el estado 11. La captura presentada a los 110 s desde la lectura del mando
+muestra el fondo oscuro con ondas, sin una escena 3D reconocible ni Kratos. El perfil y la retirada
+de trazas mejoran la observación y reducen costes, pero **no acreditan todavía una partida jugable**.
+
+### Posiciones presentes en el flujo VIF anterior
+
+Se revisó fuera de línea el flujo VIF completo capturado anteriormente en el estado 11. Un UNPACK
+`V4_32`, con 120 vectores y `STCYCL=0x0102`, ya contiene en su payload los 120 valores
+`(0,0,0,32768)`, antes de que VIF/VU1 los interpreten. El mismo comando seguido del payload aparece
+en varios buffers del volcado EE. Otros lotes `V4_16` de 81 vértices contienen posiciones XYZ
+distintas de cero. Esto acota los ceros de aquel lote a los datos de entrada EE/DMA; no demuestra
+todavía qué productor falla ni que una plantilla vacía sea incorrecta en ese momento.
+
+Los símbolos y el export de referencia ayudan a seguir `renEEPrim::InitUNPACKData`, `InitChunk` y
+`GetUpdateAddress`. La primera prepara instrucciones y offsets, reservando espacio para los datos;
+hay que identificar y comprobar la rutina que posteriormente rellena las posiciones. No se cambia
+el recorte ni se sustituye geometría con datos inventados. Los exports, flujos y volcados permanecen
+locales y no se publican.
+
+### Referencia del port de Shadow of the Colossus
+
+El usuario aportó [sotc-vibe-pc](https://github.com/LightVelox/sotc-vibe-pc). Se revisaron su
+arquitectura, resultados de rendimiento y el runtime exacto que fija su submódulo:
+[`LightVelox/PS2Recomp`, `ac9efa070638ad3b3accd284de6f898d5ab271d1`](https://github.com/LightVelox/PS2Recomp/tree/ac9efa070638ad3b3accd284de6f898d5ab271d1).
+La copia de referencia queda en una carpeta local ignorada; el runtime de GoW conserva su revisión
+fijada y los parches integrados de este proyecto.
+
+Hallazgos concretos para la siguiente etapa:
+
+- La interfaz `GSRasterBackend` coincide con la nuestra. El fork aporta `GSGpuBackend`, un wrapper
+  `GSThreadedBackend`, rasterizado OpenGL y pruebas de referencia/replay. Esto permite estudiar una
+  incorporación por módulos conservando el renderer CPU para comparar resultados. La interfaz común
+  no basta para garantizar compatibilidad de memoria, sincronización, transferencias o presentación.
+- Aporta VU1 recompilada con fallback al intérprete y herramientas de verificación. En nuestra muestra
+  VU supone menos del 9 % del tiempo instrumentado, por lo que no es la primera optimización de FPS.
+- El IOP y el reloj de audio también tienen cambios. Hay que comparar por separado el intérprete,
+  scheduler y SPU2 con los cambios de Claude antes de trasladar cualquier arreglo de ese ámbito.
+- Sus [resultados publicados](https://github.com/LightVelox/sotc-vibe-pc/blob/main/Docs/PERFORMANCE_RESULTS.md)
+  separan campos emulados, actualizaciones del juego, imágenes distintas y swaps del host. Registran
+  mejoras concretas de presentación, pero no acreditan 60 actualizaciones reales por segundo en las
+  muestras del santuario. Se usa como referencia de implementación y validación, sin trasladar esa
+  cifra de rendimiento a GoW.
+
+Prioridad: contrastar los datos y la salida del renderizado con una referencia correcta; después
+adaptar backend GS y mejoras genéricas en parches independientes, con pruebas y comparación visual.

@@ -17,7 +17,7 @@ if not defined VSPATH (
 )
 set VSCMD_SKIP_SENDTELEMETRY=1
 call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat" > logs\vcvars.log 2>&1
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0compilar.ps1" > logs\2_compilar.log 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0compilar.ps1" %* > logs\2_compilar.log 2>&1
 set "RC=%errorlevel%"
 echo [codigo final %RC%] >> logs\2_compilar.log
 echo.
