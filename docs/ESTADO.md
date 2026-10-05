@@ -238,6 +238,17 @@ siguen en el historial de git por si hiciera falta recuperarlos.
 3. Memory card (SIO2 / `MC2_D.IRX`).
 4. Audio sobre 989snd / SPU2.
 
+## Auditoría del intérprete de VU1
+
+Se revisaron, instrucción por instrucción, las unidades superior e inferior de VU1
+(`ps2_vu1_upper.cpp`, `ps2_vu1_lower.cpp`) contra la especificación y contra PCSX2 (`VUops.cpp`):
+FMAC con broadcast, acumulador y `OPMULA`/`OPMSUB`, `CLIP`, `FTOI`/`ITOF`, `DIV`/`SQRT`/`RSQRT` (con la
+latencia de `Q`), flags (`FSAND`, `FMAND`, `FCAND`…), ramas y enlaces, cargas y almacenamientos con
+autoincremento, `MTIR`/`MFIR`, el generador `R` y la EFU. La única discrepancia fue una errata en un
+coeficiente de la serie de `EATAN` (`-0.1308…` en vez de `-0.1390…`), corregida en
+`ps2recomp-vu-efu.patch` con su prueba. La semántica de esas instrucciones no explica la imagen negra
+de la partida. Fuera de esta revisión quedan las latencias por instrucción y los riesgos del pipeline.
+
 ## Validación del avance al menú
 
 - `scripts\probar_pad2.cmd`: pasa la prueba de bytes de botones, sticks y las doce presiones.

@@ -11,7 +11,8 @@
    (checkpoints que ceden en la entrada de una función), `ps2recomp-xgkick.patch` (`GOW_XGKICK_IMMEDIATE`,
    opcional), `ps2recomp-vif-unpack.patch` (UNPACK V2 y V4-5), `ps2recomp-vif-diagnostic.patch`
    (diagnósticos acotados de VIF y XGKICK), `ps2recomp-heap.patch` (heap privado del runtime configurable
-   con `setPrivateGuestHeap`) y `ps2recomp-vu-jump.patch` (JR/JALR leen el destino VI actual)
+   con `setPrivateGuestHeap`), `ps2recomp-vu-jump.patch` (JR/JALR leen el destino VI actual) y
+   `ps2recomp-vu-efu.patch` (coeficiente de la serie de `EATAN`)
    con `git apply --ignore-whitespace`. Antes de reaplicarlos retira los archivos nuevos que dejó
    la compilación anterior (`gow_stub_services.cpp` e `iop_format.h`).
 4. **Ajustes de CMake** — añade `src/runner` a los includes de `ps2EntryRunner` y desactiva `/GL` y `/LTCG`
