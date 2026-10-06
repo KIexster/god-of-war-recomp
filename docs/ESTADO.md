@@ -1205,3 +1205,40 @@ activa (sondeo de un registro o de memoria), saltarlos rendiría mucho más que 
 Para ello basta una ejecución con `PS2X_IOP_PC_EVERY=1000000`: el registro mostrará `[IOP:pc]` con los
 PC más repetidos. **Falta medirlo con el juego:** repetir `scripts\probar_rendimiento.ps1` y comparar el
 porcentaje del IOP y las llamadas a `vid::Flip` por segundo.
+
+### Coordenadas constantes e integración del IOP rápido (2026-10-06)
+
+Se integra `origin/main` con el parche IOP de Opus mediante merge, sin modificar su
+implementación. Se conservan los dos registros de investigación y se ordena el IOP
+rápido después de sprites y antes de los nuevos parches de atributos de triángulos.
+
+`ps2recomp-gs-triangle-texcoords.patch` corrige UV/STQ constantes en CPU y ambas
+rutas OpenGL. La regresión incluye Q=1,5: requiere también refinar el recíproco GPU,
+porque el texel anterior se seleccionaba incluso en el primer centro. Antes fallan
+las tres pruebas nuevas; después pasa la suite integrada **535/535**, incluidas
+ocho pruebas con OpenGL real. Las restas de UV son firmadas y se conserva la
+interpolación homogénea antes de dividir por Q.
+
+La sonda independiente verifica **24/24 casos de atributos constantes**: UV o STQ
+con Q=1,5, nearest/lineal, ambos sentidos y CPU/OpenGL compute/hardware. Conserva
+otros 12 casos exploratorios con Q variable y S/T proporcionales a Q sobre fronteras
+exactas de texel: todavía difieren del control constante, tanto en CPU como en GPU.
+No se consideran resueltos por este parche. El gradiente de la regresión evita esas
+fronteras y comprueba que se mantiene la división después de interpolar.
+
+Las variantes hardware se compilan de forma asíncrona y pueden usar compute al
+principio. La sonda espera de forma acotada y confirma cada dibujo hardware mediante
+los contadores existentes: aumentan primitivas y batches sin aumentar tiles compute.
+Así se verifican también los ocho casos constantes por la ruta hardware ejecutada,
+no solo con esa ruta habilitada.
+
+La auditoría reproduce **31 parches y 75 fuentes sin diferencias**; los 14 scripts
+PowerShell se analizan sin errores. La compilación completa termina con código 0,
+regenera las 6418 unidades y la suite posterior vuelve a pasar **535/535**.
+El control adicional de RGBA/alpha-test y F pasa **6/6**, confirmando también hardware
+con los contadores después de terminar las variantes asíncronas.
+
+El primer control del juego quedó interrumpido al alcanzarse el límite de uso de
+la revisión automática de aprobación; solo registró el arranque y no llegó a guardar
+el control visual de la escena. Se repetirá tras incorporar las correcciones MMI y
+VU0 publicadas por Opus durante esa pausa. El renderer sigue en estado parcial.

@@ -35,7 +35,8 @@
    `ps2recomp-gs-triangle-sampling.patch` (CPU comparte con OpenGL el centro entero, XYOFFSET 12.4 y bordes) y
    `ps2recomp-gs-sprite-sampling.patch` (ejes CPU de sprites con fracciones, sentido de UV y área cero) y
    `ps2recomp-iop-fast.patch` (intérprete del IOP unas 1,65 veces más rápido, sin cambiar su comportamiento) y
-   `ps2recomp-gs-triangle-constants.patch` (interpolación CPU/OpenGL que conserva color, alpha y niebla constantes)
+   `ps2recomp-gs-triangle-constants.patch` (interpolación CPU/OpenGL que conserva color, alpha y niebla constantes) y
+   `ps2recomp-gs-triangle-texcoords.patch` (UV/STQ constantes y refinamiento del recíproco Q en el shader)
    con `git apply --ignore-whitespace`. Antes de reaplicarlos borra los archivos que dejó la compilación
    anterior y que algún parche crea (`new file mode`), así un parche nuevo no necesita tocar esa limpieza.
 4. **Ajustes de CMake** — añade `src/runner` a los includes de `ps2EntryRunner` y desactiva `/GL` y `/LTCG`

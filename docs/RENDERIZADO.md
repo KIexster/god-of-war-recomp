@@ -437,6 +437,30 @@ de restar atributos para admitir diferencias negativas sin underflow de enteros.
 La suite nativa pasa **531/531**, incluidas siete pruebas con OpenGL real. La sonda
 separada y la comparación de gradientes se registran en `ESTADO.md`.
 
+## Coordenadas de textura constantes en triángulos
+
+`ps2recomp-gs-triangle-texcoords.patch` conserva UV 12.4 y S/T/Q constantes mediante
+interpolación por diferencias en CPU y OpenGL compute/hardware. Las restas mantienen
+el signo para admitir UV descendentes. S, T y Q siguen siendo valores homogéneos:
+la división por Q se hace después de interpolar, al muestrear la textura.
+
+La regresión de Q constante de 1,5 detectó además un recíproco inferior en la GPU:
+el primer centro ya seleccionaba el texel anterior. El shader refina `1/Q` con el
+residuo de una operación `fma` consumida por `precise`; conserva el camino de recíproco
+cero. Es un ajuste GS propio, separado de la FPU del EE. GLSL permite un error de
+hasta 2,5 ULP en la división y especifica el uso de `precise` con `fma` en las
+secciones 4.7.1 y 8.3 de la [especificación de Khronos](https://registry.khronos.org/OpenGL/specs/gl/GLSLangSpec.4.60.pdf).
+
+Dos pruebas CPU y una OpenGL fallan antes del cambio. Comparan todos los centros
+interiores con un sprite texturizado de 1×1 y valores de referencia explícitos,
+en ambos sentidos de giro, con nearest y filtrado lineal. Comprueban también un
+gradiente descendente y Q variable en un centro lejos de fronteras de texel.
+La suite integrada con el parche IOP de Opus pasa **535/535**, incluidas ocho
+pruebas con OpenGL real. La precisión en fronteras exactas con Q variable se sigue
+investigando por separado; conservar atributos constantes no resuelve todos esos casos.
+La sonda independiente confirma la ruta hardware usando los contadores de batches,
+primitivas y tiles compute, después de esperar de forma acotada sus variantes asíncronas.
+
 ## Referencia Tobiichi-Port
 
 Se revisa [YYOzcan/Tobiichi-Port](https://github.com/YYOzcan/Tobiichi-Port/tree/9f02797f8ab7481fddad4d2daf7afad82d11699f)
