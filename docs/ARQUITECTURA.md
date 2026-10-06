@@ -38,7 +38,8 @@
    `ps2recomp-vu0-macro.patch` (VU0 en modo macro usa su memoria de datos; DMA con cadenas de más de 4096 tags) y
    `ps2recomp-mmi.patch` (15 instrucciones MMI corregidas según PCSX2: permutaciones, PABS, PADDUH/PSUBUH, PS*VW) y
    `ps2recomp-gs-triangle-constants.patch` (interpolación CPU/OpenGL que conserva color, alpha y niebla constantes) y
-   `ps2recomp-gs-triangle-texcoords.patch` (UV/STQ constantes y refinamiento del recíproco Q en el shader)
+   `ps2recomp-gs-triangle-texcoords.patch` (UV/STQ constantes y refinamiento del recíproco Q en el shader) y
+   `ps2recomp-vu1-efu-opcodes.patch` (codificaciones reales de ERSQRT, ESIN, EATAN y EEXP, y caso EFU reservado)
    con `git apply --ignore-whitespace`. Antes de reaplicarlos borra los archivos que dejó la compilación
    anterior y que algún parche crea (`new file mode`), así un parche nuevo no necesita tocar esa limpieza.
 4. **Ajustes de CMake** — añade `src/runner` a los includes de `ps2EntryRunner` y desactiva `/GL` y `/LTCG`

@@ -46,6 +46,7 @@ $vu0MacroPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-macro.patch'
 $mmiPatch = Join-Path $RepoRoot 'patches\ps2recomp-mmi.patch'
 $gsTriangleConstantsPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-triangle-constants.patch'
 $gsTriangleTexcoordsPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-triangle-texcoords.patch'
+$vu1EfuOpcodesPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-efu-opcodes.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -116,6 +117,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $vu0MacroPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $mmiPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsTriangleConstantsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsTriangleTexcoordsPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1EfuOpcodesPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner

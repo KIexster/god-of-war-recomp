@@ -1343,3 +1343,24 @@ VU1 emitidos por defecto; GS no mide aquí la ejecución del worker OpenGL. No s
 porcentajes de utilización de CPU/GPU. El control antiguo de 3,45 Flip/s descartaba
 todos los modelos observados: el trabajo ejecutado ahora cambió y no permite atribuir
 la diferencia al parche IOP. Se repetirá el perfil después de corregir EFU.
+
+### Decodificación EFU de VU1 (2026-10-06)
+
+`ps2recomp-vu1-efu-opcodes.patch` separa un fallo anterior del intérprete: según la
+tabla LowerOP de PCSX2 enlazada arriba, ERSQRT usa `0x79`, ESIN `0x7C`, EATAN `0x7D`
+y EEXP `0x7E`; `0x77` está reservado. El runtime utilizaba respectivamente `0x77`,
+`0x79`, `0x7C` y `0x7D`. Esto detenía los microprogramas de GoW que ejecutan EEXP en
+`pc=0x288` y seleccionaba otra fórmula para las tres instrucciones anteriores.
+
+Se corrigen tanto la ejecución como la decodificación usada por la caché y el
+scheduler, con las latencias de las operaciones ya existentes. Se conservan las
+fórmulas, el acceso a P y la restricción de EFU en VU0. Tres regresiones nuevas usan
+palabras binarias explícitas: comprueban resultados y WAITP/continuación de las cuatro
+instrucciones, el rechazo de `0x77` y que EEXP siga reservado en VU0. Dos fixtures
+anteriores de EATAN y latencias EFU se ajustan a las codificaciones correctas sin
+relajar sus aserciones. Con esos fixtures, cuatro pruebas fallan antes del cambio;
+con el arreglo pasan **540/540** sin activar las ocho pruebas OpenGL.
+
+Pendiente de este registro: regeneración/compilación completa con los 34 parches,
+suite con OpenGL y nuevo control de la escena y rendimiento. El juego probado arriba
+corresponde al ejecutable anterior a este arreglo.

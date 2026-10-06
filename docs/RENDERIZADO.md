@@ -469,6 +469,13 @@ OpenGL. En estado 11 desaparece la duplicación Y/Z de las esferas: 30 de las pr
 polígonos y texturas distintos, pero siguen deformados y sin Kratos reconocible.
 Se investigan las paradas de VU1 en EEXP; ver el control integrado en `ESTADO.md`.
 
+`ps2recomp-vu1-efu-opcodes.patch` corrige esa selección de instrucciones y sus
+latencias en la decodificación cacheada y en la ejecución. ERSQRT/ESIN/EATAN/EEXP se
+contrastan con la tabla LowerOP de PCSX2 en `32ac6e2`, conservando las fórmulas EFU.
+Las pruebas usan palabras binarias explícitas y comprueban también WAITP y el
+rechazo de instrucciones reservadas. La validación con el juego se registra aparte
+para distinguirla de la integración MMI anterior.
+
 ## Referencia Tobiichi-Port
 
 Se revisa [YYOzcan/Tobiichi-Port](https://github.com/YYOzcan/Tobiichi-Port/tree/9f02797f8ab7481fddad4d2daf7afad82d11699f)
