@@ -1177,3 +1177,26 @@ Para ello basta una ejecución con `PS2X_IOP_PC_EVERY=1000000`: el registro most
 PC más repetidos. **Falta medirlo con el juego:** repetir `scripts\probar_rendimiento.ps1` y comparar el
 porcentaje del IOP y las llamadas a `vid::Flip` por segundo.
 
+### VU0 en modo macro y cadenas DMA largas (2026-10-06)
+
+`ps2recomp-vu0-macro.patch` (tras `ps2recomp-iop-fast.patch`) incorpora, con la autorización ya dada para el
+fork de SotC, dos commits más que afectan al código del EE:
+
+- **03d18df — VU0 en modo macro usa su memoria de datos.** `VLQI`/`VSQI`/`VLQD`/`VSQD` y `VILWR`/`VISWR`
+  leían y escribían la **RAM del EE desde la dirección 0** (`READ128((vi & 0x3FF) << 4)`) en lugar de la
+  memoria de datos de VU0 (`(vi & 0xFF) << 4` dentro de sus 4 KB); además `VSQI`/`VSQD` tenían intercambiados
+  los campos Fs e It, y VI0/VF0 podían escribirse. En SotC esto rompía la pila de matrices
+  (push/pop) y desaparecían los personajes. Si God of War usa esas instrucciones, estaba leyendo y
+  pisando los primeros 16 KB de la RAM del EE.
+- **e36fbf1 — cadenas DMA de más de 4096 tags.** El recorrido de cadenas se cortaba a los 4096 tags y
+  perdía el final: el GIF quedaba en modo IMAGE y se tragaba la configuración A+D del cuadro siguiente.
+  El límite pasa a 2^20 tags y avisa (`[dma] chain on ... stopped after ... tags`) si se alcanza. El mismo
+  commit corrige `VRNEXT`/`VRINIT`/`VRXOR`/`VRGET` (LFSR del registro R), `VFTOI` (saturación) y `VABS`
+  (denormales), y comparte el registro R de VU0 entre hilos en `EeScheduler`. La herramienta opcional
+  `vu0_audit` del fork no se incorpora (depende de su renderer de referencia).
+
+La suite pasa **528/528** con los 30 parches (pruebas del fork que decodifican las instrucciones
+`vsqi`/`vlqd`, cadena DMA larga, números aleatorios, `VFTOI`/`VABS`). **Falta comprobarlo con el juego:**
+requiere `scripts\2_compilar.cmd` (cambia el código generado). Conviene repetir la captura del estado 11
+y, si aparece, buscar `[dma] chain` en el registro.
+
