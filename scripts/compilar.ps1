@@ -30,6 +30,8 @@ $perfPatch = Join-Path $RepoRoot 'patches\ps2recomp-perf.patch'
 $gsOpenGlPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-opengl.patch'
 $eeFixesPatch = Join-Path $RepoRoot 'patches\ps2recomp-ee-fixes.patch'
 $gsPresentationPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-presentation.patch'
+$vifDirectPatch = Join-Path $RepoRoot 'patches\ps2recomp-vif-direct.patch'
+$vifDirectFragmentsPatch = Join-Path $RepoRoot 'patches\ps2recomp-vif-direct-fragments.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -84,6 +86,8 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $perfPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsOpenGlPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $eeFixesPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsPresentationPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vifDirectPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vifDirectFragmentsPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner

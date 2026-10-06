@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-_Última actualización: 5 de octubre de 2026_
+_Última actualización: 6 de octubre de 2026_
 
 ## Qué funciona
 
@@ -751,3 +751,62 @@ La suite nativa vuelve a pasar **481/481**, incluidas las dos pruebas GPU reales
 Los 17 parches aplican y las 65 fuentes auditadas coinciden con el runtime local.
 El inspector pasa 8/8, configuración y handlers no tienen errores (cuatro avisos
 conocidos), los nueve scripts PowerShell y libpad2 pasan sus comprobaciones.
+
+### Ampliación de la procedencia y recorte VU1 (2026-10-06)
+
+Una ejecución de 175 s con `GOW_SKIP_FMV=1`, `GOW_FAST_BOOT=1`, OpenGL y sondas temporales
+alcanza el estado 11. Amplía la muestra a **128 cadenas VIF1 y 15.798 tramos DMA**.
+Ningún payload observado incluye `0x7FCEB0` o `0x81C020`, los dos buffers con XYZ cambiante.
+Sus objetos (`0x7FCCC0`, `0x81BE30`) mantienen `updated=0`, `rendered=1`, `view=1` en
+las 128 muestras. Ambos buffers DMA son no nulos. Es una observación de esta muestra,
+no una prueba de que nunca se envíen ni de que deban dibujar una parte concreta de la escena.
+
+La inspección del MIPS de `renEEPrimContext::ProcessServer` (`0x141B78`) sitúa la selección
+en `0x141C18–0x141C34`: lee el índice actualizado de `objeto+0x146`, selecciona el DMA
+y lo copia a `objeto+0x147` antes del filtro de vista del objeto. Falta observar si el
+contexto recorre esos objetos y qué filtros aplica; no se fuerza el intercambio de buffers.
+
+La traza del replay VU1 número 5 observa los operandos **después del stall de emisión**.
+Conserva el SHA-256 del paquete original número 11 y registra 1.576 pares de instrucciones.
+Los 86 CLIP se reparten entre PC byte `0xD28` y `0xD30`; FT.w es negativo en todos
+(-427,592 a -75,934). Se ven cambios de CLIP con su latencia. Esto no demuestra un fallo
+del recorte: primero hay que comprobar el espacio y el signo esperados de la transformación.
+Los enteros empaquetados que se muestran como NaN al leerlos como floats tampoco prueban
+un error de posiciones. Las sondas y el replay se retiran; los datos quedan en `logs/`.
+
+### Continuación DIRECT y separación de IMAGE/VIF (2026-10-06)
+
+Se integra en un parche propio la corrección de Claude
+[`540defd`](https://github.com/KIexster/god-of-war-recomp/commit/540defd), sin incorporar
+los cambios EE/IOP de su rama. Antes, una IMAGE pendiente de GIF PATH2 consumía los comandos
+VIF que seguían al DIRECT como si fueran píxeles. Ahora solo toma los payloads de los
+siguientes DIRECT/DIRECTHL, mantiene MARK/STCYCL/ITOP y procesa los GIFtags posteriores
+a la imagen. La prioridad corresponde al DIRECT actual. Dos pruebas antiguas se corrigen
+porque esperaban píxeles sin el siguiente comando DIRECT.
+
+La nueva regresión y esas dos pruebas fallan antes del arreglo (**477/480**) y pasan después
+(**480/480**); al añadir la prueba de prioridad, la suite normal pasa **481/481**.
+
+Se detecta además que DIRECT recortaba su tamaño al bloque disponible y perdía el resto.
+`ps2recomp-vif-direct-fragments.patch` conserva el payload incompleto y DIRECTHL entre
+bloques, sin copiar los payloads completos y con un límite de 1 MiB. Seis regresiones nuevas
+fallan sin ese cambio (**481/487**) y pasan con él. Incluyen todos los cortes de byte de
+PACKED/REGLIST de 32 B, FIFO, IMAGE con comprobación de VRAM, prioridad, IMMEDIATE=0 y reset.
+La suite con OpenGL real pasa **489/489**. Los **19 parches** aplican y sus **67 fuentes**
+auditadas coinciden con el runtime local. Configuración y handlers sin errores (cuatro
+avisos conocidos), inspector GIF 8/8 y scripts PowerShell sin errores de sintaxis.
+
+Alcance, referencia primaria, crédito y diagnóstico opcional: [`RENDERIZADO.md`](RENDERIZADO.md#transferencias-direct-de-path2).
+La reconstrucción completa regenera las **6.418 unidades** y termina correctamente. Tras ella,
+la suite nativa vuelve a pasar **489/489**, incluidas las dos pruebas GPU. Libpad2 también pasa.
+Una partida de **175 s**, con `GOW_SKIP_FMV=1`, `GOW_FAST_BOOT=1` y `GOW_VIF_DIAG=1`,
+inicializa OpenGL en la RX 5700 XT sin fallback y llega al estado 11 con `pending=0`,
+`levelReady=1` y `flashReady=1`. Guarda dos capturas tardías distintas a **90,27 y 110,04 s**;
+no guarda la de 130 s antes de terminar. Se ve agua oscura, sin Kratos ni el escenario completo.
+
+No aparecen mensajes `[gow-vif-direct]` en esa ejecución: **no se observan DIRECT truncados**
+en la muestra. Las regresiones demuestran los defectos del runtime, pero esta prueba no prueba
+que hayan causado la escena ausente ni permite atribuirles una mejora visual o de FPS.
+Las capturas y registros permanecen en `logs/`; las sondas temporales de geometría ya no están
+en el ejecutable reconstruido. El siguiente paso es observar la membresía de los buffers
+actualizados en `renEEPrimContext::ProcessServer`.

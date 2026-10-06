@@ -199,3 +199,31 @@ sus unidades GS, antes de aplicar XYOFFSET. Un kick no garantiza un triángulo v
 La captura de esta investigación usó sondas temporales VIF/VU1 y un replay local, ya
 retirados. `GOW_GEOMETRY_DIAG` y `GOW_REPLAY_STEM` no son opciones del runtime publicado.
 Conservar capturas e informes bajo `logs/`; no subir RAM, microcódigo ni datos del juego.
+
+## Transferencias DIRECT de PATH2
+
+`ps2recomp-vif-direct.patch` adapta la corrección de Claude en
+[`540defd`](https://github.com/KIexster/god-of-war-recomp/commit/540defd): una IMAGE pendiente
+solo consume el payload de los siguientes DIRECT/DIRECTHL. Los comandos VIF entre ellos
+siguen ejecutándose. La prioridad corresponde al comando actual, incluso si cambia entre
+DIRECT y DIRECTHL al continuar la misma imagen.
+
+`ps2recomp-vif-direct-fragments.patch` conserva por separado el tamaño pendiente de un
+DIRECT que llega dividido entre bloques DMA o escrituras FIFO. Su acumulador está limitado
+a 65.536 QW (1 MiB, también para IMMEDIATE=0). Solo copia las cargas incompletas; la ruta
+que recibe un DIRECT completo sigue enviando sus bytes directamente. Inicializar la memoria
+o escribir VIF1_FBRST.RST descarta esa continuación y su prioridad.
+
+Se completa el DIRECT antes de entregarlo al parser GS, que recibe paquetes sin estado
+de continuación PACKED/REGLIST. Esto conserva el payload, pero no reproduce todos los
+stalls ni los ciclos del hardware. No añade continuación de otros comandos VIF ni de
+PACKED/REGLIST entre distintos comandos DIRECT completos. La referencia de comportamiento
+es [`_vifCode_Direct` de PCSX2](https://github.com/PCSX2/pcsx2/blob/master/pcsx2/Vif_Codes.cpp),
+que conserva el tamaño pendiente y distingue DIRECT de DIRECTHL; no se ha copiado su código.
+Se mantiene el crédito del port GS a Taylor N. Albarnaz / LightVelox indicado al inicio.
+
+Las regresiones comprueban píxeles IMAGE, comandos MARK/STCYCL/ITOP intermedios, nuevos
+GIFtags después de una imagen, prioridad DIRECTHL, PACKED/REGLIST con todos los cortes
+de byte en un payload de 32 B, escrituras FIFO, el tamaño máximo y reset. No contienen
+datos del juego. `GOW_VIF_DIAG=1` añade hasta 16 mensajes `[gow-vif-direct]` de inicio y
+otros 16 de finalización de transferencias fragmentadas. No habilitarlo para medir FPS.
