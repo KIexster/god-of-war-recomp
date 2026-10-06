@@ -837,3 +837,40 @@ los dos objetos que sí recibe el contexto con las entradas VU1. No se fuerza su
 ni el cambio de buffer. Los resultados permanecen en `logs/`. La CI del commit VIF
 `f5711bd` pasa tanto las comprobaciones rápidas como la compilación y suite Linux del runtime:
 [ejecución 37457211736](https://github.com/KIexster/god-of-war-recomp/actions/runs/37457211736).
+
+### Orden FIFO y DIRECTHL en el GIF (2026-10-06)
+
+La comparación de `GifArbiter::drain` mezclaba la prioridad numérica del path con una
+excepción DIRECTHL/IMAGE dentro de `std::stable_sort`. DIRECT y DIRECTHL del mismo path
+resultaban equivalentes, pero tenían relaciones distintas con una IMAGE de PATH3: el
+comparador no era un orden débil estricto. En las regresiones, esto permite cambiar el
+orden de un mismo canal o servir DIRECTHL antes de la IMAGE pendiente.
+
+`ps2recomp-gif-order.patch` agrupa solo por path, manteniendo la estabilidad, y arbitra
+entre las cabeceras de PATH2/PATH3 después de PATH1. La excepción ya no entra en el
+comparador de ordenación. Conserva también los paquetes añadidos por un callback para
+procesarlos en la siguiente tanda. No cambia los backends CPU/OpenGL ni la semántica EE/IOP.
+
+Las dos regresiones prueban todas las permutaciones de DIRECTHL/DIRECT/IMAGE y de
+DIRECTHL/setup/IMAGE. Fallan antes (**487/489**, suite normal) y pasan después. La suite
+con las dos pruebas OpenGL reales pasa **491/491**. Los **20 parches** aplican en orden
+y sus **68 fuentes** auditadas coinciden con el runtime local. Alcance y referencia:
+[`RENDERIZADO.md`](RENDERIZADO.md#orden-de-los-paquetes-gif).
+
+La CI del diagnóstico de contexto `f8a851a` también pasa:
+[ejecución 37458210600](https://github.com/KIexster/god-of-war-recomp/actions/runs/37458210600).
+La reconstrucción completa regenera las **6.418 unidades** y termina correctamente. Tras
+ella, la suite vuelve a pasar **491/491**, incluidas las dos pruebas OpenGL, y una nueva
+auditoría confirma las **68 fuentes** de los **20 parches** sin diferencias.
+
+Una partida de **175 s** con OpenGL, `GOW_SKIP_FMV=1`, `GOW_FAST_BOOT=1`,
+`GOW_EE_PRIM_DIAG=1` y `GOW_ANM_DIAG=1` inicializa la RX 5700 XT sin fallback y alcanza
+el estado 11 con `pending=0`, `levelReady=1` y `flashReady=1`. Las capturas tardías de
+**110,19 y 130,27 s** son distintas y muestran agua oscura; siguen ausentes Kratos y el
+escenario completo. Las **64 muestras** de contexto repiten la lista válida de dos objetos
+y la ausencia de `0x7FCCC0`/`0x81BE30`. No se atribuye al nuevo orden una mejora visual ni
+de FPS. Capturas y registros permanecen en `logs/`.
+
+Se inicia además un control más largo sin `GOW_FAST_BOOT`, con el mismo ejecutable y
+`GOW_SKIP_FMV`, para comprobar si omitir la consulta de fin de la introducción afecta
+a la membresía observada. Su resultado se documentará al terminar.

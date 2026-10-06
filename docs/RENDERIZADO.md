@@ -238,3 +238,18 @@ GIFtags después de una imagen, prioridad DIRECTHL, PACKED/REGLIST con todos los
 de byte en un payload de 32 B, escrituras FIFO, el tamaño máximo y reset. No contienen
 datos del juego. `GOW_VIF_DIAG=1` añade hasta 16 mensajes `[gow-vif-direct]` de inicio y
 otros 16 de finalización de transferencias fragmentadas. No habilitarlo para medir FPS.
+
+## Orden de los paquetes GIF
+
+`ps2recomp-gif-order.patch` conserva el orden FIFO dentro de PATH1, PATH2 y PATH3. La cola
+agrupa por path con una comparación estricta y elige después entre sus cabeceras: PATH1
+tiene prioridad; un DIRECTHL de PATH2 espera a una IMAGE que esté en la cabecera de PATH3.
+Un DIRECT normal conserva su prioridad sobre PATH3. No se adelanta una IMAGE a su setup ni
+un DIRECT posterior a un DIRECTHL previo del mismo canal.
+
+La excepción DIRECTHL/IMAGE usada antes dentro de `std::stable_sort` no cumplía el
+[orden débil estricto exigido por C++](https://eel.is/c++draft/alg.sorting.general#3).
+Dos regresiones cubren todas las permutaciones de esos grupos y la prioridad PATH1.
+Este arreglo ordena paquetes completos en la abstracción actual; no reproduce todos los
+stalls, preempciones ni ciclos del GIF real. Las pruebas son sintéticas y no acreditan
+por sí solas una mejora en la imagen o los FPS del juego.
