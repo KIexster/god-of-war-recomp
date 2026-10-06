@@ -33,6 +33,7 @@
    `ps2recomp-gif-native-tag.patch` (el atajo DMA IMAGE conserva PRE/Q y acepta IMAGE2 tras validar la cadena) y
    `ps2recomp-gs-image-fragments.patch` (conserva pixels CT24/Z24 entre cargas, reset y exportación de estado) y
    `ps2recomp-gs-triangle-sampling.patch` (CPU comparte con OpenGL el centro entero, XYOFFSET 12.4 y bordes) y
+   `ps2recomp-gs-sprite-sampling.patch` (ejes CPU de sprites con fracciones, sentido de UV y área cero) y
    `ps2recomp-iop-fast.patch` (intérprete del IOP unas 1,65 veces más rápido, sin cambiar su comportamiento)
    con `git apply --ignore-whitespace`. Antes de reaplicarlos borra los archivos que dejó la compilación
    anterior y que algún parche crea (`new file mode`), así un parche nuevo no necesita tocar esa limpieza.
