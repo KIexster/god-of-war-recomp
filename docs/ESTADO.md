@@ -1062,3 +1062,29 @@ en el EE. Durante la validación se reproduce otro problema separado en CPU y Op
 48 bytes CT24 juntos producen 16 pixels, pero en tres bloques de 16 B producen solo 15
 y dejan la transferencia abierta. Se continúa con la conservación de ese pixel parcial;
 los datos sintéticos y las capturas permanecen en `logs/`.
+
+La CI de `1f009b4` pasa:
+[`Pruebas`, ejecución 37497401093](https://github.com/KIexster/god-of-war-recomp/actions/runs/37497401093).
+
+### Pixels CT24/Z24 divididos entre cargas IMAGE (2026-10-06)
+
+`ps2recomp-gs-image-fragments.patch` conserva como máximo dos bytes pendientes por
+backend. Completa el pixel con la carga siguiente y pasa el resto directamente a la
+subida existente, sin retener una copia de la textura. Se limpia el acumulador al
+reiniciar o empezar otra transferencia; exportar/importar el estado OpenGL lo conserva.
+Los formatos distintos de CT24/Z24 siguen usando la ruta anterior.
+
+La suite reproduce **tres fallos** antes del cambio: cargas CPU, cargas OpenGL y
+exportación de un pixel parcial. Con el cambio pasan **519/519 pruebas**, incluidas
+cuatro con OpenGL real. Se comparan VRAM completa y contador de pixels en todos los
+cortes de una carga de 48 B, además de cargas repetidas de 1 B y 16 B, byte alto preservado
+en CT24/Z24, reset/nueva transferencia y exportación/restauración. Las pruebas contienen
+datos sintéticos. La auditoría aplica **26 parches** y reproduce exactamente **73 fuentes**.
+La compilación completa termina con **6.418 unidades generadas** y código cero;
+se repiten las **519/519 pruebas** con OpenGL real y la auditoría exacta de fuentes.
+El control de partida de **175 s** llega al estado 11, `pending=0`, `levelReady=1`
+y `flashReady=1`, sin fallback CPU. Las capturas de **90,15 y 110,13 s** siguen
+mostrando agua sin Kratos ni el escenario completo. Las **64 llamadas observadas a Clip**
+en el estado 11 descartan con `0x80000000`, con Y/Z idénticas y argumentos finitos.
+Este arreglo corrige las cargas fragmentadas; no acredita mejora de FPS ni resuelve
+el descarte de modelos que se investiga por separado en el EE.

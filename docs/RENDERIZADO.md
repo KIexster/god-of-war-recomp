@@ -343,6 +343,27 @@ desactivado, pixels y conservación del color. Otra prueba rechaza una cadena co
 inválido y comprueba que no cambie PRE/Q, no suba pixels ni incremente el contador nativo.
 El atajo sigue validando todos los datos antes de aplicar sus efectos.
 
+## Pixels de 24 bits entre bloques IMAGE
+
+`ps2recomp-gs-image-fragments.patch` conserva uno o dos bytes de un pixel CT24/Z24
+cuando termina una carga `UploadImage`. El backend completa ese pixel con la carga
+siguiente y entrega el resto en bloques alineados a tres bytes. CPU y OpenGL comparten
+este pequeño acumulador; no se copia el payload completo ni se altera la ruta de otros
+formatos. Terminar la transferencia descarta su padding. Reset y una nueva transferencia
+descartan los bytes pendientes; exportar/importar OpenGL conserva el pixel parcial.
+
+La reproducción inicial sube 48 bytes: en una carga produce 16 pixels, pero en tres
+cargas de 16 B produce 15 y deja dirección 0 activa, tanto en CPU como en OpenGL real.
+Cuatro regresiones cubren CT24/Z24 en todos los cortes de los 48 bytes, cargas repetidas
+de un byte y de un quadword, preservación del byte alto de VRAM, reset/nueva transferencia
+y exportación de uno o dos bytes pendientes. Dos pruebas requieren OpenGL real y dos
+se ejecutan siempre en CPU. Antes del arreglo fallan tres; después pasan las 519 pruebas
+nativas, también después de la compilación completa de 6.418 unidades. La auditoría
+reproduce 26 parches y 73 fuentes sin diferencias. El control de partida de 175 s llega
+al estado 11 sin fallback CPU; las capturas de 90,15 y 110,13 s siguen mostrando agua
+sin Kratos ni el escenario completo. Las 64 llamadas observadas a Clip en esa fase
+siguen descartando con `0x80000000` y Y/Z idénticas. No se acredita una mejora de FPS.
+
 ## Selección del contexto de modelos
 
 `GOW_MODEL_DIAG=1` registra `[gow-model:server]` a la entrada de
