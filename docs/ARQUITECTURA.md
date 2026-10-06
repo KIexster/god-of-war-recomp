@@ -19,7 +19,9 @@
    `ps2recomp-spu2-output.patch` (salida del SPU2 por el audio del PC) y
    `ps2recomp-sio2.patch` (SIO2 y memory card emulados en el IOP) y
    `ps2recomp-perf.patch` (perfil opcional de tiempos exclusivos y contadores de presentación) y
-   `ps2recomp-gs-opengl.patch` (backend OpenGL y cola GS opcionales, conservando el CPU)
+   `ps2recomp-gs-opengl.patch` (backend OpenGL y cola GS opcionales, conservando el CPU) y
+   `ps2recomp-ee-fixes.patch` (FPU y VU0 sin NaN/infinitos, ramas de 64 bits, LQ/SQ alineados y saltos
+   finales, tomados del fork de SotC)
    con `git apply --ignore-whitespace`. Antes de reaplicarlos borra los archivos que dejó la compilación
    anterior y que algún parche crea (`new file mode`), así un parche nuevo no necesita tocar esa limpieza.
 4. **Ajustes de CMake** — añade `src/runner` a los includes de `ps2EntryRunner` y desactiva `/GL` y `/LTCG`
