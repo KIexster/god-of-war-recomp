@@ -1392,3 +1392,78 @@ descarta que la instrumentación opcional explique por sí sola la baja frecuenc
 observada. Los tiempos en cero de este modo significan contadores desactivados,
 no ausencia de trabajo. Los dos registros se conservan en `logs/vu1_efu_opcodes_perf/`
 y `logs/vu1_efu_opcodes_frames/`.
+
+El control CPU posterior de 300 s también llega a estado 11 y no registra
+instrucciones VU1 reservadas. Conserva las mismas 64 observaciones de Clip (30
+pasan, 34 descartadas, todas finitas, sin Y/Z duplicadas). Las capturas tardías
+siguen mostrando polígonos desproporcionados y superficies deformadas; Kratos no
+es reconocible. Este fallo también ocurre con CPU, aunque las imágenes de dos
+ejecuciones independientes no permiten una comparación por pixel ni excluyen un
+problema en el frontend GS común. El siguiente control debe repetir los mismos
+comandos y el mismo estado inicial en ambos backends. Datos privados:
+`logs/vu1_efu_opcodes_cpu_game/`. La CI del commit `94c9389` termina en verde.
+
+### Estado CPU y repetición de comandos GS (2026-10-06)
+
+Para comparar la misma geometría y los mismos comandos se añade
+`ps2recomp-gs-cpu-state.patch`, separado de los arreglos anteriores. El CPU original
+no implementaba `GSBackendStateAccess`: guardar solo su VRAM perdía paleta, caché
+de textura, transferencia y readback. Se adapta la exportación/importación de
+Taylor N. Albarnaz / LightVelox, fork SotC `ac9efa0` (GPL-3.0), conservando la caché
+original y los bytes CT24 pendientes de este port. La importación valida antes de
+modificar el destino; una página fuera de VRAM, desalineada, un pixel CT24 inválido
+o un cursor fuera del buffer se rechazan.
+
+Tres regresiones fallan antes del cambio (**540/543**): transferencia CT24 cortada
+en dos bytes con CPU directo y con hilo, paleta/caché/readback conservados y rechazo
+sin modificar el estado. Tras el arreglo pasan **551/551**, incluidas las ocho
+pruebas OpenGL. La sonda de caché usa TBP0 en bloques de 256 B y comprueba un texel
+cacheado distinto del contenido de VRAM; el arreglo no invalida esa página para
+disimular diferencias. La auditoría previa verifica **35 parches y 79 fuentes**
+exactamente. La compilación completa y el control del juego se verifican abajo.
+
+La compilación completa posterior regenera las 6418 unidades y termina correctamente;
+la auditoría vuelve a comparar las 79 fuentes sin diferencias. La suite nativa sobre
+ese runtime pasa **551/551**. El diagnóstico final inicia la captura únicamente desde
+comandos de dibujo/transferencia del EE, para evitar leer sus variables desde el hilo
+de presentación. Tras ese ajuste de `src/`, la recompilación rápida y el test sintético
+también pasan. Las rutas Unicode absolutas se verifican en Windows.
+
+La captura sintética coincide también con OpenGL real: cero bytes distintos tanto con
+compute como con la opción hardware habilitada. Esta muestra pequeña suma un tile
+compute en ambas ejecuciones: no demuestra que el segundo control use rasterizado
+hardware. Los registros quedan en `logs/gs_replay_synthetic_*`; la captura del tramo
+real de GoW se verifica a continuación.
+
+El diagnóstico opcional de `src/gow_gs_replay.h` conserva los comandos, MXCSR,
+paleta, transferencia y VRAM inicial/final. La herramienta independiente repite
+esa entrada en CPU y OpenGL y puede localizar la primera divergencia. Tiene
+límite de tamaño/duración y no se instala sin `GOW_GS_REPLAY_TRACE`; el perfil
+elimina esa variable. El test sintético verifica captura completa, parser y rechazo
+de truncamiento, y la repetición CPU obtiene **cero bytes distintos**. El estado
+completo, uso y límites del formato se describen en `RENDERIZADO.md`.
+
+El control CPU de 200 s llega a estado 11 y guarda una captura completa de comandos
+de 23,89 MB. Repite **47.207 envíos de primitivas y dos presentaciones** con cero
+bytes distintos respecto a la VRAM final original; también coinciden paleta,
+transferencia, bytes CT24 pendientes y readback. Repetirla nuevamente en CPU conserva
+las dos imágenes sin diferencias. La página de textura inicial está invalidada,
+por lo que no hay una página CPU antigua que impida importar esta entrada en GPU.
+
+OpenGL real en la RX 5700 XT diverge por primera vez en el **registro 577, dibujo
+561**, un triángulo texturado con STQ y PSMT8: solo tres bytes de VRAM difieren en
+ese punto. Al final difieren **166.763 bytes con compute** y **164.227 con hardware
+habilitado**; las dos presentaciones difieren. El segundo recorrido mezcla hardware
+y compute (7.749 tiles compute frente a 11.937 del primero), y el log confirma que
+hardware se activa. No se interpreta esta ejecución mixta como uso exclusivo de
+rasterizado hardware. Estos códigos de salida 1 indican una divergencia localizada,
+no un fallo del parser ni pérdida de la captura.
+
+Las 12 capturas del control siguen mostrando polígonos enormes y franjas; Kratos
+no es reconocible. Las 64 muestras de Clip siguen finitas, con 30 aceptadas y 34
+descartadas, sin Y/Z duplicadas, y no hay instrucciones VU1 reservadas. La repetición
+permite aislar precisión/interpolación en GS; no demuestra que esas diferencias
+expliquen toda la deformación que también aparece en CPU. El siguiente paso es
+comprobar el efecto del modo de redondeo del host y reducir el primer dibujo distinto
+a una prueba sintética. Los comandos, coordenadas, VRAM e imágenes originales quedan
+únicamente en `logs/gs_cpu_state_game/`, excluidos de Git.

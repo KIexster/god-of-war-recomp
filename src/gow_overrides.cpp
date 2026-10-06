@@ -4,6 +4,7 @@
 #include "ps2_runtime_macros.h"
 #include "ps2_host_backend.h"
 #include "gow_pad2_packet.h"
+#include "gow_gs_replay.h" // GOW-Port: captura opcional y acotada para comparar backends.
 #include <ps2_recompiled_functions.h>
 #include <cstdio>
 #include <cstdlib>
@@ -867,6 +868,7 @@ namespace
     void applyGowOverrides(PS2Runtime &runtime)
     {
         configureGowCdImage();
+        gow_gs_replay::configure(runtime.memory(),runtime.gs());
         // El heap interno del runtime va bajo el ELF (memoria libre) para no pisar el heap propio del juego,
         // que este crea con SetupHeap al final del .bss (patches/ps2recomp-heap.patch).
         runtime.setPrivateGuestHeap(0x000A0000u, 0x000FF000u);

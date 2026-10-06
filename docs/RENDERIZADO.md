@@ -481,6 +481,66 @@ cinco minutos desaparecen las instrucciones VU1 reservadas y se capturan imágen
 distintas hasta 240 s del reloj PAD. La escena conserva deformaciones graves y
 Kratos no es reconocible; esta corrección no completa el renderizado 3D.
 
+Un segundo control de cinco minutos con CPU también muestra deformaciones graves,
+sin errores de instrucciones VU1 reservadas. No se puede atribuir todo el fallo a
+OpenGL ni comparar pixels entre estas ejecuciones independientes. Se prepara una
+repetición con comandos y estado inicial idénticos para acotar la divergencia.
+
+## Repetición local de comandos GS
+
+`ps2recomp-gs-cpu-state.patch` adapta la exportación/importación CPU del fork SotC
+`ac9efa070638ad3b3accd284de6f898d5ab271d1`, con crédito a Taylor N. Albarnaz /
+LightVelox (GPL-3.0). Conserva la paleta y sus CBP, la página de textura cacheada,
+la transferencia, los bytes CT24 pendientes y el buffer/cursor de readback. Los
+snapshots inválidos se rechazan antes de modificar el estado del destino.
+
+El diagnóstico opcional `GOW_GS_REPLAY_TRACE` instala un wrapper en los overrides,
+conservando la selección CPU/hilo/OpenGL. Comienza después de 150 s del reloj del
+host y solo en estado 11; captura tres segundos con límite de 64 MiB. Guarda el
+estado inicial y final y los comandos, incluidos presentación y modo MXCSR.
+Serializa las llamadas al backend durante esta prueba: no se usa para medir FPS.
+Sin la variable no instala el wrapper. El perfil la elimina explícitamente.
+
+```powershell
+# Primero compilar el port con todos los parches y después la herramienta.
+.\scripts\compilar_replay_gs.cmd
+$env:GOW_GS_REPLAY_TRACE = "$PWD\logs\tramo_gs.bin"
+# Ejecutar el control del juego con CPU; mantenerlo abierto al menos 160 s.
+# Al terminar, quitar la variable antes de otros controles.
+Remove-Item Env:GOW_GS_REPLAY_TRACE
+.\logs\repetir_gs.exe .\logs\tramo_gs.bin cpu --lockstep logs
+.\logs\repetir_gs.exe .\logs\tramo_gs.bin compute --lockstep logs
+.\logs\repetir_gs.exe .\logs\tramo_gs.bin hardware --lockstep logs
+```
+
+La herramienta verifica primero que el CPU reproduzca la VRAM final original.
+Comprueba también la paleta, la transferencia y el readback finales. El importador
+GPU actual no restaura la página CPU: si sus bytes iniciales difieren de la VRAM,
+rechaza esa comparación y requiere capturar desde una frontera TEXFLUSH.
+Compara después la VRAM y las presentaciones de ambos backends. `--lockstep`
+localiza el primer comando que cambia la VRAM de forma distinta; los códigos de
+salida son 0 (coincidencia), 1 (divergencia), 2 (archivo/contexto inválido) y 3
+(la repetición no reproduce la captura o una lectura esperada). Comprueba que
+OpenGL esté activo; un fallback CPU no certifica paridad GPU. Las variantes de
+hardware pueden usar compute mientras compilan: los contadores se muestran para
+comprobar qué trabajo ejecutaron. El formato binario es local y requiere el
+mismo ABI y versión de estructuras; no es un formato portátil.
+
+Los binarios, VRAM, comandos y capturas resultantes permanecen en `logs/`, ignorado
+por Git. Nunca adjuntarlos a commits ni subirlos a GitHub. La prueba sintética del
+script no contiene datos del juego y comprueba el parser y el rechazo de archivos
+truncados antes de repetir los comandos en CPU.
+
+La primera captura real verificada (estado 11, 47.207 primitivas y dos presentaciones)
+reproduce el estado y la VRAM final CPU exactamente. Compute y el recorrido mixto
+con hardware habilitado divergen en el mismo dibujo 561 (registro 577), inicialmente
+en tres bytes; se trata de un triángulo STQ con textura PSMT8. El final difiere en
+166.763 y 164.227 bytes respectivamente, y en ambas presentaciones. Se confirma
+OpenGL real en la RX 5700 XT; el recorrido mixto usa 7.749 tiles compute frente a
+11.937 del recorrido compute. Estos resultados delimitan una diferencia GS, pero
+las deformaciones grandes también aparecen en CPU y todavía requieren investigar
+los datos anteriores al backend. Esta captura opcional serializada no mide FPS.
+
 ## Referencia Tobiichi-Port
 
 Se revisa [YYOzcan/Tobiichi-Port](https://github.com/YYOzcan/Tobiichi-Port/tree/9f02797f8ab7481fddad4d2daf7afad82d11699f)
