@@ -594,3 +594,37 @@ son una inicialización explícita; queda por seguir su transformación y uso en
 El caller `0x1FB800` (función `0x1FB4B8`) devuelve dos buffers con XYZ no nulo y cambiante,
 también en las lecturas posteriores. No se observan retornos desde los dos productores
 `goWater` estudiados en esta muestra. No se altera ADC ni se rellenan posiciones artificiales.
+
+### Arreglos del EE tomados del fork de SotC (2026-10-06)
+
+Con autorización del usuario se incorporan, en `ps2recomp-ee-fixes.patch` (aplicado tras
+`ps2recomp-gs-opengl.patch`), los arreglos del EE del fork de SotC (TaylorNAlbarnaz/PS2Recomp, rama
+`sotc-port`), marcados con `// GOW-Port:` y el commit de origen:
+
+- **FPU (COP1) con la semántica del PS2** (8b51cb9, 9bb389e, c419f26): la FPU del EE no tiene NaN ni
+  infinitos. ADD/SUB/MUL saturan a ±`FLT_MAX`; ADD/SUB alinean los operandos sin bits de guarda (como
+  PCSX2); `DIV.S` por cero da ±`FLT_MAX` y pone D o I en FCR31; `SQRT.S`/`RSQRT.S` usan |FT| y redondean
+  al más cercano; `CVT.W.S` satura; las comparaciones `C.*.S` comparan el patrón de bits y nunca dan
+  "desordenado". Antes una división por cero o un desbordamiento producía infinitos o NaN que se
+  propagaban, por ejemplo a matrices de cámara. `ps2recomp-fpu-roots.patch` no cambia: sus dos pruebas
+  ahora esperan las llamadas `ps2FpuSqrt`/`ps2FpuRsqrt`, que conservan los mismos operandos (FT para
+  `SQRT.S`, FS/sqrt(FT) para `RSQRT.S`).
+- **VU0 en modo macro:** VADD/VSUB/VMUL/VMULQ saturan; `VDIV`, `VSQRT` y `VRSQRT` usan las mismas reglas
+  con los flags del registro de estado. `VRSQRT` calculaba 1/sqrt(FT) e **ignoraba FS**; ahora es
+  FS/sqrt(|FT|).
+- **LQ/SQ/LQC2/SQC2 ignoran los 4 bits bajos de la dirección** (9bb389e).
+- **BLEZ/BGTZ/BLTZ/BGEZ (y sus variantes) comparan el registro de 64 bits**, no los 32 bits bajos (3c46932).
+- **Salto final a la entrada de la función llamada** (c4c20e8): `dispatchGuestBranch` tomaba una llamada
+  que volvía con el PC en su propia entrada como un retorno implícito; si dentro hubo un salto (`j` de
+  vuelta a la función), el llamador continuaba con la pila de la otra función. Ahora solo se aplica si no
+  se despachó ningún salto dentro, además de la condición del checkpoint que ya existía.
+
+No se incorporan todavía la entrega de cada desbordamiento de los temporizadores del EE (d328765), que
+depende de otros cambios del fork, ni la propagación de constantes con relocalizaciones (019867b), que
+afecta a módulos reubicados que God of War no usa.
+
+Pruebas: 6 pruebas nuevas (comparaciones, suma con alineación, división y raíz con redondeo, LQ/SQ,
+salto final, unidad Q de VU0) y la de ramas de 64 bits del fork; la suite pasa **479/479** con los 16
+parches. **Falta comprobarlo con el juego:** hace falta `scripts\2_compilar.cmd` (cambia el código que
+genera el recompilador y las 6 418 unidades se regeneran). Repetir la prueba de posiciones y de la matriz
+de cámara del estado 11 y comparar las capturas.
