@@ -628,3 +628,61 @@ salto final, unidad Q de VU0) y la de ramas de 64 bits del fork; la suite pasa *
 parches. **Falta comprobarlo con el juego:** hace falta `scripts\2_compilar.cmd` (cambia el código que
 genera el recompilador y las 6 418 unidades se regeneran). Repetir la prueba de posiciones y de la matriz
 de cámara del estado 11 y comparar las capturas.
+
+### Presentación OpenGL y campos entrelazados (2026-10-05)
+
+Se añade `ps2recomp-gs-presentation.patch` después del backend OpenGL, sin modificar el
+parche importado ni los ámbitos EE/FPU/IOP/VIF/VU1 de la otra tarea.
+
+La primera diferencia encontrada fue `preferredSource`: el GPU no respetaba la fuente
+seleccionada por el frontend. Se corrige conservando sus unidades de **bloques de 256 B**,
+distintas de las páginas de **8 KB** de DISPFB, con su formato, stride y origen. La prueba
+usa una base no alineada a páginas y los cuatro formatos de color. Esa corrección no bastó
+para la muestra del juego: la traza confirmó **dos circuitos activos y ninguna fuente
+preferida**.
+
+Un diagnóstico temporal comparó el compositor CPU con OpenGL sobre **la misma VRAM obtenida
+del GPU**. El juego usa `PMODE=0x8023`, CT24 y modo de campos (`SMODE2 & 3 == 1`), con un
+desplazamiento vertical de una fila entre circuitos. El CPU seleccionaba y duplicaba las
+filas del campo par/impar; el shader omitía esa paridad. Así se localiza una diferencia
+en presentación sin atribuirla a VU1 ni a ceros de los vértices.
+
+El shader incorpora el campo seleccionado por `vsyncTick & 1`, incluyendo la paridad en
+la clave de presentación compartida. En modo progresivo no se fuerza alternancia. También
+se corrige la salida de un solo circuito para mostrar su RGB sin mezclar contra el fondo
+por el alfa del píxel. El readback diferido conserva la fuente y el destino de cada imagen.
+Los diagnósticos temporales se retiraron tras localizar la causa.
+
+Las dos pruebas GPU fallan antes de los arreglos (**472/474**) y pasan después (**474/474**),
+tanto con compute como con rasterizado gráfico. Comparan campos par/impar y modo progresivo,
+alfa cero, selección de fuente y píxeles completos con el CPU. Incluyen los registros de
+temporización de GoW con un patrón sintético **512×448**, sin datos del juego. Los 16 parches
+aplican en un árbol aislado y sus 61 fuentes comparadas coinciden con el runtime local.
+
+La reconstrucción completa del arreglo regenera las 6418 unidades y enlaza correctamente.
+En una ejecución separada de 155 s, OpenGL se inicializa en la RX 5700 XT sin fallback y
+alcanza el estado 11. Las cuatro capturas de `70–130 s` son distintas; siguen mostrando
+agua oscura, sin Kratos ni el entorno completo. Son resultados anteriores a la integración
+de EE/FPU: no se atribuye ese cambio visual a los arreglos posteriores de Opus.
+
+Antes de publicar se integra `main` actualizado por Opus (`d3fcfa9`, con
+`ps2recomp-ee-fixes.patch`). Se conservan ambos parches y se reconstruyen de nuevo las
+6418 unidades. La suite nativa combinada pasa **481/481**, incluidas las dos pruebas GPU
+reales; las pruebas separadas de caché GS pasan **45/45**. Los **17 parches** aplican en
+orden y las **65 fuentes** comparadas coinciden con el runtime local. Configuración y
+handlers sin errores (cuatro avisos conocidos); nueve scripts sin errores de sintaxis.
+
+La ejecución combinada de 155 s, con diagnósticos de posiciones y render activados,
+inicializa OpenGL sin fallback y alcanza el estado 11. Guarda tres capturas tardías
+distintas a `94,85 / 95,19 / 110,10 s`; no llega a guardar la cuarta antes del límite.
+Se ve agua y algunos artefactos, sin Kratos ni el escenario completo. Esa ejecución con
+diagnósticos no es una medida de rendimiento y no cambia la comparación inicial de FPS.
+
+La sonda registra **64 inicializaciones, 298 retornos y 128 lecturas posteriores**:
+las 14 direcciones del caller `0x12E258` conservan la plantilla `(0,0,0,0x8000)` en
+112 lecturas; las dos de `0x1FB800` tienen XYZ no nulo y cambiante en las otras 16.
+Los arreglos EE/FPU no eliminan esa plantilla deliberada del loader. En el snapshot VU1
+del estado 11, los 16 floats de la matriz en `0x1060` son finitos; esta comprobación
+de una matriz no certifica todas las transformaciones. Sigue pendiente correlacionar
+los buffers escritos por sus productores con VIF/VU1 y los triángulos recibidos por GS.
+Los snapshots y las capturas permanecen en `logs/`, ignorados por Git.

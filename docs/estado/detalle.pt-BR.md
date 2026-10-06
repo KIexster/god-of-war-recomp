@@ -37,7 +37,7 @@ Gerado por `tools/estado/generar.py` a partir de `docs/estado/datos.toml` e `con
 | EE | INTC: VSync e interrupção do GS | 2 | ✅ Funciona |  |
 | EE | Controlador DMA | 2 | ✅ Funciona |  |
 | EE | Temporizadores | 1 | ✅ Funciona |  |
-| GS / VU | GS: primitivas e framebuffer | 3 | ✅ Funciona | CPU de referência preservado; backend OpenGL opcional em validação, cena 3D completa ainda ausente |
+| GS / VU | GS: primitivas e framebuffer | 3 | ✅ Funciona | CPU de referência preservado; apresentação de campos OpenGL verificada, cena 3D completa ainda ausente |
 | GS / VU | VIF1 e VU1 | 3 | 🔧 Parcial | SQRT/RSQRT corrigidas: matrizes de câmera finitas e triângulos enviados ao GS; a cena 3D completa ainda não aparece |
 | GS / VU | GS: texturas, CLUT e fontes | 2 | 🔧 Parcial | Faltam letras em alguns textos |
 | GS / VU | GIF (PATH1-3) | 2 | ✅ Funciona |  |
