@@ -19,6 +19,7 @@
    `ps2recomp-spu2-output.patch` (salida del SPU2 por el audio del PC) y
    `ps2recomp-sio2.patch` (SIO2 y memory card emulados en el IOP),
    `ps2recomp-perf.patch` (perfil opcional de tiempos exclusivos y contadores de presentación),
+   `ps2recomp-gs-opengl.patch` (backend OpenGL y cola GS opcionales, conservando el CPU),
    `ps2recomp-dma-chain.patch` (cadenas DMA de más de 4096 tags),
    `ps2recomp-vif-direct.patch` (una IMAGE de PATH2 continúa con el siguiente DIRECT),
    `ps2recomp-ee-branches.patch` (`BLEZ`/`BGTZ`/`BLTZ`/`BGEZ` comparan 64 bits) y
@@ -37,6 +38,10 @@ Las trazas `PS2X_ENABLE_RUNTIME_LOGS`, `PS2X_ENABLE_AGRESSIVE_LOGS` y `PS2X_ENAB
 se configuran en `OFF` por defecto; `scripts\2_compilar.cmd -Trazas` las activa para investigar.
 El perfil `GOW_PERF_DIAG` es independiente de estas opciones de compilación; se describe en
 [`ESTADO.md`](ESTADO.md#medicion-de-rendimiento-2026-10-05).
+
+La selección CPU / CPU con hilo / OpenGL, la procedencia GPL-3.0 del fork SotC y sus límites
+se describen en [`RENDERIZADO.md`](RENDERIZADO.md). Este parche GS se mantiene separado de los
+arreglos EE/FPU/IOP de Opus; no modifica el parche de operandos FPU existente.
 
 ## Configuración del recompilador
 

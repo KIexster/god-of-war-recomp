@@ -27,6 +27,7 @@ $fpuRootsPatch = Join-Path $RepoRoot 'patches\ps2recomp-fpu-roots.patch'
 $spu2OutputPatch = Join-Path $RepoRoot 'patches\ps2recomp-spu2-output.patch'
 $sio2Patch = Join-Path $RepoRoot 'patches\ps2recomp-sio2.patch'
 $perfPatch = Join-Path $RepoRoot 'patches\ps2recomp-perf.patch'
+$gsOpenGlPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-opengl.patch'
 $dmaChainPatch = Join-Path $RepoRoot 'patches\ps2recomp-dma-chain.patch'
 $vifDirectPatch = Join-Path $RepoRoot 'patches\ps2recomp-vif-direct.patch'
 $eeBranchesPatch = Join-Path $RepoRoot 'patches\ps2recomp-ee-branches.patch'
@@ -82,6 +83,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $fpuRootsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $spu2OutputPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $sio2Patch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $perfPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsOpenGlPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $dmaChainPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vifDirectPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $eeBranchesPatch)

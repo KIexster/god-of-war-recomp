@@ -174,6 +174,7 @@ nombre = "GS / VU"
   nombre = { es = "GS: primitivas y framebuffer", en = "GS: primitives and framebuffer", pt = "GS: primitivas e framebuffer" }
   estado = "ok"
   peso = 3
+  nota = { es = "CPU de referencia conservado; backend OpenGL opcional en validación, todavía sin escena 3D completa", en = "Reference CPU preserved; optional OpenGL backend under validation, complete 3D scene still missing", pt = "CPU de referência preservado; backend OpenGL opcional em validação, cena 3D completa ainda ausente" }
 
   [[hardware.grupo.componente]]
   corto = "VIF1/VU1"

@@ -16,6 +16,7 @@
 namespace
 {
     uint32_t readGuest32(const uint8_t *rdram, uint32_t addr);
+    void gowDiagPrimPoll(uint8_t *rdram, double seconds);
     // libpad2 uses socket handles and an 18-byte payload, unlike libpad's
     // port/slot API and 32-byte status packet. God of War expects state 1 and
     // a button profile beginning with 0xff to identify a DualShock 2.
@@ -116,6 +117,8 @@ namespace
                 return value && std::strcmp(value, "1") == 0;
             }();
             static double nextStateReport = 0;
+            if (const char *diag=std::getenv("GOW_EE_PRIM_DIAG"); diag && std::strcmp(diag,"1")==0)
+                gowDiagPrimPoll(rdram,seconds);
             if (noCapture && seconds >= nextStateReport)
             {
                 nextStateReport = seconds + 5;
@@ -164,9 +167,11 @@ namespace
                             data.write(reinterpret_cast<const char *>(runtime->memory().getVU1Data()), 0x4000);
                             std::ofstream ram("gow_render_ram.bin", std::ios::binary);
                             ram.write(reinterpret_cast<const char *>(rdram), 0x02000000u);
+                            // Sincronizar la VRAM del backend GPU antes de leer el búfer host.
+                            runtime->gs().refreshDisplaySnapshot();
+                            const auto gsState = runtime->gs().getDebugSnapshot();
                             std::ofstream vram("gow_render_vram.bin", std::ios::binary);
                             vram.write(reinterpret_cast<const char *>(runtime->memory().getGSVRAM()), PS2_GS_VRAM_SIZE);
-                            const auto gsState = runtime->gs().getDebugSnapshot();
                             for (unsigned context = 0; context < 2; ++context)
                             {
                                 const auto &frame = gsState.ctx[context].frame;
@@ -363,6 +368,68 @@ namespace
         sub_001262C8_0x1262c8(rdram, ctx, runtime);
     }
 
+    // GOW-Port: observar el productor de posiciones, sin alterar buffers ni ejecución EE.
+    void gowDiagInitUnpack(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+    {
+        if (ctx->pc != 0x00141350u) { sub_00141350_0x141350(rdram, ctx, runtime); return; }
+        const uint32_t object=GPR_U32(ctx,4), data=GPR_U32(ctx,5), type=GPR_U32(ctx,6);
+        const uint32_t chunk=GPR_U32(ctx,7), buffer=GPR_U32(ctx,8), caller=GPR_U32(ctx,31);
+        sub_00141350_0x141350(rdram, ctx, runtime);
+        static unsigned samples=0;
+        if (samples++ < 64 && ctx->pc == caller)
+            std::fprintf(stderr,"[gow-eeprim:init] this=%x caller=%x type=%u chunk=%u buffer=%u command=%x next=%x\n",
+                         object,caller,type,chunk,buffer,data,GPR_U32(ctx,2));
+    }
+
+    struct GowPrimProbe { uint32_t object=0,caller=0,address=0; };
+    std::array<GowPrimProbe,16> g_primProbes{};
+    size_t g_nextPrimProbe=0;
+
+    void gowDiagPrimPoll(uint8_t *rdram, double seconds)
+    {
+        static double next=0;
+        if(seconds<next) return;
+        next=seconds+5;
+        if(readGuest32(rdram,0x29E560u)!=11u) return;
+        for(const auto &p:g_primProbes)
+        {
+            const auto *data=padBuffer(rdram,p.address,16);
+            if(!data) continue;
+            uint32_t words[4]{}; std::memcpy(words,data,16);
+            std::fprintf(stderr,"[gow-eeprim:later] seconds=%.2f this=%x caller=%x data=%x first=%08x,%08x,%08x,%08x\n",
+                         seconds,p.object,p.caller,p.address,words[0],words[1],words[2],words[3]);
+        }
+    }
+
+    void gowDiagUpdateAddress(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+    {
+        if (ctx->pc != 0x001417D8u) { sub_001417D8_0x1417d8(rdram, ctx, runtime); return; }
+        const uint32_t object=GPR_U32(ctx,4), type=GPR_U32(ctx,5), offset=GPR_U32(ctx,6);
+        const uint32_t chunk=GPR_U32(ctx,7), buffer=GPR_U32(ctx,8), caller=GPR_U32(ctx,31);
+        sub_001417D8_0x1417d8(rdram, ctx, runtime);
+        static unsigned early=0, scene=0;
+        auto &samples=readGuest32(rdram,0x29E560u)==11u ? scene : early;
+        if (type != 0u || samples >= (readGuest32(rdram,0x29E560u)==11u ? 256u : 64u)) return;
+        ++samples;
+        // Un checkpoint no es un retorno: no interpretar v0 como dirección en ese caso.
+        if (ctx->pc != caller)
+        {
+            std::fprintf(stderr,"[gow-eeprim:update] caller=%x this=%x checkpoint=%x\n",caller,object,ctx->pc);
+            return;
+        }
+        const uint32_t address=GPR_U32(ctx,2);
+        const auto *data=padBuffer(rdram,address,16);
+        uint32_t words[4]{}; if(data) std::memcpy(words,data,16);
+        if(data)
+        {
+            bool found=false;
+            for(const auto &p:g_primProbes) found |= p.address==address;
+            if(!found) g_primProbes[g_nextPrimProbe++ % g_primProbes.size()]={object,caller,address};
+        }
+        std::fprintf(stderr,"[gow-eeprim:update] this=%x caller=%x type=%u offset=%u chunk=%u buffer=%u data=%x valid=%u first=%08x,%08x,%08x,%08x\n",
+                     object,caller,type,offset,chunk,buffer,address,data?1u:0u,words[0],words[1],words[2],words[3]);
+    }
+
     // int sceCdReadDvdDualInfo(int *on_dual, unsigned int *layer1_start)
     void gowCdReadDvdDualInfo(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
     {
@@ -535,6 +602,11 @@ namespace
             for (const uint32_t address : {0x001262C8u, 0x00126310u, 0x0012633Cu, 0x00126368u,
                                            0x00126428u, 0x00126478u, 0x00126528u})
                 runtime.replaceFunction(address, gowDiagFilteredCopy);
+        if (const char *diag=std::getenv("GOW_EE_PRIM_DIAG"); diag && std::strcmp(diag,"1")==0)
+        {
+            runtime.replaceFunction(0x00141350u, gowDiagInitUnpack);
+            runtime.replaceFunction(0x001417D8u, gowDiagUpdateAddress);
+        }
         runtime.replaceFunction(0x00180E50u, gowDiagPathSelect);
         runtime.replaceFunction(0x00180D08u, gowDiagAttachNode);
         runtime.replaceFunction(0x0027B7E8u, gowPad2Init);

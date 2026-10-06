@@ -535,6 +535,65 @@ Hallazgos concretos para la siguiente etapa:
 Prioridad: contrastar los datos y la salida del renderizado con una referencia correcta; después
 adaptar backend GS y mejoras genéricas en parches independientes, con pruebas y comparación visual.
 
+### Adaptación del backend GS de SotC (2026-10-05)
+
+Se incorpora `patches/ps2recomp-gs-opengl.patch` como parche independiente después del perfil.
+Adapta `GSGpuBackend`, `GSThreadedBackend`, shaders, contexto WGL y tablas de direccionamiento
+de VRAM del commit `ac9efa070638ad3b3accd284de6f898d5ab271d1` de Taylor N. Albarnaz / LightVelox,
+bajo GPL-3.0. Los archivos importados llevan el comentario `GOW-Port` y su procedencia.
+Selección, créditos, pruebas y límites: [`RENDERIZADO.md`](RENDERIZADO.md).
+
+Se conserva el renderer CPU original como predeterminado y como referencia. El GPU funciona
+en el hilo GS; vuelve a CPU si no inicializa el contexto o los shaders. Las lecturas y FINISH
+esperan los comandos previos, Flush publica y completa su bloque, y el cierre drena comandos
+antes de destruir el contexto en su hilo. La presentación compacta del fork se adapta al
+stride de 640 píxeles de nuestro frontend. Las tablas VRAM se inicializan una sola vez.
+La presentación GL compartida se deja para una etapa posterior.
+
+La suite nativa pasa **474/474**: cinco nuevas pruebas normales y dos pruebas opcionales con
+GPU real. En una AMD Radeon RX 5700 XT se verifica OpenGL 4.6 con compute forzado y con
+rasterizado gráfico activo. Se comparan transferencias partidas/alineadas, clear, sprites,
+VRAM completa y presentación; también se comprueban interior/exterior de un triángulo plano
+y textura CT32. Sin las tres correcciones de la cola, sus regresiones fallan: **469/472**.
+Las 45 pruebas separadas de caché/CLUT/memoria GS pasan con la integración nueva.
+
+La reconstrucción completa genera las 6418 unidades del juego. Los 15 parches aplican en un
+árbol aislado y sus 61 fuentes `.cpp`/`.h` comparadas coinciden con el runtime local.
+Configuración y handlers: cero errores, cuatro avisos conocidos; PowerShell y libpad2 correctos.
+
+Se añade `GOW_EE_PRIM_DIAG=1` para observar `renEEPrim::InitUNPACKData` y `GetUpdateAddress`
+sin modificar datos ni su ejecución. Registra los callers y los buffers devueltos; el mando
+automático puede releer hasta 16 direcciones cada 5 s. Esas direcciones pueden reutilizarse,
+por lo que una lectura tardía necesita comprobar su propiedad antes de atribuir el contenido
+a un productor. El diagnóstico de VRAM existente usa ahora el snapshot público para leer
+también la memoria del backend GPU actualizada.
+
+El alcance respeta el reparto: no se cambia recompilador, FPU, IOP, VIF ni VU1. El parche
+`ps2recomp-fpu-roots.patch` permanece intacto. Se detectó una rama remota adicional de Claude
+con arreglos EE/DMA/VIF/VU0 y se mantiene separada; no se incorpora a `main` por esta tarea.
+Repetir la prueba de posiciones cuando Opus integre sus cambios EE/FPU precede a decidir
+si la recompilación de VU1 aporta una mejora útil.
+
+Comparación local sin capturas, con el mismo binario/ELF/ISO y tres ventanas completas de
+5 s en estado 11, dentro de `120–136 s`: CPU directo **2,40 `vid::Flip`/s**, CPU con hilo
+**2,39**, OpenGL con hilo **3,26**. Presentaciones del host: **56,33 / 55,68 / 59,12 Hz**.
+La mejora de OpenGL es aproximadamente **36 %** en esta muestra corta; no se mide variabilidad
+ni se certifican cuadros distintos. La GPU real inicializa sin fallback. Las capturas se
+toman en ejecuciones separadas de 155 s: ambos modos muestran agua oscura sin Kratos ni la
+escena completa. Las tardías del CPU cambian; las de OpenGL de `56–130 s` son idénticas.
+Queda pendiente contrastar la selección de framebuffer/presentación del CPU (`preferredSource`)
+con CRTC del GPU, además de la geometría. El CPU conserva su papel de referencia predeterminada.
+
+La traza nueva registra **64 inicializaciones, 298 retornos y 192 lecturas posteriores**.
+El caller `0x12E258`, en `LoadClient` (`0x12DE70`), obtiene 40 buffers; las 14 direcciones
+de ese caller conservadas por la sonda muestran después `(0,0,0,0x8000)`. Se comprueba en
+el MIPS original que el bucle `0x12E270–0x12E288` **escribe deliberadamente esa plantilla**.
+La reserva inicial incluye los chunks relacionados con el UNPACK V4-32 de XYZ cero anterior.
+Esto corrige la hipótesis de que esos ceros, por sí solos, prueben un productor EE roto:
+son una inicialización explícita; queda por seguir su transformación y uso en VU1/GIF.
+El caller `0x1FB800` (función `0x1FB4B8`) devuelve dos buffers con XYZ no nulo y cambiante,
+también en las lecturas posteriores. No se observan retornos desde los dos productores
+`goWater` estudiados en esta muestra. No se altera ADC ni se rellenan posiciones artificiales.
 ### Arreglos de exactitud portados del fork de SotC (2026-10-05)
 
 Se portaron, como parches independientes y con licencia GPL-3.0 compatible, cuatro correcciones del fork
@@ -552,8 +611,9 @@ Ninguna estaba en nuestra revisión fijada ni en los parches anteriores. Informe
 Las dos pruebas existentes de continuación de DIRECT comprobaban el comportamiento anterior (datos crudos
 tras el DIRECT); se ajustaron para que la continuación llegue en el siguiente DIRECT, como en el fork.
 Las seis pruebas nuevas o ajustadas fallan sin los arreglos y pasan con ellos. La suite pasa **472/472** en
-Linux; los 18 parches aplican en orden sobre la revisión fijada.
+Linux (**477/477** tras integrar el backend OpenGL); los parches aplican en orden sobre la revisión fijada, también detrás de `ps2recomp-gs-opengl.patch`.
 
 **Sin probar con el juego.** Hace falta `scripts\2_compilar.cmd` completo (dos parches cambian el
-recompilador) y repetir la prueba de la partida. Qué mirar: si cambian
-los vértices `(0,0,0,32768)` del lote preparado por el EE y si las fuentes del menú se completan.
+recompilador) y repetir la prueba de la partida. Qué mirar: si las fuentes del menú se completan y si
+cambia la escena 3D. Los vértices `(0,0,0,32768)` no sirven como indicador: la traza de `LoadClient`
+(sección anterior) muestra que son una plantilla escrita a propósito.

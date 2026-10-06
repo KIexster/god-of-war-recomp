@@ -195,12 +195,14 @@ A documentação técnica está atualmente em espanhol:
 
 - [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) — pipeline, overrides, patches do runtime e integração contínua
 - [`docs/CONTROLES.md`](docs/CONTROLES.md) — controles e testes do controle e do menu
+- [`docs/RENDERIZADO.md`](docs/RENDERIZADO.md) — renderers CPU/CPU com thread/OpenGL opcionais e comparações
 - [`AGENTS.md`](AGENTS.md) — convenções do projeto para colaboradores e agentes
 - [`docs/ESTADO.md`](docs/ESTADO.md) — status atual, registro da investigação, problemas conhecidos e próximos passos
 
 ## Créditos e licença
 
 - [**PS2Recomp**](https://github.com/ran-j/PS2Recomp), de ran-j e colaboradores — recompilador e runtime (GPL-3.0).
+- [**Fork do runtime de SotC**](https://github.com/LightVelox/PS2Recomp/tree/ac9efa070638ad3b3accd284de6f898d5ab271d1), de Taylor N. Albarnaz / LightVelox — backend GS OpenGL e fila de comandos (GPL-3.0, `ac9efa0`).
 - *God of War* © Sony Interactive Entertainment / Santa Monica Studio. Este projeto não é afiliado nem
   endossado pela Sony. Nenhum conteúdo do jogo é distribuído.
 
