@@ -35,6 +35,8 @@
    `ps2recomp-gs-triangle-sampling.patch` (CPU comparte con OpenGL el centro entero, XYOFFSET 12.4 y bordes) y
    `ps2recomp-gs-sprite-sampling.patch` (ejes CPU de sprites con fracciones, sentido de UV y área cero) y
    `ps2recomp-iop-fast.patch` (intérprete del IOP unas 1,65 veces más rápido, sin cambiar su comportamiento) y
+   `ps2recomp-vu0-macro.patch` (VU0 en modo macro usa su memoria de datos; DMA con cadenas de más de 4096 tags) y
+   `ps2recomp-mmi.patch` (15 instrucciones MMI corregidas según PCSX2: permutaciones, PABS, PADDUH/PSUBUH, PS*VW) y
    `ps2recomp-gs-triangle-constants.patch` (interpolación CPU/OpenGL que conserva color, alpha y niebla constantes) y
    `ps2recomp-gs-triangle-texcoords.patch` (UV/STQ constantes y refinamiento del recíproco Q en el shader)
    con `git apply --ignore-whitespace`. Antes de reaplicarlos borra los archivos que dejó la compilación

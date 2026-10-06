@@ -42,6 +42,8 @@ $gsImageFragmentsPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-image-fragmen
 $gsTriangleSamplingPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-triangle-sampling.patch'
 $gsSpriteSamplingPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-sprite-sampling.patch'
 $iopFastPatch = Join-Path $RepoRoot 'patches\ps2recomp-iop-fast.patch'
+$vu0MacroPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-macro.patch'
+$mmiPatch = Join-Path $RepoRoot 'patches\ps2recomp-mmi.patch'
 $gsTriangleConstantsPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-triangle-constants.patch'
 $gsTriangleTexcoordsPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-triangle-texcoords.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
@@ -110,6 +112,8 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $gsImageFragmentsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsTriangleSamplingPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsSpriteSamplingPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $iopFastPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu0MacroPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $mmiPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsTriangleConstantsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsTriangleTexcoordsPatch)
 Pop-Location

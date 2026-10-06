@@ -1012,7 +1012,7 @@ debería conservar la cuarta. Se contrasta la semántica con
 | PEXEW | [22,11,44,33] | [33,22,11,44] |
 | PROT3W | [22,33,44,11] | [22,33,11,44] |
 
-**Pendiente en el EE asignado a Opus:** corregir PEXEW en `ps2_runtime_macros.h`
+**Resuelto en `ps2recomp-mmi.patch` (ver "Auditoría de las instrucciones MMI").** Pendiente original: corregir PEXEW en `ps2_runtime_macros.h`
 (`_MM_SHUFFLE(3,0,1,2)`) y PROT3W tanto allí como en la emisión de
 `mmi_translation_helpers.cpp` (`_MM_SHUFFLE(3,0,2,1)`), con regresiones de las cuatro
 palabras, alias origen/destino y registro cero. PROT3W se emite en línea y requiere
@@ -1242,3 +1242,54 @@ El primer control del juego quedó interrumpido al alcanzarse el límite de uso 
 la revisión automática de aprobación; solo registró el arranque y no llegó a guardar
 el control visual de la escena. Se repetirá tras incorporar las correcciones MMI y
 VU0 publicadas por Opus durante esa pausa. El renderer sigue en estado parcial.
+
+### VU0 en modo macro y cadenas DMA largas (2026-10-06)
+
+`ps2recomp-vu0-macro.patch` (tras `ps2recomp-iop-fast.patch`) incorpora, con la autorización ya dada para el
+fork de SotC, dos commits más que afectan al código del EE:
+
+- **03d18df — VU0 en modo macro usa su memoria de datos.** `VLQI`/`VSQI`/`VLQD`/`VSQD` y `VILWR`/`VISWR`
+  leían y escribían la **RAM del EE desde la dirección 0** (`READ128((vi & 0x3FF) << 4)`) en lugar de la
+  memoria de datos de VU0 (`(vi & 0xFF) << 4` dentro de sus 4 KB); además `VSQI`/`VSQD` tenían intercambiados
+  los campos Fs e It, y VI0/VF0 podían escribirse. En SotC esto rompía la pila de matrices
+  (push/pop) y desaparecían los personajes. Si God of War usa esas instrucciones, estaba leyendo y
+  pisando los primeros 16 KB de la RAM del EE.
+- **e36fbf1 — cadenas DMA de más de 4096 tags.** El recorrido de cadenas se cortaba a los 4096 tags y
+  perdía el final: el GIF quedaba en modo IMAGE y se tragaba la configuración A+D del cuadro siguiente.
+  El límite pasa a 2^20 tags y avisa (`[dma] chain on ... stopped after ... tags`) si se alcanza. El mismo
+  commit corrige `VRNEXT`/`VRINIT`/`VRXOR`/`VRGET` (LFSR del registro R), `VFTOI` (saturación) y `VABS`
+  (denormales), y comparte el registro R de VU0 entre hilos en `EeScheduler`. La herramienta opcional
+  `vu0_audit` del fork no se incorpora (depende de su renderer de referencia).
+
+La suite pasa **528/528** con los 30 parches (pruebas del fork que decodifican las instrucciones
+`vsqi`/`vlqd`, cadena DMA larga, números aleatorios, `VFTOI`/`VABS`). **Falta comprobarlo con el juego:**
+requiere `scripts\2_compilar.cmd` (cambia el código generado). Conviene repetir la captura del estado 11
+y, si aparece, buscar `[dma] chain` en el registro.
+
+### Auditoría de las instrucciones MMI (2026-10-06)
+
+A raíz del hallazgo de PEXEW/PROT3W en la esfera de visibilidad (sección "PEXEW duplica Y en la Z de las
+esferas de visibilidad"), se comparó el código que emite el recompilador para **60 instrucciones MMI**
+(aritméticas, comparaciones, saturación, permutaciones, empaquetado y desplazamientos) con la semántica de
+[PCSX2 `MMI.cpp`](https://github.com/PCSX2/pcsx2/blob/master/pcsx2/MMI.cpp). Una prueba diferencial local
+(se volcó con `CodeGenerator::translateInstruction` el código de cada instrucción y se compiló contra
+`ps2_runtime_macros.h`) lo ejecutó con 2000 pares de valores aleatorios y de borde, con destino distinto y
+con destino igual a cada fuente, frente a una referencia escrita a partir de PCSX2. **15 instrucciones no coincidían:**
+
+| Instrucción | Fallo |
+|---|---|
+| PEXEW, PROT3W, PEXCW | palabras mal ordenadas (PEXEW copiaba Y en la Z de las esferas de visibilidad) |
+| PEXEH, PREVH, PEXCH | medias palabras mal ordenadas (PREVH invertía las 8 en vez de cada mitad) |
+| PINTH, PINTEH | intercalaban la mitad equivocada de rs |
+| PABSW, PABSH | leían rs en vez de rt y no saturaban 0x80000000 / 0x8000 |
+| PADDUH, PSUBUH | sumaban/restaban sin saturar |
+| PSLLVW, PSRLVW, PSRAVW | desplazaban rs (no rt) y en las cuatro palabras, sin extender el signo a 64 bits |
+
+`ps2recomp-mmi.patch` (tras `ps2recomp-vu0-macro.patch`) corrige las macros de `ps2_runtime_macros.h` y la
+emisión de `mmi_translation_helpers.cpp`. Con el parche, las 60 instrucciones coinciden con PCSX2 en todas
+las variantes. La suite gana `PS2Mmi` (permutaciones con [11,22,33,44], saturación de PABS, desplazamientos
+y formas emitidas) y pasa **533/533** con los 31 parches.
+
+**Falta comprobarlo con el juego** (requiere `scripts\2_compilar.cmd`, cambia el código generado): repetir
+las sondas de Clip del estado 11. Con PEXEW corregido, Y y Z de la esfera deberían dejar de coincidir y
+algunos modelos deberían pasar Clip.
