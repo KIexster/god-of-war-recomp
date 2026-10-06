@@ -42,6 +42,7 @@ $gsImageFragmentsPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-image-fragmen
 $gsTriangleSamplingPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-triangle-sampling.patch'
 $gsSpriteSamplingPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-sprite-sampling.patch'
 $iopFastPatch = Join-Path $RepoRoot 'patches\ps2recomp-iop-fast.patch'
+$vu0MacroPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-macro.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -108,6 +109,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $gsImageFragmentsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsTriangleSamplingPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsSpriteSamplingPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $iopFastPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu0MacroPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
