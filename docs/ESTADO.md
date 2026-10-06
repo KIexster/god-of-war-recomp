@@ -1174,3 +1174,34 @@ la integración y su perfil se registrarán por separado.
 
 La CI del parche anterior de sprites también terminó en verde:
 [ejecución 37507078237](https://github.com/KIexster/god-of-war-recomp/actions/runs/37507078237).
+
+### Rendimiento del intérprete del IOP (2026-10-06)
+
+El perfil de la medición de rendimiento atribuye al IOP el 61 % del hilo del juego. Un IOP sin hilos
+listos cuesta poco (unos 7 ms por segundo emulado, incluido el SPU2), así que ese tiempo es de hilos del
+IOP ejecutando instrucciones. El intérprete hacía unos **55 M instrucciones/s** en la máquina de la CI;
+el IOP real va a 36,8 MHz, por lo que un IOP ocupado necesita casi dos tercios de un núcleo para ir a
+tiempo real. Con callgrind, cada instrucción emulada costaba unas 245 instrucciones del host.
+
+`ps2recomp-iop-fast.patch` (tras `ps2recomp-gs-sprite-sampling.patch`) quita costes por instrucción sin
+cambiar el comportamiento:
+
+- La búsqueda de stubs de importación (`IopImportRegistry::decode`) se hacía en **cada** instrucción;
+  ahora solo cuando la instrucción es `jr ra`, que es como empiezan los stubs.
+- Lectura de instrucciones y cargas/escrituras en RAM con camino rápido en línea (`fetch32`, `load*`,
+  `store*`); los registros de hardware, la scratchpad, el SPU2 y el SIO2 siguen por `read*`/`write*`.
+  Las escrituras siguen marcando la RAM ocupada como antes.
+- La comprobación de DMA pendiente es una marca en línea; `PS2X_IOP_PC_EVERY` se lee al crear el IOP en
+  lugar de con un `static` local en cada instrucción; `physicalAddress` pasa a la cabecera.
+
+Medido con callgrind (instrucciones del host para el mismo programa del IOP): bucle aritmético
+737 → 452 M (−39 %), bucle con LW/SW 1513 → 907 M (−40 %), es decir, unas **1,65 veces más rápido**. La
+nueva prueba "IOP fast loads and stores match the generic memory paths" fija que los accesos rápidos
+equivalen a los genéricos (espejos KSEG0/KSEG1, marca de RAM escrita, registros de hardware y FIFO del
+SIO2). La suite pasa **523/523** con los 29 parches.
+
+Siguiente paso: averiguar qué hilos del IOP están ocupados en la partida. Si son bucles de espera
+activa (sondeo de un registro o de memoria), saltarlos rendiría mucho más que acelerar el intérprete.
+Para ello basta una ejecución con `PS2X_IOP_PC_EVERY=1000000`: el registro mostrará `[IOP:pc]` con los
+PC más repetidos. **Falta medirlo con el juego:** repetir `scripts\probar_rendimiento.ps1` y comparar el
+porcentaje del IOP y las llamadas a `vid::Flip` por segundo.

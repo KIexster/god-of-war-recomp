@@ -41,6 +41,7 @@ $gifNativeTagPatch = Join-Path $RepoRoot 'patches\ps2recomp-gif-native-tag.patch
 $gsImageFragmentsPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-image-fragments.patch'
 $gsTriangleSamplingPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-triangle-sampling.patch'
 $gsSpriteSamplingPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-sprite-sampling.patch'
+$iopFastPatch = Join-Path $RepoRoot 'patches\ps2recomp-iop-fast.patch'
 $gsTriangleConstantsPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-triangle-constants.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
@@ -107,6 +108,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $gifNativeTagPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsImageFragmentsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsTriangleSamplingPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsSpriteSamplingPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $iopFastPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsTriangleConstantsPatch)
 Pop-Location
 
