@@ -181,7 +181,7 @@ nombre = "GS / VU"
   nombre = { es = "VIF1 y VU1", en = "VIF1 and VU1", pt = "VIF1 e VU1" }
   estado = "parcial"
   peso = 3
-  nota = { es = "SQRT/RSQRT corregidas: matrices de cámara finitas y triángulos enviados al GS; aún falta la escena 3D completa", en = "SQRT/RSQRT corrected: finite camera matrices and triangles sent to GS; the complete 3D scene is still missing", pt = "SQRT/RSQRT corrigidas: matrizes de câmera finitas e triângulos enviados ao GS; a cena 3D completa ainda não aparece" }
+  nota = { es = "MMI integrado: modelos pasan Clip y se actualizan posiciones; imagen deformada, paradas de VU1 en EEXP pendientes", en = "MMI integrated: models pass Clip and positions update; distorted image, VU1 stops at EEXP remain unresolved", pt = "MMI integrado: modelos passam Clip e posições são atualizadas; imagem deformada, paradas de VU1 em EEXP pendentes" }
 
   [[hardware.grupo.componente]]
   corto = "Tex/CLUT"

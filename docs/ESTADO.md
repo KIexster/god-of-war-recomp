@@ -1293,3 +1293,53 @@ y formas emitidas) y pasa **533/533** con los 31 parches.
 **Falta comprobarlo con el juego** (requiere `scripts\2_compilar.cmd`, cambia el código generado): repetir
 las sondas de Clip del estado 11. Con PEXEW corregido, Y y Z de la esfera deberían dejar de coincidir y
 algunos modelos deberían pasar Clip.
+
+### Control integrado de GS, MMI y VU0 (2026-10-06)
+
+Se integra `origin/main` en `0421ec4` mediante merge, conservando los parches de Opus
+y los dos nuevos parches GS de constantes y coordenadas. Los 33 parches reproducen
+exactamente las 78 fuentes modificadas del runtime. Se regeneran las 6418 unidades
+y se recompila el ejecutable completo. MSVC interrumpe inicialmente `libsd.cpp` sin
+emitir diagnóstico; la reanudación compila esa unidad y enlaza correctamente sin
+cambiar fuentes. La suite nativa integrada pasa **545/545**, incluidas ocho pruebas
+OpenGL en Windows; la configuración y los 14 scripts PowerShell pasan sus controles.
+
+El control OpenGL de 175 s alcanza el estado 11. En sus primeras 64 llamadas a Clip
+desde ProcessModel, las esferas son finitas y **ninguna tiene Y y Z con bits iguales**.
+**30 devuelven `0` y 34 devuelven `0x80000000`**, frente a 64 rechazos y 64 pares Y/Z
+idénticos en el control previo. La muestra abarca once modelos; no es un censo de
+toda la escena. El modelo `0xD51C80`, grupo `0xD599C0`, pasa Clip en sus cinco muestras.
+Los descartes restantes pueden corresponder a objetos fuera de la vista y no se fuerzan.
+
+Las posiciones observadas también cambian: se actualizan buffers de primitivas que
+sí pertenecen a los contextos, desde llamadas como `0x1644E0`, con datos no nulos.
+Esto supera el diagnóstico anterior limitado a la plantilla del loader y a los
+buffers de `0x1FB800`; no certifica que toda la geometría enviada sea correcta.
+
+La captura a 138,75 s del reloj PAD está en estado 11 (`pending=0`, `levelReady=1`,
+`flashReady=0`) y muestra polígonos/texturas deformados. La de 110,02 s aún está en
+estado 4 y muestra textura naranja y triángulos grandes. Se inicializa OpenGL real
+en la RX 5700 XT, sin fallback. **Kratos y la escena completa siguen pendientes**;
+pasar Clip no equivale a una partida jugable. Los registros y capturas quedan solo
+en `logs/integrated_mmi_gs_game/`, excluidos del repositorio.
+
+El siguiente control detecta paradas de VU1 en `pc=0x288`, instrucción `0x8040FFFE`.
+La tabla LowerOP de [PCSX2 fijada en `32ac6e2`](https://github.com/PCSX2/pcsx2/blob/32ac6e23e4aaf8c8c5e74a6c1ed750ee7672120e/pcsx2/VUops.cpp)
+la identifica como EEXP; el runtime la considera reservada. También están cruzados
+los códigos de ERSQRT, ESIN y EATAN. Se preparará un parche VU1 separado con pruebas
+de instrucciones binarias explícitas, sin modificar las fórmulas EFU existentes.
+El perfil previo a ese arreglo incluye los errores emitidos por esas paradas y
+no debe describirse como rendimiento de una escena renderizada correctamente.
+
+El script de rendimiento elimina también variables de diagnósticos experimentales
+de geometría y replay, y restaura sus valores al terminar.
+
+El perfil OpenGL de 240 s, sin capturas ni diagnósticos opcionales y sin otras pruebas
+o compilaciones concurrentes, confirma estado 11 antes del intervalo medido. Sus ocho
+ventanas completas de 180,31 a 220,38 s dan **1,00 llamadas a `vid::Flip`/s** y
+**59,11 presentaciones/s**. El tiempo exclusivo transcurrido del hilo del juego se
+reparte en IOP 53,18 %, VU 40,59 %, EE 3,69 % y envío GS 2,53 %. Incluye los errores
+VU1 emitidos por defecto; GS no mide aquí la ejecución del worker OpenGL. No son
+porcentajes de utilización de CPU/GPU. El control antiguo de 3,45 Flip/s descartaba
+todos los modelos observados: el trabajo ejecutado ahora cambió y no permite atribuir
+la diferencia al parche IOP. Se repetirá el perfil después de corregir EFU.

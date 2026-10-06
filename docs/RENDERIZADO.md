@@ -461,6 +461,14 @@ investigando por separado; conservar atributos constantes no resuelve todos esos
 La sonda independiente confirma la ruta hardware usando los contadores de batches,
 primitivas y tiles compute, después de esperar de forma acotada sus variantes asíncronas.
 
+## Integración con MMI y VU0
+
+La integración posterior con MMI y VU0 de Opus pasa **545/545** pruebas nativas con
+OpenGL. En estado 11 desaparece la duplicación Y/Z de las esferas: 30 de las primeras
+64 llamadas observadas pasan Clip, frente a cero antes. Las capturas ya muestran
+polígonos y texturas distintos, pero siguen deformados y sin Kratos reconocible.
+Se investigan las paradas de VU1 en EEXP; ver el control integrado en `ESTADO.md`.
+
 ## Referencia Tobiichi-Port
 
 Se revisa [YYOzcan/Tobiichi-Port](https://github.com/YYOzcan/Tobiichi-Port/tree/9f02797f8ab7481fddad4d2daf7afad82d11699f)
