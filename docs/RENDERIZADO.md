@@ -253,3 +253,21 @@ Dos regresiones cubren todas las permutaciones de esos grupos y la prioridad PAT
 Este arreglo ordena paquetes completos en la abstracción actual; no reproduce todos los
 stalls, preempciones ni ciclos del GIF real. Las pruebas son sintéticas y no acreditan
 por sí solas una mejora en la imagen o los FPS del juego.
+
+## Etiquetas GIF vacías y PRE
+
+`ps2recomp-gif-tag-semantics.patch` corrige el frontend que comparten los backends CPU y
+OpenGL. Una etiqueta con `NLOOP=0` no emite registros: conserva PRIM, los vértices pendientes
+y Q. `PRE/PRIM` de la etiqueta solo se aplica en PACKED con datos, y se ignora en REGLIST
+e IMAGE. Se corrigen tanto `processGIFPacket` como la ruta PACKED nativa validada. El
+atajo de subida IMAGE también respeta PRE del setup PACKED y el reinicio de Q de las
+etiquetas no vacías, conservando los bytes subidos e ignorando PRE de IMAGE.
+
+La regla coincide con `GSState::Transfer` de
+[PCSX2, commit 32ac6e2](https://github.com/PCSX2/pcsx2/blob/32ac6e23e4aaf8c8c5e74a6c1ed750ee7672120e/pcsx2/GS/GSState.cpp#L3371),
+que referencia la sección 7.2.2 del manual EE. El arreglo y las pruebas son propios;
+no se incorpora código de PCSX2. Cuatro regresiones comprueban el estado, la conservación
+de un triángulo entre etiquetas vacías y Q, los controles con PACKED no vacío y PRE,
+y los efectos del setup en la subida IMAGE nativa.
+No modifica las transferencias VIF ni añade continuaciones PACKED/REGLIST entre DIRECT
+distintos; eso sigue siendo una limitación separada.

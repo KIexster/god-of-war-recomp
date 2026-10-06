@@ -871,6 +871,65 @@ escenario completo. Las **64 muestras** de contexto repiten la lista válida de 
 y la ausencia de `0x7FCCC0`/`0x81BE30`. No se atribuye al nuevo orden una mejora visual ni
 de FPS. Capturas y registros permanecen en `logs/`.
 
-Se inicia además un control más largo sin `GOW_FAST_BOOT`, con el mismo ejecutable y
-`GOW_SKIP_FMV`, para comprobar si omitir la consulta de fin de la introducción afecta
-a la membresía observada. Su resultado se documentará al terminar.
+La CI del arreglo GIF `701da8d` pasa:
+[ejecución 37461636026](https://github.com/KIexster/god-of-war-recomp/actions/runs/37461636026).
+
+El control de **600 s** sin `GOW_FAST_BOOT`, con el mismo ejecutable, `GOW_SKIP_FMV` y
+las mismas sondas, muestra avance de la introducción hasta **11,75 s** de animación en
+los mensajes conservados y después llega al estado 11. Las **64 muestras** repiten el
+contexto, cámara y lista válida de dos objetos; `0x7FCCC0` y `0x81BE30` siguen ausentes.
+Las capturas de **360,28 y 480,20 s** son distintas y muestran agua oscura, sin Kratos.
+Este control no aporta evidencia de que el arranque acelerado cause esa ausencia en
+el contexto observado. No acredita el registro de todos los demás objetos del nivel
+ni permite comparar FPS bajo diagnóstico.
+
+### Efectos de las etiquetas GIF vacías (2026-10-06)
+
+Al revisar el parser se detecta que aplicaba PRE y reiniciaba Q aunque `NLOOP=0`.
+Aplicar PRIM también descartaba los vértices pendientes, incluso con la misma topología.
+REGLIST e IMAGE aplicaban indebidamente PRE. Se corrigen el parser general y la ruta
+PACKED nativa en `ps2recomp-gif-tag-semantics.patch`, conservando el frontend común a CPU
+y OpenGL. El atajo de subida IMAGE omitía a su vez PRE del setup PACKED y el reinicio de
+Q de las etiquetas no vacías; se corrige sin cambiar los bytes de la imagen.
+
+Las tres primeras regresiones fallan antes (**489/492**, suite normal). Tras esos arreglos,
+la nueva regresión de la subida IMAGE todavía falla (**492/493**), antes de corregir ese
+atajo. Cubren ambas rutas, etiquetas vacías con y sin PRE entre vértices, Q, modos que
+ignoran PRE y controles no vacíos. Alcance y referencia primaria:
+[`RENDERIZADO.md`](RENDERIZADO.md#etiquetas-gif-vacías-y-pre).
+
+La revisión de las dos capturas locales anteriores de 256 paquetes PATH1 encuentra en
+cada una **205 etiquetas vacías, 90 con PRE=1 y PRIM=0x5C**, sin truncamientos de paquete.
+Es el mismo caso que el arreglo convierte en una etiqueta sin emisiones al GS; eso no
+demuestra por sí solo que causara la escena ausente. La suite con OpenGL real pasa
+**495/495**. Los **21 parches** aplican y sus **68 fuentes** auditadas coinciden con el
+runtime local. Configuración/handlers sin errores (cuatro avisos conocidos) y PowerShell
+sin errores de sintaxis. La reconstrucción completa regenera las **6.418 unidades** y
+termina correctamente. Tras ella, la suite vuelve a pasar **495/495** y la nueva auditoría
+confirma las **68 fuentes** de los **21 parches** sin diferencias.
+
+La partida de **175 s** con las mismas opciones OpenGL/SKIP_FMV/FAST_BOOT y sondas de
+contexto/animación inicializa el rasterizado de hardware en la RX 5700 XT sin fallback y
+llega al estado 11 con `pending=0`, `levelReady=1` y `flashReady=1`. Las capturas de
+**110,24 y 130,14 s** muestran agua oscura y son distintas, pero siguen ausentes Kratos
+y el escenario completo. Las **64 muestras** conservan la lista válida de dos objetos y
+los buffers dinámicos fuera de ella. El arreglo corrige los efectos de las etiquetas;
+esta ejecución no acredita una mejora visual ni de FPS. Los datos del juego permanecen
+en `logs/`.
+
+### Identificación del productor de los buffers dinámicos (2026-10-06)
+
+El MIPS retail de `0x1FA8A8` llama a `0x1FB4B8` con cinco vectores y después a
+`attachment::tChained::Connect` (`0x1FCD48`, nombre del mapa de símbolos) y a otra rutina
+con cuatro vectores. La rutina de cinco vectores obtiene tipos 3 y 0 del mismo `renEEPrim`,
+elige el índice opuesto al mostrado y escribe siete coordenadas UV con las mismas
+constantes que `attachment::tChained::DrawGapFiller` en la referencia GoW 2 con símbolos.
+
+Estas coincidencias vinculan probablemente los buffers de `0x1FB800` con el relleno de
+las cadenas de los attachments. No confirman el nombre retail ni que esos objetos deban
+registrarse en el contexto observado. Las estructuras difieren entre versiones; no se
+cambia `funcmap.csv` ni se sustituye código del juego. El cuerpo del escenario y de Kratos
+debe seguirse también por la ruta de modelos. Se localiza `renModelServer::ProcessServer`
+en `0x159C58` (nombre del mapa): selecciona un contexto de una tabla y llama a su método
+virtual antes de enviar la cadena DMA. El siguiente diagnóstico observará esa selección
+y el descarte de modelos, conservando la ejecución original.
