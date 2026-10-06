@@ -22,6 +22,8 @@ jobs:
       - uses: actions/checkout@v5
       - name: Validar config/funcmap.csv y config/recomp.template.toml
         run: python3 tools/ci/validar_config.py
+      - name: Probar el inspector de paquetes GIF
+        run: python3 -m unittest discover -s tests -p test_gif_inspector.py
       - name: Analizar los scripts de PowerShell
         shell: pwsh
         run: ./tools/ci/analizar_ps1.ps1

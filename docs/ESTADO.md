@@ -686,3 +686,68 @@ del estado 11, los 16 floats de la matriz en `0x1060` son finitos; esta comproba
 de una matriz no certifica todas las transformaciones. Sigue pendiente correlacionar
 los buffers escritos por sus productores con VIF/VU1 y los triángulos recibidos por GS.
 Los snapshots y las capturas permanecen en `logs/`, ignorados por Git.
+
+### Procedencia de posiciones y paquetes PATH1 (2026-10-05)
+
+Se sigue el recorrido RAM → DMA/VIF → VU1 → GIF sobre `12d5da0`, con los arreglos EE/FPU
+de Opus ya integrados. Dos ejecuciones instrumentadas de **165 s y 105 s** llegan al
+estado 11 con OpenGL. Las sondas locales conservan los primeros ocho streams VIF1,
+48 estados de entrada de VU1 y 256 paquetes PATH1 completos de ese estado. La segunda
+ejecución observa además la procedencia de cada tramo DMA, sin cambiar sus datos ni
+la ejecución de EE/FPU/IOP. Esas sondas y el test de replay se retiran al terminar;
+los volcados permanecen exclusivamente en `logs/`.
+
+En el stream VIF1 número 1, de **481.064 B**, el comando `0x6C788002` en `0x62104`
+desempaqueta 120 vectores V4-32. Su payload en `0x62108` ya contiene 120 copias de
+`(0,0,0,0x8000)`. La traza DMA lo sitúa en RAM **`0x812390`**: el tramo empieza en
+`0x620E8`, procede de `0x812370` y contiene 3.904 B. Esa dirección es exactamente la
+devuelta al caller `0x12E258` de `LoadClient`, para el objeto `0x8084C0`, chunk 0,
+buffer 1. Se vincula así la plantilla con su origen, sin deducirlo solo de su contenido.
+
+| Payload en el stream 1 | Dirección RAM | Caller observado | Chunk / buffer |
+|---|---|---|---|
+| `0x62108` | `0x812390` | `0x12E258` | 0 / 1 |
+| `0x6BAD0` | `0x7F3220` | `0x12E258` | 0 / 1 |
+
+Hay ocho payloads de ese tamaño y con esa plantilla en el stream 1; reaparecen con
+los mismos orígenes en los streams 3, 5 y 7. Las lecturas observadas en VU1, PC byte
+`0x3240`, también encuentran la plantilla en memoria de datos antes de transformarla.
+Los ceros de estas muestras ya existen antes del UNPACK: no los introduce el renderer
+GS. Esto no demuestra que todos esos buffers deban contener geometría visible ni
+descarta problemas posteriores de selección o transformación.
+
+En cambio, las direcciones no nulas `0x7FCEB0` y `0x81C020`, actualizadas por `0x1FB800`,
+no aparecen como origen de payload en las ocho cadenas DMA muestreadas. La muestra
+es limitada; todavía hay que identificar su selección y envío antes de vincularlas
+con un paquete de salida. No se fuerza un cambio de buffer ni se escriben posiciones.
+
+El inspector nuevo, `tools/gs/inspeccionar_paquetes.py`, valida límites de etiquetas y
+payloads y cuenta XYZ, ADC/XYZ3 y rangos de coordenadas. Ambas capturas PATH1 dan
+**2.654 vértices: 337 con kick y 2.317 sin kick**, en 256 paquetes; 220 no contienen XYZ.
+Un kick solicita dibujo, pero no equivale por sí solo a un triángulo válido. Los paquetes
+252 y 254 tienen 120 XYZ idénticos cada uno, con ADC activo en todos ellos. Otros paquetes
+tienen posiciones distintas y kicks habilitados. El descarte de esta muestra ya figura
+en la salida de VU1, antes de procesarla el backend GS; no se ha demostrado que todos
+esos descartes sean incorrectos ni que expliquen por sí solos la escena ausente.
+
+Una reproducción local desde el estado de entrada VU1 número 5 genera exactamente el
+paquete original número 11: SHA-256
+`3c6dab3532d876d6b914213fc96cb89af6cfdf92697d6fb0051532b82dff57cb4`.
+La suite con ese test temporal pasa **480/480** (479 normales y el replay, sin las dos
+pruebas GPU). Esto permite reproducir el resultado del intérprete; no certifica su
+equivalencia con hardware PS2. La traza Q muestra divisiones y consumos posteriores;
+el valor inicial Q=2 observado antes de DIV no prueba que la perspectiva esté detenida.
+
+El inspector incluye ocho pruebas sintéticas de disposición PACKED/REGLIST/A+D,
+ADC frente a fog/XYZ3, PRE, NREG=0, IMAGE, padding y truncamiento; se ejecutan también
+en CI. No incluye datos del juego. Uso y alcance: [`RENDERIZADO.md`](RENDERIZADO.md).
+El siguiente paso es correlacionar un paquete no degenerado descartado con sus entradas
+de transformación/CLIP y seguir el envío de los buffers actualizados. No se publica
+un arreglo de comportamiento con esta investigación ni se acredita una escena 3D completa.
+
+Tras retirar las sondas se recompilan sus fuentes y se enlazan de nuevo los ejecutables
+del juego y de pruebas; ninguno conserva las opciones temporales de captura/replay.
+La suite nativa vuelve a pasar **481/481**, incluidas las dos pruebas GPU reales.
+Los 17 parches aplican y las 65 fuentes auditadas coinciden con el runtime local.
+El inspector pasa 8/8, configuración y handlers no tienen errores (cuatro avisos
+conocidos), los nueve scripts PowerShell y libpad2 pasan sus comprobaciones.

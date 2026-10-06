@@ -168,3 +168,34 @@ nulo y cambiante, también en sus lecturas posteriores. No se observa en esta mu
 retorno de `GetUpdateAddress` desde `goWater::InitEEPrim` o `UpdateEEPrim`. Estos resultados
 acotan la investigación: seguir la transformación de esas plantillas, su selección de
 datos y el resultado que VU1 entrega a GIF; no sustituirlas arbitrariamente por posiciones.
+
+La traza posterior, con EE/FPU integrados, vincula mediante las direcciones DMA dos de
+esas plantillas (`0x812390` y `0x7F3220`) con sus buffers de `LoadClient`. Llegan en cero
+al UNPACK y se observan así en memoria VU1 antes de transformarse. Los dos buffers
+actualizados por `0x1FB800` no aparecen como origen de payload en las ocho cadenas
+muestreadas; su envío sigue pendiente de identificar. En los primeros 256 paquetes
+PATH1 hay 2.654 vértices, 337 con kick y 2.317 sin kick (ADC/XYZ3), con casos de XYZ
+repetidos y otros de posiciones distintas. Estos resultados localizan datos y descartes
+anteriores al backend GS; no demuestran por sí solos un fallo de VIF/VU1 ni corrigen
+la escena ausente. Direcciones, replay y límites: [`ESTADO.md`](ESTADO.md).
+
+## Inspección offline de GIF
+
+El inspector usa solo la biblioteca estándar de Python y recibe un paquete binario
+o una carpeta de capturas locales `gow_geo_gif_*.bin`:
+
+```powershell
+python tools/gs/inspeccionar_paquetes.py logs/gs_geometry_probe --json logs/gif_summary.json
+python -m unittest discover -s tests -p test_gif_inspector.py
+```
+
+Valida tamaños de PACKED, REGLIST (incluido su padding) e IMAGE; el formato 3 no está
+soportado. Cuenta escrituras XYZF2/XYZ2/XYZF3/XYZ3 y A+D, distinguiendo kick de ADC/XYZ3.
+El JSON contiene métricas, rangos XYZ, etiquetas y SHA-256 por archivo; no copia los
+payloads. Los tipos PRIM solo cuentan etiquetas PACKED con PRE: no reconstruyen todo
+el estado GS ni las primitivas que efectivamente rasteriza. Los valores X/Y conservan
+sus unidades GS, antes de aplicar XYOFFSET. Un kick no garantiza un triángulo visible.
+
+La captura de esta investigación usó sondas temporales VIF/VU1 y un replay local, ya
+retirados. `GOW_GEOMETRY_DIAG` y `GOW_REPLAY_STEM` no son opciones del runtime publicado.
+Conservar capturas e informes bajo `logs/`; no subir RAM, microcódigo ni datos del juego.
