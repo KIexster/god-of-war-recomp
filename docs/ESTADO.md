@@ -957,3 +957,71 @@ y correlacionar sus descartes con los paquetes VU1. Capturas y registros siguen 
 
 La CI del arreglo de etiquetas `f385fcc` pasa:
 [ejecución 37465434359](https://github.com/KIexster/god-of-war-recomp/actions/runs/37465434359).
+
+### Recorrido real del maestro GROB y listas de modelos (2026-10-06)
+
+Se amplía `GOW_MODEL_DIAG=1` para observar la entrada del maestro `0x1511F0`, las
+listas de `0x159878` y las llamadas a `0x157A60`. El mapa retail deja estas dos últimas
+como funciones sin nombre; su estructura coincide respectivamente con
+`renModelServerContext::ProcessServer` y `ProcessModel` en la referencia GoW 2.
+Los offsets de los filtros se comprueban en el MIPS retail, sin copiar su código
+generado. Alcance y límites: [`RENDERIZADO.md`](RENDERIZADO.md#selección-del-contexto-de-modelos).
+
+La primera prueba de **175 s** confirma que el maestro es compartido por varios
+servidores. Se limita después cada contexto por separado para que otros servidores
+no agoten las muestras de modelos. La segunda prueba, también de **175 s**, registra
+en el estado 11 cuatro contextos activos de modelos. `0x1111B98` contiene **14 modelos**:
+uno no pasa la máscara de vista, ocho son candidatos al árbol estático y cinco a la
+llamada directa. Los otros contextos contienen **1, 1 y 2 modelos**, todos candidatos
+a la llamada directa en las muestras observadas. Se verifican **64 entradas reales**
+a la rutina de procesamiento en esta fase, repartidas entre nueve modelos distintos,
+con un grupo cada uno. Las listas observadas no presentan ciclos, punteros inválidos
+ni truncamientos.
+
+Durante las primeras 64 muestras del maestro de modelos, la lista crece de ocho a
+trece contextos y después queda en once, con tres activos. El contexto de 14 modelos
+se observa en **21 llamadas** antes de esa reducción. Es una transición del estado
+observado; no identifica por sí misma un fallo de registro ni cuáles son los modelos
+de Kratos. Las capturas de **110,25 y 130,21 s** continúan mostrando agua oscura sin
+Kratos ni el escenario completo. No se fuerzan registros, visibilidad ni índices.
+
+La siguiente observación registra la visibilidad raíz del esqueleto y el retorno de
+`renView::Clip` procedente del procesamiento de modelos. Una entrada en esa rutina
+todavía no prueba que el modelo pase sus filtros internos ni que emita geometría.
+
+### PEXEW duplica Y en la Z de las esferas de visibilidad (2026-10-06)
+
+La tercera partida de **175 s** añade la observación de visibilidad y Clip. Las **64
+entradas de procesamiento** en el estado 11 tienen raíz de esqueleto válida y visible,
+y el primer bloque de visibilidad de grupos vale `0xFFFFFFFF`. En las **64 llamadas
+observadas a Clip**, correspondientes a siete modelos distintos, los cuatro argumentos
+son finitos, Y y Z tienen los mismos bits y el retorno real es **`0x80000000`**, descarte.
+Antes del estado 11 se registran 49 descartes y 15 retornos `0x20`. Estos límites no
+cubren todos los modelos ni todos los descartes de la escena.
+
+Se localiza una causa concreta de los argumentos duplicados: en `0x157F94`, PROT3W
+extrae Y para `f13`; en `0x157FA0`, PEXEW debería extraer Z para `f14`. La macro actual
+`PS2_PEXEW` usa `_MM_SHUFFLE(2,3,0,1)`, que copia también Y a la palabra baja.
+Una reproducción nativa aislada con palabras **[11,22,33,44]**, ajena al juego, confirma
+la permutación incorrecta. También detecta que PROT3W rota las cuatro palabras, cuando
+debería conservar la cuarta. Se contrasta la semántica con
+[PEXEW y PROT3W de PCSX2, commit 32ac6e2](https://github.com/PCSX2/pcsx2/blob/32ac6e23e4aaf8c8c5e74a6c1ed750ee7672120e/pcsx2/MMI.cpp#L1435).
+
+| Instrucción | Resultado actual, de palabra baja a alta | Resultado esperado |
+|---|---|---|
+| PEXEW | [22,11,44,33] | [33,22,11,44] |
+| PROT3W | [22,33,44,11] | [22,33,11,44] |
+
+**Pendiente en el EE asignado a Opus:** corregir PEXEW en `ps2_runtime_macros.h`
+(`_MM_SHUFFLE(3,0,1,2)`) y PROT3W tanto allí como en la emisión de
+`mmi_translation_helpers.cpp` (`_MM_SHUFFLE(3,0,2,1)`), con regresiones de las cuatro
+palabras, alias origen/destino y registro cero. PROT3W se emite en línea y requiere
+regenerar las funciones; cambiar solo la macro no corrige el ejecutable. Este turno
+no modifica el recompilador, FPU, IOP ni los parches de EE.
+
+La macro incorrecta explica la Z mal extraída; todavía no se ha probado cuánto cambia
+el descarte ni la imagen tras corregirla. Las capturas de **110,04 y 130,22 s** siguen
+mostrando agua sin Kratos ni el escenario completo, con OpenGL de hardware y estado 11.
+Las sondas compilan en Windows y los datos/reproducciones quedan en `logs/`. La siguiente
+prueba de render debe repetir estas sondas tras integrar el arreglo EE y después seguir
+los modelos que pasen Clip hasta las partes y los paquetes VU1.

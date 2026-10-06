@@ -280,6 +280,35 @@ distintos; eso sigue siendo una limitación separada.
 su tabla virtual y el destino/ajuste de la llamada, comprobando los límites de RAM.
 Los índices se calculan en 64 bits para evitar envolvimientos.
 
+La misma variable observa la entrada real de `renGROBMasterContext::ProcessServer`
+(`0x1511F0`): `[gow-model:grob-master]` resume hasta 256 contextos de su lista, el filtro
+no nulo en `cliente+0x2C`, ciclos, punteros inválidos y truncamientos. Conserva el límite
+de 64 muestras por fase para cada uno de los primeros ocho contextos distintos;
+las primeras ocho muestras detallan cada cliente como
+`[gow-model:grob-client]`, con su servidor, vista y método virtual. `validRoute` indica
+únicamente que los punteros observados caben en RAM, sin certificar el registro del
+método en el runtime ni su posterior invocación. Los nodos se comparan por dirección
+física para detectar también ciclos entre alias de RAM.
+
+`[gow-model:context]` observa la entrada de `0x159878`, cuya lista y filtros coinciden
+con `renModelServerContext::ProcessServer` de la referencia GoW 2, aunque el mapa retail
+no le asigna ese nombre. Registra las máscaras de vista, los modelos candidatos a la
+llamada directa y los destinados al árbol estático, con los mismos límites por contexto
+y por lista. `[gow-model:client]` detalla las ocho primeras muestras.
+`[gow-model:process]` registra hasta 64 entradas por fase en `0x157A60`, equivalente
+por estructura a `ProcessModel`, con el modelo y su número de grupos. Estos candidatos
+se calculan a partir de la memoria observada: tampoco prueban que los filtros internos
+o el árbol de esferas permitan dibujar el modelo.
+
+La entrada de procesamiento también observa el esqueleto, su visibilidad raíz y el
+primer bloque de bits de visibilidad de grupos. `[gow-model:clip]` registra hasta 64
+llamadas por fase a `renView::Clip` (`0x169120`) procedentes de `0x157FA8`. Conserva los
+bits de la esfera y de diez coeficientes/límites de la vista. Solo registra un resultado
+como válido cuando el original vuelve a su llamador (`completed=1`); `0x80000000`
+es el código que esta ruta usa para descartar. Ninguna sonda cambia los cálculos, los
+registros FPU ni los filtros. No recoge aquí otras llamadas a Clip ni todos los
+descartes internos de partes/modelos estáticos.
+
 Es una observación de entrada: no certifica que el método se haya invocado, que haya modelos
 visibles ni que se haya enviado o dibujado geometría. Conserva los registros y la memoria
 del juego y llama siempre al original, también en las reanudaciones. El perfil de rendimiento

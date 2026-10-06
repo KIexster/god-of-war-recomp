@@ -487,6 +487,191 @@ namespace
         sub_00159C58_0x159c58(rdram, ctx, runtime);
     }
 
+    struct GowModelContextSamples { uint32_t physical = 0u; unsigned early = 0u, scene = 0u; };
+
+    // GOW-Port: el maestro es compartido por varios servidores; limitar cada contexto
+    // evita que los primeros servidores agoten las muestras del servidor de modelos.
+    unsigned gowModelContextSample(std::array<GowModelContextSamples, 8> &probes, uint32_t context, uint32_t state)
+    {
+        const uint32_t physical = context & 0x1FFFFFFFu;
+        if (!physical) return 0u;
+        for (auto &probe : probes)
+            if (probe.physical == physical || !probe.physical)
+            {
+                probe.physical = physical;
+                auto &samples = state == 11u ? probe.scene : probe.early;
+                return samples < 64u ? ++samples : 0u;
+            }
+        return 0u;
+    }
+
+    // GOW-Port: lista del maestro GROB segun el MIPS retail 0x151238-0x151334.
+    // Una fotografia de entrada no sustituye la ejecucion ni prueba un envio al GS.
+    void gowDiagGrobMaster(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+    {
+        if (ctx->pc != 0x001511F0u) { sub_001511F0_0x1511f0(rdram, ctx, runtime); return; }
+        const uint32_t state = readGuest32(rdram, 0x29E560u), context = GPR_U32(ctx, 4);
+        static std::array<GowModelContextSamples, 8> probes{};
+        const unsigned sample = gowModelContextSample(probes, context, state);
+        if (sample)
+        {
+            const bool validContext = padBuffer(rdram, context, 0x28u) != nullptr;
+            const uint32_t head = validContext ? readGuest32(rdram, context + 0x24u) : 0u;
+            uint32_t node = head;
+            std::array<uint32_t, 256> seen{};
+            size_t count = 0u, active = 0u, invalidRoutes = 0u;
+            bool invalid = !validContext, cycle = false;
+            while (node && count < seen.size())
+            {
+                const uint32_t physical = node & 0x1FFFFFFFu;
+                for (size_t i = 0u; i < count; ++i) cycle |= seen[i] == physical;
+                if (cycle) break;
+                const auto *clientData = physical >= 8u ? padBuffer(rdram, node - 8u, 0x48u) : nullptr;
+                if (!clientData) { invalid = true; break; }
+                seen[count++] = physical;
+                const uint32_t client = node - 8u;
+                uint16_t id = 0u;
+                std::memcpy(&id, clientData, sizeof(id));
+                const uint32_t enabled = readGuest32(rdram, client + 0x2Cu);
+                const uint32_t view = readGuest32(rdram, client + 0x44u);
+                const uint32_t server = readGuest32(rdram, 0x32E848u + uint32_t(id) * 4u);
+                const uint32_t vtable = readGuest32(rdram, client + 0x20u);
+                const auto *methods = padBuffer(rdram, vtable, 0x20u);
+                int16_t adjustment = 0;
+                if (methods) std::memcpy(&adjustment, methods + 0x18u, sizeof(adjustment));
+                const uint32_t target = methods ? readGuest32(rdram, vtable + 0x1Cu) : 0u;
+                const bool validRoute = methods && padBuffer(rdram, server, 0x24u) &&
+                    padBuffer(rdram, view, 2u) && padBuffer(rdram, target, 4u);
+                active += enabled ? 1u : 0u;
+                invalidRoutes += enabled && !validRoute ? 1u : 0u;
+                if (sample <= 8u)
+                    std::fprintf(stderr, "[gow-model:grob-client] sample=%u state=%u master=%x index=%zu this=%x id=%x enabled=%x clients=%x view=%x server=%x vtable=%x adjustment=%d target=%x validRoute=%u\n",
+                                 sample, state, context, count - 1u, client, unsigned(id), enabled,
+                                 readGuest32(rdram, client + 0x24u), view, server, vtable, int(adjustment), target,
+                                 validRoute ? 1u : 0u);
+                node = readGuest32(rdram, node);
+            }
+            std::fprintf(stderr, "[gow-model:grob-master] sample=%u state=%u this=%x valid=%u head=%x nodes=%zu active=%zu invalidRoutes=%zu invalid=%u cycle=%u truncated=%u\n",
+                         sample, state, context, validContext ? 1u : 0u, head, count, active, invalidRoutes,
+                         invalid ? 1u : 0u, cycle ? 1u : 0u, node && !invalid && !cycle ? 1u : 0u);
+        }
+        sub_001511F0_0x1511f0(rdram, ctx, runtime);
+    }
+
+    // GOW-Port: filtros de la lista de modelos, comprobados en MIPS 0x1598A0-0x15991C.
+    void gowDiagModelContext(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+    {
+        if (ctx->pc != 0x00159878u) { sub_00159878_0x159878(rdram, ctx, runtime); return; }
+        const uint32_t state = readGuest32(rdram, 0x29E560u), context = GPR_U32(ctx, 4);
+        static std::array<GowModelContextSamples, 8> probes{};
+        const unsigned sample = gowModelContextSample(probes, context, state);
+        if (sample)
+        {
+            const bool validContext = padBuffer(rdram, context, 0x60u) != nullptr;
+            const uint32_t view = readGuest32(rdram, 0x33104Cu);
+            const bool validView = padBuffer(rdram, view, 0x3B0u) != nullptr;
+            const uint32_t viewId = validView ? readGuest32(rdram, view + 0x3ACu) : 0u;
+            const uint32_t mask = validContext ? readGuest32(rdram, context + 0x48u) : 0u;
+            const uint32_t staticCount = validContext ? readGuest32(rdram, context + 0x54u) : 0u;
+            const uint32_t sphereTree = validContext ? readGuest32(rdram, context + 0x58u) : 0u;
+            const uint32_t sphereValid = validContext ? readGuest32(rdram, context + 0x5Cu) : 0u;
+            const bool useStatic = sphereValid && staticCount;
+            uint32_t node = validContext ? readGuest32(rdram, context + 0x24u) : 0u;
+            const uint32_t head = node;
+            std::array<uint32_t, 256> seen{};
+            size_t count = 0u, viewRejected = 0u, treeCandidates = 0u, processCandidates = 0u;
+            bool invalid = !validContext || !validView, cycle = false;
+            while (node && count < seen.size())
+            {
+                const uint32_t physical = node & 0x1FFFFFFFu;
+                for (size_t i = 0u; i < count; ++i) cycle |= seen[i] == physical;
+                if (cycle) break;
+                const auto *data = physical >= 8u ? padBuffer(rdram, node - 8u, 0x124u) : nullptr;
+                if (!data) { invalid = true; break; }
+                seen[count++] = physical;
+                const uint32_t model = node - 8u, modelMask = readGuest32(rdram, model + 0xD8u);
+                int16_t sphereId = 0;
+                std::memcpy(&sphereId, data + 0x122u, sizeof(sphereId));
+                const bool passesView = (viewId & mask) && (viewId & modelMask);
+                viewRejected += !passesView ? 1u : 0u;
+                treeCandidates += passesView && useStatic && sphereId >= 0 ? 1u : 0u;
+                processCandidates += passesView && (!useStatic || sphereId < 0) ? 1u : 0u;
+                if (sample <= 8u)
+                    std::fprintf(stderr, "[gow-model:client] sample=%u state=%u context=%x index=%zu this=%x mask=%x sphereId=%d passesView=%u treeCandidate=%u\n",
+                                 sample, state, context, count - 1u, model, modelMask, int(sphereId), passesView ? 1u : 0u,
+                                 passesView && useStatic && sphereId >= 0 ? 1u : 0u);
+                node = readGuest32(rdram, node);
+            }
+            std::fprintf(stderr, "[gow-model:context] sample=%u state=%u this=%x view=%x validView=%u id=%x mask=%x head=%x nodes=%zu viewRejected=%zu treeCandidates=%zu processCandidates=%zu staticCount=%u sphereTree=%x sphereValid=%u invalid=%u cycle=%u truncated=%u\n",
+                         sample, state, context, view, validView ? 1u : 0u, viewId, mask, head, count,
+                         viewRejected, treeCandidates, processCandidates, staticCount, sphereTree, sphereValid,
+                         invalid ? 1u : 0u, cycle ? 1u : 0u, node && !invalid && !cycle ? 1u : 0u);
+        }
+        sub_00159878_0x159878(rdram, ctx, runtime);
+    }
+
+    // GOW-Port: entrada real de la rutina que procesa un modelo (MIPS 0x157A60).
+    // Su estructura coincide con ProcessModel de la referencia GoW 2; el mapa retail no la nombra.
+    void gowDiagProcessModel(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+    {
+        if (ctx->pc != 0x00157A60u) { sub_00157A60_0x157a60(rdram, ctx, runtime); return; }
+        const uint32_t state = readGuest32(rdram, 0x29E560u);
+        static unsigned early = 0u, scene = 0u;
+        auto &samples = state == 11u ? scene : early;
+        if (samples < 64u)
+        {
+            const uint32_t context = GPR_U32(ctx, 4), model = GPR_U32(ctx, 5);
+            const bool valid = padBuffer(rdram, model, 0xE8u) != nullptr;
+            const uint32_t view = readGuest32(rdram, 0x33104Cu);
+            const uint32_t object = valid ? readGuest32(rdram, model + 0x18u) : 0u;
+            const bool validObject = padBuffer(rdram, object, 0x108u) != nullptr;
+            const uint32_t skeleton = validObject ? readGuest32(rdram, object + 0x104u) : 0u;
+            const auto *skeletonData = padBuffer(rdram, skeleton, 0x90u);
+            uint16_t rootId = 0u;
+            if (skeletonData) std::memcpy(&rootId, skeletonData + 0x86u, sizeof(rootId));
+            const uint32_t visibility = skeletonData ? readGuest32(rdram, skeleton + 0x54u) : 0u;
+            const uint64_t rootAddress = (visibility & 0x1FFFFFFFu) + uint64_t(rootId) * 4u;
+            const bool validRoot = skeletonData && (!visibility || (rootAddress < 0x02000000u && padBuffer(rdram, uint32_t(rootAddress), 4u)));
+            const uint32_t rootVisible = validRoot ? (!visibility || readGuest32(rdram, uint32_t(rootAddress)) ? 1u : 0u) : 0u;
+            std::fprintf(stderr, "[gow-model:process] sample=%u state=%u context=%x this=%x valid=%u caller=%x view=%x groups=%u groupArray=%x disableCulling=%u object=%x skeleton=%x visibility=%x rootId=%u validRoot=%u rootVisible=%u groupBits=%x\n",
+                         ++samples, state, context, model, valid ? 1u : 0u, GPR_U32(ctx, 31), view,
+                         valid ? readGuest32(rdram, model + 0xE0u) : 0u,
+                         valid ? readGuest32(rdram, model + 0xE4u) : 0u, GPR_U32(ctx, 6), object, skeleton,
+                         visibility, unsigned(rootId), validRoot ? 1u : 0u, rootVisible,
+                         validObject ? readGuest32(rdram, object + 0x100u) : 0u);
+        }
+        sub_00157A60_0x157a60(rdram, ctx, runtime);
+    }
+
+    // GOW-Port: resultado del Clip llamado desde ProcessModel (MIPS 0x157FA8).
+    // Solo observar bits de argumentos y resultado; no cambiar la FPU ni el criterio del juego.
+    void gowDiagModelClip(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+    {
+        if (ctx->pc != 0x00169120u) { sub_00169120_0x169120(rdram, ctx, runtime); return; }
+        const uint32_t caller = GPR_U32(ctx, 31), state = readGuest32(rdram, 0x29E560u);
+        static unsigned early = 0u, scene = 0u;
+        auto &samples = state == 11u ? scene : early;
+        const unsigned sample = caller == 0x00157FB0u && samples < 64u ? ++samples : 0u;
+        const uint32_t view = GPR_U32(ctx, 4), model = GPR_U32(ctx, 17), group = GPR_U32(ctx, 19);
+        std::array<uint32_t, 4> sphere{};
+        std::array<uint32_t, 10> planes{};
+        const bool validView = padBuffer(rdram, view, 0x38Cu) != nullptr;
+        if (sample)
+        {
+            for (size_t i = 0u; i < sphere.size(); ++i) std::memcpy(&sphere[i], &ctx->f[12u + i], 4u);
+            const std::array<uint32_t, 10> offsets = {0x384u, 0x388u, 0x2C0u, 0x2C8u, 0x2D4u, 0x2D8u, 0x2E0u, 0x2E8u, 0x2F4u, 0x2F8u};
+            if (validView)
+                for (size_t i = 0u; i < offsets.size(); ++i) planes[i] = readGuest32(rdram, view + offsets[i]);
+        }
+        sub_00169120_0x169120(rdram, ctx, runtime);
+        if (sample)
+            std::fprintf(stderr, "[gow-model:clip] sample=%u state=%u this=%x group=%x view=%x validView=%u sphere=%08x,%08x,%08x,%08x planes=%08x,%08x,%08x,%08x,%08x,%08x,%08x,%08x,%08x,%08x completed=%u result=%x\n",
+                         sample, state, model, group, view, validView ? 1u : 0u,
+                         sphere[0], sphere[1], sphere[2], sphere[3], planes[0], planes[1], planes[2], planes[3],
+                         planes[4], planes[5], planes[6], planes[7], planes[8], planes[9], ctx->pc == caller ? 1u : 0u,
+                         ctx->pc == caller ? GPR_U32(ctx, 2) : 0u);
+    }
+
     void gowDiagPrimPoll(uint8_t *rdram, double seconds)
     {
         static double next=0;
@@ -711,7 +896,13 @@ namespace
             runtime.replaceFunction(0x00141B78u, gowDiagPrimContext);
         }
         if (const char *diag = std::getenv("GOW_MODEL_DIAG"); diag && std::strcmp(diag, "1") == 0)
+        {
             runtime.replaceFunction(0x00159C58u, gowDiagModelServer);
+            runtime.replaceFunction(0x001511F0u, gowDiagGrobMaster);
+            runtime.replaceFunction(0x00159878u, gowDiagModelContext);
+            runtime.replaceFunction(0x00157A60u, gowDiagProcessModel);
+            runtime.replaceFunction(0x00169120u, gowDiagModelClip);
+        }
         runtime.replaceFunction(0x00180E50u, gowDiagPathSelect);
         runtime.replaceFunction(0x00180D08u, gowDiagAttachNode);
         runtime.replaceFunction(0x0027B7E8u, gowPad2Init);
