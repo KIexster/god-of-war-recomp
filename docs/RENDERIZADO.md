@@ -364,6 +364,46 @@ al estado 11 sin fallback CPU; las capturas de 90,15 y 110,13 s siguen mostrando
 sin Kratos ni el escenario completo. Las 64 llamadas observadas a Clip en esa fase
 siguen descartando con `0x80000000` y Y/Z idénticas. No se acredita una mejora de FPS.
 
+## Triángulos CPU como referencia para OpenGL
+
+`ps2recomp-gs-triangle-sampling.patch` elimina el desplazamiento de medio pixel del CPU,
+conserva los cuatro bits fraccionales de XYOFFSET y aplica la inclusión de bordes
+superiores/izquierdos. Reutiliza `gs_triangle_rules.h`, adaptado de Taylor N. Albarnaz /
+LightVelox, commit `ac9efa070638ad3b3accd284de6f898d5ab271d1`, igual que OpenGL.
+Las aristas se calculan en entero y avanzan por sumas dentro de cada fila; la Z se
+interpola por diferencias para conservar los valores planos de 32 bits.
+
+La convención está descrita en las secciones 2.4.4 y 3.2.9 del
+[GS User's Manual](https://www.scribd.com/document/784545197/GS-Users-Manual):
+el centro del pixel de pantalla tiene coordenadas enteras y un borde compartido
+pertenece a un solo triángulo. La conversión y el recorrido del renderer software de
+[PCSX2](https://github.com/PCSX2/pcsx2/blob/32ac6e23e4aaf8c8c5e74a6c1ed750ee7672120e/pcsx2/GS/Renderers/SW/GSRasterizer.cpp)
+sirven como comprobación independiente; no se copia su código.
+
+Tres regresiones fallan en CPU antes del cambio y pasan ya en las dos rutas OpenGL:
+color interpolado en un centro conocido, XYOFFSET fraccional y dos triángulos con
+alpha que deben cubrir el borde compartido una sola vez, en ambos sentidos de giro.
+Dos fixtures antiguos de STQ/filtro lineal se recalculan para el centro entero, conservando
+su capacidad de distinguir interpolación homogénea y filtrado. El fixture de fan ahora
+lee CT32 con su distribución swizzled de referencia y exige exactamente el rectángulo
+interior de centros enteros; la lectura lineal anterior inventaba huecos.
+
+La comparación sintética de VRAM completa pasa de 12 diferencias a **48/48 casos iguales**
+entre CPU y OpenGL compute/hardware, con IIP, cuatro pruebas Z y valores Z32 altos.
+Las pruebas del parche y la compilación completa se registran en `ESTADO.md`.
+
+## Referencia Tobiichi-Port
+
+Se revisa [YYOzcan/Tobiichi-Port](https://github.com/YYOzcan/Tobiichi-Port/tree/9f02797f8ab7481fddad4d2daf7afad82d11699f)
+en `9f02797f8ab7481fddad4d2daf7afad82d11699f`. Los cinco archivos comparados
+(`gs_cpu_backend.cpp`, `ps2_vif1_interpreter.cpp` y núcleo/instrucciones superiores e
+inferiores de VU1) son idénticos a los del PS2Recomp fijado en `c5a9d025`.
+Su README declara el menú y la partida pendientes; esto describe lo publicado,
+no una prueba ejecutada aquí. Los hooks GoW incluyen objetos/tabla virtual de relleno
+y atajos de arranque. No se incorporan como arreglo del renderizado ni se ha probado
+su ejecutable. Puede servir para contrastar hipótesis de arranque, pero los archivos
+revisados no aportan todavía una solución distinta para GS/VIF/VU1.
+
 ## Selección del contexto de modelos
 
 `GOW_MODEL_DIAG=1` registra `[gow-model:server]` a la entrada de

@@ -39,6 +39,7 @@ $gifImageOrderPatch = Join-Path $RepoRoot 'patches\ps2recomp-gif-image-order.pat
 $gifImage2Patch = Join-Path $RepoRoot 'patches\ps2recomp-gif-image2.patch'
 $gifNativeTagPatch = Join-Path $RepoRoot 'patches\ps2recomp-gif-native-tag.patch'
 $gsImageFragmentsPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-image-fragments.patch'
+$gsTriangleSamplingPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-triangle-sampling.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -102,6 +103,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $gifImageOrderPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gifImage2Patch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gifNativeTagPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsImageFragmentsPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsTriangleSamplingPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner

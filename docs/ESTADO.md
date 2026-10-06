@@ -1088,3 +1088,34 @@ mostrando agua sin Kratos ni el escenario completo. Las **64 llamadas observadas
 en el estado 11 descartan con `0x80000000`, con Y/Z idénticas y argumentos finitos.
 Este arreglo corrige las cargas fragmentadas; no acredita mejora de FPS ni resuelve
 el descarte de modelos que se investiga por separado en el EE.
+
+La CI de `0a4f66c` pasa:
+[`Pruebas`, ejecución 37501053476](https://github.com/KIexster/god-of-war-recomp/actions/runs/37501053476).
+
+### Centros y bordes de triángulos en el renderer CPU (2026-10-06)
+
+`ps2recomp-gs-triangle-sampling.patch` comparte con OpenGL las reglas de triángulos
+adaptadas del fork SotC: centro entero, XYOFFSET completo 12.4 y borde compartido
+dibujado una sola vez. El CPU anterior desplazaba medio pixel la muestra, truncaba
+el offset y aceptaba ambos lados de una arista. Tres regresiones reproducen esos
+fallos; OpenGL compute/hardware ya las pasaban. Ahora pasan **523/523 pruebas**,
+incluidas cinco con OpenGL real. Se ajustan tres fixtures antiguos por las razones
+documentadas en [`RENDERIZADO.md`](RENDERIZADO.md#triangulos-cpu-como-referencia-para-opengl).
+
+La comparación independiente de VRAM completa en **48 casos** de triángulos planos/IIP,
+cuatro modos de prueba Z y valores Z32 `7`, `0x80000001` y `0xffffff01`, en las dos
+rutas OpenGL, pasa de **12 diferencias** a **cero**. Esto mejora la referencia CPU para
+comparar el renderer GPU; no prueba que todos los efectos GS sean equivalentes.
+La compilación completa termina con **6.418 unidades generadas** y código cero;
+se repiten las **523/523 pruebas** con OpenGL real. La auditoría reproduce **27 parches
+y 74 fuentes** exactamente. El control de partida de **175 s** llega al estado 11,
+`pending=0`, `levelReady=1` y `flashReady=1`, sin fallback CPU. Las capturas de **90,02
+y 110,00 s** siguen mostrando agua sin Kratos ni el escenario completo; las 64 llamadas
+observadas a Clip en esa fase mantienen descarte `0x80000000`, Y/Z idénticas y valores
+finitos. La comparación sintética mejora; la partida jugable y los FPS quedan sin acreditar.
+
+También se revisa [Tobiichi-Port en `9f02797f`](https://github.com/YYOzcan/Tobiichi-Port/tree/9f02797f8ab7481fddad4d2daf7afad82d11699f).
+Los cinco archivos GS/VIF/VU1 comparados coinciden con nuestro runtime base fijado.
+Su README mantiene menú y partida pendientes; los atajos GoW de arranque no se
+incorporan como solución de renderizado. Se documenta la revisión sin afirmar que
+su ejecutable se haya probado aquí.
