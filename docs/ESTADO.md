@@ -933,3 +933,27 @@ debe seguirse también por la ruta de modelos. Se localiza `renModelServer::Proc
 en `0x159C58` (nombre del mapa): selecciona un contexto de una tabla y llama a su método
 virtual antes de enviar la cadena DMA. El siguiente diagnóstico observará esa selección
 y el descarte de modelos, conservando la ejecución original.
+
+### Selección del contexto por el servidor de modelos (2026-10-06)
+
+Se añade `GOW_MODEL_DIAG=1` como observación opcional de `0x159C58`. La recompilación de
+`src/` termina correctamente y PowerShell pasa sin errores. La sonda conserva los
+checkpoints y llama siempre al original; no escribe registros ni memoria del juego.
+El perfil elimina la variable. Alcance: [`RENDERIZADO.md`](RENDERIZADO.md#selección-del-contexto-de-modelos).
+
+Una partida de **175 s** con OpenGL, SKIP_FMV, FAST_BOOT y las sondas de contexto/animación
+registra **64 muestras en el estado 3 y 64 en el estado 11**. Todas observan el servidor
+`0x59D878`, tabla `0x59DBA8`, grupo/slot `0/0`, array `0x59DBC0`, contexto `0x59DDC8`
+y tabla virtual `0x2C2468`, con punteros dentro de RAM. El ajuste de `this` es cero y el
+destino seleccionado es `0x1511F0`, identificado por el mapa como
+`renGROBMasterContext::ProcessServer`. La referencia GoW 2 también llama a un contexto
+maestro GROB desde esta ruta: el destino observado no demuestra una selección incorrecta.
+
+Las capturas de **110,16 y 130,04 s** vuelven a mostrar agua oscura, sin Kratos ni el
+escenario completo. Los registros mantienen `pending=0`, `levelReady=1` y `flashReady=1`.
+La observación de entrada no certifica las llamadas posteriores ni el culling de los
+modelos. El siguiente paso es seguir los contextos e instancias que recorre ese maestro,
+y correlacionar sus descartes con los paquetes VU1. Capturas y registros siguen en `logs/`.
+
+La CI del arreglo de etiquetas `f385fcc` pasa:
+[ejecución 37465434359](https://github.com/KIexster/god-of-war-recomp/actions/runs/37465434359).

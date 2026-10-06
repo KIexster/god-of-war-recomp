@@ -452,6 +452,41 @@ namespace
         sub_00141B78_0x141b78(rdram, ctx, runtime);
     }
 
+    // GOW-Port: seleccionar el contexto de modelos segun el MIPS retail, sin modificarlo.
+    void gowDiagModelServer(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+    {
+        if (ctx->pc != 0x00159C58u) { sub_00159C58_0x159c58(rdram, ctx, runtime); return; }
+        const uint32_t state = readGuest32(rdram, 0x29E560u), server = GPR_U32(ctx, 4);
+        static unsigned early = 0u, scene = 0u;
+        auto &samples = state == 11u ? scene : early;
+        if (samples < 64u)
+        {
+            const unsigned sample = ++samples;
+            const bool validServer = padBuffer(rdram, server, 0xD8u) != nullptr;
+            const uint32_t table = validServer ? readGuest32(rdram, server + 0x24u) : 0u;
+            const uint32_t group = validServer ? readGuest32(rdram, server + 0x44u) : 0u;
+            const uint32_t slot = validServer ? readGuest32(rdram, server + 0xD4u) : 0u;
+            // Calculos en 64 bits para no envolver indices fuera de RAM.
+            const uint64_t row = (table & 0x1FFFFFFFu) + uint64_t(group) * 12u;
+            const bool validRow = table && row < 0x02000000u && padBuffer(rdram, uint32_t(row), 12u);
+            const uint32_t array = validRow ? readGuest32(rdram, uint32_t(row)) : 0u;
+            const uint64_t cell = (array & 0x1FFFFFFFu) + uint64_t(slot) * 4u;
+            const bool validCell = array && cell < 0x02000000u && padBuffer(rdram, uint32_t(cell), 4u);
+            const uint32_t context = validCell ? readGuest32(rdram, uint32_t(cell)) : 0u;
+            const bool validContext = padBuffer(rdram, context, 0x24u) != nullptr;
+            const uint32_t vtable = validContext ? readGuest32(rdram, context + 0x20u) : 0u;
+            const auto *methods = padBuffer(rdram, vtable, 0x20u);
+            int16_t adjustment = 0;
+            if (methods) std::memcpy(&adjustment, methods + 0x18u, sizeof(adjustment));
+            const uint32_t target = methods ? readGuest32(rdram, vtable + 0x1Cu) : 0u;
+            std::fprintf(stderr, "[gow-model:server] sample=%u state=%u this=%x valid=%u table=%x group=%u slot=%u array=%x context=%x validContext=%u vtable=%x validMethods=%u adjustment=%d target=%x\n",
+                         sample, state, server, validServer ? 1u : 0u, table, group, slot, array, context,
+                         validContext ? 1u : 0u, vtable, methods ? 1u : 0u, int(adjustment), target);
+        }
+        // La seleccion es una fotografia de entrada; el original conserva sus checkpoints y llamadas.
+        sub_00159C58_0x159c58(rdram, ctx, runtime);
+    }
+
     void gowDiagPrimPoll(uint8_t *rdram, double seconds)
     {
         static double next=0;
@@ -675,6 +710,8 @@ namespace
             runtime.replaceFunction(0x001417D8u, gowDiagUpdateAddress);
             runtime.replaceFunction(0x00141B78u, gowDiagPrimContext);
         }
+        if (const char *diag = std::getenv("GOW_MODEL_DIAG"); diag && std::strcmp(diag, "1") == 0)
+            runtime.replaceFunction(0x00159C58u, gowDiagModelServer);
         runtime.replaceFunction(0x00180E50u, gowDiagPathSelect);
         runtime.replaceFunction(0x00180D08u, gowDiagAttachNode);
         runtime.replaceFunction(0x0027B7E8u, gowPad2Init);

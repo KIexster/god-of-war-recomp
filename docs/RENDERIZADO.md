@@ -271,3 +271,16 @@ de un triángulo entre etiquetas vacías y Q, los controles con PACKED no vacío
 y los efectos del setup en la subida IMAGE nativa.
 No modifica las transferencias VIF ni añade continuaciones PACKED/REGLIST entre DIRECT
 distintos; eso sigue siendo una limitación separada.
+
+## Selección del contexto de modelos
+
+`GOW_MODEL_DIAG=1` registra `[gow-model:server]` a la entrada de
+`renModelServer::ProcessServer` (`0x159C58`), con un máximo de 64 muestras previas al estado
+11 y otras 64 dentro de él. Observa la tabla, grupo y slot seleccionados, el contexto,
+su tabla virtual y el destino/ajuste de la llamada, comprobando los límites de RAM.
+Los índices se calculan en 64 bits para evitar envolvimientos.
+
+Es una observación de entrada: no certifica que el método se haya invocado, que haya modelos
+visibles ni que se haya enviado o dibujado geometría. Conserva los registros y la memoria
+del juego y llama siempre al original, también en las reanudaciones. El perfil de rendimiento
+elimina la variable para evitar mezclar este diagnóstico con la medición.
