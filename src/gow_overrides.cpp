@@ -385,6 +385,73 @@ namespace
     std::array<GowPrimProbe,16> g_primProbes{};
     size_t g_nextPrimProbe=0;
 
+    // GOW-Port: observar la lista usada por ProcessServer antes de ejecutar el original.
+    // La lista de SCUS-97399 usa nodos en objeto+8 y termina en NULL (MIPS 0x141BF4/0x1421A4).
+    void gowDiagPrimContext(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+    {
+        if (ctx->pc != 0x00141B78u) { sub_00141B78_0x141b78(rdram, ctx, runtime); return; }
+        static unsigned early = 0u, scene = 0u;
+        const uint32_t state = readGuest32(rdram, 0x29E560u);
+        auto &sample = state == 11u ? scene : early;
+        const uint32_t context = GPR_U32(ctx, 4);
+        if (sample < 64u && padBuffer(rdram, context, 0x4Cu))
+        {
+            ++sample;
+            const uint32_t view = readGuest32(rdram, 0x33104Cu);
+            const bool validView = padBuffer(rdram, view, 0x3B0u) != nullptr;
+            const uint32_t viewId = validView ? readGuest32(rdram, view + 0x3ACu) : 0u;
+            const uint32_t contextMask = readGuest32(rdram, context + 0x48u);
+            uint32_t camera = 0u;
+            if (validView)
+            {
+                const uint32_t cameraNode = readGuest32(rdram, view + 0x360u);
+                if (cameraNode != view + 0x360u && padBuffer(rdram, cameraNode, 12u))
+                    camera = readGuest32(rdram, cameraNode + 8u);
+            }
+            std::array<uint32_t, 256> seen{};
+            std::array<bool, 16> members{};
+            uint32_t node = readGuest32(rdram, context + 0x24u);
+            const uint32_t head = node;
+            size_t count = 0u;
+            uint32_t candidates = 0u;
+            bool invalid = false, cycle = false;
+            while (node && count < seen.size())
+            {
+                const uint32_t physical = node & 0x1FFFFFFFu;
+                for (size_t i = 0u; i < count; ++i)
+                    cycle |= seen[i] == physical;
+                if (cycle) break;
+                if (physical < 8u || !padBuffer(rdram, node - 8u, 0x148u)) { invalid = true; break; }
+                seen[count++] = physical;
+                const uint32_t object = node - 8u;
+                const auto *objectData = padBuffer(rdram, object, 0x148u);
+                const int8_t updated = static_cast<int8_t>(objectData[0x146u]);
+                const uint32_t dma = (updated == 0 || updated == 1) ? readGuest32(rdram, object + 0xF0u + 4u * updated) : 0u;
+                const uint32_t objectMask = readGuest32(rdram, object + 0xD8u);
+                candidates += camera && (viewId & contextMask) && dma && (viewId & objectMask) ? 1u : 0u;
+                for (size_t i = 0u; i < g_primProbes.size(); ++i)
+                    members[i] = members[i] || (g_primProbes[i].object &&
+                        (g_primProbes[i].object & 0x1FFFFFFFu) == (object & 0x1FFFFFFFu));
+                node = readGuest32(rdram, node);
+            }
+            std::fprintf(stderr, "[gow-eeprim:context] sample=%u state=%u this=%x view=%x validView=%u id=%x mask=%x camera=%x head=%x nodes=%zu candidates=%u invalid=%u cycle=%u truncated=%u\n",
+                         sample, state, context, view, validView ? 1u : 0u, viewId, contextMask, camera, head,
+                         count, candidates, invalid ? 1u : 0u, cycle ? 1u : 0u, node && !invalid && !cycle ? 1u : 0u);
+            for (size_t i = 0u; i < g_primProbes.size(); ++i)
+            {
+                const auto &p = g_primProbes[i];
+                const auto *objectData = padBuffer(rdram, p.object, 0x148u);
+                if (!objectData) continue;
+                std::fprintf(stderr, "[gow-eeprim:member] sample=%u state=%u context=%x this=%x caller=%x member=%u updated=%u rendered=%u viewMask=%x next=%x dma=%x,%x\n",
+                             sample, state, context, p.object, p.caller, members[i] ? 1u : 0u,
+                             objectData[0x146u], objectData[0x147u], readGuest32(rdram, p.object + 0xD8u),
+                             readGuest32(rdram, p.object + 8u), readGuest32(rdram, p.object + 0xF0u), readGuest32(rdram, p.object + 0xF4u));
+            }
+        }
+        // Nunca escribir índices, posiciones ni registros: el original conserva también sus checkpoints.
+        sub_00141B78_0x141b78(rdram, ctx, runtime);
+    }
+
     void gowDiagPrimPoll(uint8_t *rdram, double seconds)
     {
         static double next=0;
@@ -606,6 +673,7 @@ namespace
         {
             runtime.replaceFunction(0x00141350u, gowDiagInitUnpack);
             runtime.replaceFunction(0x001417D8u, gowDiagUpdateAddress);
+            runtime.replaceFunction(0x00141B78u, gowDiagPrimContext);
         }
         runtime.replaceFunction(0x00180E50u, gowDiagPathSelect);
         runtime.replaceFunction(0x00180D08u, gowDiagAttachNode);

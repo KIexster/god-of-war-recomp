@@ -179,6 +179,17 @@ repetidos y otros de posiciones distintas. Estos resultados localizan datos y de
 anteriores al backend GS; no demuestran por sí solos un fallo de VIF/VU1 ni corrigen
 la escena ausente. Direcciones, replay y límites: [`ESTADO.md`](ESTADO.md).
 
+La misma variable también observa la entrada de `renEEPrimContext::ProcessServer`
+(`0x141B78`). Guarda hasta 64 muestras antes del estado 11 y otras 64 dentro de él.
+Por muestra recorre hasta 256 nodos, comprueba límites y ciclos, y registra cámara,
+ID/máscara de vista y pertenencia de los objetos observados por `GetUpdateAddress`.
+`candidates` solo cuenta los que pasan los primeros filtros de cámara, vista e índice
+de DMA en esa fotografía; no acredita visitas posteriores, rasterizado ni dibujos.
+Con `invalid`, `cycle` o `truncated` activos, una ausencia en la muestra no permite
+afirmar que el objeto no pertenece al resto de la lista. Los registros usan las etiquetas
+`[gow-eeprim:context]` y `[gow-eeprim:member]`; no modifican memoria ni índices y las
+reanudaciones tras checkpoints llaman directamente al original. Tampoco se usan para medir FPS.
+
 ## Inspección offline de GIF
 
 El inspector usa solo la biblioteca estándar de Python y recibe un paquete binario

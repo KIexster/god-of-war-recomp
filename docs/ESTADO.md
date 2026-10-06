@@ -810,3 +810,30 @@ que hayan causado la escena ausente ni permite atribuirles una mejora visual o d
 Las capturas y registros permanecen en `logs/`; las sondas temporales de geometría ya no están
 en el ejecutable reconstruido. El siguiente paso es observar la membresía de los buffers
 actualizados en `renEEPrimContext::ProcessServer`.
+
+### Pertenencia al contexto de render (2026-10-06)
+
+Se amplía el diagnóstico opcional `GOW_EE_PRIM_DIAG=1` para observar la lista de
+`renEEPrimContext::ProcessServer` a la entrada, sin escribir memoria ni cambiar la
+ejecución original. La reconstrucción de `src/` termina correctamente. Se registran
+hasta 64 entradas antes del estado 11 y otras 64 en él, con 256 nodos como máximo por
+entrada y detección de punteros fuera de RAM, ciclos y truncamiento.
+
+Una ejecución de **175 s** con OpenGL, `GOW_SKIP_FMV=1`, `GOW_FAST_BOOT=1` y mando
+automático sin capturas alcanza el estado 11. Las **64 muestras** de ese estado pertenecen
+al contexto `0x7B8DC0`: vista `0x75CD70`, ID `0x45`, máscara de contexto `0x3` y cámara
+`0x7A3950`. Su lista contiene **dos objetos** y termina sin ciclo, puntero inválido ni
+truncamiento. Ambos pasan los primeros filtros observados; eso no acredita dibujo ni
+los filtros de material y transformación posteriores.
+
+Los objetos `0x7FCCC0` y `0x81BE30`, actualizados por el caller `0x1FB800`, **no pertenecen
+a esa lista en ninguna de las 64 muestras**. Sus enlaces `objeto+8` son cero y conservan
+`updated=0`, `rendered=1`. El productor sigue obteniendo ambos buffers con XYZ cambiante.
+Esto explica por qué ese contexto no alterna sus índices en la muestra; no demuestra
+que deban estar registrados en él ni que su ausencia cause la falta de Kratos.
+
+El siguiente paso es identificar quién crea y registra esos clientes, y correlacionar
+los dos objetos que sí recibe el contexto con las entradas VU1. No se fuerza su registro
+ni el cambio de buffer. Los resultados permanecen en `logs/`. La CI del commit VIF
+`f5711bd` pasa tanto las comprobaciones rápidas como la compilación y suite Linux del runtime:
+[ejecución 37457211736](https://github.com/KIexster/god-of-war-recomp/actions/runs/37457211736).
