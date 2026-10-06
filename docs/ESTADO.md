@@ -1145,3 +1145,32 @@ Las capturas de **90,18 y 110,11 s** siguen mostrando agua sin Kratos ni el esce
 completo, y las 64 llamadas observadas a Clip en esa fase descartan con `0x80000000`,
 con Y/Z idénticas y argumentos finitos. El mismo bloqueo se observa con CPU y OpenGL;
 estos controles no acreditan una partida jugable ni una mejora de FPS.
+
+### Interpolación de atributos constantes y alpha-test (2026-10-06)
+
+`ps2recomp-gs-triangle-constants.patch` calcula RGBA Gouraud y F por diferencias
+entre vértices en CPU y OpenGL compute/hardware. La suma redondeada de los pesos
+reducía valores constantes; alpha 128 podía quedar en 127 y fallar GEQUAL 128,
+dejando huecos en el triángulo. En la sonda de 17×19 pixels fallan 17 centros de
+color y 8 de niebla en CPU, y 151/110 en cada ruta OpenGL. Para F se usa como
+referencia un punto con los mismos atributos, sin interpolación.
+
+Dos pruebas CPU y una con OpenGL real reproducen el fallo antes del cambio; después
+pasan **531/531 pruebas**, incluidas siete con OpenGL. Se comparan los centros
+interiores y ambos sentidos de giro; la prueba de color activa GEQUAL 128 para
+detectar también los huecos. La auditoría reproduce **29 parches y 74 fuentes**.
+La sonda independiente pasa **6/6 casos**: CPU, OpenGL compute y hardware, con color
+o F constantes. La comparación de gradientes y profundidad conserva **48/48 casos**
+iguales entre CPU y ambas rutas OpenGL. La compilación completa regeneró las 6418
+unidades y terminó con código 0; la suite posterior vuelve a pasar **531/531**.
+
+El control de 175 s usa OpenGL real, sin fallback CPU. Las capturas de **90,21 y
+110,23 s** muestran agua sin Kratos; se alcanza el estado 11 con `pending=0`,
+`levelReady=1` y `flashReady=1`. Las 64 llamadas observadas a Clip en esa fase siguen
+descartando con `0x80000000`, argumentos finitos y Y/Z iguales. La corrección de
+atributos constantes queda verificada; todavía falta la escena 3D completa.
+Este control usa el IOP anterior al parche de aceleración incorporado por Opus;
+la integración y su perfil se registrarán por separado.
+
+La CI del parche anterior de sprites también terminó en verde:
+[ejecución 37507078237](https://github.com/KIexster/god-of-war-recomp/actions/runs/37507078237).

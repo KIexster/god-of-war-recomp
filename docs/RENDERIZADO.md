@@ -415,6 +415,28 @@ Ahora especifican rectángulos de 1×1 sin cambiar las aserciones de esas propie
 La regresión nueva exige que una primitiva vacía no cambie la VRAM. No se alteran
 el frontend, VIF, VU1, los shaders ni los parches de EE/IOP.
 
+## Color, alpha y niebla constantes en triángulos
+
+`ps2recomp-gs-triangle-constants.patch` interpola RGBA Gouraud y el coeficiente F
+por diferencias entre vértices, en CPU y en el código común de los shaders compute/
+hardware. Es un ajuste propio sobre el renderer adaptado de SotC. La suma de tres
+pesos float redondeados podía quedar por debajo de uno: incluso con atributos iguales
+en todos los vértices perdía una unidad de color, alpha o F.
+
+Se reproduce con un triángulo de 17×19 pixels: en CPU se alteran 17 centros con color
+constante y 8 con F constante; en cada ruta OpenGL, 151 y 110 respectivamente.
+La referencia para color es RGBA exacto; para niebla se compara con un punto de los
+mismos atributos, que usa la aplicación de niebla existente sin interpolar F.
+El problema incluye alpha 128 convertido en 127, que puede fallar GEQUAL 128 y dejar
+huecos aun cuando los vértices tengan alpha suficiente.
+
+Dos regresiones CPU y una OpenGL fallan antes del cambio. Verifican ambos sentidos
+de giro, todos los centros interiores, RGBA constante con alpha-test GEQUAL 128 y
+F constante frente al control sin interpolación. El shader convierte a float antes
+de restar atributos para admitir diferencias negativas sin underflow de enteros.
+La suite nativa pasa **531/531**, incluidas siete pruebas con OpenGL real. La sonda
+separada y la comparación de gradientes se registran en `ESTADO.md`.
+
 ## Referencia Tobiichi-Port
 
 Se revisa [YYOzcan/Tobiichi-Port](https://github.com/YYOzcan/Tobiichi-Port/tree/9f02797f8ab7481fddad4d2daf7afad82d11699f)
