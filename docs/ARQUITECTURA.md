@@ -22,8 +22,11 @@
    `ps2recomp-gs-opengl.patch` (backend OpenGL y cola GS opcionales, conservando el CPU),
    `ps2recomp-dma-chain.patch` (cadenas DMA de más de 4096 tags),
    `ps2recomp-vif-direct.patch` (una IMAGE de PATH2 continúa con el siguiente DIRECT),
-   `ps2recomp-ee-branches.patch` (`BLEZ`/`BGTZ`/`BLTZ`/`BGEZ` comparan 64 bits) y
-   `ps2recomp-vu0-div.patch` (`VDIV`/`VSQRT`/`VRSQRT` de VU0 con semántica de hardware)
+   `ps2recomp-ee-branches.patch` (`BLEZ`/`BGTZ`/`BLTZ`/`BGEZ` comparan 64 bits),
+   `ps2recomp-vu0-div.patch` (`VDIV`/`VSQRT`/`VRSQRT` de VU0 con semántica de hardware),
+   `ps2recomp-fpu-hw.patch` (FPU del EE y VU0 sin Inf/NaN; `CVT.W.S` trunca),
+   `ps2recomp-tail-jump.patch` (un salto de cola a la entrada del llamado no es un retorno) y
+   `ps2recomp-vu1-budget-diag.patch` (`GOW_VU1_BUDGET_DIAG`: programas VU1 cortados por el tope de ciclos)
    con `git apply --ignore-whitespace`. Antes de reaplicarlos borra los archivos que dejó la compilación
    anterior y que algún parche crea (`new file mode`), así un parche nuevo no necesita tocar esa limpieza.
 4. **Ajustes de CMake** — añade `src/runner` a los includes de `ps2EntryRunner` y desactiva `/GL` y `/LTCG`

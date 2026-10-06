@@ -1,0 +1,223 @@
+diff --git a/ps2xRecomp/src/lib/fpu_translator.cpp b/ps2xRecomp/src/lib/fpu_translator.cpp
+index a2f895e..372528a 100644
+--- a/ps2xRecomp/src/lib/fpu_translator.cpp
++++ b/ps2xRecomp/src/lib/fpu_translator.cpp
+@@ -53,10 +53,8 @@ namespace ps2recomp
+             case COP1_S_MUL:
+                 return fmt::format("ctx->f[{}] = FPU_MUL_S(ctx->f[{}], ctx->f[{}]);", fd, fs, ft);
+             case COP1_S_DIV:
+-                return fmt::format("if (ctx->f[{}] == 0.0f) {{ ctx->fcr31 |= 0x100000; /* DZ flag */ "
+-                                   "ctx->f[{}] = copysignf(INFINITY, ctx->f[{}] * 0.0f); }} "
+-                                   "else ctx->f[{}] = ctx->f[{}] / ctx->f[{}];",
+-                                   ft, fd, fs, fd, fs, ft);
++                // GOW-Port: dividir por cero da +-FLT_MAX con los flags D/I, no Inf.
++                return fmt::format("ctx->f[{}] = ps2FpuDivide(ctx->fcr31, ctx->f[{}], ctx->f[{}]);", fd, fs, ft);
+             case COP1_S_SQRT:
+                 // GOW-Port: R5900 codifica el radicando en FT; FS no es la fuente de SQRT.S.
+                 return fmt::format("ctx->f[{}] = FPU_SQRT_S(ctx->f[{}]);", fd, ft);
+diff --git a/ps2xRuntime/include/ps2_runtime_macros.h b/ps2xRuntime/include/ps2_runtime_macros.h
+index da16c02..91cbcef 100644
+--- a/ps2xRuntime/include/ps2_runtime_macros.h
++++ b/ps2xRuntime/include/ps2_runtime_macros.h
+@@ -212,12 +212,22 @@ static inline float ps2VuRsqrt(uint16_t &status, float numerator, float value)
+     return ps2VuClampScalar(numerator / std::sqrt(std::fabs(value)));
+ }
+ 
++// GOW-Port: la VU no tiene Inf/NaN; un resultado con exponente 255 se satura a +-FLT_MAX.
++static inline __m128 ps2VuClampVector(__m128 value)
++{
++    const __m128i bits = _mm_castps_si128(value);
++    const __m128i exponentMask = _mm_set1_epi32(0x7F800000);
++    const __m128i special = _mm_cmpeq_epi32(_mm_and_si128(bits, exponentMask), exponentMask);
++    const __m128i saturated = _mm_or_si128(_mm_and_si128(bits, _mm_set1_epi32(static_cast<int>(0x80000000u))), _mm_set1_epi32(0x7F7FFFFF));
++    return _mm_castsi128_ps(_mm_or_si128(_mm_and_si128(special, saturated), _mm_andnot_si128(special, bits)));
++}
++
+ // PS2 VU (Vector Unit) operations
+-#define PS2_VADD(a, b) _mm_add_ps((__m128)(a), (__m128)(b))
+-#define PS2_VSUB(a, b) _mm_sub_ps((__m128)(a), (__m128)(b))
+-#define PS2_VMUL(a, b) _mm_mul_ps((__m128)(a), (__m128)(b))
++#define PS2_VADD(a, b) ps2VuClampVector(_mm_add_ps((__m128)(a), (__m128)(b))) // GOW-Port
++#define PS2_VSUB(a, b) ps2VuClampVector(_mm_sub_ps((__m128)(a), (__m128)(b))) // GOW-Port
++#define PS2_VMUL(a, b) ps2VuClampVector(_mm_mul_ps((__m128)(a), (__m128)(b))) // GOW-Port
+ #define PS2_VDIV(a, b) _mm_div_ps((__m128)(a), (__m128)(b))
+-#define PS2_VMULQ(a, q) _mm_mul_ps((__m128)(a), _mm_set1_ps(q))
++#define PS2_VMULQ(a, q) ps2VuClampVector(_mm_mul_ps((__m128)(a), _mm_set1_ps(q))) // GOW-Port
+ #define PS2_VBLEND(a, b, mask) PS2_BLENDV_PS((__m128)(a), (__m128)(b), (__m128)(mask))
+ 
+ // Memory access helpers - Hybrid Fast/Slow Path
+@@ -676,12 +686,54 @@ inline __m128i ps2_u64_to_epi64_pair(uint64_t value)
+ #define PS2_PMFHL_SH(hi, lo) _mm_shufflehi_epi16(_mm_shufflelo_epi16(_mm_packs_epi32(ps2_u64_to_epi64_pair(lo), ps2_u64_to_epi64_pair(hi)), _MM_SHUFFLE(3, 1, 2, 0)), _MM_SHUFFLE(3, 1, 2, 0))
+ 
+ // FPU (COP1) operations
++// GOW-Port: la FPU del EE no tiene Inf/NaN ni denormales. Los resultados con exponente 255 se saturan a
++// +-FLT_MAX, dividir por cero da +-FLT_MAX con los flags D/I de FCR31, CVT.W.S trunca (no redondea) y
++// satura, y las comparaciones tratan los exponentes 0 como cero y los exponentes 255 como finitos.
++constexpr uint32_t PS2_FCR31_I = 0x00020000u;
++constexpr uint32_t PS2_FCR31_D = 0x00010000u;
++constexpr uint32_t PS2_FCR31_SI = 0x00000040u;
++constexpr uint32_t PS2_FCR31_SD = 0x00000020u;
++
++static inline float ps2FpuClamp(float value)
++{
++    return ps2VuClampScalar(value);
++}
++
++static inline float ps2FpuDivide(uint32_t &fcr31, float dividend, float divisor)
++{
++    if (ps2VuFloatIsZero(divisor))
++    {
++        if (ps2VuFloatIsZero(dividend))
++            fcr31 |= PS2_FCR31_I | PS2_FCR31_SI;
++        else
++            fcr31 |= PS2_FCR31_D | PS2_FCR31_SD;
++        return ps2VuSignedFloatMax(ps2VuFloatBits(dividend) ^ ps2VuFloatBits(divisor));
++    }
++    return ps2FpuClamp(dividend / divisor);
++}
++
++static inline int32_t ps2FpuConvertToWord(float value)
++{
++    const uint32_t bits = ps2VuFloatBits(value);
++    if ((bits & 0x7F800000u) >= 0x4F000000u)
++        return (bits & 0x80000000u) ? INT32_MIN : INT32_MAX;
++    return static_cast<int32_t>(value);
++}
++
++static inline uint32_t ps2FpuCompareKey(float value)
++{
++    uint32_t bits = ps2VuFloatBits(value);
++    if ((bits & 0x7F800000u) == 0u)
++        bits = 0u;
++    return (bits & 0x80000000u) != 0u ? ~bits : bits ^ 0x80000000u;
++}
++
+ #define FPU_SET_ACC(ctx, res) (ctx->f_acc = res)
+-#define FPU_ADD_S(a, b) ((float)(a) + (float)(b))
+-#define FPU_SUB_S(a, b) ((float)(a) - (float)(b))
+-#define FPU_MUL_S(a, b) ((float)(a) * (float)(b))
+-#define FPU_DIV_S(a, b) ((float)(a) / (float)(b))
+-#define FPU_SQRT_S(a) sqrtf((float)(a))
++#define FPU_ADD_S(a, b) ps2FpuClamp((float)(a) + (float)(b))
++#define FPU_SUB_S(a, b) ps2FpuClamp((float)(a) - (float)(b))
++#define FPU_MUL_S(a, b) ps2FpuClamp((float)(a) * (float)(b))
++#define FPU_DIV_S(a, b) ps2FpuClamp((float)(a) / (float)(b))
++#define FPU_SQRT_S(a) ps2FpuClamp(std::sqrt(std::fabs((float)(a))))
+ #define FPU_ABS_S(a) fabsf((float)(a))
+ #define FPU_MOV_S(a) ((float)(a))
+ #define FPU_NEG_S(a) (-(float)(a))
+@@ -695,24 +747,24 @@ inline __m128i ps2_u64_to_epi64_pair(uint64_t value)
+ #define FPU_FLOOR_W_S(a) ((int32_t)floorf((float)(a)))
+ #define FPU_CVT_S_W(a) ((float)(int32_t)(a))
+ #define FPU_CVT_S_L(a) ((float)(int64_t)(a))
+-#define FPU_CVT_W_S(a) ((int32_t)nearbyintf((float)(a)))
++#define FPU_CVT_W_S(a) ps2FpuConvertToWord((float)(a))
+ #define FPU_CVT_L_S(a) ((int64_t)(float)(a))
+ #define FPU_C_F_S(a, b) (0)
+-#define FPU_C_UN_S(a, b) (isnan((float)(a)) || isnan((float)(b)))
+-#define FPU_C_EQ_S(a, b) ((float)(a) == (float)(b))
+-#define FPU_C_UEQ_S(a, b) ((float)(a) == (float)(b) || isnan((float)(a)) || isnan((float)(b)))
+-#define FPU_C_OLT_S(a, b) ((float)(a) < (float)(b))
+-#define FPU_C_ULT_S(a, b) ((float)(a) < (float)(b) || isnan((float)(a)) || isnan((float)(b)))
+-#define FPU_C_OLE_S(a, b) ((float)(a) <= (float)(b))
+-#define FPU_C_ULE_S(a, b) ((float)(a) <= (float)(b) || isnan((float)(a)) || isnan((float)(b)))
++#define FPU_C_UN_S(a, b) (0)
++#define FPU_C_EQ_S(a, b) (ps2FpuCompareKey((float)(a)) == ps2FpuCompareKey((float)(b)))
++#define FPU_C_UEQ_S(a, b) FPU_C_EQ_S(a, b)
++#define FPU_C_OLT_S(a, b) (ps2FpuCompareKey((float)(a)) < ps2FpuCompareKey((float)(b)))
++#define FPU_C_ULT_S(a, b) FPU_C_OLT_S(a, b)
++#define FPU_C_OLE_S(a, b) (ps2FpuCompareKey((float)(a)) <= ps2FpuCompareKey((float)(b)))
++#define FPU_C_ULE_S(a, b) FPU_C_OLE_S(a, b)
+ #define FPU_C_SF_S(a, b) (0)
+-#define FPU_C_NGLE_S(a, b) (isnan((float)(a)) || isnan((float)(b)))
+-#define FPU_C_SEQ_S(a, b) ((float)(a) == (float)(b))
+-#define FPU_C_NGL_S(a, b) ((float)(a) == (float)(b) || isnan((float)(a)) || isnan((float)(b)))
+-#define FPU_C_LT_S(a, b) ((float)(a) < (float)(b))
+-#define FPU_C_NGE_S(a, b) ((float)(a) < (float)(b) || isnan((float)(a)) || isnan((float)(b)))
+-#define FPU_C_LE_S(a, b) ((float)(a) <= (float)(b))
+-#define FPU_C_NGT_S(a, b) ((float)(a) <= (float)(b) || isnan((float)(a)) || isnan((float)(b)))
++#define FPU_C_NGLE_S(a, b) (0)
++#define FPU_C_SEQ_S(a, b) FPU_C_EQ_S(a, b)
++#define FPU_C_NGL_S(a, b) FPU_C_EQ_S(a, b)
++#define FPU_C_LT_S(a, b) FPU_C_OLT_S(a, b)
++#define FPU_C_NGE_S(a, b) FPU_C_OLT_S(a, b)
++#define FPU_C_LE_S(a, b) FPU_C_OLE_S(a, b)
++#define FPU_C_NGT_S(a, b) FPU_C_OLE_S(a, b)
+ 
+ // QFSRV: Quadword Funnel Shift Right Variable
+ // Concatenates rs || rt (256 bits) and right-shifts by SA bits, taking lower 128 bits.
+diff --git a/ps2xTest/src/code_generator_tests.cpp b/ps2xTest/src/code_generator_tests.cpp
+index aae8e6c..e475ed8 100644
+--- a/ps2xTest/src/code_generator_tests.cpp
++++ b/ps2xTest/src/code_generator_tests.cpp
+@@ -184,6 +184,18 @@ void register_code_generator_tests()
+         }
+     });
+ 
++    // GOW-Port: DIV.S por cero satura a +-FLT_MAX como la FPU del EE, en vez de producir Inf.
++    tc.Run("R5900 DIV.S uses the saturating FPU divide", [](TestCase &t) {
++        const std::vector<Section> sections;
++        CodeGenerator gen({}, sections);
++        R5900Decoder decoder;
++        const uint32_t raw = (OPCODE_COP1 << 26) | (COP1_S << 21) |
++                             (11u << 16) | (7u << 11) | (4u << 6) | COP1_S_DIV;
++        const Instruction inst = decoder.decodeInstruction(0x1008, raw, false);
++        t.Equals(gen.translateInstruction(inst), std::string("ctx->f[4] = ps2FpuDivide(ctx->fcr31, ctx->f[7], ctx->f[11]);"),
++                 "DIV.S debe llamar a ps2FpuDivide con FS/FT");
++    });
++
+     tc.Run("R5900 RSQRT.S preserves FS numerator and FT radicand", [](TestCase &t) {
+         const std::vector<Section> sections;
+         CodeGenerator gen({}, sections);
+diff --git a/ps2xTest/src/ps2_vu_tests.cpp b/ps2xTest/src/ps2_vu_tests.cpp
+index 99039e5..64cfd13 100644
+--- a/ps2xTest/src/ps2_vu_tests.cpp
++++ b/ps2xTest/src/ps2_vu_tests.cpp
+@@ -100,6 +100,47 @@ void register_ps2_vu_tests()
+             t.IsTrue((status & PS2_VU_STATUS_I) != 0u && (status & PS2_VU_STATUS_D) == 0u, "0 / 0 sets I, not D");
+         });
+ 
++        // GOW-Port: semantica de la FPU del EE (sin Inf/NaN, CVT.W.S trunca).
++        tc.Run("EE FPU CVT.W.S truncates and saturates", [](TestCase &t)
++        {
++            t.Equals(FPU_CVT_W_S(2.7f), 2, "2.7 truncates to 2");
++            t.Equals(FPU_CVT_W_S(-2.7f), -2, "-2.7 truncates to -2");
++            t.Equals(FPU_CVT_W_S(0.5f), 0, "0.5 truncates to 0");
++            t.Equals(FPU_CVT_W_S(3.0e9f), INT32_MAX, "positive overflow saturates");
++            t.Equals(FPU_CVT_W_S(-3.0e9f), INT32_MIN, "negative overflow saturates");
++        });
++
++        tc.Run("EE FPU and VU0 macro arithmetic saturate instead of producing Inf", [](TestCase &t)
++        {
++            const float fltMax = 3.40282347e38f;
++            t.Equals(FPU_MUL_S(fltMax, 2.0f), fltMax, "MUL.S overflow saturates to +FLT_MAX");
++            t.Equals(FPU_ADD_S(-fltMax, -fltMax), -fltMax, "ADD.S overflow saturates to -FLT_MAX");
++            t.Equals(FPU_SUB_S(FPU_MUL_S(fltMax, 2.0f), fltMax), 0.0f, "a saturated value stays finite in later math");
++            uint32_t fcr31 = 0u;
++            t.Equals(ps2FpuDivide(fcr31, -1.0f, 0.0f), -fltMax, "DIV.S by zero gives -FLT_MAX");
++            t.IsTrue((fcr31 & PS2_FCR31_D) != 0u, "DIV.S by zero sets D");
++            alignas(16) float out[4];
++            _mm_store_ps(out, PS2_VMUL(_mm_set1_ps(fltMax), _mm_set_ps(2.0f, -2.0f, 1.0f, 0.0f)));
++            t.Equals(out[0], 0.0f, "VMUL lane x");
++            t.Equals(out[1], fltMax, "VMUL lane y stays FLT_MAX");
++            t.Equals(out[2], -fltMax, "VMUL lane z saturates to -FLT_MAX");
++            t.Equals(out[3], fltMax, "VMUL lane w saturates to +FLT_MAX");
++        });
++
++        tc.Run("EE FPU compares extended finite values and denormals", [](TestCase &t)
++        {
++            const auto fromBits = [](uint32_t bits) { float value; std::memcpy(&value, &bits, sizeof(value)); return value; };
++            const float extended = fromBits(0x7FFFFFFFu);
++            const float negativeExtended = fromBits(0xFFFFFFFFu);
++            const float denormal = fromBits(0x00000001u);
++            t.IsTrue(FPU_C_EQ_S(extended, extended), "an exponent-255 value compares equal to itself");
++            t.IsTrue(FPU_C_OLT_S(3.0f, extended), "an exponent-255 value exceeds ordinary values");
++            t.IsTrue(FPU_C_OLT_S(negativeExtended, -3.0f), "a negative exponent-255 value is below ordinary values");
++            t.IsTrue(FPU_C_EQ_S(-0.0f, 0.0f), "signed zeros compare equal");
++            t.IsTrue(FPU_C_EQ_S(denormal, 0.0f), "denormals compare as zero");
++            t.IsTrue(!FPU_C_UN_S(extended, extended), "the EE has no unordered values");
++        });
++
+         tc.Run("MulVector_componentwise", [](TestCase &t)
+         {
+             VuEnv env;

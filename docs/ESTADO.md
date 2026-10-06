@@ -617,3 +617,25 @@ Linux (**477/477** tras integrar el backend OpenGL); los parches aplican en orde
 recompilador) y repetir la prueba de la partida. Qué mirar: si las fuentes del menú se completan y si
 cambia la escena 3D. Los vértices `(0,0,0,32768)` no sirven como indicador: la traza de `LoadClient`
 (sección anterior) muestra que son una plantilla escrita a propósito.
+
+### Segunda tanda de arreglos del fork de SotC (2026-10-06)
+
+Tres parches más, del mismo fork y con la misma licencia, cada uno con su prueba:
+
+| Parche | Origen | Qué corrige |
+|---|---|---|
+| `ps2recomp-fpu-hw.patch` | `8b51cb9`, `c419f26` | La FPU del EE y VU0 en modo macro no tienen Inf/NaN. `CVT.W.S` **redondeaba** al entero más cercano (`nearbyintf`); el R5900 trunca y satura. El GCC del PS2 usa `cvt.w.s` para cada `(int)float` (465 en el export de GoW2), así que cada conversión podía salir desplazada en una unidad. Además: `ADD/SUB/MUL.S` y `VADD/VSUB/VMUL/VMULQ` saturan a ±FLT_MAX, `DIV.S` por cero da ±FLT_MAX con flags D/I en vez de Inf, `SQRT.S` usa `|ft|`, y las comparaciones `C.xx.S` tratan los denormales como cero y nunca dan "unordered". Requiere regenerar el C++. |
+| `ps2recomp-tail-jump.patch` | `c4c20e8` | `dispatchGuestBranch` tomaba como retorno implícito un llamado que volvía con `pc` en su propia entrada. Un salto de cola recursivo (`j` a la entrada) deja exactamente ese `pc`, y el llamador seguía con la pila del llamado. En SotC sobrescribía una dirección de retorno guardada. Ahora el atajo solo se aplica si no hubo un salto despachado dentro del llamado. |
+| `ps2recomp-vu1-budget-diag.patch` | propio | `GOW_VU1_BUDGET_DIAG=1` registra los programas VU1 que agotan el tope de 65536 ciclos por MSCAL/MSCNT (ver [CONTROLES.md](CONTROLES.md)). Sirve para confirmar o descartar la hipótesis del tope sin cambiarlo. |
+
+Las cinco pruebas nuevas de los dos primeros parches fallan sin los arreglos y pasan con ellos; la del
+diagnóstico comprueba un programa cortado por el tope y otro que termina en su bit E. La suite pasa
+**483/483** en Linux y los 22 parches aplican en orden sobre la revisión fijada.
+`RSQRT.S` (de `ps2recomp-fpu-roots.patch`) sigue dividiendo sin saturar cuando `ft` es cero.
+
+No se portó el arreglo de interrupciones de temporizador del fork (`d328765`): cambia el modelo de
+temporizadores con un registro global protegido por mutex y no hay indicios de que GoW cuente
+interrupciones de temporizador como reloj.
+
+**Sin probar con el juego.** Además de lo indicado para la primera tanda, conviene ejecutar la partida con
+`GOW_VU1_BUDGET_DIAG=1` y anotar aquí si aparece alguna línea `[gow-vu1-budget]`.

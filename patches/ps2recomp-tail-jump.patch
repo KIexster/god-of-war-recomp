@@ -1,0 +1,87 @@
+diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
+index e1e6615..6836a3b 100644
+--- a/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -1424,6 +1424,13 @@ bool PS2Runtime::dispatchGuestBranch(uint8_t *rdram,
+ 
+     ctx->pc = targetPc;
+     const bool isCall = (kind == GuestBranchKind::DirectCall || kind == GuestBranchKind::IndirectCall);
++    // GOW-Port: cuenta los saltos (no llamadas) despachados en este hilo. Un salto de cola recursivo de vuelta
++    // a la entrada del llamado deja ctx->pc en esa entrada y no debe confundirse con un retorno implícito.
++    static thread_local uint64_t guestJumpSerial = 0u;
++    if (!isCall)
++    {
++        ++guestJumpSerial;
++    }
+ 
+     // Every inter-function transfer is also a deterministic EE safe point.
+     // Backward edges inside generated functions use eeCheckpointDue(), while
+@@ -1469,6 +1476,7 @@ bool PS2Runtime::dispatchGuestBranch(uint8_t *rdram,
+     RecompiledFunction targetFn = lookupFunction(targetPc);
+     const uint32_t entryPc = ctx->pc;
+     const uint64_t checkpointSerial = m_eeCheckpointSerial;
++    const uint64_t jumpSerial = guestJumpSerial; // GOW-Port
+     ps2_perf::guestEntry(targetPc); // GOW-Port: también cuenta llamadas que no vuelven al dispatcher.
+     targetFn(rdram, ctx, this);
+ 
+@@ -1477,7 +1485,7 @@ bool PS2Runtime::dispatchGuestBranch(uint8_t *rdram,
+         return false;
+     }
+ 
+-    if (ctx->pc == entryPc && m_eeCheckpointSerial == checkpointSerial)
++    if (ctx->pc == entryPc && m_eeCheckpointSerial == checkpointSerial && jumpSerial == guestJumpSerial)
+     {
+         ctx->pc = fallthroughPc;
+     }
+diff --git a/ps2xTest/src/ps2_runtime_expansion_tests.cpp b/ps2xTest/src/ps2_runtime_expansion_tests.cpp
+index 72f3a64..380a39a 100644
+--- a/ps2xTest/src/ps2_runtime_expansion_tests.cpp
++++ b/ps2xTest/src/ps2_runtime_expansion_tests.cpp
+@@ -175,6 +175,13 @@ namespace
+ 
+     std::atomic<uint32_t> gGuestJumpTargetCount{0u};
+ 
++    // GOW-Port: el llamado termina con un salto de cola a su propia entrada (recursión por j).
++    void testGuestBranchSelfTailJumpHandler(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
++    {
++        setRegU32(*ctx, 29, 0x00001F00u);
++        runtime->dispatchGuestBranch(rdram, ctx, 0x3600u, 0x3610u, 0u, PS2Runtime::GuestBranchKind::DirectJump, "test-j");
++    }
++
+     void testGuestJumpTargetHandler(uint8_t *, R5900Context *, PS2Runtime *)
+     {
+         gGuestJumpTargetCount.fetch_add(1u, std::memory_order_relaxed);
+@@ -476,6 +483,33 @@ void register_ps2_runtime_expansion_tests()
+             t.Equals(ctx.pc, 0x3000u, "the scheduler must resume the unfinished loop");
+         });
+ 
++        // GOW-Port: un salto de cola a la entrada del llamado no es un retorno implícito.
++        tc.Run("dispatchGuestBranch call does not treat a tail jump to the callee entry as a return", [](TestCase &t)
++        {
++            PS2Runtime runtime;
++            runtime.registerFunction(0x3600u, &testGuestBranchSelfTailJumpHandler);
++
++            R5900Context ctx{};
++            ctx.pc = 0x2000u;
++            setRegU32(ctx, 29, 0x00002000u);
++
++            const bool continuedInCaller = runtime.dispatchGuestBranch(
++                nullptr,
++                &ctx,
++                0x3600u,
++                0x2000u,
++                0x2008u,
++                PS2Runtime::GuestBranchKind::DirectCall,
++                "test-jal");
++
++            t.IsFalse(continuedInCaller,
++                      "a pending tail jump back to the callee entry must unwind to the dispatcher");
++            t.Equals(ctx.pc, 0x3600u,
++                     "the dispatcher should resume at the tail-jump target");
++            t.Equals(::getRegU32(&ctx, 29), 0x00001F00u,
++                     "the callee's stack pointer belongs to the pending tail call");
++        });
++
+         tc.Run("dispatchGuestBranch jump returns to central dispatcher without nesting", [](TestCase &t)
+         {
+             PS2Runtime runtime;
