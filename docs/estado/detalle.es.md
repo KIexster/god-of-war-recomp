@@ -38,7 +38,7 @@ Generado por `tools/estado/generar.py` a partir de `docs/estado/datos.toml` y `c
 | EE | Controlador DMA | 2 | ✅ Funciona |  |
 | EE | Temporizadores | 1 | ✅ Funciona |  |
 | GS / VU | GS: primitivas y framebuffer | 3 | ✅ Funciona | CPU de referencia conservado; presentación de campos OpenGL verificada, todavía sin escena 3D completa |
-| GS / VU | VIF1 y VU1 | 3 | 🔧 Parcial | MMI integrado: modelos pasan Clip y se actualizan posiciones; imagen deformada, paradas de VU1 en EEXP pendientes |
+| GS / VU | VIF1 y VU1 | 3 | 🔧 Parcial | MMI y EFU corregidos: modelos pasan Clip y VU1 continúa; persisten deformaciones graves en la escena |
 | GS / VU | GS: texturas, CLUT y fuentes | 2 | 🔧 Parcial | Faltan letras en algunos textos |
 | GS / VU | GIF (PATH1-3) | 2 | ✅ Funciona |  |
 | GS / VU | IPU: vídeo FMV | 2 | ⏳ Pendiente | Se alcanza la carga del FMV, pero se queda esperando a MPEG |

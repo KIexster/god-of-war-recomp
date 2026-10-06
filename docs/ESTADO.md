@@ -1361,6 +1361,34 @@ anteriores de EATAN y latencias EFU se ajustan a las codificaciones correctas si
 relajar sus aserciones. Con esos fixtures, cuatro pruebas fallan antes del cambio;
 con el arreglo pasan **540/540** sin activar las ocho pruebas OpenGL.
 
-Pendiente de este registro: regeneración/compilación completa con los 34 parches,
-suite con OpenGL y nuevo control de la escena y rendimiento. El juego probado arriba
-corresponde al ejecutable anterior a este arreglo.
+La compilación completa con los 34 parches vuelve a regenerar las 6418 unidades y
+termina correctamente. La auditoría posterior compara 78 fuentes sin diferencias;
+la suite nativa pasa **548/548**, incluidas las ocho pruebas OpenGL. Los cuatro fallos
+previos quedan corregidos y los casos de instrucciones reservadas siguen cubiertos.
+
+El control OpenGL de 300 s llega a estado 11 y registra **cero instrucciones VU1
+reservadas** durante toda la ejecución. Conserva los resultados de las 64 muestras
+de Clip (30 pasan, 34 descartadas; todas finitas, sin Y/Z duplicadas). Guarda 14
+capturas distintas; las de 190,71 y 240,36 s del reloj PAD están en estado 11, con
+`pending=0`, `levelReady=1` y `flashReady=0`. Muestran más geometría y texturas que
+el control anterior, pero con polígonos enormes, franjas y deformaciones. Kratos
+no es reconocible y la escena completa sigue pendiente. Los datos quedan en
+`logs/vu1_efu_opcodes_game/`, excluidos de Git.
+
+El perfil posterior de 240 s, sin capturas ni diagnósticos opcionales y sin otras
+compilaciones/pruebas concurrentes, mide ocho ventanas completas de 180,06 a 220,07 s
+en estado 11: **1,25 Flip/s y 59,99 presentaciones/s**. El tiempo exclusivo transcurrido
+del hilo del juego es VU 52,36 %, IOP 41,25 %, GS frontend 3,77 % y EE 2,62 %. Este
+control ejecuta más geometría y elimina las paradas/errores VU1 anteriores; el 1,00
+Flip/s previo no corresponde a una escena correcta. Se confirma el coste del perfil
+con una segunda ejecución de contadores de cuadros y se conserva CPU como siguiente
+control para localizar las deformaciones frente a OpenGL.
+
+La repetición contando solo cuadros (`GOW_PERF_DIAG=frames`) también está en estado
+11 durante el intervalo: ocho ventanas completas de 180,05 a 220,06 s, con **1,275
+Flip/s y 59,99 presentaciones/s**. Son 51 Flip en 40 s frente a 50 con el perfil completo;
+esta diferencia pequeña entre ejecuciones no permite medir un overhead exacto, pero
+descarta que la instrumentación opcional explique por sí sola la baja frecuencia
+observada. Los tiempos en cero de este modo significan contadores desactivados,
+no ausencia de trabajo. Los dos registros se conservan en `logs/vu1_efu_opcodes_perf/`
+y `logs/vu1_efu_opcodes_frames/`.

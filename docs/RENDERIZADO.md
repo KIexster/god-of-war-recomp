@@ -476,6 +476,11 @@ Las pruebas usan palabras binarias explícitas y comprueban también WAITP y el
 rechazo de instrucciones reservadas. La validación con el juego se registra aparte
 para distinguirla de la integración MMI anterior.
 
+La compilación completa posterior pasa **548/548** con OpenGL. En el control de
+cinco minutos desaparecen las instrucciones VU1 reservadas y se capturan imágenes
+distintas hasta 240 s del reloj PAD. La escena conserva deformaciones graves y
+Kratos no es reconocible; esta corrección no completa el renderizado 3D.
+
 ## Referencia Tobiichi-Port
 
 Se revisa [YYOzcan/Tobiichi-Port](https://github.com/YYOzcan/Tobiichi-Port/tree/9f02797f8ab7481fddad4d2daf7afad82d11699f)

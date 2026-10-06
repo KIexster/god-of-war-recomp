@@ -848,7 +848,7 @@
 <text class="badge-t" x="824.8" y="149.1" font-size="11" text-anchor="middle" pointer-events="none">GS</text>
 <rect class="ok" x="767.2" y="178" width="45.5" height="106.5"><title>GIF (PATH1-3)</title></rect>
 <text class="badge-t" x="789.9" y="235.1" font-size="11" text-anchor="middle" pointer-events="none">GIF</text>
-<rect class="parcial" x="813.7" y="178" width="68.8" height="106.5"><title>VIF1 y VU1 — MMI integrado: modelos pasan Clip y se actualizan posiciones; imagen deformada, paradas de VU1 en EEXP pendientes</title></rect>
+<rect class="parcial" x="813.7" y="178" width="68.8" height="106.5"><title>VIF1 y VU1 — MMI y EFU corregidos: modelos pasan Clip y VU1 continúa; persisten deformaciones graves en la escena</title></rect>
 <rect x="813.7" y="178" width="68.8" height="106.5" fill="url(#rayas)" pointer-events="none"/>
 <text class="badge-v-oscuro" x="848.1" y="235.1" font-size="11" text-anchor="middle" pointer-events="none">VIF1/VU1</text>
 <rect class="parcial" x="767.2" y="285.5" width="57.2" height="85"><title>GS: texturas, CLUT y fuentes — Faltan letras en algunos textos</title></rect>
