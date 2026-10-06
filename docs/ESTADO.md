@@ -1119,3 +1119,29 @@ Los cinco archivos GS/VIF/VU1 comparados coinciden con nuestro runtime base fija
 Su README mantiene menú y partida pendientes; los atajos GoW de arranque no se
 incorporan como solución de renderizado. Se documenta la revisión sin afirmar que
 su ejecutable se haya probado aquí.
+
+La CI de `5ada6aa` pasa:
+[`Pruebas`, ejecución 37504095195](https://github.com/KIexster/god-of-war-recomp/actions/runs/37504095195).
+
+### Cobertura e interpolación de sprites CPU (2026-10-06)
+
+`ps2recomp-gs-sprite-sampling.patch` conserva las fracciones de XYOFFSET/UV y comparte
+con OpenGL los ejes firmados del fork SotC. El CPU deja de dibujar áreas vacías y
+mantiene el origen de textura al invertir los ejes o recortar con scissor. Cuatro
+regresiones reproducen los fallos antes del arreglo. La comparación sintética de
+VRAM completa pasa de **14 diferencias a cero en 16 casos** con compute/hardware;
+la suite pasa **528/528**, incluidas seis pruebas con OpenGL real.
+
+Se ajustan ocho fixtures antiguos que dibujaban sprites vacíos: pasan a usar un
+rectángulo de 1×1 conservando sus comprobaciones de alias CT32, CLUT, alpha y scissor.
+La prueba nueva verifica que ancho/alto cero no cambie ningún byte de VRAM. Los
+motivos y la procedencia se detallan en
+[`RENDERIZADO.md`](RENDERIZADO.md#sprites-cpu-como-referencia-para-opengl).
+La compilación completa termina con **6.418 unidades generadas** y código cero;
+se repiten las **528/528 pruebas** con OpenGL real. La auditoría reproduce **28 parches
+y 74 fuentes** exactamente. El control de partida de **175 s con el renderer CPU**
+llega al estado 11, `pending=0`, `levelReady=1` y `flashReady=1`.
+Las capturas de **90,18 y 110,11 s** siguen mostrando agua sin Kratos ni el escenario
+completo, y las 64 llamadas observadas a Clip en esa fase descartan con `0x80000000`,
+con Y/Z idénticas y argumentos finitos. El mismo bloqueo se observa con CPU y OpenGL;
+estos controles no acreditan una partida jugable ni una mejora de FPS.

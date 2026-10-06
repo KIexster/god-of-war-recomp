@@ -392,6 +392,29 @@ La comparación sintética de VRAM completa pasa de 12 diferencias a **48/48 cas
 entre CPU y OpenGL compute/hardware, con IIP, cuatro pruebas Z y valores Z32 altos.
 Las pruebas del parche y la compilación completa se registran en `ESTADO.md`.
 
+## Sprites CPU como referencia para OpenGL
+
+`ps2recomp-gs-sprite-sampling.patch` reutiliza los ejes firmados de `gs_sprite_rules.h`,
+adaptados del mismo commit `ac9efa070638ad3b3accd284de6f898d5ab271d1` de Taylor N.
+Albarnaz / LightVelox. El CPU conserva XYOFFSET y UV fraccionales, muestrea en el
+centro entero y calcula la textura desde los extremos originales incluso cuando se
+invierten los ejes o se recorta con scissor. Un ancho o alto cero deja de dibujar.
+Las reglas de cobertura y el recorrido se contrastan con el manual GS 3.2.9 y el
+renderer software de PCSX2 enlazados en la sección anterior; OpenGL ya usaba esos ejes.
+
+Cuatro pruebas CPU reproducen los fallos antes del cambio: cobertura fraccional,
+área cero, UV con filtro lineal y textura invertida/recortada. Otra prueba exige
+OpenGL real en compute y hardware para los mismos casos. La muestra constante
+UV=0,75 da `0x80000707` en OpenGL y `0x80006666` en el CPU anterior; también se
+contrasta la ruta STQ. La sonda separada de VRAM completa pasa de **14 diferencias
+a cero en 16 casos**. Los datos son sintéticos.
+
+Ocho fixtures antiguos de alias CT32, CLUT, alpha y scissor usaban sprites con dos
+vértices iguales y dependían del ancho/alto mínimo de un pixel que inventaba el CPU.
+Ahora especifican rectángulos de 1×1 sin cambiar las aserciones de esas propiedades.
+La regresión nueva exige que una primitiva vacía no cambie la VRAM. No se alteran
+el frontend, VIF, VU1, los shaders ni los parches de EE/IOP.
+
 ## Referencia Tobiichi-Port
 
 Se revisa [YYOzcan/Tobiichi-Port](https://github.com/YYOzcan/Tobiichi-Port/tree/9f02797f8ab7481fddad4d2daf7afad82d11699f)
