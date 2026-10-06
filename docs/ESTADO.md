@@ -1025,3 +1025,40 @@ mostrando agua sin Kratos ni el escenario completo, con OpenGL de hardware y est
 Las sondas compilan en Windows y los datos/reproducciones quedan en `logs/`. La siguiente
 prueba de render debe repetir estas sondas tras integrar el arreglo EE y después seguir
 los modelos que pasen Clip hasta las partes y los paquetes VU1.
+
+### Continuaciones GIF y equivalencia del atajo DMA (2026-10-06)
+
+Se añaden cuatro parches al final de la lista de compilación, sin modificar los parches
+del EE, la FPU, el recompilador o el IOP:
+
+| Parche | Cambio comprobado |
+|---|---|
+| `ps2recomp-gif-stream.patch` | Cursores PACKED/REGLIST/IMAGE por PATH; conserva registros, Q, padding y pixels entre bloques y DIRECT distintos; VIF entrega bytes originales sin wrappers IMAGE. |
+| `ps2recomp-gif-image-order.patch` | DIRECTHL reconoce continuaciones IMAGE y etiquetas tras setup; no confunde registros o relleno con etiquetas ni bloquea por una IMAGE vacía. |
+| `ps2recomp-gif-image2.patch` | FLG=3 consume el payload IMAGE2 en las rutas general/nativa y conserva su clasificación en el árbitro. |
+| `ps2recomp-gif-native-tag.patch` | El atajo DMA de texturas conserva PRE del setup, reinicia Q y acepta IMAGE2 después de validar toda la cadena; rechazo sin efectos en el GS. |
+
+Los fallos se reproducen antes de corregir cada tema: **4** pruebas de fragmentación,
+**4** de clasificación, **3** de IMAGE2 y **1** del estado del atajo DMA. Se añaden
+**20 regresiones** en total, con controles de reset, PATH intercalados, NREG=0 y cadena
+rechazada. La suite nativa pasa **515/515**, incluidas dos pruebas con OpenGL real.
+Se ajusta la expectativa de un wrapper IMAGE antiguo y cuatro fixtures de prioridad
+que usaban imágenes vacías; las razones se detallan en
+[`RENDERIZADO.md`](RENDERIZADO.md#continuidad-del-flujo-gif-por-path).
+
+La auditoría aplica **25 parches** sobre el commit fijado y compara **71 fuentes**,
+sin diferencias respecto al árbol probado, también después de la compilación completa
+con **6.418 unidades generadas** y resultado cero. Se repite la suite **515/515** con
+OpenGL real. Una partida de **175 s** con SKIP_FMV, FAST_BOOT y las sondas de modelos
+llega al estado 11, `pending=0`, `levelReady=1` y `flashReady=1`, sin fallback CPU.
+Las capturas de **90,13 y 110,09 s** muestran agua, sin Kratos ni el escenario completo.
+Las **64 llamadas observadas a Clip** en esa fase siguen descartando los modelos con
+`0x80000000`; Y y Z mantienen los mismos bits y los argumentos son finitos.
+
+No se acredita una mejora de FPS ni la aparición de Kratos. El arbitraje sigue trabajando
+con bloques completos, sin reproducir todos los ciclos o preempciones del hardware.
+Las posiciones y los descartes de modelos deberán repetirse tras el arreglo MMI pendiente
+en el EE. Durante la validación se reproduce otro problema separado en CPU y OpenGL:
+48 bytes CT24 juntos producen 16 pixels, pero en tres bloques de 16 B producen solo 15
+y dejan la transferencia abierta. Se continúa con la conservación de ese pixel parcial;
+los datos sintéticos y las capturas permanecen en `logs/`.

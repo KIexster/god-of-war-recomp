@@ -34,6 +34,10 @@ $vifDirectPatch = Join-Path $RepoRoot 'patches\ps2recomp-vif-direct.patch'
 $vifDirectFragmentsPatch = Join-Path $RepoRoot 'patches\ps2recomp-vif-direct-fragments.patch'
 $gifOrderPatch = Join-Path $RepoRoot 'patches\ps2recomp-gif-order.patch'
 $gifTagSemanticsPatch = Join-Path $RepoRoot 'patches\ps2recomp-gif-tag-semantics.patch'
+$gifStreamPatch = Join-Path $RepoRoot 'patches\ps2recomp-gif-stream.patch'
+$gifImageOrderPatch = Join-Path $RepoRoot 'patches\ps2recomp-gif-image-order.patch'
+$gifImage2Patch = Join-Path $RepoRoot 'patches\ps2recomp-gif-image2.patch'
+$gifNativeTagPatch = Join-Path $RepoRoot 'patches\ps2recomp-gif-native-tag.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -92,6 +96,10 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $vifDirectPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vifDirectFragmentsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gifOrderPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gifTagSemanticsPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gifStreamPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gifImageOrderPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gifImage2Patch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gifNativeTagPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner

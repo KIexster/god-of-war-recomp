@@ -26,7 +26,11 @@
    `ps2recomp-vif-direct.patch` (IMAGE de PATH2 continúa dentro de DIRECT, conservando los comandos VIF) y
    `ps2recomp-vif-direct-fragments.patch` (conserva el payload y la prioridad de DIRECT entre bloques DMA/FIFO) y
    `ps2recomp-gif-order.patch` (arbitraje entre cabeceras, conservando el FIFO de cada path) y
-   `ps2recomp-gif-tag-semantics.patch` (NLOOP=0 conserva PRIM/Q y PRE solo actúa en PACKED)
+   `ps2recomp-gif-tag-semantics.patch` (NLOOP=0 conserva PRIM/Q y PRE solo actúa en PACKED) y
+   `ps2recomp-gif-stream.patch` (cursor PACKED/REGLIST/IMAGE independiente por PATH, sin etiquetas sintéticas) y
+   `ps2recomp-gif-image-order.patch` (DIRECTHL reconoce continuaciones IMAGE y omite registros/relleno) y
+   `ps2recomp-gif-image2.patch` (compatibilidad IMAGE2 en el parser, el atajo de subida y el arbitraje) y
+   `ps2recomp-gif-native-tag.patch` (el atajo DMA IMAGE conserva PRE/Q y acepta IMAGE2 tras validar la cadena)
    con `git apply --ignore-whitespace`. Antes de reaplicarlos borra los archivos que dejó la compilación
    anterior y que algún parche crea (`new file mode`), así un parche nuevo no necesita tocar esa limpieza.
 4. **Ajustes de CMake** — añade `src/runner` a los includes de `ps2EntryRunner` y desactiva `/GL` y `/LTCG`

@@ -225,10 +225,10 @@ a 65.536 QW (1 MiB, también para IMMEDIATE=0). Solo copia las cargas incompleta
 que recibe un DIRECT completo sigue enviando sus bytes directamente. Inicializar la memoria
 o escribir VIF1_FBRST.RST descarta esa continuación y su prioridad.
 
-Se completa el DIRECT antes de entregarlo al parser GS, que recibe paquetes sin estado
-de continuación PACKED/REGLIST. Esto conserva el payload, pero no reproduce todos los
-stalls ni los ciclos del hardware. No añade continuación de otros comandos VIF ni de
-PACKED/REGLIST entre distintos comandos DIRECT completos. La referencia de comportamiento
+Estos dos parches completan el DIRECT antes de entregarlo al parser GS. La continuación
+PACKED/REGLIST entre distintos comandos DIRECT se añade después con `ps2recomp-gif-stream.patch`,
+descrito abajo. No se reproducen todos los stalls ni los ciclos del hardware ni se añade
+continuación de otros comandos VIF. La referencia de comportamiento
 es [`_vifCode_Direct` de PCSX2](https://github.com/PCSX2/pcsx2/blob/master/pcsx2/Vif_Codes.cpp),
 que conserva el tamaño pendiente y distingue DIRECT de DIRECTHL; no se ha copiado su código.
 Se mantiene el crédito del port GS a Taylor N. Albarnaz / LightVelox indicado al inicio.
@@ -269,8 +269,79 @@ que referencia la sección 7.2.2 del manual EE. El arreglo y las pruebas son pro
 no se incorpora código de PCSX2. Cuatro regresiones comprueban el estado, la conservación
 de un triángulo entre etiquetas vacías y Q, los controles con PACKED no vacío y PRE,
 y los efectos del setup en la subida IMAGE nativa.
-No modifica las transferencias VIF ni añade continuaciones PACKED/REGLIST entre DIRECT
-distintos; eso sigue siendo una limitación separada.
+Este parche no modifica VIF; la continuación entre DIRECT distintos se añade en el
+siguiente parche.
+
+## Continuidad del flujo GIF por PATH
+
+`ps2recomp-gif-stream.patch` conserva por separado el cursor de PATH1, PATH2 y PATH3:
+etiqueta incompleta, formato, registro actual, registros pendientes, padding REGLIST y
+bytes IMAGE. Cada cursor retiene como máximo 15 bytes de una unidad incompleta. Las
+subidas IMAGE contiguas siguen llegando al backend en bloques grandes; no se almacena
+otra copia del payload completo en el frontend.
+
+Un nuevo bloque continúa la etiqueta pendiente de su PATH, en lugar de leer sus datos
+como otra GIFtag. Q y PRE se aplican al completar una etiqueta, conservando las reglas
+de etiquetas vacías. El estado del GS y los registros siguen siendo compartidos; solo
+el cursor de lectura es independiente. Reset elimina esos cursores. Los atajos PACKED
+y DMA IMAGE se rechazan cuando PATH3 tiene un flujo incompleto, para que lo complete el
+parser general.
+
+El callback del árbitro conserva el identificador del PATH; los clientes anteriores de
+dos argumentos mantienen su interfaz. VIF entrega los bytes originales de cada DIRECT:
+se retiran las etiquetas IMAGE sintéticas que antes envolvían las continuaciones, pues
+el frontend conserva ahora su tamaño pendiente. La prueba existente de continuación
+comprueba por eso el payload original junto a la etiqueta siguiente, en vez del wrapper.
+MARK, STCYCL e ITOP entre comandos VIF siguen ejecutándose.
+
+Nueve regresiones sintéticas comprueban todos los cortes de byte de PACKED, ST/Q y
+vértices, REGLIST impar y su relleno, IMAGE y la etiqueta siguiente, NREG=0 (16 registros),
+reset, tres PATH intercalados, los atajos nativos y un PACKED repartido entre tres DIRECT.
+El frontend es común a CPU y OpenGL; estas pruebas no incluyen archivos del juego.
+
+## Prioridad de las continuaciones IMAGE
+
+`ps2recomp-gif-image-order.patch` clasifica el flujo PATH3 mediante sus etiquetas y
+tamaños pendientes. Un bloque de pixels IMAGE conserva su clasificación aunque no
+empiece por una etiqueta. Los registros PACKED/REGLIST y el relleno no se interpretan
+como etiquetas, aunque sus bits coincidan con IMAGE. También se reconoce IMAGE tras un
+setup dentro del mismo bloque. NLOOP=0 no inicia una imagen ni bloquea DIRECTHL.
+
+Se conserva el arbitraje FIFO entre cabeceras del parche anterior. La clasificación
+abarca el bloque completo; sigue siendo la abstracción de paquetes del runtime, sin
+reproducir la preempción o los ciclos del GIF real. Reset descarta el cursor PATH3 junto
+a la cola. Seis regresiones cubren continuaciones entre drains, setup seguido de IMAGE,
+datos que parecen etiquetas, IMAGE vacía, padding/etiqueta parcial y reset. Cuatro fixtures
+anteriores de prioridad pasan a usar NLOOP=1 con pixels: sus expectativas de orden se
+conservan y se elimina la suposición de que una IMAGE vacía transmite datos.
+
+## Compatibilidad IMAGE2
+
+`ps2recomp-gif-image2.patch` trata FLG=3 como IMAGE2, siguiendo la compatibilidad de
+[`GSState::Transfer` de PCSX2, commit 32ac6e2](https://github.com/PCSX2/pcsx2/blob/32ac6e23e4aaf8c8c5e74a6c1ed750ee7672120e/pcsx2/GS/GSState.cpp#L3489).
+Se consume su payload como IMAGE, sin aplicar PRE, en el frontend y el atajo de subida
+completa. El árbitro conserva esa clasificación en sus continuaciones. El nombre
+anterior `GIF_FMT_DISABLED` se mantiene como alias de API. El arreglo es propio; no se
+copia código de PCSX2 ni se presenta FLG=3 como un modo documentado de uso normal del juego.
+
+Tres regresiones verifican todos los cortes de byte y la etiqueta siguiente, los pixels
+de la subida nativa en CPU y en un backend de observación, PRE del setup y el arbitraje
+de la etiqueta y su continuación. No se ha demostrado que GoW emita IMAGE2 en la escena
+observada; el cambio evita desincronizar el parser si recibe este formato.
+
+## Estado de las etiquetas en el atajo DMA de texturas
+
+`ps2recomp-gif-native-tag.patch` completa los efectos de las etiquetas en el atajo
+`tryProcessNativeGifImageUploadChain`. Tras validar la cadena entera, pasa la etiqueta
+PACKED del setup a `uploadImageNative`: reinicia Q y aplica PRE bajo el mismo lock que
+la subida. PRE de la imagen se ignora. También admite IMAGE2, como el frontend general.
+Un argumento opcional conserva la API anterior de subida directa sin etiqueta.
+
+Una regresión reproduce antes del arreglo la pérdida de PRE y el Q antiguo en el
+siguiente punto, además del rechazo de IMAGE2. Cubre IMAGE/IMAGE2 con PRE activado y
+desactivado, pixels y conservación del color. Otra prueba rechaza una cadena con terminal
+inválido y comprueba que no cambie PRE/Q, no suba pixels ni incremente el contador nativo.
+El atajo sigue validando todos los datos antes de aplicar sus efectos.
 
 ## Selección del contexto de modelos
 
