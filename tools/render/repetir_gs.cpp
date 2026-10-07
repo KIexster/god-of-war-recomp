@@ -1,5 +1,6 @@
 // GOW-Port: repetir una captura local del mismo ABI sin archivos del juego.
 #include "gow_gs_replay.h"
+#include "gs_frame_pixels.h"
 #include "runtime/gs/gs_cpu_backend.h"
 #include "runtime/gs/gs_gpu_backend.h"
 #include <algorithm>
@@ -44,9 +45,9 @@ namespace {
         size_t n=0; for(size_t i=0;i<a.size();++i) if(a[i]!=b[i]) { if(first==SIZE_MAX) first=i; ++n; } return n;
     }
     void ppm(const std::filesystem::path &path,const PresentationFrame &f) {
-        if(!f || uint64_t(f.width)*f.height*4!=f.pixels.size()) return;
-        std::ofstream out(path,std::ios::binary); out<<"P6\n"<<f.width<<' '<<f.height<<"\n255\n";
-        for(size_t i=0;i<f.pixels.size();i+=4) out.write(reinterpret_cast<const char*>(f.pixels.data()+i),3);
+        if(!f) return;
+        if(!GowRenderTool::writePpm(path,f,GowRenderTool::PixelLayout::HostRows640))
+            std::cerr<<"No se pudo exportar PPM visible: "<<path.string()<<'\n';
     }
 }
 
@@ -81,7 +82,8 @@ int main(int argc,char **argv) {
         backend->SetHardwareRasterAllowed(mode=="hardware"); candidate=std::make_unique<GSThreadedBackend>(std::move(backend));
     } else candidate=std::make_unique<GSCpuBackend>();
     auto candidateVram=initial.vram; candidate->Initialize(candidateVram.data(),uint32_t(candidateVram.size()));
-    if(gpu && (!gpu->IsReady() || dynamic_cast<GSGpuBackend*>(&static_cast<GSThreadedBackend&>(*candidate).Inner())!=gpu)) {
+    // GOW-Port: Initialize puede destruir la GPU al sustituirla por CPU; verificar Inner primero.
+    if(gpu && (dynamic_cast<GSGpuBackend*>(&static_cast<GSThreadedBackend&>(*candidate).Inner())!=gpu || !gpu->IsReady())) {
         std::cerr<<"OpenGL no disponible: fallback no cuenta como comparación\n"; return 2;
     }
     auto *access=dynamic_cast<GSBackendStateAccess*>(candidate.get());
@@ -116,7 +118,11 @@ int main(int argc,char **argv) {
         }
         if(r.op==replay::Op::Submit) ++draws;
         if(r.op==replay::Op::Present) {
-            size_t first=0; const auto n=differences(a.pixels,b.pixels,first);
+            std::vector<uint8_t> visibleA,visibleB;
+            if(!GowRenderTool::normalize(a,visibleA,GowRenderTool::PixelLayout::HostRows640) || !GowRenderTool::normalize(b,visibleB,GowRenderTool::PixelLayout::HostRows640)) {
+                std::cerr<<"Layout de presentación inválido en registro "<<index<<'\n'; return 3;
+            }
+            size_t first=0; const auto n=differences(visibleA,visibleB,first);
             if(n || a.width!=b.width || a.height!=b.height) {
                 ++frameMismatch;
                 if(frameMismatch==1) { ppm(output/"replay_cpu.ppm",a); ppm(output/"replay_candidate.ppm",b); }
@@ -144,7 +150,8 @@ int main(int argc,char **argv) {
     }
     if(!reader.error.empty() || !ended) { std::cerr<<"Captura incompleta: "<<reader.error<<'\n'; return 2; }
     ppm(output/"replay_last_cpu.ppm",a); ppm(output/"replay_last_candidate.ppm",b);
-    std::cout<<"registros="<<index<<" draws="<<draws<<" framesDistintos="<<frameMismatch<<" primeraDivergencia="<<firstMismatch<<'\n';
+    std::cout<<"registros="<<index<<" draws="<<draws<<" framesDistintos="<<frameMismatch
+             <<(lockstep?" primeraDivergencia=":" primerControlVRAMDistinto=")<<firstMismatch<<'\n';
     if(gpu) { const auto stats=gpu->GetStats(); std::cout<<"OpenGL batches="<<stats.batches<<" prims="<<stats.prims<<" tiles="<<stats.tiles<<'\n'; }
     return firstMismatch!=SIZE_MAX || frameMismatch?1:0;
 }

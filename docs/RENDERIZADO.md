@@ -561,6 +561,38 @@ reconocibles, aunque una imagen posterior conserva deformaciones y todavía no
 certifica a Kratos. Se usa como nueva referencia para las siguientes correcciones
 GS; la captura opcional no sirve para medir rendimiento.
 
+Dos parches posteriores delimitan fallos GS independientes: `gs-triangle-precision`
+conserva recíproco y numeradores en double antes del peso float, igualando la
+referencia CPU en la regresión de Z32/Z24 para triángulos grandes; `gs-packed-depth`
+evita perder bits de Z32 en PACKED XYZ2/XYZ3 antes de llegar al backend. Se prueban
+por separado antes y después del arreglo y mantienen el renderer CPU para comparar.
+El trabajo FP64 adicional requiere un perfil posterior para valorar su coste.
+
+`repetir_gs` compara y exporta únicamente la región visible de `PresentationFrame`:
+CPU reserva filas de 640×512 y GPU usa 640×alto visible. El helper
+`tools/render/gs_frame_pixels.h` requiere indicar el layout y evita interpretar
+el relleno como diferencias de imagen. `scripts\compilar_replay_gs.cmd` ejecuta
+también `tests/gs_frame_pixels_test.cpp`, con layouts, padding, truncamiento,
+exportación PPM y una presentación real de CPU. Una diferencia de VRAM sigue
+siendo independiente de este ajuste de diagnóstico.
+
+Para investigar feedback bilineal sin volcados del juego, el mismo script compila
+`logs\comparar_feedback_gs.exe`. Ejecutarlo compara un sprite sobre una textura
+procedural CT32 de 64×64 con la fuente en el propio framebuffer y con una copia
+disjunta, en CPU y OpenGL compute. Imprime diferencias por fila, bytes de VRAM y
+repeticiones GPU; requiere una GPU real. El código de salida 0 indica que terminó
+la comparación, aunque haya diferencias; 2 indica un control inválido o GPU no
+disponible. No certifica cuál salida tiene la semántica del GS.
+
+El [suplemento del manual GS, §§1.2 y 1.4](https://www.scribd.com/document/718537990/GS-Users-Manual-Supplement)
+describe un búfer de textura de una página y grupos de 4×2 píxeles para dibujo
+texturado; el filtro bilineal puede recargar páginas por sus vecinos. Esto respalda
+investigar caché y orden de acceso, pero no fija el resultado del patrón sintético
+de feedback. El bucle CPU actual escribe un píxel tras cada muestra y todavía no
+modela esos grupos ni su pipeline. La [nota de PCSX2 sobre caché GS](https://github.com/PCSX2/pcsx2/discussions/4311)
+también distingue la caché de textura de la de framebuffer. Se necesita un control
+de ese patrón para decidir el siguiente cambio.
+
 ## Referencia Tobiichi-Port
 
 Se revisa [YYOzcan/Tobiichi-Port](https://github.com/YYOzcan/Tobiichi-Port/tree/9f02797f8ab7481fddad4d2daf7afad82d11699f)

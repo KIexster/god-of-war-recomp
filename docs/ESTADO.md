@@ -1537,4 +1537,118 @@ Una sonda privada de 12 triángulos sintéticos grandes reproduce diferencias de
 tres casos con el shader actual. Un borrador que conserva el recíproco y los
 numeradores enteros en double antes de obtener pesos float elimina esas diferencias
 en los 12 casos y en el dibujo real aislado 561. Ese borrador todavía no forma parte
-del ejecutable; se convertirá en un parche separado con regresión y control completo.
+del ejecutable de ese control; se convierte después en el parche separado que se
+describe a continuación.
+
+### Precisión de pesos OpenGL y profundidad PACKED Z32 (2026-10-06)
+
+`ps2recomp-gs-triangle-precision.patch` conserva el recíproco del área en double en
+dos palabras libres del registro de primitiva. El shader común reconstruye los
+numeradores enteros en double dentro del dominio GS y convierte los pesos a float
+solo después de multiplicar por ese recíproco, como CPU. `Submit` prepara primitivas
+con redondeo SSE al más cercano y restaura los controles del productor. Se conserva
+el stride de 40 palabras y el shader hardware generado usa el mismo cálculo.
+La regresión compara VRAM completa CPU/OpenGL para dos áreas grandes, dos XYOFFSET,
+Z32/Z24 y cuatro modos SSE, con compute y hardware permitido. Falla en el renderer
+anterior (**553/554**) y pasa con el arreglo (**554/554**). La sonda privada de doce
+casos y el triángulo real aislado anterior también dejan de diferir. Esto mejora
+la precisión de GS; todavía no demuestra una ganancia de FPS ni elimina todos los
+desacuerdos de la nueva captura.
+
+`ps2recomp-gs-packed-depth.patch` corrige otro fallo antes del backend: PACKED XYZ2
+y XYZ3 convertían su Z32 a float antes de almacenarlo en `GSVertex.z` (double).
+Por ejemplo, `0x01000001` perdía un bit y `0xFFFFFFFF` acababa escribiéndose como
+cero. Ambas rutas convierten directamente a double; XYZF de 24 bits, REGLIST y A+D
+conservan su comportamiento. Dos regresiones comprueban cuatro profundidades en
+la ruta nativa y en los 33 cortes de bytes del paquete, además de la cola de XYZ3
+y XYZ2 con ADC sin dibujo prematuro. Antes del arreglo fallan ambas (**545/547**
+sin las pruebas OpenGL); después pasan **556/556**, incluidas las nueve OpenGL.
+La auditoría integrada reconstruye **38 parches y 79 fuentes exactas**;
+configuración y 14 scripts pasan con los cuatro avisos conocidos. La compilación
+completa conjunta termina correctamente, genera las 6418 unidades y conserva las
+79 fuentes exactas al auditarlas después de compilar. Sigue el control del juego.
+
+La suite reconstruida después de esa compilación pasa **556/556**. El helper público
+compila las tres herramientas y pasa la captura/repetición sintética. CPU reproduce
+de nuevo los 53.016 dibujos originales sin diferencias. Compute termina con
+386.873 bytes distintos, frente a 387.242 antes; el recorrido mixto termina con
+390.713, frente a 386.914. Ambos conservan la primera diferencia de feedback (917
+bytes en el sprite 510) y las tres presentaciones distintas. La mezcla de rutas
+hardware/compute también cambia (17.783 tiles compute frente a 17.679 antes): no
+se atribuye su variación final exclusivamente a precisión ni se declara paridad
+hardware. El control OpenGL del juego usa el ejecutable completo de estos cambios.
+
+El control OpenGL de 330 s alcanza estado 11 con `pending=0` y `levelReady=1`,
+en RX 5700 XT con hardware activo y sin fallback. La única PPM de partida es la
+de 249,35 s: se reconocen cielo, lluvia y escenario al fondo, pero un objeto oscuro
+grande tapa el centro y Kratos no es identificable. Las anteriores permanecen en
+menú o transición; no se comparan como la misma fase del control CPU de 160/191 s.
+Las 64 muestras de Clip conservan los resultados anteriores y los 66 buffers
+tardíos observados tienen primeras tripletas no nulas. No aparecen instrucciones
+VU reservadas, rutas inválidas, ciclos ni truncamientos. Sigue sin certificar una
+partida jugable o una mejora de FPS.
+
+La revisión final protege también los diagnósticos frente al fallback GPU: la cola
+puede destruir el backend OpenGL al sustituirlo por CPU, por lo que las herramientas
+y la nueva regresión verifican primero `Inner()` antes de consultar `IsReady()`.
+No cambia el rasterizado. La segunda compilación completa requerida para publicar
+la corrección del test termina correctamente; la suite vuelve a pasar **556/556**
+y la auditoría posterior conserva las 79 fuentes exactas.
+
+El control de cámara conjunta muestra 64 Clips finitos y completos: 22 resultados
+`0`, seis `20` y 36 descartes `80000000`, sin Y/Z duplicados. Las 544 sondas tardías
+de `InitUNPACKData` tienen una primera tripleta no nula. Hay 10.520 primitivas
+degeneradas con todos sus XYZ cero; los S enormes aparecen exclusivamente en ellas,
+sin XYZ no finitos. Esto no respalda forzar posiciones a otro valor. No aparecen
+rutas inválidas ni ciclos en las muestras de modelos/GROB. Los planos oscuros de
+240,85 s quedan pendientes de comparar con el mismo cuadro de referencia para
+distinguir encuadre, oclusión y geometría defectuosa.
+
+La primera diferencia de la nueva traza se reduce a un sprite bilineal que lee y
+escribe el mismo framebuffer CT32. La sonda privada aislada reproduce los 917 bytes
+en 476 píxeles de 24 filas, concentrados junto a límites de página; repetirla da el
+mismo resultado. Con nearest no difiere, TEXFLUSH previo conserva la diferencia,
+y copiar la fuente a una región disjunta la elimina. Esto localiza una diferencia
+de feedback/caché CPU frente a OpenGL. La referencia PCSX2 distingue explícitamente
+estos casos de lectura del destino, pero no demuestra cuál de nuestras salidas
+reproduce el GS; no se fuerza paridad cambiando el filtrado ni anulando la caché.
+
+El caso se reduce además a una textura procedural CT32 de 64×64: CPU y GPU
+difieren en 63 píxeles (186 bytes), únicamente en las filas 32 y 33. CPU mutable
+difiere igual de su control con fuente disjunta, mientras OpenGL coincide con
+ese control en las dos repeticiones. Los 53.248 vecinos bilineales del caso real
+también se verifican después de CLAMP, incluidos los negativos remapeados a cero.
+La nueva herramienta pública `tools/render/comparar_feedback_gs.cpp` reproduce
+el caso sintético y se compila con `scripts\compilar_replay_gs.cmd`; no utiliza
+datos del juego. El siguiente paso requiere una referencia GS para este patrón
+de lectura y escritura antes de cambiar la política de caché.
+
+### Revisión del trabajo de Claude y comparación visible (2026-10-07)
+
+El checkout `E:\gowclaude\repo` está limpio en `1bdcd72` y coincide con el nuevo
+`origin/main`: siete commits posteriores a `1968f03`. Son cambios separados de
+getenv en bucles calientes, rendimiento VU1, DMA del scratchpad, entrada MPEG,
+diagnóstico PCM, sonido IOP y memory card. La mejora VU1 tiene un banco de pruebas
+del mismo cuadro y salida idéntica: 775 a 503 ms; no equivale a una mejora del 35 %
+de FPS de la partida. El arreglo de scratchpad explica la paleta de huesos de
+Kratos que llegaba cero a VU1. Las capturas locales de Claude muestran a Kratos,
+enemigos y HUD con formas reconocibles, y las del guardado llegan a «Save Complete».
+Sus resultados y controles están en `COMPARACION_PCSX2.md`, `RENDIMIENTO.md`,
+`FMV_Y_AUDIO.md` y `MEMORY_CARD.md`. Falta verificar el ejecutable conjunto con
+los dos nuevos arreglos GS; se conserva la referencia anterior como histórica.
+
+La revisión de `repetir_gs` detecta además que CPU reserva filas de 640×512 y GPU
+devuelve filas de 640×alto visible. Comparar los vectores brutos podía marcar una
+diferencia de tamaño aunque los píxeles visibles fueran iguales, y el exportador
+rechazaba la PPM de CPU. `gs_frame_pixels.h` exige el layout explícito del backend,
+extrae solo la imagen visible y rechaza buffers truncados o ambiguos. Dieciocho
+controles sintéticos, incluido `GSCpuBackend::Present` real de 64×64 y la PPM RGB,
+pasan; la captura/repetición CPU sintética vuelve a quedar exacta. Las cifras de
+VRAM anteriores no cambian; las comparaciones de presentación brutas se vuelven
+a comprobar con esta herramienta antes de considerarlas diferencias de imagen.
+La repetición compute completa de la traza histórica confirma ahora tres imágenes
+visibles distintas, y exporta tanto CPU como GPU (cuatro PPM válidas). CPU vuelve a
+reproducir VRAM final exactamente. Este control usa el modo por lotes: sus 387.310
+bytes finales no se comparan como si fuera la ejecución con sincronización por
+dibujo anterior. En modo por lotes se etiqueta el primer control de VRAM distinto,
+sin presentarlo como la posición de la primera divergencia real.

@@ -16,6 +16,12 @@ call :compile tools\render\repetir_gs.cpp repetir_gs
 if errorlevel 1 exit /b 1
 call :compile tests\gs_replay_test.cpp gs_replay_test
 if errorlevel 1 exit /b 1
+call :compile tools\render\comparar_feedback_gs.cpp comparar_feedback_gs
+if errorlevel 1 exit /b 1
+call :compile tests\gs_frame_pixels_test.cpp gs_frame_pixels_test
+if errorlevel 1 exit /b 1
+logs\gs_frame_pixels_test.exe > logs\gs_frame_pixels_test.log 2>&1
+if errorlevel 1 exit /b 1
 logs\gs_replay_test.exe logs\gs_replay_synthetic.bin > logs\gs_replay_test.log 2>&1
 if errorlevel 1 exit /b 1
 logs\repetir_gs.exe logs\gs_replay_synthetic.bin cpu --lockstep logs >> logs\gs_replay_test.log 2>&1
