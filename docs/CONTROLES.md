@@ -42,6 +42,14 @@ del mando y X a los 12, 20, 28, 36, 52, 60, 68, 76, 84, 100, 116 y 132 segundos.
 pantalla está activa y **no certifica que se haya iniciado una partida jugable**. La ejecución normal
 no inyecta botones. Hay que revisar las imágenes y los registros.
 
+`GOW_PAD_GUION` sustituye esa secuencia por otra: una lista `segundo:botón` separada por comas, con
+pulsaciones de 0,7 s. Botones: `start`, `select`, `arriba`, `abajo`, `izquierda`, `derecha`, `x`,
+`circulo`, `cuadrado`, `triangulo`, `l1`, `r1`, `l2`, `r2`. Por ejemplo, para abrir Cargar en el menú:
+
+```powershell
+$env:GOW_PAD_GUION = '5:start,13:abajo,20:x'
+```
+
 Para investigar búsquedas de nodos durante las transiciones:
 
 ```powershell

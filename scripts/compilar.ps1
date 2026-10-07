@@ -49,6 +49,13 @@ $gsTriangleTexcoordsPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-triangle-t
 $vu1EfuOpcodesPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-efu-opcodes.patch'
 $gsCpuStatePatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-cpu-state.patch'
 $gsCpuRoundingPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-cpu-rounding.patch'
+$getenvHotPatch = Join-Path $RepoRoot 'patches\ps2recomp-getenv-hot.patch'
+$vu1PerfPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-perf.patch'
+$sprChainPatch = Join-Path $RepoRoot 'patches\ps2recomp-spr-chain.patch'
+$mpegCreatePatch = Join-Path $RepoRoot 'patches\ps2recomp-mpeg-create.patch'
+$audioPcmPatch = Join-Path $RepoRoot 'patches\ps2recomp-audio-pcm.patch'
+$iopSoundPatch = Join-Path $RepoRoot 'patches\ps2recomp-iop-sound.patch'
+$memcardPatch = Join-Path $RepoRoot 'patches\ps2recomp-memcard.patch'
 $gsTrianglePrecisionPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-triangle-precision.patch'
 $gsPackedDepthPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-packed-depth.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
@@ -124,6 +131,13 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $gsTriangleTexcoordsPatc
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1EfuOpcodesPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsCpuStatePatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsCpuRoundingPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $getenvHotPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1PerfPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $sprChainPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $mpegCreatePatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $audioPcmPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $iopSoundPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $memcardPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsTrianglePrecisionPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsPackedDepthPatch)
 Pop-Location

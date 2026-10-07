@@ -13,6 +13,9 @@
 #include <array>
 #include <chrono>
 #include <fstream>
+#include <sstream>
+#include <string>
+#include <vector>
 
 namespace
 {
@@ -118,7 +121,8 @@ namespace
                 return value && std::strcmp(value, "1") == 0;
             }();
             static double nextStateReport = 0;
-            if (const char *diag=std::getenv("GOW_EE_PRIM_DIAG"); diag && std::strcmp(diag,"1")==0)
+            static const bool primDiag = [] { const char *diag=std::getenv("GOW_EE_PRIM_DIAG"); return diag && std::strcmp(diag,"1")==0; }();
+            if (primDiag)
                 gowDiagPrimPoll(rdram,seconds);
             if (noCapture && seconds >= nextStateReport)
             {
@@ -128,13 +132,50 @@ namespace
                              readGuest32(rdram, 0x29E5A0u), readGuest32(rdram, 0x29E584u),
                              readGuest32(rdram, 0x29CAB4u), readGuest32(rdram, 0x29C838u));
             }
-            constexpr double presses[] = {5, 12, 20, 28, 36, 52, 60, 68, 76, 84, 100, 116, 132};
-            for (size_t i = 0; i < std::size(presses); ++i)
-                if (seconds >= presses[i] && seconds < presses[i] + 0.7)
+            // GOW_PAD_GUION="5:start,12:abajo,16:x": pulsaciones de 0,7 s en esos segundos (en lugar de la
+            // secuencia fija). Botones: start, select, arriba, abajo, izquierda, derecha, x, circulo, cuadrado,
+            // triangulo, l1, r1, l2, r2.
+            struct ScriptedPress { double seconds; uint8_t byte; uint8_t mask; };
+            static const std::vector<ScriptedPress> script = [] {
+                std::vector<ScriptedPress> presses;
+                const char *text = std::getenv("GOW_PAD_GUION");
+                if (!text)
+                    return presses;
+                static const std::pair<const char *, std::pair<uint8_t, uint8_t>> buttons[] = {
+                    {"select", {2, 0x01}}, {"start", {2, 0x08}}, {"arriba", {2, 0x10}}, {"derecha", {2, 0x20}},
+                    {"abajo", {2, 0x40}}, {"izquierda", {2, 0x80}}, {"l2", {3, 0x01}}, {"r2", {3, 0x02}},
+                    {"l1", {3, 0x04}}, {"r1", {3, 0x08}}, {"triangulo", {3, 0x10}}, {"circulo", {3, 0x20}},
+                    {"x", {3, 0x40}}, {"cuadrado", {3, 0x80}}};
+                std::string item;
+                std::istringstream stream(text);
+                while (std::getline(stream, item, ','))
                 {
-                    if (i == 0) state[2] &= ~0x08u; // Start
-                    else state[3] &= ~0x40u; // Cross
+                    const size_t colon = item.find(':');
+                    if (colon == std::string::npos)
+                        continue;
+                    const std::string name = item.substr(colon + 1);
+                    for (const auto &[button, bit] : buttons)
+                        if (name == button)
+                            presses.push_back({std::strtod(item.c_str(), nullptr), bit.first, bit.second});
                 }
+                return presses;
+            }();
+            if (!script.empty())
+            {
+                for (const ScriptedPress &press : script)
+                    if (seconds >= press.seconds && seconds < press.seconds + 0.7)
+                        state[press.byte] &= static_cast<uint8_t>(~press.mask);
+            }
+            else
+            {
+                constexpr double presses[] = {5, 12, 20, 28, 36, 52, 60, 68, 76, 84, 100, 116, 132};
+                for (size_t i = 0; i < std::size(presses); ++i)
+                    if (seconds >= presses[i] && seconds < presses[i] + 0.7)
+                    {
+                        if (i == 0) state[2] &= ~0x08u; // Start
+                        else state[3] &= ~0x40u; // Cross
+                    }
+            }
             static size_t capture = 0;
             constexpr double captures[] = {4, 10, 18, 26, 34, 44, 56, 70, 90, 110, 130, 160, 190, 240, 360, 480, 580};
             if (!noCapture && capture < std::size(captures) && seconds >= captures[capture])
@@ -227,7 +268,8 @@ namespace
         if (++reads <= 3 || buttons != lastButtons)
             std::fprintf(stderr, "[gow-pad2] read buttons=%04x sticks=%u,%u,%u,%u\n", buttons, buffer[2], buffer[3], buffer[4], buffer[5]);
         lastButtons = buttons;
-        if (std::getenv("GOW_ANM_DIAG") && readGuest32(rdram, 0x29E560u) == 4u && reads % 100 == 0)
+        static const bool anmDiag = std::getenv("GOW_ANM_DIAG") != nullptr;
+        if (anmDiag && readGuest32(rdram, 0x29E560u) == 4u && reads % 100 == 0)
         {
             const uint32_t card = readGuest32(rdram, 0x29BE50u);
             std::fprintf(stderr, "[gow-transition] padType=%u cardState=%u pause=%u,%u,%u,%u speed=%x\n",
@@ -262,7 +304,9 @@ namespace
 
     void gowDiagPathSelect(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
-        if (ctx->pc == 0x00180E50u && std::getenv("GOW_PATH_DIAG"))
+        // GOW-Port: getenv recorre todo el entorno; en funciones llamadas a menudo se lee una vez.
+        static const bool pathDiag = std::getenv("GOW_PATH_DIAG") != nullptr;
+        if (ctx->pc == 0x00180E50u && pathDiag)
         {
             const uint32_t object = GPR_U32(ctx, 4);
             const uint32_t address = GPR_U32(ctx, 5);
@@ -275,7 +319,8 @@ namespace
 
     void gowDiagAttachNode(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
-        if (ctx->pc == 0x00180D08u && GPR_U32(ctx, 5) == 0 && std::getenv("GOW_PATH_DIAG"))
+        static const bool pathDiag = std::getenv("GOW_PATH_DIAG") != nullptr;
+        if (ctx->pc == 0x00180D08u && GPR_U32(ctx, 5) == 0 && pathDiag)
         {
             std::ofstream file("gow_path_failure.bin", std::ios::binary);
             file.write(reinterpret_cast<const char *>(rdram), 0x02000000u);
@@ -333,8 +378,8 @@ namespace
     void gowDiagAnimationTime(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
         const uint32_t ra = GPR_U32(ctx, 31), object = GPR_U32(ctx, 4);
-        const char *fastBoot = std::getenv("GOW_FAST_BOOT");
-        if (fastBoot && std::strcmp(fastBoot, "1") == 0 && ra == 0x0021E714u &&
+        static const bool fastBoot = [] { const char *value = std::getenv("GOW_FAST_BOOT"); return value && std::strcmp(value, "1") == 0; }();
+        if (fastBoot && ra == 0x0021E714u &&
             readGuest32(rdram, 0x29E560u) == 4u && readGuest32(rdram, 0x29E584u) == 1u)
         {
             // Only the intro-completion query is bypassed, after the level load.
