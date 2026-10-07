@@ -92,6 +92,11 @@ int main(int argc, char **argv)
 
     // Igual que PS2Runtime::syncCoreSubsystems, sin los bits D/T del EE.
     VU1Interpreter vu1;
+    {
+        // Como PS2Runtime: escrituras directas salvo con GOW_VU1_COLAS=1.
+        const char *queues = std::getenv("GOW_VU1_COLAS");
+        vu1.setDirectRegisterWrites(!(queues && std::strcmp(queues, "1") == 0));
+    }
     uint64_t launches = 0;
     mem.setVu1MscalCallback([&](uint32_t pc, uint32_t top, uint32_t itop)
                             {

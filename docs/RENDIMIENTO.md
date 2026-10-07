@@ -67,3 +67,38 @@ CPU) y la suite nativa pasa **545/545**. En el juego la diferencia queda dentro 
 ventanas (la escena cambia y otros procesos compiten por la CPU); el banco de pruebas es la medida
 de referencia. Lo siguiente en el perfil de VU1 es el cálculo de flags de FMAC
 (`updateFmacFlags`, `calculateFmacProductSticky`, `calculateFmacExactResult`) y `execUpper`.
+
+## VU1 sin colas de escritura (rama `vu1-rapido`, 2026-10-07)
+
+`patches/ps2recomp-vu1-direct.patch`, con el mismo banco de pruebas (cuadro `D6385328`, 30 pasadas):
+
+| Cambio | ms por cuadro |
+|---|---:|
+| Antes (main) | 503 |
+| VF/VI/ACC se escriben al ejecutar en vez de encolarse con su latencia | 427 |
+| `commitReadyPipelines` no hace nada antes del vencimiento más próximo; sin bits pegajosos si nadie lee el estado | 396 |
+| La operación FMAC exacta (flags) se decodifica una vez por instrucción, no por componente | 386 |
+| Entradas libres y registros VI escritos a partir de máscaras de bits | 339 |
+
+**Escrituras directas.** Las colas de VF/VI/ACC no cambian el resultado del programa: quien lee un
+registro se detiene hasta que está listo (`m_vfReady`, `m_viReady`, `m_accReady`) y solo se confirma
+la última escritura emitida. Lo que sí cambia es el estado intermedio que ve quien corta la ejecución
+por presupuesto de ciclos (las pruebas del modelo de latencias). Por eso es opcional:
+`VU1Interpreter::setDirectRegisterWrites(true)` lo activa y `PS2Runtime` lo hace para VU1 salvo con
+`GOW_VU1_COLAS=1`. VU0 sigue con colas (el EE lee sus registros en modo macro). Las colas de flags,
+Q, P y stores se mantienen.
+
+**Bits pegajosos.** Si el microcódigo cargado no tiene `FSAND`/`FSEQ`/`FSOR`, no se calculan los
+bits pegajosos de los productos (`calculateFmacProductSticky`). Se vuelve a comprobar cada vez que
+cambia el microcódigo; un programa posterior que lea el estado vería los pegajosos que no se
+calcularon antes (con el microcódigo de este cuadro no ocurre: no hay ninguna de esas instrucciones).
+
+Comprobación: la imagen es idéntica byte a byte con y sin colas en dos cuadros (`vif_pcsx2_inicio2`
+de PCSX2 y `vif_port_480s` del port) y en modo con colas coincide con la referencia anterior. La
+suite pasa **551/551** con la prueba nueva `direct register writes finish a VU1 program like the
+queued model` (mismo resultado, mismos ciclos y mismas escrituras en memoria).
+
+En el juego (OpenGL, ventanas de 5 s entre 220 y 235 s del mismo ejecutable): `vid::Flip` pasa de
+2,2–2,4 por segundo con `GOW_VU1_COLAS=1` a 2,4–3,2 sin colas. VU1 sigue ocupando casi todo el hilo;
+para llegar a tiempo real hace falta un recompilador de VU1.
+
