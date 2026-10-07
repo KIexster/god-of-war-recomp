@@ -106,3 +106,18 @@ coincide con PCSX2 (`0 / 0,1951 / 0,3827 / 0,7071 / 1,0`), la matriz de la cáma
 1 en los tres ejes y las capturas de 160 y 190 s muestran la cubierta del barco, los acantilados, el
 cielo y la lluvia sin polígonos estirados. Las animaciones de Kratos y los enemigos usan la misma
 tabla; queda por verificar su aspecto en partida.
+
+## Inicio de la partida sin `GOW_FAST_BOOT` (2026-10-07)
+
+Con el arreglo de `sin` y las mejoras de rendimiento, la intro termina sola: a los ~480 s (OpenGL,
+`GOW_SKIP_FMV=1`) aparece el HUD. La matriz de la cámara coincide con la del savestate de PCSX2 del
+inicio (`D6385328`): misma posición `(1530,2; 49,8; 1973,8)` y mismos ejes. Al repetir la cadena
+VIF1 de ese cuadro, la imagen del port reproduce la del juego: Kratos aparece como polígonos rojos
+gigantes delante de la cámara, mientras la cadena de PCSX2 lo dibuja bien. El fallo vuelve a estar
+en los datos del EE.
+
+Entre las matrices V4-32 de 4×4 que sube cada cadena, el port tiene muchas con escala uniforme
+0,1–0,2 en las direcciones VU `0x106`–`0x12E` que PCSX2 no tiene (allí son 1,0, 0,3 o 0,5). Sigue
+abierto: identificar el esqueleto de Kratos y comparar su paleta de huesos con la de PCSX2 en el
+mismo cuadro. Las salidas de `makeAnimMatrices*` del port tienen rotaciones unitarias; la escala
+0,1/0,3/0,5 aparece en la articulación raíz de las variantes `NonUnitScale`.
