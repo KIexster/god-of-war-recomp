@@ -1687,3 +1687,30 @@ comparar tamaños distintos de buffers. La pasada fría mezcla compute durante l
 compilación de variantes, por lo que no se usa como control de la misma ruta.
 Sigue la investigación del orden de acceso a VRAM y de los buffers de subida;
 estos tiempos de repetición tampoco son una medición de FPS del juego.
+
+El nuevo `repetir_gs --repeticiones N` lleva ese control al tool público. Reutiliza
+las mismas instancias, comprueba la restauración completa y compara VRAM, estado
+y todos los cuadros visibles entre pasadas consecutivas. Los deltas de raster
+distinguen las pasadas que aún usan compute mientras compilan variantes. Se
+corrige también el directorio de salida como tercer argumento y se detectan
+opciones inválidas y fallos al exportar, manteniendo los códigos de salida.
+El helper completo y sus 18 controles pasan; CPU sintético ×3, compute ×3 y
+hardware ×8 conservan paridad y estabilidad. CPU del primer cuadro real ×3 es
+exacto y exporta seis PPM válidas; hardware ×8 detecta 545 bytes VRAM y 358 visibles
+distintos entre las dos últimas, ambas con cero tiles compute.
+
+La búsqueda con cortes CPU válidos estrecha el caso al segundo sprite de feedback:
+519 (antes) y 520 (primer sprite) son repetibles; al incluir 521 aparecen 36 bytes
+variables con 3 lotes, 192 primitivas y cero tiles compute. La restauración y el
+estado portable final siguen exactos. La diferencia CPU/GPU de 917 bytes del primer
+sprite es estable y se distingue de esta variación. Cero reutilizaciones del ring
+de subida en la captura descartan ese reciclado como causa; todavía se necesita
+una referencia para decidir el tratamiento correcto de lecturas del destino.
+
+Cuatro capturas procedurales comprueban también estados iniciales que el control
+simple no cubría: dos bytes CT24 pendientes, lectura local con cursor 7 y nueve
+bytes pendientes, página de caché fresca y página con un byte obsoleto. Las cuatro
+son exactas en CPU ×3, incluida la imagen visible; las tres compatibles con GPU
+son exactas en compute ×3 y la obsoleta se rechaza con código 2 antes de crear GL.
+El directorio como argumento 3 exporta las imágenes correctas; un archivo usado
+como directorio y nueve variantes de opciones inválidas también devuelven 2.

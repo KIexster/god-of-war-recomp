@@ -4,9 +4,10 @@
 #include "runtime/gs/gs_cpu_backend.h"
 #include "runtime/gs/gs_gpu_backend.h"
 #include <algorithm>
+#include <charconv>
 #include <iostream>
 #include <iomanip>
-#include <thread>
+#include <tuple>
 
 namespace replay=gow_gs_replay;
 namespace {
@@ -44,10 +45,273 @@ namespace {
         if(a==b) return 0; // La biblioteca compara bloques; evita recorrer cada byte idéntico.
         size_t n=0; for(size_t i=0;i<a.size();++i) if(a[i]!=b[i]) { if(first==SIZE_MAX) first=i; ++n; } return n;
     }
-    void ppm(const std::filesystem::path &path,const PresentationFrame &f) {
-        if(!f) return;
-        if(!GowRenderTool::writePpm(path,f,GowRenderTool::PixelLayout::HostRows640))
-            std::cerr<<"No se pudo exportar PPM visible: "<<path.string()<<'\n';
+    bool ppm(const std::filesystem::path &path,const PresentationFrame &f) {
+        if(!f) return true;
+        if(GowRenderTool::writePpm(path,f,GowRenderTool::PixelLayout::HostRows640)) return true;
+        std::cerr<<"No se pudo exportar PPM visible: "<<path.string()<<'\n';
+        return false;
+    }
+    // Comparar campos semánticos: los structs de la captura contienen padding del ABI.
+    const char *stateDifference(const GSBackendState &a,const GSBackendState &b,bool gpuAbsentCache=false) {
+        if(a.clut!=b.clut || a.clutCbp!=b.clutCbp) return "CLUT";
+        if(gpuAbsentCache) {
+            if(b.cachePageBase!=UINT32_MAX ||
+               std::any_of(b.cacheBytes.begin(),b.cacheBytes.end(),[](uint8_t v){return v!=0;})) return "cache GPU";
+        } else if(a.cachePageBase!=b.cachePageBase || a.cacheBytes!=b.cacheBytes) return "pagina de cache";
+        const auto transfer=[](const GSTransferCommand &v) {
+            return std::tie(v.bitbltbuf.sbp,v.bitbltbuf.sbw,v.bitbltbuf.spsm,v.bitbltbuf.dbp,v.bitbltbuf.dbw,v.bitbltbuf.dpsm,
+                            v.trxpos.ssax,v.trxpos.ssay,v.trxpos.dsax,v.trxpos.dsay,v.trxpos.dir,v.trxreg.rrw,v.trxreg.rrh,v.direction);
+        };
+        const auto progress=[](const GSTransferSnapshot &v) {
+            return std::tie(v.x,v.y,v.totalPixels,v.copiedPixels,v.direction,v.localToHostPendingBytes);
+        };
+        if(transfer(a.transfer)!=transfer(b.transfer)) return "transferencia";
+        if(progress(a.transferState)!=progress(b.transferState)) return "progreso de transferencia";
+        if(a.upload24.size!=b.upload24.size || a.upload24.bytes!=b.upload24.bytes) return "pixel CT24 pendiente";
+        if(a.localToHost!=b.localToHost || a.localToHostReadPos!=b.localToHostReadPos) return "lectura localToHost";
+        return nullptr;
+    }
+    struct Options {
+        std::filesystem::path capture,output=".";
+        std::string mode;
+        bool lockstep=false;
+        uint32_t repetitions=1;
+        bool gpuMode() const { return mode!="cpu"; }
+        bool multiple() const { return repetitions>1; }
+        std::filesystem::path image(uint32_t pass,const std::string &name) const {
+            return output/(multiple()?"replay_pasada_"+std::to_string(pass)+"_"+name+".ppm":"replay_"+name+".ppm");
+        }
+    };
+    template<class Char> bool parse(int argc,Char **argv,Options &options) {
+        if(argc<3) return false;
+        options.capture=std::filesystem::path(argv[1]); options.mode=std::filesystem::path(argv[2]).string();
+        if(options.mode!="cpu" && options.mode!="compute" && options.mode!="hardware") return false;
+        bool directory=false,repetitions=false;
+        for(int i=3;i<argc;++i) {
+            const std::filesystem::path argument(argv[i]);
+            if(argument==std::filesystem::path("--lockstep")) { if(options.lockstep) return false; options.lockstep=true; }
+            else if(argument==std::filesystem::path("--repeticiones")) {
+                if(repetitions || ++i==argc) return false;
+                const std::filesystem::path number(argv[i]);
+                const auto &native=number.native();
+                if(native.empty() || std::any_of(native.begin(),native.end(),[](auto c){return c<'0' || c>'9';})) return false;
+                const std::string value=number.string();
+                uint32_t count=0; const auto result=std::from_chars(value.data(),value.data()+value.size(),count);
+                if(result.ec!=std::errc{} || result.ptr!=value.data()+value.size() || count==0) return false;
+                options.repetitions=count; repetitions=true;
+            } else {
+                if(argument.empty() || argument.native().front()=='-' || directory) return false;
+                options.output=argument; directory=true;
+            }
+        }
+        return true;
+    }
+    bool restoreInitial(GSRasterBackend &backend,std::vector<uint8_t> &vram,
+                        const replay::Snapshot &initial,bool gpuMode,GSGpuBackend *gpu=nullptr) {
+        // Terminar la pasada anterior ANTES de sobrescribir el vector estable y reinicializar.
+        backend.Sync(GSSyncReason::Finish);
+        std::copy(initial.vram.begin(),initial.vram.end(),vram.begin());
+        backend.Initialize(vram.data(),uint32_t(vram.size()));
+        // Initialize puede destruir la GPU al sustituirla por CPU; comprobar Inner primero.
+        if(gpu && (dynamic_cast<GSGpuBackend*>(&static_cast<GSThreadedBackend&>(backend).Inner())!=gpu || !gpu->IsReady())) {
+            std::cerr<<"OpenGL no disponible: fallback no cuenta como comparación\n"; return false;
+        }
+        auto *access=dynamic_cast<GSBackendStateAccess*>(&backend);
+        GSBackendState restored;
+        if(!access || !access->ImportState(initial.state) || !access->ExportState(restored)) {
+            std::cerr<<"No se pudo restaurar/exportar el estado inicial\n"; return false;
+        }
+        if(const char *field=stateDifference(initial.state,restored,gpuMode)) {
+            std::cerr<<"Restauración inicial distinta: "<<field<<'\n'; return false;
+        }
+        backend.Sync(GSSyncReason::DebugReadback);
+        std::vector<uint8_t> restoredVram; backend.SnapshotVram(restoredVram);
+        if(restoredVram!=initial.vram) { std::cerr<<"Restauración inicial de VRAM distinta\n"; return false; }
+        return true;
+    }
+    // Se conserva cada imagen VISIBLE, sin filas de reserva ni padding del backend.
+    struct VisibleFrame {
+        uint32_t width=0,height=0;
+        std::vector<uint8_t> pixels;
+    };
+    struct PassResult {
+        std::vector<uint8_t> vram;
+        GSBackendState state;
+        std::vector<VisibleFrame> frames;
+        GSGpuBackend::Stats stats{};
+        bool parity=true;
+    };
+    GSGpuBackend::Stats statsDelta(const GSGpuBackend::Stats &a,const GSGpuBackend::Stats &b) {
+        return {b.prims-a.prims,b.batches-a.batches,b.tiles-a.tiles,b.clutLoads-a.clutLoads,
+                b.flushTarget-a.flushTarget,b.flushTexture-a.flushTexture,b.flushOther-a.flushOther};
+    }
+    void printStats(const GSGpuBackend::Stats &s,const std::string &mode) {
+        std::cout<<"OpenGL DELTA batches="<<s.batches<<" prims="<<s.prims<<" tiles="<<s.tiles
+                 <<" clutLoads="<<s.clutLoads<<" flushTarget="<<s.flushTarget
+                 <<" flushTexture="<<s.flushTexture<<" flushOther="<<s.flushOther<<'\n';
+        if(mode=="hardware") std::cout<<"hardware solicitado; ";
+        else std::cout<<"compute solicitado; ";
+        std::cout<<(s.prims==0?"sin primitivas":s.tiles==0?"sin tiles compute observados":"ruta mixta/compute")<<'\n';
+    }
+    void reportFirst(const replay::Record &record,size_t index,size_t draws,size_t n,size_t first) {
+        std::cout<<"Primera divergencia: registro="<<index<<" op="<<unsigned(record.op)<<" draws="<<draws<<" bytes="<<n<<" first="<<first<<std::endl;
+        if(record.op!=replay::Op::Submit) return;
+        GSPrimitiveBatch batch{}; replay::pod(record,batch); const auto &s=batch.state;
+        std::cout<<std::setprecision(17)<<"prim="<<unsigned(s.prim.type)<<" tme="<<s.prim.tme<<" fst="<<s.prim.fst<<" psm="<<unsigned(s.context.tex0.psm)
+                 <<" frame="<<s.context.frame.fbp<<" test="<<std::hex<<s.context.test<<" alpha="<<s.context.alpha<<std::dec<<'\n';
+        for(unsigned i=0;i<batch.vertexCount;++i) { const auto &v=batch.vertices[i];
+            std::cout<<"v"<<i<<" xy="<<v.x<<','<<v.y<<" z="<<v.z<<" stq="<<v.s<<','<<v.t<<','<<v.q<<" uv="<<v.u<<','<<v.v<<'\n'; }
+    }
+    int runPass(const Options &options,uint32_t pass,const replay::Snapshot &initial,
+                GSCpuBackend &reference,GSRasterBackend &candidate,GSGpuBackend *gpu,PassResult &result) {
+        replay::Reader reader(options.capture); replay::Record record;
+        replay::Snapshot check;
+        if(!reader.next(record) || record.op!=replay::Op::Initial || !replay::decodeSnapshot(record,check) ||
+           check.vram!=initial.vram || stateDifference(initial.state,check.state)) {
+            std::cerr<<"Estado inicial inválido o captura modificada entre pasadas\n"; return 2;
+        }
+        const auto before=gpu?gpu->GetStats():GSGpuBackend::Stats{};
+        PresentationFrame a,b;
+        size_t index=0,draws=0,firstMismatch=SIZE_MAX,frameMismatch=0,visibleBytes=0;
+        bool ended=false,stateMismatch=false;
+        std::vector<uint8_t> actualA,actualB;
+        while(reader.next(record)) {
+            ++index;
+            if(record.op==replay::Op::End) {
+                replay::Snapshot final; if(!replay::decodeSnapshot(record,final)) return 2;
+                reference.Sync(GSSyncReason::DebugReadback); reference.SnapshotVram(actualA);
+                size_t first=0; const auto n=differences(final.vram,actualA,first);
+                std::cout<<"CPU vs captura final: bytes="<<n<<" first="<<first<<'\n';
+                if(n) return 3;
+                GSBackendState state;
+                if(!reference.ExportState(state)) return 3;
+                if(const char *field=stateDifference(final.state,state)) {
+                    std::cerr<<"El estado CPU final no reproduce la captura: "<<field<<'\n'; return 3;
+                }
+                candidate.Sync(GSSyncReason::Finish); candidate.Sync(GSSyncReason::DebugReadback); candidate.SnapshotVram(actualB);
+                const auto m=differences(actualA,actualB,first);
+                std::cout<<"CPU vs "<<options.mode<<" final: bytes="<<m<<" first="<<first<<'\n';
+                if(m && firstMismatch==SIZE_MAX) firstMismatch=index;
+                auto *access=dynamic_cast<GSBackendStateAccess*>(&candidate);
+                if(!access || !access->ExportState(result.state)) return 3;
+                if(const char *field=stateDifference(state,result.state,options.gpuMode())) {
+                    stateMismatch=true; std::cout<<"CPU vs "<<options.mode<<" estado final distinto: "<<field<<'\n';
+                }
+                result.vram=std::move(actualB); ended=true; break;
+            }
+            if(record.op==replay::Op::Initial || !apply(reference,record,a) || !apply(candidate,record,b)) {
+                std::cerr<<"Fallo en registro "<<index<<" op="<<unsigned(record.op)<<'\n'; return 3;
+            }
+            if(record.op==replay::Op::Submit) ++draws;
+            if(record.op==replay::Op::Present) {
+                std::vector<uint8_t> visibleA,visibleB;
+                if(!GowRenderTool::normalize(a,visibleA,GowRenderTool::PixelLayout::HostRows640) ||
+                   !GowRenderTool::normalize(b,visibleB,GowRenderTool::PixelLayout::HostRows640)) {
+                    std::cerr<<"Layout de presentación inválido en registro "<<index<<'\n'; return 3;
+                }
+                size_t first=0; const auto n=differences(visibleA,visibleB,first);
+                if(n || a.width!=b.width || a.height!=b.height) {
+                    ++frameMismatch;
+                    if(frameMismatch==1 && (!ppm(options.image(pass,"cpu"),a) || !ppm(options.image(pass,"candidate"),b))) return 2;
+                }
+                if(options.multiple()) {
+                    // Acotar el historial exacto sin cargar cientos de cuadros o el volcado entero.
+                    visibleBytes+=visibleB.size();
+                    if(visibleBytes>replay::kLimit) {
+                        std::cerr<<"Las imágenes visibles de una pasada exceden el límite de estabilidad (64 MiB)\n"; return 2;
+                    }
+                    result.frames.push_back({b.width,b.height,std::move(visibleB)});
+                }
+            }
+            if(options.lockstep && firstMismatch==SIZE_MAX && (record.op==replay::Op::Submit || record.op==replay::Op::Upload || record.op==replay::Op::Transfer ||
+                            record.op==replay::Op::Clear || record.op==replay::Op::Write || record.op==replay::Op::Reset)) {
+                reference.Sync(GSSyncReason::DebugReadback); reference.SnapshotVram(actualA);
+                candidate.Sync(GSSyncReason::DebugReadback); candidate.SnapshotVram(actualB);
+                size_t first=0; const auto n=differences(actualA,actualB,first);
+                if(n) { firstMismatch=index; reportFirst(record,index,draws,n,first); }
+            }
+        }
+        if(!reader.error.empty() || !ended) { std::cerr<<"Captura incompleta: "<<reader.error<<'\n'; return 2; }
+        if(!ppm(options.image(pass,"last_cpu"),a) || !ppm(options.image(pass,"last_candidate"),b)) return 2;
+        std::cout<<"registros="<<index<<" draws="<<draws<<" framesDistintos="<<frameMismatch
+                 <<(options.lockstep?" primeraDivergencia=":" primerControlVRAMDistinto=")<<firstMismatch<<'\n';
+        result.parity=firstMismatch==SIZE_MAX && frameMismatch==0 && !stateMismatch;
+        if(gpu) {
+            const auto stats=gpu->GetStats(); result.stats=statsDelta(before,stats);
+            if(options.multiple()) printStats(result.stats,options.mode);
+            else std::cout<<"OpenGL batches="<<stats.batches<<" prims="<<stats.prims<<" tiles="<<stats.tiles<<'\n';
+        }
+        return result.parity?0:1;
+    }
+    bool comparePasses(uint32_t pass,const PassResult &previous,const PassResult &current,bool gpuMode) {
+        size_t first=0; const auto bytes=differences(previous.vram,current.vram,first);
+        const char *field=stateDifference(previous.state,current.state);
+        const size_t common=std::min(previous.frames.size(),current.frames.size());
+        size_t frames=std::max(previous.frames.size(),current.frames.size())-common;
+        for(size_t i=0;i<common;++i) {
+            const auto &a=previous.frames[i],&b=current.frames[i];
+            size_t pixelFirst=0;
+            const size_t pixelBytes=differences(a.pixels,b.pixels,pixelFirst);
+            const bool dimensionsMatch=a.width==b.width && a.height==b.height;
+            frames+=!dimensionsMatch || pixelBytes!=0;
+            std::cout<<"Candidato cuadro="<<i+1<<" pasada="<<pass-1<<"->"<<pass
+                     <<" bytes="<<pixelBytes<<" first="<<pixelFirst
+                     <<" dimensionesIguales="<<dimensionsMatch<<'\n';
+        }
+        const bool equalRaster=previous.stats.prims==current.stats.prims && previous.stats.tiles==current.stats.tiles;
+        std::cout<<"Candidato pasada "<<pass-1<<" vs "<<pass<<": bytes="<<bytes<<" first="<<first
+                 <<" estado="<<(field?field:"igual")<<" framesDistintos="<<frames
+                 <<" framesPrevios="<<previous.frames.size()<<" framesActuales="<<current.frames.size()<<'\n';
+        if(gpuMode) {
+            std::cout<<(equalRaster?"Contadores de raster iguales":"Contadores de raster distintos")
+                     <<": prims="<<previous.stats.prims<<"->"<<current.stats.prims<<" tiles="<<previous.stats.tiles<<"->"<<current.stats.tiles<<'\n';
+            if(!equalRaster && (bytes || field || frames))
+                std::cout<<"El resultado distinto entre pasadas no certifica inestabilidad de una misma ruta de raster\n";
+        }
+        return bytes==0 && field==nullptr && frames==0;
+    }
+    int run(const Options &options) {
+        std::error_code outputError;
+        std::filesystem::create_directories(options.output,outputError);
+        if(outputError || !std::filesystem::is_directory(options.output,outputError)) {
+            std::cerr<<"Directorio de salida inválido: "<<options.output.string()<<'\n'; return 2;
+        }
+        replay::Reader reader(options.capture); replay::Record record; replay::Snapshot initial;
+        if(!reader.next(record) || record.op!=replay::Op::Initial) { std::cerr<<reader.error<<"; falta estado inicial\n"; return 2; }
+        if(!replay::decodeSnapshot(record,initial)) { std::cerr<<"Estado inicial inválido\n"; return 2; }
+        if(initial.state.cachePageBase!=UINT32_MAX) {
+            const auto base=initial.state.cachePageBase; const auto size=initial.state.cacheBytes.size();
+            if(base%size || uint64_t(base)+size>initial.vram.size()) return 2;
+            size_t stale=0; for(size_t i=0;i<size;++i) stale+=initial.state.cacheBytes[i]!=initial.vram[base+i];
+            std::cout<<"Cache inicial: base="<<base<<" bytesDistintosDeVRAM="<<stale<<'\n';
+            if(options.gpuMode() && stale) { std::cerr<<"Capturar después de TEXFLUSH: la página CPU inicial contiene texels anteriores\n"; return 2; }
+        }
+        // Crear los backends UNA vez. Los vectores viven más y nunca se redimensionan.
+        auto referenceVram=initial.vram,candidateVram=initial.vram;
+        GSCpuBackend reference;
+        std::unique_ptr<GSRasterBackend> candidate; GSGpuBackend *gpu=nullptr;
+        if(options.gpuMode()) {
+            auto backend=std::make_unique<GSGpuBackend>(); gpu=backend.get();
+            backend->SetHardwareRasterAllowed(options.mode=="hardware"); candidate=std::make_unique<GSThreadedBackend>(std::move(backend));
+        } else candidate=std::make_unique<GSCpuBackend>();
+        struct Restore { unsigned csr=_mm_getcsr(); ~Restore(){_mm_setcsr(csr);} } restore;
+        PassResult previous; bool differencesSeen=false;
+        for(uint32_t iteration=0;iteration<options.repetitions;++iteration) {
+            const uint32_t pass=iteration+1;
+            _mm_setcsr(restore.csr);
+            if(!restoreInitial(reference,referenceVram,initial,false) ||
+               !restoreInitial(*candidate,candidateVram,initial,options.gpuMode(),gpu)) return 2;
+            if(options.multiple()) std::cout<<"Pasada "<<pass<<'/'<<options.repetitions<<"; restauración inicial exacta (cache GPU ausente esperada="<<options.gpuMode()<<")\n";
+            PassResult current; const int code=runPass(options,pass,initial,reference,*candidate,gpu,current);
+            if(code>=2) return code;
+            differencesSeen|=code!=0;
+            if(options.multiple()) {
+                std::cout<<"Paridad CPU vs "<<options.mode<<" pasada="<<pass<<": "<<(current.parity?"igual":"distinta")<<'\n';
+                if(iteration) differencesSeen|=!comparePasses(pass,previous,current,options.gpuMode());
+                previous=std::move(current);
+            }
+        }
+        return differencesSeen?1:0;
     }
 }
 
@@ -56,102 +320,10 @@ int wmain(int argc,wchar_t **argv) {
 #else
 int main(int argc,char **argv) {
 #endif
-    if(argc<3) { std::cerr<<"Uso: repetir_gs captura.bin cpu|compute|hardware [--lockstep] [directorio]\n"; return 2; }
-    const std::string mode=std::filesystem::path(argv[2]).string(); const bool gpuMode=mode=="compute" || mode=="hardware";
-    if(!gpuMode && mode!="cpu") return 2;
-    const bool lockstep=argc>3 && std::filesystem::path(argv[3]).string()=="--lockstep";
-    const std::filesystem::path output=argc>4?std::filesystem::path(argv[4]):std::filesystem::path(".");
-    replay::Reader reader{std::filesystem::path(argv[1])}; replay::Record r;
-    if(!reader.next(r) || r.op!=replay::Op::Initial) { std::cerr<<reader.error<<"; falta estado inicial\n"; return 2; }
-    replay::Snapshot initial;
-    if(!replay::decodeSnapshot(r,initial)) { std::cerr<<"Estado inicial inválido\n"; return 2; }
-    if(initial.state.cachePageBase!=UINT32_MAX) {
-        const auto base=initial.state.cachePageBase; const auto size=initial.state.cacheBytes.size();
-        if(base%size || uint64_t(base)+size>initial.vram.size()) return 2;
-        size_t stale=0; for(size_t i=0;i<size;++i) stale+=initial.state.cacheBytes[i]!=initial.vram[base+i];
-        std::cout<<"Cache inicial: base="<<base<<" bytesDistintosDeVRAM="<<stale<<'\n';
-        // El importador GPU actual no restaura la página CPU. No falsear la entrada
-        // ni presentar como paridad una repetición que comienza con estados distintos.
-        if(gpuMode && stale) { std::cerr<<"Capturar después de TEXFLUSH: la página CPU inicial contiene texels anteriores\n"; return 2; }
+    Options options;
+    if(!parse(argc,argv,options)) {
+        std::cerr<<"Uso: repetir_gs captura.bin cpu|compute|hardware [--lockstep] [--repeticiones N] [directorio]\n"
+                 <<"N debe ser un entero positivo; no se admiten opciones desconocidas ni duplicadas\n"; return 2;
     }
-    GSCpuBackend reference; auto referenceVram=initial.vram;
-    reference.Initialize(referenceVram.data(),uint32_t(referenceVram.size())); reference.ImportState(initial.state);
-    std::unique_ptr<GSRasterBackend> candidate; GSGpuBackend *gpu=nullptr;
-    if(gpuMode) {
-        auto backend=std::make_unique<GSGpuBackend>(); gpu=backend.get();
-        backend->SetHardwareRasterAllowed(mode=="hardware"); candidate=std::make_unique<GSThreadedBackend>(std::move(backend));
-    } else candidate=std::make_unique<GSCpuBackend>();
-    auto candidateVram=initial.vram; candidate->Initialize(candidateVram.data(),uint32_t(candidateVram.size()));
-    // GOW-Port: Initialize puede destruir la GPU al sustituirla por CPU; verificar Inner primero.
-    if(gpu && (dynamic_cast<GSGpuBackend*>(&static_cast<GSThreadedBackend&>(*candidate).Inner())!=gpu || !gpu->IsReady())) {
-        std::cerr<<"OpenGL no disponible: fallback no cuenta como comparación\n"; return 2;
-    }
-    auto *access=dynamic_cast<GSBackendStateAccess*>(candidate.get());
-    if(!access || !access->ImportState(initial.state)) return 2;
-    struct Restore { unsigned csr=_mm_getcsr(); ~Restore(){_mm_setcsr(csr);} } restore;
-    PresentationFrame a,b; size_t index=0,draws=0,firstMismatch=SIZE_MAX,frameMismatch=0; bool ended=false;
-    std::vector<uint8_t> actualA,actualB;
-    while(reader.next(r)) {
-        ++index;
-        if(r.op==replay::Op::End) {
-            replay::Snapshot final; if(!replay::decodeSnapshot(r,final)) return 2;
-            reference.Sync(GSSyncReason::DebugReadback); reference.SnapshotVram(actualA);
-            size_t first=0; const auto n=differences(final.vram,actualA,first);
-            std::cout<<"CPU vs captura final: bytes="<<n<<" first="<<first<<'\n';
-            if(n) return 3;
-            GSBackendState state; reference.ExportState(state);
-            if(state.clut!=final.state.clut || state.clutCbp!=final.state.clutCbp ||
-               state.transferState.x!=final.state.transferState.x || state.transferState.y!=final.state.transferState.y ||
-               state.transferState.copiedPixels!=final.state.transferState.copiedPixels ||
-               state.upload24.size!=final.state.upload24.size || state.upload24.bytes!=final.state.upload24.bytes ||
-               state.localToHost!=final.state.localToHost || state.localToHostReadPos!=final.state.localToHostReadPos) {
-                std::cerr<<"El estado CPU final no reproduce la captura\n"; return 3;
-            }
-            candidate->Sync(GSSyncReason::DebugReadback); candidate->SnapshotVram(actualB);
-            const auto m=differences(actualA,actualB,first);
-            std::cout<<"CPU vs "<<mode<<" final: bytes="<<m<<" first="<<first<<'\n';
-            if(m && firstMismatch==SIZE_MAX) firstMismatch=index;
-            ended=true; break;
-        }
-        if(r.op==replay::Op::Initial || !apply(reference,r,a) || !apply(*candidate,r,b)) {
-            std::cerr<<"Fallo en registro "<<index<<" op="<<unsigned(r.op)<<'\n'; return 3;
-        }
-        if(r.op==replay::Op::Submit) ++draws;
-        if(r.op==replay::Op::Present) {
-            std::vector<uint8_t> visibleA,visibleB;
-            if(!GowRenderTool::normalize(a,visibleA,GowRenderTool::PixelLayout::HostRows640) || !GowRenderTool::normalize(b,visibleB,GowRenderTool::PixelLayout::HostRows640)) {
-                std::cerr<<"Layout de presentación inválido en registro "<<index<<'\n'; return 3;
-            }
-            size_t first=0; const auto n=differences(visibleA,visibleB,first);
-            if(n || a.width!=b.width || a.height!=b.height) {
-                ++frameMismatch;
-                if(frameMismatch==1) { ppm(output/"replay_cpu.ppm",a); ppm(output/"replay_candidate.ppm",b); }
-            }
-        }
-        if(lockstep && firstMismatch==SIZE_MAX && (r.op==replay::Op::Submit || r.op==replay::Op::Upload || r.op==replay::Op::Transfer ||
-                        r.op==replay::Op::Clear || r.op==replay::Op::Write || r.op==replay::Op::Reset)) {
-            reference.Sync(GSSyncReason::DebugReadback); reference.SnapshotVram(actualA);
-            candidate->Sync(GSSyncReason::DebugReadback); candidate->SnapshotVram(actualB);
-            size_t first=0; const auto n=differences(actualA,actualB,first);
-            if(n && firstMismatch==SIZE_MAX) {
-                firstMismatch=index;
-                std::cout<<"Primera divergencia: registro="<<index<<" op="<<unsigned(r.op)<<" draws="<<draws<<" bytes="<<n<<" first="<<first<<std::endl;
-                if(r.op==replay::Op::Submit) {
-                    GSPrimitiveBatch batch{}; replay::pod(r,batch);
-                    const auto &s=batch.state;
-                    std::cout<<std::setprecision(17);
-                    std::cout<<"prim="<<unsigned(s.prim.type)<<" tme="<<s.prim.tme<<" fst="<<s.prim.fst<<" psm="<<unsigned(s.context.tex0.psm)
-                             <<" frame="<<s.context.frame.fbp<<" test="<<std::hex<<s.context.test<<" alpha="<<s.context.alpha<<std::dec<<'\n';
-                    for(unsigned i=0;i<batch.vertexCount;++i) { const auto &v=batch.vertices[i];
-                        std::cout<<"v"<<i<<" xy="<<v.x<<','<<v.y<<" z="<<v.z<<" stq="<<v.s<<','<<v.t<<','<<v.q<<" uv="<<v.u<<','<<v.v<<'\n'; }
-                }
-            }
-        }
-    }
-    if(!reader.error.empty() || !ended) { std::cerr<<"Captura incompleta: "<<reader.error<<'\n'; return 2; }
-    ppm(output/"replay_last_cpu.ppm",a); ppm(output/"replay_last_candidate.ppm",b);
-    std::cout<<"registros="<<index<<" draws="<<draws<<" framesDistintos="<<frameMismatch
-             <<(lockstep?" primeraDivergencia=":" primerControlVRAMDistinto=")<<firstMismatch<<'\n';
-    if(gpu) { const auto stats=gpu->GetStats(); std::cout<<"OpenGL batches="<<stats.batches<<" prims="<<stats.prims<<" tiles="<<stats.tiles<<'\n'; }
-    return firstMismatch!=SIZE_MAX || frameMismatch?1:0;
+    return run(options);
 }

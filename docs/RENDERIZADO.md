@@ -576,6 +576,53 @@ también `tests/gs_frame_pixels_test.cpp`, con layouts, padding, truncamiento,
 exportación PPM y una presentación real de CPU. Una diferencia de VRAM sigue
 siendo independiente de este ajuste de diagnóstico.
 
+Para comprobar si un mismo backend repite el resultado, usar varias pasadas:
+
+```powershell
+.\logs\repetir_gs.exe .\logs\tramo_gs.bin hardware --repeticiones 8 logs\estabilidad_gs
+```
+
+Las instancias CPU/GPU y sus vectores VRAM se mantienen. Antes de cada pasada se
+espera FINISH, se copian los bytes iniciales y se reimporta y verifica todo el estado:
+CLUT, transferencias, carry CT24, lectura local y caché CPU. La caché CPU ausente en
+GPU se identifica explícitamente y sigue rechazándose una página inicial obsoleta.
+CPU debe reproducir exactamente el End de la captura en todas las pasadas.
+
+La paridad CPU/candidato y la estabilidad entre candidatos consecutivos se informan
+por separado. Se comparan VRAM, estado y todos los cuadros visibles, con bytes y
+primer índice distinto por cuadro. Los contadores se muestran como deltas de cada
+pasada: «hardware solicitado» no garantiza que las variantes estén listas; observar
+primitivas y cero tiles compute permite reconocer pasadas sin ese fallback. Totales
+iguales no certifican que toda la ruta sea idéntica. El historial exacto se limita
+a 64 MiB visibles por pasada; si se supera, devuelve 2 y requiere un tramo menor.
+
+El directorio puede ir con o sin `--lockstep`, antes o después de las opciones.
+Se crea si falta; un fallo al crear/exportar y las opciones inválidas devuelven 2.
+Las imágenes de varias pasadas llevan `replay_pasada_N_` para conservarlas. Si se
+omite el directorio, `replay_*.ppm` queda excluido de Git. Las capturas y salidas
+del juego siguen siendo exclusivamente locales.
+
+El control FULL45 del primer cuadro histórico reproduce CPU/estado exactamente
+en tres pasadas y exporta seis PPM visibles válidas. En ocho pasadas OpenGL, las
+dos últimas usan 34 lotes, 734 primitivas y cero tiles compute, pero difieren en
+545 bytes de VRAM y 358 visibles, con estado final igual. La herramienta devuelve
+1 y muestra ambos resultados; no oculta la diferencia ni la interpreta como FPS.
+
+Los cortes previos localizan esa variación: hasta el registro 519 todo coincide;
+el primer sprite de feedback (520) es repetible aunque conserve los 917 bytes de
+diferencia CPU/GPU. Añadir el segundo (521) ya produce 36 bytes variables entre
+pasadas hardware con restauraciones y estado final exactos. Los 16 sprites leen
+y escriben CT32 sobre el mismo framebuffer y su resultado pasa después al cuadro
+visible. La instrumentación del ring original observa cero reutilizaciones en
+la captura: su reciclado no explica esta variación.
+
+La [especificación de interlock de Khronos](https://registry.khronos.org/OpenGL/extensions/ARB/ARB_fragment_shader_interlock.txt)
+garantiza orden y visibilidad de buffers `coherent` dentro de la sección crítica
+para fragmentos del mismo píxel; no ordena píxeles distintos ni lecturas anteriores
+a esa sección. El shader actual muestrea antes de entrar al interlock. Esto acota
+la investigación de feedback, pero no certifica una política de caché GS ni justifica
+añadir una barrera o cambiar el filtrado sin un control de referencia.
+
 Para investigar feedback bilineal sin volcados del juego, el mismo script compila
 `logs\comparar_feedback_gs.exe`. Ejecutarlo compara un sprite sobre una textura
 procedural CT32 de 64×64 con la fuente en el propio framebuffer y con una copia

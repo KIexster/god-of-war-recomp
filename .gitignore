@@ -28,6 +28,8 @@ build/
 
 # --- Logs y archivos locales ---
 logs/
+# Imágenes exportadas por repetir_gs si se ejecuta sin directorio de salida.
+replay_*.ppm
 *.log
 ps2_log.txt
 imgui.ini
