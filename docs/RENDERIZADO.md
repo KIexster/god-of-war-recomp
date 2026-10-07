@@ -631,6 +631,30 @@ repeticiones GPU; requiere una GPU real. El código de salida 0 indica que termi
 la comparación, aunque haya diferencias; 2 indica un control inválido o GPU no
 disponible. No certifica cuál salida tiene la semántica del GS.
 
+El mismo helper compila `generar_feedback_gs.exe` y comprueba en CPU tres capturas
+procedurales de dos sprites sobre una textura CT32 de 64×416. `self` lee y escribe
+el mismo framebuffer con bilinear; `disjoint` conserva el filtro y copia la fuente
+a otra región; `nearest` conserva el feedback y cambia solamente el filtro. La
+copia comprueba sus 27.588 vecinos tras CLAMP. No requiere archivos del juego:
+
+```powershell
+scripts\compilar_replay_gs.cmd
+.\logs\repetir_gs.exe logs\feedback_sintetico\feedback_gs_self.bin hardware --repeticiones 12 logs\feedback_sintetico\hw_self
+.\logs\repetir_gs.exe logs\feedback_sintetico\feedback_gs_disjoint.bin hardware --repeticiones 12 logs\feedback_sintetico\hw_disjoint
+.\logs\repetir_gs.exe logs\feedback_sintetico\feedback_gs_nearest.bin hardware --repeticiones 12 logs\feedback_sintetico\hw_nearest
+```
+
+El generador se puede ejecutar aparte con `generar_feedback_gs.exe [directorio]`;
+las capturas usan la ABI del runtime con que se compiló. En RX 5700 XT, CPU ×3
+reproduce los tres End y cuadros exactamente. Hardware ×12 conserva paridad y
+estabilidad para `disjoint` y `nearest` (salida 0). `self` devuelve 1: difiere de
+CPU y varía también entre pasadas con dos lotes, dos primitivas y cero tiles
+compute. Por ejemplo, las pasadas 4→5 difieren en 19 bytes de VRAM y 19 visibles;
+7→8, en 34 de cada uno. Restauración y estado portable final permanecen exactos.
+La pasada inicial mezcla compute mientras se compila la variante y se informa
+por separado. Las cantidades variables no son valores esperados fijos: el caso
+reproduce la inestabilidad, sin certificar todavía la política correcta de caché GS.
+
 El [suplemento del manual GS, §§1.2 y 1.4](https://www.scribd.com/document/718537990/GS-Users-Manual-Supplement)
 describe un búfer de textura de una página y grupos de 4×2 píxeles para dibujo
 texturado; el filtro bilineal puede recargar páginas por sus vecinos. Esto respalda

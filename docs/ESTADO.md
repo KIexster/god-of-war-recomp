@@ -1714,3 +1714,15 @@ son exactas en CPU ×3, incluida la imagen visible; las tres compatibles con GPU
 son exactas en compute ×3 y la obsoleta se rechaza con código 2 antes de crear GL.
 El directorio como argumento 3 exporta las imágenes correctas; un archivo usado
 como directorio y nueve variantes de opciones inválidas también devuelven 2.
+
+El nuevo generador `tools/render/generar_feedback_gs.cpp` reduce la inestabilidad
+a dos sprites sobre texels procedurales de 64×416, sin archivos del juego. Genera
+feedback bilineal, fuente disjunta y feedback nearest, verificando los 27.588
+vecinos copiados. El helper recompila ahora cinco herramientas, pasa los 18
+controles de imágenes y repite las tres capturas en CPU ×3 con End, VRAM y cuadro
+exactos. En RX 5700 XT, hardware ×12 de fuente disjunta y nearest conserva paridad
+y estabilidad; feedback bilineal devuelve 1 y varía entre pasadas hardware con
+dos lotes, dos primitivas y cero tiles compute (19 bytes VRAM/visibles en 4→5 y
+34 en 7→8). Restauración y estado portable final permanecen exactos. Así se puede
+reproducir el problema independientemente del juego antes de elegir un arreglo;
+no se cambia todavía la política del renderer ni se atribuye una mejora de FPS.
