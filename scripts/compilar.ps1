@@ -51,6 +51,7 @@ $gsCpuStatePatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-cpu-state.patch'
 $gsCpuRoundingPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-cpu-rounding.patch'
 $getenvHotPatch = Join-Path $RepoRoot 'patches\ps2recomp-getenv-hot.patch'
 $vu1PerfPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-perf.patch'
+$sprChainPatch = Join-Path $RepoRoot 'patches\ps2recomp-spr-chain.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -126,6 +127,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $gsCpuStatePatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsCpuRoundingPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $getenvHotPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1PerfPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $sprChainPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner

@@ -121,3 +121,21 @@ Entre las matrices V4-32 de 4×4 que sube cada cadena, el port tiene muchas con 
 abierto: identificar el esqueleto de Kratos y comparar su paleta de huesos con la de PCSX2 en el
 mismo cuadro. Las salidas de `makeAnimMatrices*` del port tienen rotaciones unitarias; la escala
 0,1/0,3/0,5 aparece en la articulación raíz de las variantes `NonUnitScale`.
+
+### Causa: DMA del scratchpad en modo cadena (2026-10-07)
+
+En el cuadro de partida, la paleta de huesos de Kratos que sube a VU1 (`UNPACK V4-32`, 36 QW en
+VU `0x106`) llegaba entera a cero en el port; en la cadena de PCSX2 son matrices válidas.
+`CalcSkinHierarchy` (`0x137508`) deja los huesos en el scratchpad (`0x70000010`) y el juego los
+copia a los paquetes con el canal fromSPR en **cadena de destino** (`CHCR=0x104`; también usa toSPR
+en cadena de origen, `CHCR=0x105`). El runtime solo implementaba el modo normal de los canales 8 y 9
+y no copiaba nada en modo cadena.
+
+`patches/ps2recomp-spr-chain.patch` implementa ambos modos: fromSPR lee etiquetas
+`{QWC, ID, IRQ, ADDR}` del scratchpad y escribe cada bloque en su dirección de RAM (`cnts`, `cnt`,
+`end`); toSPR recorre etiquetas en RAM (`refe/cnt/next/ref/refs/call/ret/end`, con TTE) y escribe
+los datos seguidos en el scratchpad. Dos regresiones fallan sin el parche; la suite pasa **547/547**.
+
+Con la compilación completa, OpenGL y `GOW_SKIP_FMV=1` (sin `GOW_FAST_BOOT`), las capturas de 240,
+360, 480 y 580 s muestran la intro, a Kratos en la cubierta, a los no muertos y la partida con el
+HUD, todos con su forma correcta.
