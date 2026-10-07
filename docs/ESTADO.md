@@ -1652,3 +1652,38 @@ reproducir VRAM final exactamente. Este control usa el modo por lotes: sus 387.3
 bytes finales no se comparan como si fuera la ejecución con sincronización por
 dibujo anterior. En modo por lotes se etiqueta el primer control de VRAM distinto,
 sin presentarlo como la posición de la primera divergencia real.
+
+La integración conserva los siete parches de Claude antes de los dos arreglos GS:
+**45 parches y 84 fuentes exactas** al reconstruir y comparar el árbol. La
+compilación completa regenera las 6418 unidades y termina correctamente. Después
+pasan **565/565 pruebas**, incluidas las nueve OpenGL y las nuevas regresiones de
+SPR, MPEG, sonido y tarjeta. Las cuatro herramientas de renderizado se recompilan;
+sus 18 controles de imágenes, captura/repetición CPU sintética y sonda de feedback
+procedural conservan los resultados esperados.
+
+El control conjunto OpenGL de 225 s carga una partida de «Docks of Athens» desde
+una **copia** de la tarjeta ECC de Claude, con el original comprobado por SHA256
+sin cambios. RX 5700 XT usa hardware sin fallback. La última captura de 512×448
+muestra a Kratos en el punto de guardado, el HUD y la indicación R2; alcanza
+estado 11 sin carga pendiente. No prueba todavía combate, rendimiento sostenido
+ni todos los escenarios. Las 128 muestras de Clip entre menú y partida son finitas
+y completas; las 144 sondas tardías de `InitUNPACKData` tienen una primera tripleta
+no nula. Los 64 contextos de modelos de partida no contienen direcciones inválidas,
+ciclos ni truncamientos, y no se registran instrucciones VU reservadas.
+
+El treemap de SDK y hardware y los tres README reflejan ahora estos controles:
+MPEG/IPU pasan a parcial por la intro decodificada; tarjeta y audio detallan qué se
+verificó y qué falta. GS queda parcial por las diferencias CPU/OpenGL todavía
+abiertas. El 65,4 % de librerías y 60,5 % de hardware representan las ponderaciones
+del mapa, no el porcentaje del juego completado ni su velocidad.
+
+La repetición hardware con tres pasadas en una sola instancia GL certifica la
+restauración antes de comparar: VRAM inicial, CLUT/CBP, transferencias y estado
+portable exactos en las tres; CPU inicial/final con caché exacta y CPU frente a la
+captura final sin diferencias. Las dos pasadas calientes usan ambas 373 lotes,
+33.445 primitivas y cero tiles compute, pero difieren entre sí en **4617 bytes de
+VRAM** y en **344/298/296 bytes de las tres imágenes visibles**. Ya no se trata de
+comparar tamaños distintos de buffers. La pasada fría mezcla compute durante la
+compilación de variantes, por lo que no se usa como control de la misma ruta.
+Sigue la investigación del orden de acceso a VRAM y de los buffers de subida;
+estos tiempos de repetición tampoco son una medición de FPS del juego.

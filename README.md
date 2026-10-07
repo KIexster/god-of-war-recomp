@@ -67,18 +67,21 @@ Per-library and per-component breakdown: [`docs/estado/detalle.en.md`](docs/esta
 | Streaming data from the original ISO (`smpd` → `R_PERM.WAD`, game configuration) | ✅ |
 | Main game loop (`sys::GameLoop`) | ✅ |
 | Video output: legal screen and title logo | ✅ |
-| Correct text/font and 3D rendering | 🔧 in progress |
+| Ship, Kratos, enemies and HUD have correct shapes; further rendering checks remain | 🔧 in progress |
 | Controller/keyboard through libpad2 HLE; menu and difficulty selection | ✅ |
-| Starting a playable game | 🔧 in progress |
-| Audio: emulated SPU2 with output to the PC (not verified in-game yet) | 🔧 in progress |
-| Memory card: emulated SIO2, PCSX2-compatible `Mcd001.ps2`; loading and saving verified in-game | ✅ |
+| Gameplay reached; performance still ~2–3 fps | 🔧 in progress |
+| FMV video: intro decoded and displayed without skipping; other videos unverified | 🔧 in progress |
+| Audio: banks and continuous emulated sound verified; playback stutters at the current speed | 🔧 in progress |
+| Memory card: listing, loading, saving and reloading verified on a PCSX2 copy; formatting unverified | 🔧 in progress |
 
-The game boots, runs the original IOP modules (including the `smpd` data streamer), streams its data from
-the ISO, enters its main loop and **renders its first screens**: the *"Sony Computer Entertainment America
-presents"* legal screen and the *God of War* title logo. Keyboard and controller input now reach the menu
-and difficulty selection. With `GOW_SKIP_FMV=1`, the game reaches its gameplay state, but the framebuffer
-remains black; playable gameplay has not been verified. See [controls and tests](docs/CONTROLES.md) and
-[`docs/ESTADO.md`](docs/ESTADO.md) for the detailed investigation log.
+The game boots, loads its data from the ISO and reaches the menu and gameplay with keyboard or controller
+input. After fixing scratchpad DMA chains, captures show the ship, Kratos, enemies and HUD with correct
+shapes. The FMV intro also decodes without `GOW_SKIP_FMV`. Loading, saving and reloading a game have been
+verified on a copied 8 MB PCSX2 card with ECC; formatting and reopening it in PCSX2 remain unverified.
+The port is still experimental: gameplay runs at ~2–3 fps, audio playback stutters, and CPU/OpenGL
+differences and graphics coverage need further checks. See [rendering](docs/COMPARACION_PCSX2.md),
+[FMV and audio](docs/FMV_Y_AUDIO.md), [memory card](docs/MEMORY_CARD.md) and
+[`docs/ESTADO.md`](docs/ESTADO.md) for the checks and their limits.
 
 ## Repository layout
 

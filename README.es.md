@@ -68,18 +68,21 @@ Desglose por librería y por componente: [`docs/estado/detalle.es.md`](docs/esta
 | Carga de datos desde la ISO original (`smpd` → `R_PERM.WAD`, configuración) | ✅ |
 | Bucle principal del juego (`sys::GameLoop`) | ✅ |
 | Salida de vídeo: pantalla legal y logo del título | ✅ |
-| Texto, fuentes y renderizado 3D correctos | 🔧 en progreso |
+| Barco, Kratos, enemigos y HUD con formas correctas; faltan otros controles de renderizado | 🔧 en progreso |
 | Mando/teclado por HLE de libpad2; menú y selección de dificultad | ✅ |
-| Inicio de una partida jugable | 🔧 en progreso |
-| Audio: SPU2 emulado con salida al PC (aún sin verificar con el juego) | 🔧 en progreso |
-| Memory card: SIO2 emulado, `Mcd001.ps2` compatible con PCSX2; cargar y guardar comprobados en el juego | ✅ |
+| Partida alcanzada; rendimiento todavía de ~2–3 fps | 🔧 en progreso |
+| Vídeo FMV: intro decodificada y presentada sin omitirla; faltan otros vídeos | 🔧 en progreso |
+| Audio: bancos y sonido continuo emulado verificados; salida entrecortada a la velocidad actual | 🔧 en progreso |
+| Memory card: listar, cargar, guardar y recargar verificados en una copia PCSX2; falta formateo | 🔧 en progreso |
 
-El juego arranca, ejecuta en el IOP los módulos originales (incluido el cargador de datos `smpd`), carga
-sus datos desde la ISO, entra en su bucle principal y **dibuja sus primeras pantallas**: la pantalla legal
-*"Sony Computer Entertainment America presents"* y el logo de *God of War*. El teclado y el mando permiten
-avanzar al menú y elegir dificultad. Con `GOW_SKIP_FMV=1` se alcanza el estado de partida, pero la imagen
-queda negra; todavía no se ha verificado una partida jugable. Ver [controles y pruebas](docs/CONTROLES.md) y
-[`docs/ESTADO.md`](docs/ESTADO.md) para el registro detallado de la investigación.
+El juego arranca, carga sus datos desde la ISO y llega al menú y a la partida con teclado o mando.
+Tras corregir las cadenas DMA del scratchpad, las capturas muestran el barco, Kratos, enemigos y HUD
+con formas correctas. La intro FMV también se decodifica sin `GOW_SKIP_FMV`. Se han verificado cargar,
+guardar y recargar una partida en una copia de tarjeta PCSX2 de 8 MB con ECC; faltan formateo y reapertura
+en PCSX2. El port sigue siendo experimental: la partida va a ~2–3 fps, el audio se oye entrecortado y
+quedan diferencias CPU/OpenGL y cobertura gráfica por comprobar. Ver [renderizado](docs/COMPARACION_PCSX2.md),
+[FMV y audio](docs/FMV_Y_AUDIO.md), [memory card](docs/MEMORY_CARD.md) y
+[`docs/ESTADO.md`](docs/ESTADO.md) para los controles y sus límites.
 
 ## Estructura del repositorio
 

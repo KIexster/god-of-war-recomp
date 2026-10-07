@@ -17,14 +17,14 @@ hasta = 0x0029BBA4
 [[librerias.grupo]]
 nombre = "libmpeg"
 inicio = 0x0026F228
-estado = "pendiente"
-nota = { es = "Vídeo FMV: sceMpeg* son stubs", en = "FMV video: sceMpeg* are stubs", pt = "Vídeo FMV: sceMpeg* são stubs" }
+estado = "parcial"
+nota = { es = "La intro FMV se decodifica por software y se presenta sin GOW_SKIP_FMV; falta verificar el resto de vídeos", en = "The FMV intro is software-decoded and displayed without GOW_SKIP_FMV; other videos remain unverified", pt = "A intro FMV é decodificada por software e exibida sem GOW_SKIP_FMV; os demais vídeos ainda precisam ser verificados" }
 
 [[librerias.grupo]]
 nombre = "libipu"
 inicio = 0x002792E8
-estado = "pendiente"
-nota = { es = "sceIpuInit corregido (gowIpuInit); el FMV aún no se decodifica", en = "sceIpuInit fixed (gowIpuInit); FMV is not decoded yet", pt = "sceIpuInit corrigido (gowIpuInit); o FMV ainda não é decodificado" }
+estado = "parcial"
+nota = { es = "sceIpuInit corregido; la ruta MPEG por software funciona, sin verificar todas las operaciones de la IPU", en = "sceIpuInit fixed; the software MPEG path works, but full IPU operation coverage is unverified", pt = "sceIpuInit corrigido; a rota MPEG por software funciona, mas a cobertura completa das operações da IPU não foi verificada" }
 
 [[librerias.grupo]]
 nombre = "libgraph"
@@ -45,8 +45,8 @@ nota = { es = "Lee la ISO original", en = "Reads the original ISO", pt = "Lê a 
 [[librerias.grupo]]
 nombre = "libdbc"
 inicio = 0x0027ACA8
-estado = "pendiente"
-nota = { es = "El SIO2 está emulado, pero los mandos se ven desconectados en él", en = "SIO2 is emulated, but controllers read as disconnected on it", pt = "O SIO2 é emulado, mas os controles aparecem desconectados nele" }
+estado = "parcial"
+nota = { es = "RPC de dbcman y SIO2 verificados al cargar y guardar en tarjeta; los mandos SIO2 aún se ven desconectados", en = "dbcman RPC and SIO2 verified for card loading and saving; SIO2 controllers still read as disconnected", pt = "RPC de dbcman e SIO2 verificados ao carregar e salvar no cartão; os controles SIO2 ainda aparecem desconectados" }
 
 [[librerias.grupo]]
 nombre = "libpad2"
@@ -64,7 +64,7 @@ nota = { es = "Sin vibración: el HLE no anuncia actuadores", en = "No rumble: t
 nombre = "libmc2"
 inicio = 0x0027C100
 estado = "parcial"
-nota = { es = "SIO2 y tarjeta emulados (Mcd001.ps2), sin verificar con el juego", en = "SIO2 and card emulated (Mcd001.ps2), not verified in-game yet", pt = "SIO2 e cartão emulados (Mcd001.ps2), ainda não verificados no jogo" }
+nota = { es = "Listar, cargar, guardar y recargar verificados con una copia de tarjeta PCSX2 de 8 MB con ECC; faltan formateo y reapertura en PCSX2", en = "Listing, loading, saving and reloading verified with a copied 8 MB PCSX2 card with ECC; formatting and reopening in PCSX2 remain unverified", pt = "Listar, carregar, salvar e recarregar verificados com uma cópia de cartão PCSX2 de 8 MB com ECC; faltam formatação e reabertura no PCSX2" }
 
 [[librerias.grupo]]
 nombre = "libscf"
@@ -159,6 +159,7 @@ nombre = "EE"
   nombre = { es = "Controlador DMA", en = "DMA controller", pt = "Controlador DMA" }
   estado = "ok"
   peso = 2
+  nota = { es = "Las cadenas fromSPR/toSPR ya copian la paleta de huesos; formas de Kratos y enemigos verificadas en partida", en = "fromSPR/toSPR chains now copy the bone palette; Kratos and enemy shapes verified in gameplay", pt = "As cadeias fromSPR/toSPR já copiam a paleta de ossos; formas de Kratos e inimigos verificadas na partida" }
 
   [[hardware.grupo.componente]]
   corto = "Timers"
@@ -172,23 +173,23 @@ nombre = "GS / VU"
   [[hardware.grupo.componente]]
   corto = "GS"
   nombre = { es = "GS: primitivas y framebuffer", en = "GS: primitives and framebuffer", pt = "GS: primitivas e framebuffer" }
-  estado = "ok"
+  estado = "parcial"
   peso = 3
-  nota = { es = "CPU de referencia conservado; presentación de campos OpenGL verificada, todavía sin escena 3D completa", en = "Reference CPU preserved; OpenGL field presentation verified, complete 3D scene still missing", pt = "CPU de referência preservado; apresentação de campos OpenGL verificada, cena 3D completa ainda ausente" }
+  nota = { es = "CPU y OpenGL conservados; barco, Kratos, enemigos y HUD visibles tras el arreglo SPR; persisten diferencias CPU/OpenGL y falta certificar cobertura completa", en = "CPU and OpenGL retained; ship, Kratos, enemies and HUD visible after the SPR fix; CPU/OpenGL differences remain and complete coverage is unverified", pt = "CPU e OpenGL mantidos; barco, Kratos, inimigos e HUD visíveis após a correção SPR; persistem diferenças CPU/OpenGL e falta verificar a cobertura completa" }
 
   [[hardware.grupo.componente]]
   corto = "VIF1/VU1"
   nombre = { es = "VIF1 y VU1", en = "VIF1 and VU1", pt = "VIF1 e VU1" }
   estado = "parcial"
   peso = 3
-  nota = { es = "MMI y EFU corregidos: modelos pasan Clip y VU1 continúa; persisten deformaciones graves en la escena", en = "MMI and EFU corrected: models pass Clip and VU1 continues; severe scene distortion remains", pt = "MMI e EFU corrigidos: modelos passam Clip e VU1 continua; persistem deformações graves na cena" }
+  nota = { es = "MMI/EFU y cadenas SPR corregidos: modelos y HUD con formas correctas; cobertura aún parcial. Máscaras VU1: 35 % menos tiempo en una repetición con imagen idéntica, sin medir la mejora de FPS globales", en = "MMI/EFU and SPR chains fixed: models and HUD have correct shapes; coverage remains partial. VU1 masks: 35% less time in a replay with an identical image; overall FPS improvement unmeasured", pt = "MMI/EFU e cadeias SPR corrigidos: modelos e HUD com formas corretas; cobertura ainda parcial. Máscaras VU1: 35% menos tempo em uma repetição com imagem idêntica; melhora dos FPS gerais não medida" }
 
   [[hardware.grupo.componente]]
   corto = "Tex/CLUT"
   nombre = { es = "GS: texturas, CLUT y fuentes", en = "GS: textures, CLUT and fonts", pt = "GS: texturas, CLUT e fontes" }
   estado = "parcial"
   peso = 2
-  nota = { es = "Faltan letras en algunos textos", en = "Some text glyphs are missing", pt = "Faltam letras em alguns textos" }
+  nota = { es = "HUD visible; quedan diferencias CPU/OpenGL de texturas y feedback y falta verificar todas las fuentes y CLUT", en = "HUD visible; CPU/OpenGL texture and feedback differences remain, and full font and CLUT coverage is unverified", pt = "HUD visível; persistem diferenças CPU/OpenGL de texturas e feedback e falta verificar todas as fontes e CLUT" }
 
   [[hardware.grupo.componente]]
   corto = "GIF"
@@ -199,9 +200,9 @@ nombre = "GS / VU"
   [[hardware.grupo.componente]]
   corto = "IPU"
   nombre = { es = "IPU: vídeo FMV", en = "IPU: FMV video", pt = "IPU: vídeo FMV" }
-  estado = "pendiente"
+  estado = "parcial"
   peso = 2
-  nota = { es = "Se alcanza la carga del FMV, pero se queda esperando a MPEG", en = "FMV loading is reached, but it waits on MPEG", pt = "O carregamento do FMV é alcançado, mas fica esperando o MPEG" }
+  nota = { es = "La intro FMV funciona por decodificación MPEG por software; no demuestra emulación completa del hardware IPU", en = "The FMV intro works through software MPEG decoding; this does not establish complete IPU hardware emulation", pt = "A intro FMV funciona por decodificação MPEG por software; isso não comprova emulação completa do hardware IPU" }
 
 [[hardware.grupo]]
 nombre = "IOP"
@@ -217,7 +218,7 @@ nombre = "IOP"
   nombre = { es = "SPU2: salida de audio", en = "SPU2: audio output", pt = "SPU2: saída de áudio" }
   estado = "parcial"
   peso = 3
-  nota = { es = "SPU2 emulado con salida al PC, sin verificar con el juego; faltan reverb y ADMA", en = "SPU2 emulated with output to the PC, not verified in-game yet; reverb and ADMA are missing", pt = "SPU2 emulado com saída para o PC, ainda não verificado no jogo; faltam reverb e ADMA" }
+  nota = { es = "Bancos cargados y sonido continuo en tiempo emulado verificados; a ~2 fps se oye entrecortado; faltan reverb y ADMA", en = "Bank loading and continuous sound in emulated time verified; at ~2 fps playback stutters; reverb and ADMA are missing", pt = "Carregamento de bancos e som contínuo em tempo emulado verificados; a ~2 fps o áudio tem cortes; faltam reverb e ADMA" }
 
   [[hardware.grupo.componente]]
   corto = "IRX"
@@ -249,4 +250,4 @@ nombre = "IOP"
   nombre = { es = "SIO2: memory card", en = "SIO2: memory card", pt = "SIO2: memory card" }
   estado = "parcial"
   peso = 2
-  nota = { es = "SIO2 y protocolo de la tarjeta emulados; archivo Mcd001.ps2 compatible con PCSX2; sin verificar con el juego", en = "SIO2 and card protocol emulated; PCSX2-compatible Mcd001.ps2 file; not verified in-game yet", pt = "SIO2 e protocolo do cartão emulados; arquivo Mcd001.ps2 compatível com o PCSX2; ainda não verificado no jogo" }
+  nota = { es = "SIO2 y tarjeta de 8 MB con ECC: cargar, guardar y recargar verificados en el juego sobre una copia PCSX2; faltan formateo y reapertura en PCSX2", en = "SIO2 and 8 MB card with ECC: loading, saving and reloading verified in-game on a PCSX2 copy; formatting and reopening in PCSX2 remain unverified", pt = "SIO2 e cartão de 8 MB com ECC: carregar, salvar e recarregar verificados no jogo em uma cópia PCSX2; faltam formatação e reabertura no PCSX2" }

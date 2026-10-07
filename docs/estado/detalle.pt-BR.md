@@ -8,15 +8,15 @@ Gerado por `tools/estado/generar.py` a partir de `docs/estado/datos.toml` e `con
 
 | Biblioteca | Funções | Status | Nota |
 |---|---:|---|---|
-| `libmpeg` | 103 | ⏳ Pendente | Vídeo FMV: sceMpeg* são stubs |
-| `libipu` | 5 | ⏳ Pendente | sceIpuInit corrigido (gowIpuInit); o FMV ainda não é decodificado |
+| `libmpeg` | 103 | 🔧 Parcial | A intro FMV é decodificada por software e exibida sem GOW_SKIP_FMV; os demais vídeos ainda precisam ser verificados |
+| `libipu` | 5 | 🔧 Parcial | sceIpuInit corrigido; a rota MPEG por software funciona, mas a cobertura completa das operações da IPU não foi verificada |
 | `libgraph` | 7 | ✅ Funciona |  |
 | `libdma` | 8 | ✅ Funciona |  |
 | `libcdvd` | 10 | ✅ Funciona | Lê a ISO original |
-| `libdbc` | 11 | ⏳ Pendente | O SIO2 é emulado, mas os controles aparecem desconectados nele |
+| `libdbc` | 11 | 🔧 Parcial | RPC de dbcman e SIO2 verificados ao carregar e salvar no cartão; os controles SIO2 ainda aparecem desconectados |
 | `libpad2` | 13 | 🔧 Parcial | HLE da primeira porta (teclado ou gamepad); pressões 0/255 |
 | `libvib` | 2 | ⏳ Pendente | Sem vibração: o HLE não anuncia atuadores |
-| `libmc2` | 90 | 🔧 Parcial | SIO2 e cartão emulados (Mcd001.ps2), ainda não verificados no jogo |
+| `libmc2` | 90 | 🔧 Parcial | Listar, carregar, salvar e recarregar verificados com uma cópia de cartão PCSX2 de 8 MB com ECC; faltam formatação e reabertura no PCSX2 |
 | `libscf` | 14 | ✅ Funciona |  |
 | `libgcc` | 32 | ✅ Funciona |  |
 | `C++ EH` | 34 | ✅ Funciona |  |
@@ -27,7 +27,7 @@ Gerado por `tools/estado/generar.py` a partir de `docs/estado/datos.toml` e `con
 | `fileio` | 15 | ✅ Funciona |  |
 | `loadfile` | 14 | ✅ Funciona | Heap do IOP e carga de módulos |
 
-## Hardware do PS2: 67.4%
+## Hardware do PS2: 60.5%
 
 | Grupo | Componente | Peso | Status | Nota |
 |---|---|---:|---|---|
@@ -35,19 +35,19 @@ Gerado por `tools/estado/generar.py` a partir de `docs/estado/datos.toml` e `con
 | EE | Kernel: threads, semáforos e alarmes | 3 | ✅ Funciona |  |
 | EE | FPU (COP1) e instruções MMI | 2 | ✅ Funciona |  |
 | EE | INTC: VSync e interrupção do GS | 2 | ✅ Funciona |  |
-| EE | Controlador DMA | 2 | ✅ Funciona |  |
+| EE | Controlador DMA | 2 | ✅ Funciona | As cadeias fromSPR/toSPR já copiam a paleta de ossos; formas de Kratos e inimigos verificadas na partida |
 | EE | Temporizadores | 1 | ✅ Funciona |  |
-| GS / VU | GS: primitivas e framebuffer | 3 | ✅ Funciona | CPU de referência preservado; apresentação de campos OpenGL verificada, cena 3D completa ainda ausente |
-| GS / VU | VIF1 e VU1 | 3 | 🔧 Parcial | MMI e EFU corrigidos: modelos passam Clip e VU1 continua; persistem deformações graves na cena |
-| GS / VU | GS: texturas, CLUT e fontes | 2 | 🔧 Parcial | Faltam letras em alguns textos |
+| GS / VU | GS: primitivas e framebuffer | 3 | 🔧 Parcial | CPU e OpenGL mantidos; barco, Kratos, inimigos e HUD visíveis após a correção SPR; persistem diferenças CPU/OpenGL e falta verificar a cobertura completa |
+| GS / VU | VIF1 e VU1 | 3 | 🔧 Parcial | MMI/EFU e cadeias SPR corrigidos: modelos e HUD com formas corretas; cobertura ainda parcial. Máscaras VU1: 35% menos tempo em uma repetição com imagem idêntica; melhora dos FPS gerais não medida |
+| GS / VU | GS: texturas, CLUT e fontes | 2 | 🔧 Parcial | HUD visível; persistem diferenças CPU/OpenGL de texturas e feedback e falta verificar todas as fontes e CLUT |
 | GS / VU | GIF (PATH1-3) | 2 | ✅ Funciona |  |
-| GS / VU | IPU: vídeo FMV | 2 | ⏳ Pendente | O carregamento do FMV é alcançado, mas fica esperando o MPEG |
+| GS / VU | IPU: vídeo FMV | 2 | 🔧 Parcial | A intro FMV funciona por decodificação MPEG por software; isso não comprova emulação completa do hardware IPU |
 | IOP | CPU R3000A (interpretador) | 3 | ✅ Funciona |  |
-| IOP | SPU2: saída de áudio | 3 | 🔧 Parcial | SPU2 emulado com saída para o PC, ainda não verificado no jogo; faltam reverb e ADMA |
+| IOP | SPU2: saída de áudio | 3 | 🔧 Parcial | Carregamento de bancos e som contínuo em tempo emulado verificados; a ~2 fps o áudio tem cortes; faltam reverb e ADMA |
 | IOP | Módulos IRX originais | 2 | ✅ Funciona |  |
 | IOP | SIF: RPC e DMA EE ↔ IOP | 2 | ✅ Funciona |  |
 | IOP | CDVD: leitura da ISO original | 2 | ✅ Funciona |  |
 | IOP | Controle DualShock 2 | 2 | 🔧 Parcial | libpad2 por HLE (primeira porta); no SIO2 emulado os controles aparecem desconectados |
-| IOP | SIO2: memory card | 2 | 🔧 Parcial | SIO2 e protocolo do cartão emulados; arquivo Mcd001.ps2 compatível com o PCSX2; ainda não verificado no jogo |
+| IOP | SIO2: memory card | 2 | 🔧 Parcial | SIO2 e cartão de 8 MB com ECC: carregar, salvar e recarregar verificados no jogo em uma cópia PCSX2; faltam formatação e reabertura no PCSX2 |
 
 * Funções das bibliotecas estáticas da Sony ligadas em SCUS_973.99 (config/funcmap.csv). Hardware: ponderado por componente.
