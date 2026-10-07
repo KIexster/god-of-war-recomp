@@ -52,6 +52,8 @@ $gsCpuRoundingPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-cpu-rounding.pat
 $getenvHotPatch = Join-Path $RepoRoot 'patches\ps2recomp-getenv-hot.patch'
 $vu1PerfPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-perf.patch'
 $sprChainPatch = Join-Path $RepoRoot 'patches\ps2recomp-spr-chain.patch'
+$mpegCreatePatch = Join-Path $RepoRoot 'patches\ps2recomp-mpeg-create.patch'
+$audioPcmPatch = Join-Path $RepoRoot 'patches\ps2recomp-audio-pcm.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -128,6 +130,8 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $gsCpuRoundingPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $getenvHotPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1PerfPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $sprChainPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $mpegCreatePatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $audioPcmPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
