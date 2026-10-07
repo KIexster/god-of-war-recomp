@@ -63,12 +63,22 @@ correctamente. Las deformaciones y la oscuridad de la partida vienen de los dato
 (paquetes, matrices o vértices), no de la interpretación de VIF1/VU1. No se descarta un fallo de VU1
 que solo aparezca con otros datos.
 
-## Colores de vértice que no se recalculan
+## Colores de vértice (descartado)
 
-Las mallas estáticas de la cadena de PCSX2 están también en la RAM del port, con las mismas
-posiciones. En varias, los colores de vértice difieren: en PCSX2 valen `0x80606060` (gris uniforme)
-y en el port conservan los valores originales del disco, muy oscuros (`0x80020305`, `0x80030609`...).
-Se comprobó en la ISO: el bloque del port coincide byte a byte con los datos del disco, así que el
-juego reescribe esos colores durante la partida y en el port esa escritura no ocurre (o escribe lo
-mismo). Es una explicación candidata de la escena oscura y de la silueta negra de Kratos; falta
-identificar la función del EE que los recalcula.
+En un savestate del Egeo más avanzado (`6C2355D5`), varias mallas tienen en PCSX2 colores de vértice
+reescritos (`0x80606060`), mientras el port conserva los del disco. Con el savestate del inicio de la
+partida (`D6385328`), PCSX2 también conserva los colores del disco: es un recálculo posterior del
+nivel, no un fallo del port. Se descarta como causa de la escena oscura.
+
+## Matriz de la cámara
+
+En la partida del port, la matriz de la cámara que llega a VU1 tiene ejes ortogonales de longitud
+1,27, 1,52 y 1,93; en PCSX2 miden 1. Esto estira toda la escena. Sin `GOW_FAST_BOOT` la intro
+también sale deformada, así que no es un efecto del atajo.
+
+En PCSX2 la cámara activa es la de la armadura (`BuildCameraMatrixFromArmature`); en el port, el
+estado de cámara copia la matriz de un esqueleto de dos articulaciones que anima la cámara de la
+intro (articulación 1, con esa escala). Seno/coseno, `RotX/Y/Z`, `View`, `ToMatrix` y
+`OrthoNormalise` producen matrices unitarias en el port. Falta comparar esa articulación con PCSX2
+durante la intro para saber si la escala es un dato legítimo del esqueleto o un fallo del cálculo de
+la animación.

@@ -15,8 +15,9 @@ import struct
 import sys
 import zipfile
 
-# Cabecera de cuadro de God of War (DIRECT con la configuración del GS y NEXT a la lista).
-INICIO_CUADRO = 0x450C00
+# Cabeceras de cuadro de God of War (DIRECT con la configuración del GS y NEXT a la lista):
+# el juego alterna entre dos búferes.
+INICIOS_CUADRO = (0x450C00, 0x450A00)
 RAM = 0x2000000
 
 
@@ -84,8 +85,8 @@ def main():
     g = p.add_mutually_exclusive_group(required=True)
     g.add_argument('--pcsx2', help='savestate .p2s de PCSX2')
     g.add_argument('--volcado', help='carpeta con gow_render_ram.bin, gow_render_vram.bin, gow_vu1_*.bin')
-    p.add_argument('--inicio', type=lambda v: int(v, 0), default=INICIO_CUADRO,
-                   help='dirección de la primera etiqueta (por defecto 0x%X)' % INICIO_CUADRO)
+    p.add_argument('--inicio', type=lambda v: int(v, 0), default=None,
+                   help='dirección de la primera etiqueta (por defecto prueba 0x450C00 y 0x450A00)')
     p.add_argument('salida', help='carpeta de salida (en logs/)')
     a = p.parse_args()
 
@@ -108,9 +109,14 @@ def main():
     if len(vram) != 0x400000 or len(ee) != RAM:
         sys.exit('Tamaños inesperados de RAM o VRAM')
 
-    final, etiquetas = recorrer(ee, a.inicio, fin)
+    final = None
+    for inicio in ([a.inicio] if a.inicio is not None else INICIOS_CUADRO):
+        final, etiquetas = recorrer(ee, inicio, fin)
+        if final is not None:
+            a.inicio = inicio
+            break
     if final is None:
-        sys.exit('La cadena desde 0x%X no termina en END%s' % (a.inicio, '' if fin is None else ' 0x%X' % fin))
+        sys.exit('Ninguna cabecera de cuadro termina en END%s' % ('' if fin is None else ' 0x%X' % fin))
     flujo = aplanar(ee, a.inicio)
     for nombre, datos in archivos.items():
         open(os.path.join(a.salida, nombre), 'wb').write(datos)
