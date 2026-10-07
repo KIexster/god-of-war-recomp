@@ -25,11 +25,29 @@ así que no parecen afectar al recompilado, pero conviene retirarlas.
 SPU2 (s16le, estéreo, 48 kHz) sin los silencios de relleno, para comprobar el audio aunque la
 emulación vaya más lenta que el tiempo real.
 
-Resultado: en 23 s de audio emulado (menú, intro y partida) la salida es silencio absoluto. Con una
-traza temporal del SPU2: solo hay 48 key-on (inicialización), los volúmenes maestros están a
-`0x3FFF` y la RAM de sonido tiene 121 halfwords distintos de cero. Las 27 DMA al SPU2 (27 KB desde
-`0x1F9840`–`0x200000` de la RAM del IOP) son de inicialización y llevan ceros. **Ningún banco de
-sonido llega a la RAM del SPU2.** Del lado del EE, 989snd envía pocos comandos (inicialización,
-`0x4E`, `0x41/0x42/0x4A/0x4B`) y smpd recibe 277 llamadas `SMPD` de tipo `0x13`; no aparece una
-carga de banco. Siguiente paso: averiguar qué espera smpd para cargar los bancos (lectura de disco
-asíncrona, IRQ del SPU2 o DMA) comparando con la RAM del IOP y `SPU2.bin` de un savestate de PCSX2.
+Antes de los arreglos de abajo, en 23 s de audio emulado (menú, intro y partida) la salida era
+silencio absoluto: ningún banco de sonido llegaba a la RAM del SPU2.
+
+`patches/ps2recomp-iop-sound.patch` corrige dos fallos del emulador del IOP:
+
+1. **`sceSifGetOtherData` (sifcmd, ordinal 23) no copiaba nada.** smpd y 989snd lo usan para traer
+   desde la RAM del EE los bancos que el juego ya tiene cargados (`GENERAL`, `Title01`, `AthnA01`,
+   `SKS_Skel1`…, comando `SMPD` de tipo `0xD`). Ahora copia `size` bytes del EE a la RAM del IOP y
+   rellena el `SifRpcReceiveData_t` (origen, destino y tamaño desde `+0x10`). Con esto suenan los
+   primeros segundos (el sonido del menú).
+2. **`WaitSema` sin hilo actual fingía éxito.** Los servidores RPC se ejecutan como llamadas sueltas
+   (sin hilo), y si el semáforo estaba a cero se devolvía 0 sin tomarlo. 989snd protege su tick con un
+   candado (`gLockMasterTick`, semáforo y dueño = `GetThreadId()`): el servidor RPC lo "tomaba"
+   mientras lo tenía el hilo del tick, quedaba como dueño el hilo 0 y el tick ya no podía soltarlo
+   (error `0x7B`). Desde ahí el IOP imprimía cada 2 s `Sound System Tick locked out for 2 seconds` y
+   el sonido se paraba. Ahora, sin hilo actual, `WaitSema` deja correr a los demás hilos del IOP hasta
+   que el semáforo se libera (máximo ~1 s de reloj del IOP; si se agota devuelve `KE_SEMA_ZERO`).
+
+Resultado con `GOW_SKIP_FMV=1` y 240 s de ejecución: 19,7 s de audio emulado con sonido continuo
+(antes 5 s de sonido y luego silencio) y ningún aviso de tick bloqueado. Regresiones nuevas en
+`ps2xTest/src/ps2_iop_tests.cpp`: `WaitSema outside a thread waits for the semaphore instead of
+faking success` y `sceSifGetOtherData copies EE memory into IOP RAM`; la suite pasa **550/550**
+(ejecutada desde `ps2xTest`, que es donde la prueba de VU0 encuentra `instructions.h`).
+
+El audio sigue el reloj emulado: con la partida a ~2 fps se oye a trozos. Llegará a tiempo real
+cuando VU1 deje de ser el cuello de botella (ver `docs/RENDIMIENTO.md`).
