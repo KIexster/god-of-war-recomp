@@ -118,7 +118,8 @@ namespace
                 return value && std::strcmp(value, "1") == 0;
             }();
             static double nextStateReport = 0;
-            if (const char *diag=std::getenv("GOW_EE_PRIM_DIAG"); diag && std::strcmp(diag,"1")==0)
+            static const bool primDiag = [] { const char *diag=std::getenv("GOW_EE_PRIM_DIAG"); return diag && std::strcmp(diag,"1")==0; }();
+            if (primDiag)
                 gowDiagPrimPoll(rdram,seconds);
             if (noCapture && seconds >= nextStateReport)
             {
@@ -227,7 +228,8 @@ namespace
         if (++reads <= 3 || buttons != lastButtons)
             std::fprintf(stderr, "[gow-pad2] read buttons=%04x sticks=%u,%u,%u,%u\n", buttons, buffer[2], buffer[3], buffer[4], buffer[5]);
         lastButtons = buttons;
-        if (std::getenv("GOW_ANM_DIAG") && readGuest32(rdram, 0x29E560u) == 4u && reads % 100 == 0)
+        static const bool anmDiag = std::getenv("GOW_ANM_DIAG") != nullptr;
+        if (anmDiag && readGuest32(rdram, 0x29E560u) == 4u && reads % 100 == 0)
         {
             const uint32_t card = readGuest32(rdram, 0x29BE50u);
             std::fprintf(stderr, "[gow-transition] padType=%u cardState=%u pause=%u,%u,%u,%u speed=%x\n",
@@ -262,7 +264,9 @@ namespace
 
     void gowDiagPathSelect(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
-        if (ctx->pc == 0x00180E50u && std::getenv("GOW_PATH_DIAG"))
+        // GOW-Port: getenv recorre todo el entorno; en funciones llamadas a menudo se lee una vez.
+        static const bool pathDiag = std::getenv("GOW_PATH_DIAG") != nullptr;
+        if (ctx->pc == 0x00180E50u && pathDiag)
         {
             const uint32_t object = GPR_U32(ctx, 4);
             const uint32_t address = GPR_U32(ctx, 5);
@@ -275,7 +279,8 @@ namespace
 
     void gowDiagAttachNode(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
-        if (ctx->pc == 0x00180D08u && GPR_U32(ctx, 5) == 0 && std::getenv("GOW_PATH_DIAG"))
+        static const bool pathDiag = std::getenv("GOW_PATH_DIAG") != nullptr;
+        if (ctx->pc == 0x00180D08u && GPR_U32(ctx, 5) == 0 && pathDiag)
         {
             std::ofstream file("gow_path_failure.bin", std::ios::binary);
             file.write(reinterpret_cast<const char *>(rdram), 0x02000000u);
@@ -333,8 +338,8 @@ namespace
     void gowDiagAnimationTime(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
         const uint32_t ra = GPR_U32(ctx, 31), object = GPR_U32(ctx, 4);
-        const char *fastBoot = std::getenv("GOW_FAST_BOOT");
-        if (fastBoot && std::strcmp(fastBoot, "1") == 0 && ra == 0x0021E714u &&
+        static const bool fastBoot = [] { const char *value = std::getenv("GOW_FAST_BOOT"); return value && std::strcmp(value, "1") == 0; }();
+        if (fastBoot && ra == 0x0021E714u &&
             readGuest32(rdram, 0x29E560u) == 4u && readGuest32(rdram, 0x29E584u) == 1u)
         {
             // Only the intro-completion query is bypassed, after the level load.

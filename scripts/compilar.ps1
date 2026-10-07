@@ -49,6 +49,7 @@ $gsTriangleTexcoordsPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-triangle-t
 $vu1EfuOpcodesPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-efu-opcodes.patch'
 $gsCpuStatePatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-cpu-state.patch'
 $gsCpuRoundingPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-cpu-rounding.patch'
+$getenvHotPatch = Join-Path $RepoRoot 'patches\ps2recomp-getenv-hot.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -122,6 +123,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $gsTriangleTexcoordsPatc
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1EfuOpcodesPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsCpuStatePatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsCpuRoundingPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $getenvHotPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
