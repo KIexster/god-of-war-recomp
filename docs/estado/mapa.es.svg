@@ -971,7 +971,7 @@
 <rect class="parcial" x="767.2" y="221" width="115.3" height="63.5"><title>VIF1 y VU1 — MMI/EFU y cadenas SPR corregidos: modelos y HUD con formas correctas; cobertura aún parcial. Máscaras VU1: 35 % menos tiempo en una repetición con imagen idéntica, sin medir la mejora de FPS globales</title></rect>
 <rect x="767.2" y="221" width="115.3" height="63.5" fill="url(#rayas)" pointer-events="none"/>
 <text class="badge-v-oscuro" x="824.8" y="256.6" font-size="11" text-anchor="middle" pointer-events="none">VIF1/VU1</text>
-<rect class="parcial" x="767.2" y="285.5" width="57.2" height="85"><title>GS: texturas, CLUT y fuentes — HUD visible; bilineal y nearest STQ CPU/OpenGL verificados con patrones procedurales de PCSX2 software; feedback GPU estable en modo experimental; quedan pendientes la caché GS real y la cobertura de fuentes/CLUT</title></rect>
+<rect class="parcial" x="767.2" y="285.5" width="57.2" height="85"><title>GS: texturas, CLUT y fuentes — HUD visible; bilineal y nearest STQ CPU/OpenGL verificados, incluidos límites 16.16 con signo, con patrones procedurales de PCSX2 software; feedback GPU estable en modo experimental; quedan pendientes la caché GS real y la cobertura de fuentes/CLUT</title></rect>
 <rect x="767.2" y="285.5" width="57.2" height="85" fill="url(#rayas)" pointer-events="none"/>
 <text class="badge-v-oscuro" x="795.8" y="331.1" font-size="9" text-anchor="middle" pointer-events="none">Tex/CLUT</text>
 <rect class="parcial" x="825.3" y="285.5" width="57.2" height="85"><title>IPU: vídeo FMV — La intro FMV funciona por decodificación MPEG por software; no demuestra emulación completa del hardware IPU</title></rect>

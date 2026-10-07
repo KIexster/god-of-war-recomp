@@ -1,4 +1,4 @@
-// GOW-Port: exporta los tres patrones usados como referencia RGBA de PCSX2 software.
+// GOW-Port: exporta los cuatro patrones usados como referencia RGBA de PCSX2 software.
 // Entradas procedurales; no contiene archivos, texels ni estado del juego.
 #include "gow_gs_replay.h"
 #include "runtime/gs/gs_cpu_backend.h"
@@ -17,16 +17,16 @@ int main(int argc,char **argv)
     std::error_code error;std::filesystem::create_directories(output,error);
     if(error || !std::filesystem::is_directory(output,error)) return 2;
     using namespace gow_gs_reference;
-    const char *names[]={"bilinear","negativos","limites"};
-    const GridCase fixtures[]={GridCase::Bilinear,GridCase::Negative,GridCase::Boundary};
+    const char *names[]={"bilinear","negativos","limites","bilinear_stq"};
+    const GridCase fixtures[]={GridCase::Bilinear,GridCase::Negative,GridCase::Boundary,GridCase::BilinearStq};
     const uint32_t bilinearColors[]={0x01fefe80u,0xff01017fu,0x807f8002u,0x038080fdu};
     const auto &format=GSSwizzle::GetFormat(GS_PSM_CT32);
-    for(unsigned fixture=0;fixture<3;++fixture) {
-        const bool linear=fixture==0;const unsigned size=linear?2:4;
+    for(unsigned fixture=0;fixture<4;++fixture) {
+        const bool fst=fixture==0,linear=fst || fixture==3;const unsigned size=fst?2:4;
         std::vector<uint8_t> vram(PS2_GS_VRAM_SIZE);
         for(unsigned y=0;y<size;++y) for(unsigned x=0;x<size;++x) {
             const unsigned i=y*size+x;
-            const uint32_t color=linear?bilinearColors[i]:
+            const uint32_t color=fst?bilinearColors[i]:
                 (17u*i<<24)|((231u-13u*i)<<16)|((19u+11u*i)<<8)|(7u+15u*i);
             const auto p=GSSwizzle::Locate(format,8192,8,x,y);std::memcpy(vram.data()+p.byte,&color,4);
         }
@@ -35,16 +35,16 @@ int main(int argc,char **argv)
         gow_gs_replay::Backend capture(std::make_unique<GSCpuBackend>(),nullptr,output/(name+".bin"),0,3600);
         capture.Initialize(vram.data(),uint32_t(vram.size()));
         GSPrimitiveBatch batch{};batch.vertexCount=2;batch.state.prim.type=GS_PRIM_SPRITE;
-        batch.state.prim.tme=true;batch.state.prim.fst=linear;batch.state.linearFilter=linear;
+        batch.state.prim.tme=true;batch.state.prim.fst=fst;batch.state.linearFilter=linear;
         batch.state.textureWidth=batch.state.textureHeight=size;batch.state.colclamp=1;
         auto &c=batch.state.context;c.frame.fbw=8;c.scissor={0,15,0,15};
         c.zbuf.zbp=104;c.zbuf.psm=GS_PSM_Z24;c.zbuf.zmask=true;c.test=0x30000;
-        c.clamp=linear?5:0;c.tex1=linear?0x60:0;c.tex0.tbp0=8192;c.tex0.tbw=8;
-        c.tex0.tw=c.tex0.th=linear?1:2;c.tex0.tcc=1;c.tex0.tfx=1;
+        c.clamp=fst?5:0;c.tex1=linear?0x60:0;c.tex0.tbp0=8192;c.tex0.tbw=8;
+        c.tex0.tw=c.tex0.th=fst?1:2;c.tex0.tcc=1;c.tex0.tfx=1;
         for(unsigned y=0;y<16;++y) for(unsigned x=0;x<16;++x) {
             for(auto &v:batch.vertices) {
                 v.r=v.g=v.b=v.a=128;v.z=7;v.u=uint16_t(8+x);v.v=uint16_t(8+y);v.q=1;
-                if(!linear) {v.s=gridCoordinate(fixtures[fixture],x)/4;v.t=gridCoordinate(fixtures[fixture],y)/4;}
+                if(!fst) {v.s=gridCoordinate(fixtures[fixture],x)/4;v.t=gridCoordinate(fixtures[fixture],y)/4;}
             }
             batch.vertices[0].x=float(x);batch.vertices[0].y=float(y);
             batch.vertices[1].x=float(x+1);batch.vertices[1].y=float(y+1);capture.Submit(batch);

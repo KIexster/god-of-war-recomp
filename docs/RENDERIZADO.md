@@ -731,20 +731,75 @@ triángulos, Q=1/2 y los cuatro modos SSE. El control OpenGL exige además conta
 de las rutas compute y hardware; no basta con tener un contexto creado.
 
 El helper compila también `generar_oraculos_gs.exe [directorio=logs/oraculos_gs]`.
-Exporta los tres patrones de referencia —bilinear, negativos y límites— en
+Exporta cuatro patrones de referencia —bilinear, negativos, límites y bilinear STQ— en
 capturas de repetición `.bin`, dumps de PCSX2 `.gs` y matrices `.rgba` de 16×16.
 Los texels y comandos son procedurales. `gs_feedback_dump_test logs\oraculos_gs --oraculos`
-comprueba freeze/GIF/End y el helper repite los tres controles CPU ×3. Esto permite
+comprueba freeze/GIF/End y el helper repite los cuatro controles CPU ×3. Esto permite
 regenerar las entradas de la referencia sin la ISO ni volcados del juego. La
 comparación RGBA externa sigue siendo independiente del renderer del port.
 
-Los tres `.gs` generados son idénticos por SHA256 a los ejecutados en la referencia
-aislada, y las tres matrices CPU tienen las huellas RGBA externas documentadas.
+Los tres primeros `.gs` generados son idénticos por SHA256 a los ejecutados en la referencia
+aislada, y sus matrices CPU tienen las huellas RGBA externas documentadas.
 Freeze/GIF/End y CPU ×3 son exactos en los seis patrones del helper; los controles
 anteriores de feedback conservan sus bytes de dump. En RX 5700 XT, los tres
 oráculos hardware ×8 tienen paridad, estabilidad y estado final exactos; las
 pasadas calientes usan 256 primitivas y cero tiles compute. Estos controles no
 cambian el resultado pendiente del feedback bilineal sobre el propio destino.
+
+## Conversión STQ bilineal antes del medio texel
+
+`ps2recomp-gs-bilinear-stq.patch` extiende la conversión 16.16 ya usada por nearest
+al filtro bilineal, tanto en CPU como en GLSL. Primero trunca la coordenada escalada
+y después resta medio texel y extrae los pesos de cuatro bits. Con
+u=−1/16−1/131072, convertir antes del desplazamiento elige el peso 7; usar
+directamente el float anterior elegía 6. Los datos FST 12.4 ya son representables
+exactamente y los resultados nearest mantienen la misma conversión.
+
+La referencia ejecutada de PCSX2 v2.8.2 software usa 16×16 muestras STQ constantes,
+una textura RGBA procedural 4×4 disjunta y REPEAT. Se comprueban los 16 texels
+RGB/alpha de entrada y que el dump GIF reproduce el End CPU previo byte por byte.
+El renderer anterior difiere en **611 bytes RGBA/156 píxeles**. La huella externa
+de los 1024 bytes es SHA256
+`3566bc0c748d3948c2180c311562175df43c745a28bc8d7ad165d165b57d4e28`,
+FNV-1a64 `c6e49fa0342e621f`. La secuencia de conversión y desplazamiento está en
+[GSDrawScanline.cpp de PCSX2](https://github.com/PCSX2/pcsx2/blob/v2.8.2/pcsx2/GS/Renderers/SW/GSDrawScanline.cpp).
+Es una comparación con esa implementación software; no una captura del GS físico.
+
+Las tres nuevas regresiones fallan antes (**573/576**) y pasan tras el ajuste
+(**576/576**, catorce controles OpenGL reales). Comparan la huella externa en
+CPU directo, CPU con hilo, compute y hardware, para sprites/triángulos, Q=1/2
+y los cuatro modos SSE. Los contadores exigen 256 primitivas por matriz y,
+en hardware, al menos una matriz sin tiles compute. El generador público añade
+`feedback_gs_oraculo_bilinear_stq` en `.bin`, `.gs` y `.rgba`.
+
+La compilación completa regenera las 6418 unidades y termina con código 0;
+49 parches/84 fuentes coinciden y la suite posterior pasa 576/576. Las siete
+herramientas pasan los 18 controles de imagen y los trece freeze/GIF/End con
+CPU ×3. Los cuatro `.gs` coinciden por SHA256 con las entradas ejecutadas en
+PCSX2 y las cuatro matrices `.rgba` coinciden byte por byte con la referencia.
+Los seis controles de dumps dañados siguen rechazándose.
+
+El nuevo patrón queda exacto y estable en compute ×8 y hardware ×8, incluida
+la VRAM completa, el estado portable y el cuadro visible. Ocho pasadas rápidas
+seleccionando hardware terminaron todavía en compute: la compilación asíncrona
+de su shader no había terminado. `--pausa-ms 1000` permite esperar entre pasadas
+del mismo backend; siete de las ocho repeticiones entonces rasterizan sus
+256 primitivas con cero tiles compute y coinciden con el RGB externo. La opción
+requiere varias pasadas y una espera de 1..1000 ms; nueve usos inválidos devuelven
+2. CPU ×2 con espera queda exacto y feedback opcional con espera mantiene salida
+1 por su diferencia conocida con CPU. Estas esperas son un control de la ruta,
+no una medida de FPS ni una política del juego.
+
+El control posterior del ejecutable completo dura 510 s en OpenGL, con FMV
+omitido y feedback snapshot desactivado. Carga una copia privada de la tarjeta,
+sin modificar el original. Las dieciséis capturas 512×448 son distintas; la
+última muestra a Kratos durante un ataque, el HUD, estelas de armas, R2 y el
+punto de guardado, con estado 11 sin carga pendiente. Las 128 muestras de Clip
+son finitas y completas, las 768 primeras tripletas tardías son no nulas y
+los 192 contextos de partida no tienen punteros inválidos, ciclos ni truncamientos.
+No se registra VU reservada. El mando recibe las tres pulsaciones de cuadrado
+previstas; esto verifica la imagen de una animación de ataque, sin certificar
+combate contra enemigos ni FPS sostenidos.
 
 ## Separación de lotes y fuente protegida opcional
 

@@ -44,7 +44,7 @@ logs\generar_oraculos_gs.exe logs\oraculos_gs > logs\oraculos_gs.log 2>&1
 if errorlevel 1 exit /b 1
 logs\gs_feedback_dump_test.exe logs\oraculos_gs --oraculos >> logs\oraculos_gs.log 2>&1
 if errorlevel 1 exit /b 1
-for %%V in (bilinear negativos limites) do (
+for %%V in (bilinear negativos limites bilinear_stq) do (
     logs\repetir_gs.exe logs\oraculos_gs\feedback_gs_oraculo_%%V.bin cpu --repeticiones 3 logs\oraculos_gs\%%V >> logs\oraculos_gs.log 2>&1
     if errorlevel 1 exit /b 1
 )

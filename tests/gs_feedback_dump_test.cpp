@@ -49,11 +49,12 @@ namespace {
         if(frozen.size()!=PS2_GS_VRAM_SIZE+448 || vram.size()!=PS2_GS_VRAM_SIZE) return false;
         const std::string_view fixture(variant);
         const bool feedback=!fixture.starts_with("oraculo_");
-        const bool linear=feedback?!fixture.starts_with("nearest"):fixture=="oraculo_bilinear";
-        const uint64_t exponent=feedback?10:linear?1:2;
+        const bool fst=fixture=="oraculo_bilinear";
+        const bool linear=feedback?!fixture.starts_with("nearest"):fst || fixture=="oraculo_bilinear_stq";
+        const uint64_t exponent=feedback?10:fst?1:2;
         const uint64_t tex0=(feedback&&!fixture.starts_with("disjoint")?0ull:8192ull)|
             (8ull<<14)|(exponent<<26)|(exponent<<30)|(1ull<<34)|(feedback?0ull:1ull<<35);
-        const uint64_t tex1=linear?0x60:0,clamp=feedback||linear?5:0;
+        const uint64_t tex1=linear?0x60:0,clamp=feedback||fst?5:0;
         const uint64_t scissor=feedback?(511ull<<16)|(447ull<<48):(15ull<<16)|(15ull<<48);
         const uint64_t test=feedback?0x31001:0x30000;
         const uint64_t frame=(8ull<<16)|(feedback?0xff000000ull<<32:0ull);
@@ -183,7 +184,7 @@ int main(int argc,char **argv)
 {
     if(argc!=2 && argc!=3) return 2;
     if(argc==3 && std::filesystem::path(argv[2])=="--oraculos") {
-        for(const char *variant:{"oraculo_bilinear","oraculo_negativos","oraculo_limites"})
+        for(const char *variant:{"oraculo_bilinear","oraculo_negativos","oraculo_limites","oraculo_bilinear_stq"})
             if(!verify(std::filesystem::path(argv[1]),variant)) return 1;
     } else if(argc==3 && std::filesystem::path(argv[2])=="--separaciones") {
         for(const char *variant:{"self","disjoint","nearest","self_texflush","disjoint_texflush","nearest_texflush",

@@ -5,9 +5,11 @@
 #include "runtime/gs/gs_gpu_backend.h"
 #include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <iostream>
 #include <iomanip>
 #include <tuple>
+#include <thread>
 
 namespace replay=gow_gs_replay;
 namespace {
@@ -75,7 +77,7 @@ namespace {
         std::filesystem::path capture,output=".";
         std::string mode;
         bool lockstep=false,snapshotFeedback=false;
-        uint32_t repetitions=1;
+        uint32_t repetitions=1,pauseMs=0;
         bool gpuMode() const { return mode!="cpu"; }
         bool multiple() const { return repetitions>1; }
         std::filesystem::path image(uint32_t pass,const std::string &name) const {
@@ -94,6 +96,14 @@ namespace {
                 if(options.snapshotFeedback) return false;
                 options.snapshotFeedback=true;
             }
+            else if(argument==std::filesystem::path("--pausa-ms")) {
+                if(options.pauseMs || ++i==argc) return false;
+                const auto encoded=std::filesystem::path(argv[i]).u8string();
+                const std::string value(encoded.begin(),encoded.end());
+                uint32_t count=0;const auto result=std::from_chars(value.data(),value.data()+value.size(),count);
+                if(result.ec!=std::errc{} || result.ptr!=value.data()+value.size() || count==0 || count>1000) return false;
+                options.pauseMs=count;
+            }
             else if(argument==std::filesystem::path("--repeticiones")) {
                 if(repetitions || ++i==argc) return false;
                 const std::filesystem::path number(argv[i]);
@@ -108,7 +118,7 @@ namespace {
                 options.output=argument; directory=true;
             }
         }
-        return !options.snapshotFeedback || options.gpuMode();
+        return (!options.snapshotFeedback || options.gpuMode()) && (!options.pauseMs || options.multiple());
     }
     bool restoreInitial(GSRasterBackend &backend,std::vector<uint8_t> &vram,
                         const replay::Snapshot &initial,bool gpuMode,GSGpuBackend *gpu=nullptr) {
@@ -301,9 +311,13 @@ namespace {
         } else candidate=std::make_unique<GSCpuBackend>();
         if(options.snapshotFeedback)
             std::cout<<"Feedback experimental: fuente congelada por Submit; no emula la cache PS2 de 8 KiB\n";
+        if(options.pauseMs)
+            std::cout<<"Pausa de diagnostico entre pasadas: "<<options.pauseMs<<" ms\n";
         struct Restore { unsigned csr=_mm_getcsr(); ~Restore(){_mm_setcsr(csr);} } restore;
         PassResult previous; bool differencesSeen=false;
         for(uint32_t iteration=0;iteration<options.repetitions;++iteration) {
+            // GOW-Port: dar tiempo al compilador de shaders conservando el mismo backend.
+            if(iteration && options.pauseMs) std::this_thread::sleep_for(std::chrono::milliseconds(options.pauseMs));
             const uint32_t pass=iteration+1;
             _mm_setcsr(restore.csr);
             if(!restoreInitial(reference,referenceVram,initial,false) ||
@@ -329,8 +343,8 @@ int main(int argc,char **argv) {
 #endif
     Options options;
     if(!parse(argc,argv,options)) {
-        std::cerr<<"Uso: repetir_gs captura.bin cpu|compute|hardware [--lockstep] [--snapshot-feedback] [--repeticiones N] [directorio]\n"
-                 <<"N debe ser un entero positivo; no se admiten opciones desconocidas ni duplicadas\n"; return 2;
+        std::cerr<<"Uso: repetir_gs captura.bin cpu|compute|hardware [--lockstep] [--snapshot-feedback] [--repeticiones N] [--pausa-ms M] [directorio]\n"
+                 <<"N positivo; M=1..1000 requiere varias pasadas; no se admiten opciones desconocidas ni duplicadas\n"; return 2;
     }
     return run(options);
 }

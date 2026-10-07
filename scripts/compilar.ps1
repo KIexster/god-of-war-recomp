@@ -61,6 +61,7 @@ $gsPackedDepthPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-packed-depth.pat
 $gsBilinearPrecisionPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-bilinear-precision.patch'
 $gsNearestStqPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-nearest-stq.patch'
 $gsFeedbackSnapshotPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-feedback-snapshot.patch'
+$gsBilinearStqPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-bilinear-stq.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -146,6 +147,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $gsPackedDepthPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsBilinearPrecisionPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsNearestStqPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsFeedbackSnapshotPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsBilinearStqPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner

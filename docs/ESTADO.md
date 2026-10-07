@@ -1848,3 +1848,48 @@ no aparece en esta captura final; combate y FPS sostenidos siguen sin comprobar.
 El primer guion de 330 s perdió la selección «Load» y llegó a la intro de una
 partida nueva: no se usa como evidencia de carga guardada. Solo se retrasaron
 las pulsaciones del control privado para repetirlo.
+
+### STQ bilineal: convertir antes de restar medio texel (7 de octubre)
+
+La siguiente comparación procedural con PCSX2 v2.8.2 software confirma un fallo
+de precisión distinto: bilinear restaba medio texel a la coordenada float antes
+de cuantizarla, aunque nearest ya usaba 16.16. Una matriz 16×16 con texels RGBA
+4×4 disjuntos y valores próximos a los límites signed difiere en 611 bytes
+RGBA/156 píxeles. La entrada RGB/alpha de los 16 texels y freeze/GIF/End se
+comprueban exactos antes de atribuir la diferencia al filtro.
+
+`ps2recomp-gs-bilinear-stq.patch` realiza la conversión antes del medio texel
+en CPU y GLSL. Las tres regresiones nuevas fallan antes (573/576) y pasan
+después (576/576, catorce controles OpenGL reales). Usan la huella RGBA externa,
+sin repetir la fórmula del filtro en el test, para sprites/triángulos, Q=1/2
+y cuatro modos SSE. Hardware tiene que rasterizar al menos una matriz sin
+tiles compute. El generador público exporta ahora también el control bilinear
+STQ; los detalles y la referencia están en [RENDERIZADO.md](RENDERIZADO.md).
+
+La compilación completa regenera las 6418 unidades y termina con código 0.
+La auditoría confirma 49 parches/84 fuentes y la suite posterior pasa 576/576.
+El helper compila siete herramientas y valida trece patrones freeze/GIF/End
+con CPU ×3, además de los 18 controles de imagen y seis corrupciones rechazadas.
+Los cuatro dumps son idénticos a los ejecutados en PCSX2 por SHA256 y sus
+matrices CPU coinciden con los 1024 bytes RGBA de cada referencia.
+
+Compute ×8 y hardware ×8 del nuevo patrón conservan VRAM, estado y cuadro
+visible entre restauraciones, con RGB externo exacto. Las ocho pasadas rápidas
+seleccionando hardware usaban aún compute mientras compilaba su shader.
+La nueva opción `--pausa-ms 1000` deja terminar esa compilación entre pasadas
+sin cambiar las comparaciones: siete de las ocho repeticiones usan hardware
+con 256 primitivas y cero tiles compute. Se rechazan nueve argumentos inválidos;
+CPU ×2 con pausa mantiene salida 0 y feedback opcional mantiene su salida 1.
+La espera de diagnóstico no interviene en el juego ni mide rendimiento.
+
+El control final de 510 s usa OpenGL, omite FMV y mantiene desactivado el snapshot
+experimental. Carga una copia privada de la tarjeta de Claude; el original
+conserva su SHA256. Las dieciséis imágenes 512×448 son distintas y válidas.
+La última muestra a Kratos durante un ataque, con HUD, estelas de armas, R2 y
+punto de guardado, en estado 11 sin carga pendiente. Se reciben las tres
+pulsaciones de cuadrado; las 128 muestras de Clip son finitas/completas, las
+768 tripletas tardías son no nulas y los 192 contextos de partida no presentan
+punteros inválidos, ciclos ni truncamientos. No aparece VU reservada. La imagen
+de ataque queda comprobada; combate contra enemigos y rendimiento sostenido
+siguen pendientes. La documentación de arquitectura enlaza ahora la lista
+de parches de `scripts/compilar.ps1`, para evitar otra lista manual incompleta.

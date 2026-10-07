@@ -80,30 +80,36 @@ namespace gow_gs_reference
         return patternDump(path,seed,{0,tex0,tex1,5,0,0,scissor,0,0x31001,0,frame,zbuf},commands);
     }
 
-    enum class GridCase {Bilinear,Negative,Boundary};
+    enum class GridCase {Bilinear,Negative,Boundary,BilinearStq};
     inline float gridCoordinate(GridCase fixture,unsigned index)
     {
         constexpr std::array<float,16> limits={-2.0f,-1.75f,-1.0f,-0.75f,-0.25f,-1.0f/16,-1.0f/256,
             -1.0f/65536,-1.0f/131072,-1.0f/1048576,0,1.0f/1048576,1.0f/16,0.25f,0.75f,1.0f};
+        // GOW-Port: STQ bilinear convierte a 16.16 antes de restar medio texel.
+        constexpr float e=1.0f/131072;
+        constexpr std::array<float,16> bilinearStq={-2-e,-1-e,-0.5f-e,-0.25f-e,-0.0625f-e,
+            -e,-2*e,0,e,0.0625f-e,0.0625f+e,0.5f-e,0.5f,0.5f+e,1-e,1+e};
+        if(fixture==GridCase::BilinearStq) return bilinearStq.at(index);
         return fixture==GridCase::Boundary?limits.at(index):float(int(index)-8)/4.0f;
     }
     inline bool gridDump(const std::filesystem::path &path,std::span<const uint8_t> seed,GridCase fixture)
     {
-        const bool linear=fixture==GridCase::Bilinear;
+        const bool fst=fixture==GridCase::Bilinear;
+        const bool linear=fst || fixture==GridCase::BilinearStq;
         constexpr uint64_t frame=8ull<<16,zbuf=104ull|(1ull<<24)|(1ull<<32),scissor=(15ull<<16)|(15ull<<48);
-        const uint64_t exponent=linear?1:2,tex1=linear?0x60:0,clamp=linear?5:0;
+        const uint64_t exponent=fst?1:2,tex1=linear?0x60:0,clamp=fst?5:0;
         const uint64_t tex0=8192ull|(8ull<<14)|(exponent<<26)|(exponent<<30)|(1ull<<34)|(1ull<<35);
         Bytes commands;
         auto ad=[&](uint8_t address,uint64_t value) {commands.reg(value);commands.reg(address);};
         ad(0x1a,1);ad(0x18,0);ad(0x40,scissor);ad(0x4c,frame);ad(0x4e,zbuf);
         ad(0x47,0x30000);ad(0x06,tex0);ad(0x14,tex1);ad(0x08,clamp);ad(0x46,1);
-        ad(0x45,0);ad(0x49,0);ad(0x00,6|16|(linear?256:0));ad(0x01,0x3f80000080808080ull);
+        ad(0x45,0);ad(0x49,0);ad(0x00,6|16|(fst?256:0));ad(0x01,0x3f80000080808080ull);
         for(unsigned y=0;y<16;++y) for(unsigned x=0;x<16;++x) {
-            const uint64_t coordinate=linear?(8ull+x)|((8ull+y)<<16):
+            const uint64_t coordinate=fst?(8ull+x)|((8ull+y)<<16):
                 uint64_t(std::bit_cast<uint32_t>(gridCoordinate(fixture,x)/4.0f))|
                 (uint64_t(std::bit_cast<uint32_t>(gridCoordinate(fixture,y)/4.0f))<<32);
-            ad(linear?0x03:0x02,coordinate);ad(0x05,x*16ull|((y*16ull)<<16)|(7ull<<32));
-            ad(linear?0x03:0x02,coordinate);ad(0x05,(x+1)*16ull|(((y+1)*16ull)<<16)|(7ull<<32));
+            ad(fst?0x03:0x02,coordinate);ad(0x05,x*16ull|((y*16ull)<<16)|(7ull<<32));
+            ad(fst?0x03:0x02,coordinate);ad(0x05,(x+1)*16ull|(((y+1)*16ull)<<16)|(7ull<<32));
         }
         ad(0x61,0);
         return patternDump(path,seed,{0,tex0,tex1,clamp,0,0,scissor,0,0x30000,0,frame,zbuf},commands);

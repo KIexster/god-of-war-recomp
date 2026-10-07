@@ -7,41 +7,20 @@
 1. **Comprobación de herramientas** — `git`, `cmake`, `ninja` (entorno de MSVC cargado por `2_compilar.cmd`).
 2. **PS2Recomp** — clona `ran-j/PS2Recomp` en `<unidad>:\gowport\PS2Recomp`, hace checkout del commit
    `c5a9d02573410a2085a4b4b831b0b68ba3515440` e inicializa submódulos.
-3. **Parches** — aplica, en este orden, `patches/ps2recomp-runtime.patch`, `ps2recomp-checkpoint.patch`
-   (checkpoints que ceden en la entrada de una función), `ps2recomp-xgkick.patch` (`GOW_XGKICK_IMMEDIATE`,
-   opcional), `ps2recomp-vif-unpack.patch` (UNPACK V2 y V4-5), `ps2recomp-vif-diagnostic.patch`
-   (diagnósticos acotados de VIF y XGKICK), `ps2recomp-heap.patch` (heap privado del runtime configurable
-   con `setPrivateGuestHeap`), `ps2recomp-vu-jump.patch` (JR/JALR leen el destino VI actual),
-   `ps2recomp-vu-efu.patch` (coeficiente de la serie de `EATAN`),
-   `ps2recomp-mpeg-nodata.patch` (`sceMpegGetPicture` llama al callback `sceMpegCbNodata`),
-   `ps2recomp-spu2.patch` (emulación del SPU2 en el IOP, fase 1),
-   `ps2recomp-fpu-roots.patch` (operandos de `SQRT.S` y `RSQRT.S` en el recompilador de COP1),
-   `ps2recomp-spu2-output.patch` (salida del SPU2 por el audio del PC) y
-   `ps2recomp-sio2.patch` (SIO2 y memory card emulados en el IOP) y
-   `ps2recomp-perf.patch` (perfil opcional de tiempos exclusivos y contadores de presentación) y
-   `ps2recomp-gs-opengl.patch` (backend OpenGL y cola GS opcionales, conservando el CPU) y
-   `ps2recomp-ee-fixes.patch` (FPU y VU0 sin NaN/infinitos, ramas de 64 bits, LQ/SQ alineados y saltos
-   finales, tomados del fork de SotC) y
-   `ps2recomp-gs-presentation.patch` (campos entrelazados, fuente de presentación y direcciones en bloques),
-   `ps2recomp-vif-direct.patch` (IMAGE de PATH2 continúa dentro de DIRECT, conservando los comandos VIF) y
-   `ps2recomp-vif-direct-fragments.patch` (conserva el payload y la prioridad de DIRECT entre bloques DMA/FIFO) y
-   `ps2recomp-gif-order.patch` (arbitraje entre cabeceras, conservando el FIFO de cada path) y
-   `ps2recomp-gif-tag-semantics.patch` (NLOOP=0 conserva PRIM/Q y PRE solo actúa en PACKED) y
-   `ps2recomp-gif-stream.patch` (cursor PACKED/REGLIST/IMAGE independiente por PATH, sin etiquetas sintéticas) y
-   `ps2recomp-gif-image-order.patch` (DIRECTHL reconoce continuaciones IMAGE y omite registros/relleno) y
-   `ps2recomp-gif-image2.patch` (compatibilidad IMAGE2 en el parser, el atajo de subida y el arbitraje) y
-   `ps2recomp-gif-native-tag.patch` (el atajo DMA IMAGE conserva PRE/Q y acepta IMAGE2 tras validar la cadena) y
-   `ps2recomp-gs-image-fragments.patch` (conserva pixels CT24/Z24 entre cargas, reset y exportación de estado) y
-   `ps2recomp-gs-triangle-sampling.patch` (CPU comparte con OpenGL el centro entero, XYOFFSET 12.4 y bordes) y
-   `ps2recomp-gs-sprite-sampling.patch` (ejes CPU de sprites con fracciones, sentido de UV y área cero) y
-   `ps2recomp-iop-fast.patch` (intérprete del IOP unas 1,65 veces más rápido, sin cambiar su comportamiento) y
-   `ps2recomp-vu0-macro.patch` (VU0 en modo macro usa su memoria de datos; DMA con cadenas de más de 4096 tags) y
-   `ps2recomp-mmi.patch` (15 instrucciones MMI corregidas según PCSX2: permutaciones, PABS, PADDUH/PSUBUH, PS*VW) y
-   `ps2recomp-gs-triangle-constants.patch` (interpolación CPU/OpenGL que conserva color, alpha y niebla constantes) y
-   `ps2recomp-gs-triangle-texcoords.patch` (UV/STQ constantes y refinamiento del recíproco Q en el shader) y
-   `ps2recomp-vu1-efu-opcodes.patch` (codificaciones reales de ERSQRT, ESIN, EATAN y EEXP, y caso EFU reservado)
-   con `git apply --ignore-whitespace`. Antes de reaplicarlos borra los archivos que dejó la compilación
-   anterior y que algún parche crea (`new file mode`), así un parche nuevo no necesita tocar esa limpieza.
+3. **Parches** — aplica la lista completa en el orden que define [`scripts/compilar.ps1`](../scripts/compilar.ps1).
+   [`tools/ci/parches.py`](../tools/ci/parches.py) obtiene esa misma lista para la CI y comprueba que no
+   falte ningún archivo de `patches/`. Desde la raíz, `python tools/ci/parches.py` muestra los parches
+   y su orden; esa es la referencia para preparar un cambio sobre el runtime fijado.
+
+   Los temas se mantienen en parches separados: arranque y servicios del runtime, EE/FPU/MMI,
+   IOP/audio/memory card, DMA/VIF/GIF/VU y renderizado GS. Los backends CPU/OpenGL, el muestreo,
+   la presentación y el feedback opcional se describen en [`RENDERIZADO.md`](RENDERIZADO.md);
+   los controles ejecutados y sus límites se registran en [`ESTADO.md`](ESTADO.md).
+
+   Antes de reaplicar la lista, el script retira los archivos que algún parche crea (`new file mode`),
+   conservando una limpieza común para nuevos parches. Cada cambio de parches requiere la
+   compilación completa con `scripts\2_compilar.cmd`; la compilación rápida solo actualiza los overrides.
+
 4. **Ajustes de CMake** — añade `src/runner` a los includes de `ps2EntryRunner` y desactiva `/GL` y `/LTCG`
    para compilar en paralelo (con LTCG el enlazado de ~6 400 archivos es inviable).
 5. **Recompilador** — compila el objetivo `ps2_recomp`.

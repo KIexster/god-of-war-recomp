@@ -209,3 +209,10 @@ Los controles sin el juego y sus límites están en
 `repetir_gs` selecciona explícitamente esta política con `--snapshot-feedback`
 en modo compute/hardware. Continúa señalando las diferencias con CPU mediante
 salida 1, aunque la imagen GPU se mantenga estable entre repeticiones.
+
+`--pausa-ms M` añade una espera de 1..1000 ms entre pasadas de `repetir_gs`;
+requiere `--repeticiones N` con N mayor que 1. Permite que el compilador de
+shaders termine mientras se conserva el mismo backend. Ocho pasadas sin espera
+pueden completar sus imágenes en compute antes de que hardware esté listo:
+se deben comprobar `prims` y `tiles`, además del código de salida. La espera
+no cambia el estado inicial ni las comparaciones y no mide los FPS del juego.
