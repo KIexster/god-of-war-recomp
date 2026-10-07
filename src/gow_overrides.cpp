@@ -159,7 +159,13 @@ namespace
                     if (std::getenv("GOW_RENDER_DIAG"))
                     {
                         static bool renderDumped = false;
-                        if (gameState == 11u && !renderDumped)
+                        // GOW_RENDER_DIAG_DESDE=<segundos>: volcar la primera captura en partida a partir de ese momento.
+                        static const double dumpFrom = []
+                        {
+                            const char *v = std::getenv("GOW_RENDER_DIAG_DESDE");
+                            return v ? std::strtod(v, nullptr) : 0.0;
+                        }();
+                        if (gameState == 11u && !renderDumped && seconds >= dumpFrom)
                         {
                             renderDumped = true;
                             std::ofstream code("gow_vu1_code.bin", std::ios::binary);
