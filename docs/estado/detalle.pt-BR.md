@@ -39,7 +39,7 @@ Gerado por `tools/estado/generar.py` a partir de `docs/estado/datos.toml` e `con
 | EE | Temporizadores | 1 | ✅ Funciona |  |
 | GS / VU | GS: primitivas e framebuffer | 3 | 🔧 Parcial | CPU e OpenGL mantidos; barco, Kratos, inimigos e HUD visíveis após a correção SPR; persistem diferenças CPU/OpenGL e falta verificar a cobertura completa |
 | GS / VU | VIF1 e VU1 | 3 | 🔧 Parcial | MMI/EFU e cadeias SPR corrigidos: modelos e HUD com formas corretas; cobertura ainda parcial. Máscaras VU1: 35% menos tempo em uma repetição com imagem idêntica; melhora dos FPS gerais não medida |
-| GS / VU | GS: texturas, CLUT e fontes | 2 | 🔧 Parcial | HUD visível; persistem diferenças CPU/OpenGL de texturas e feedback e falta verificar todas as fontes e CLUT |
+| GS / VU | GS: texturas, CLUT e fontes | 2 | 🔧 Parcial | HUD visível; bilinear CPU/OpenGL coincide com PCSX2 software em 256 frações RGBA; persistem diferenças de feedback e falta verificar todas as fontes e CLUT |
 | GS / VU | GIF (PATH1-3) | 2 | ✅ Funciona |  |
 | GS / VU | IPU: vídeo FMV | 2 | 🔧 Parcial | A intro FMV funciona por decodificação MPEG por software; isso não comprova emulação completa do hardware IPU |
 | IOP | CPU R3000A (interpretador) | 3 | ✅ Funciona |  |

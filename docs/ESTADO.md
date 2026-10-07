@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-_Última actualización: 6 de octubre de 2026_
+_Última actualización: 7 de octubre de 2026_
 
 ## Qué funciona
 
@@ -29,9 +29,10 @@ _Última actualización: 6 de octubre de 2026_
   parcial de `Animation/goHero` y la llamada virtual a NULL al avanzar desde el menú.
 - `gowIpuInit` corrige la inicialización del IPU: el stub genérico saltaba a una dirección de otro
   ejecutable y ejecutaba `FilteredCopyTile` con registros incorrectos. Ahora se alcanza la carga del FMV.
-- Con `GOW_SKIP_FMV=1`, la prueba de 600 segundos alcanzó el **estado 11 de partida**, con
-  `pending=0` y el hilo principal activo. La animación previa de 13,33 s de juego tardó varios minutos
-  reales. La imagen de partida permanece negra: todavía no hay gameplay visible verificado.
+- Con `GOW_SKIP_FMV=1` se alcanza el **estado 11 de partida**, con `pending=0` y el hilo principal activo.
+  Tras integrar los arreglos de Claude, el control OpenGL de 225 segundos carga una copia de su tarjeta
+  y muestra a Kratos, el escenario, el HUD y la indicación R2 en «Docks of Athens». El rendimiento sigue
+  bajo; faltan controles de combate, otros escenarios y rendimiento sostenido.
 
 ## Símbolos
 
@@ -1726,3 +1727,40 @@ dos lotes, dos primitivas y cero tiles compute (19 bytes VRAM/visibles en 4→5 
 34 en 7→8). Restauración y estado portable final permanecen exactos. Así se puede
 reproducir el problema independientemente del juego antes de elegir un arreglo;
 no se cambia todavía la política del renderer ni se atribuye una mejora de FPS.
+
+La referencia independiente de PCSX2 v2.8.2 software descubre otro problema:
+el filtro bilineal redondeaba al final, mientras la referencia usa fracciones de
+cuatro bits y trunca cada etapa. `ps2recomp-gs-bilinear-precision.patch` cambia
+solo GS CPU/GLSL y añade tres regresiones con una huella RGBA externa de 256
+fracciones UV, también para STQ y cuatro modos SSE. Las tres fallan antes del
+arreglo y después pasan **568/568**, incluidas diez OpenGL reales. El control
+literal bilineal de una prueba anterior se ajusta al truncado documentado;
+nearest no cambia. La compilación completa de las 6418 unidades termina bien
+y el árbol reconstruido coincide en sus **46 parches y 84 fuentes**.
+
+El helper recompila seis herramientas y conserva los 18 controles de imágenes
+y las tres repeticiones CPU ×3 exactas. `generar_feedback_gs --pcsx2` añade
+exportación procedural GS freeze v8/PATH3; la nueva prueba comprueba el freeze
+inicial y reproduce los comandos GIF con VRAM final exacta en los tres casos.
+Los `.gs` exportados son idénticos por SHA256 a los usados en la referencia
+aislada, sin BIOS ni datos del juego. La comparación con PCSX2 software queda
+exacta para nearest y, tras el arreglo, para bilinear con fuente disjunta.
+Los detalles y fuentes están en [RENDERIZADO.md](RENDERIZADO.md).
+
+En RX 5700 XT, hardware ×12 sigue exacto y estable para fuente disjunta y nearest.
+Feedback bilineal aún devuelve 1 y varía: las dos últimas pasadas difieren en
+89 bytes de VRAM y de imagen visible, con dos lotes, dos primitivas, cero tiles
+compute y estado portable final igual. No se cambia la política de caché ni
+se atribuye una mejora de FPS. El treemap incorpora la precisión verificada
+y conserva GS/texturas en parcial y sus porcentajes de cobertura anteriores.
+
+El control OpenGL final de 330 s carga «Docks of Athens» desde una copia privada
+de la tarjeta ECC, cuyo original sigue idéntico por SHA256. Las 14 capturas son
+distintas y válidas; la última muestra a Kratos, el HUD, el punto de guardado y R2,
+en estado 11 sin carga pendiente. Las 128 muestras de Clip son finitas y completas;
+las 352 sondas tardías de `InitUNPACKData` tienen una primera tripleta no nula,
+y las 192 muestras de contextos de partida no contienen punteros inválidos,
+ciclos ni truncamientos. No aparecen instrucciones VU reservadas. No prueba
+todavía combate ni FPS sostenidos. Se retrasan las pulsaciones del guion privado:
+el primer control de 225 s perdió el Start inicial y acabó en la intro de partida
+nueva, por lo que no se usa como prueba de carga guardada.

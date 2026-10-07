@@ -2,6 +2,7 @@
 #include "gow_gs_replay.h"
 #include "runtime/gs/gs_cpu_backend.h"
 #include "runtime/gs/gs_swizzle.h"
+#include "gs_pcsx2_dump.h"
 #include <algorithm>
 #include <cstring>
 #include <iostream>
@@ -12,8 +13,14 @@ int wmain(int argc,wchar_t **argv)
 int main(int argc,char **argv)
 #endif
 {
-    if(argc>2) {std::cerr<<"Uso: generar_feedback_gs [directorio=logs]\n";return 2;}
-    const auto output=argc==2?std::filesystem::path(argv[1]):std::filesystem::path("logs");
+    bool pcsx2=false,hasOutput=false;
+    auto output=std::filesystem::path("logs");
+    for(int i=1;i<argc;++i) {
+        const auto argument=std::filesystem::path(argv[i]);
+        if(argument=="--pcsx2" && !pcsx2) pcsx2=true;
+        else if(!hasOutput && !argument.native().empty() && argument.native()[0]!='-') {output=argument;hasOutput=true;}
+        else {std::cerr<<"Uso: generar_feedback_gs [directorio=logs] [--pcsx2]\n";return 2;}
+    }
     std::error_code error;
     std::filesystem::create_directories(output,error);
     if(error || !std::filesystem::is_directory(output,error)) return 2;
@@ -47,6 +54,7 @@ int main(int argc,char **argv)
             std::cout<<"Vecinos copiados y verificados="<<checks<<'\n';
         }
         const auto path=output/(std::string("feedback_gs_")+name+".bin");
+        if(pcsx2 && !gow_gs_reference::feedbackDump(output/(std::string("feedback_gs_")+name+".gs"),vram,disjoint,linear)) return 2;
         gow_gs_replay::Backend capture(std::make_unique<GSCpuBackend>(),nullptr,path,0,3600);
         capture.Initialize(vram.data(),uint32_t(vram.size()));
         for(unsigned slice=0;slice<2;++slice) {

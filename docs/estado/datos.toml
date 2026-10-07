@@ -189,7 +189,7 @@ nombre = "GS / VU"
   nombre = { es = "GS: texturas, CLUT y fuentes", en = "GS: textures, CLUT and fonts", pt = "GS: texturas, CLUT e fontes" }
   estado = "parcial"
   peso = 2
-  nota = { es = "HUD visible; quedan diferencias CPU/OpenGL de texturas y feedback y falta verificar todas las fuentes y CLUT", en = "HUD visible; CPU/OpenGL texture and feedback differences remain, and full font and CLUT coverage is unverified", pt = "HUD visível; persistem diferenças CPU/OpenGL de texturas e feedback e falta verificar todas as fontes e CLUT" }
+  nota = { es = "HUD visible; bilineal CPU/OpenGL coincide con PCSX2 software en 256 fracciones RGBA; quedan diferencias de feedback y falta verificar todas las fuentes y CLUT", en = "HUD visible; CPU/OpenGL bilinear matches PCSX2 software over 256 RGBA fractions; feedback differences remain, and full font and CLUT coverage is unverified", pt = "HUD visível; bilinear CPU/OpenGL coincide com PCSX2 software em 256 frações RGBA; persistem diferenças de feedback e falta verificar todas as fontes e CLUT" }
 
   [[hardware.grupo.componente]]
   corto = "GIF"

@@ -644,7 +644,7 @@ scripts\compilar_replay_gs.cmd
 .\logs\repetir_gs.exe logs\feedback_sintetico\feedback_gs_nearest.bin hardware --repeticiones 12 logs\feedback_sintetico\hw_nearest
 ```
 
-El generador se puede ejecutar aparte con `generar_feedback_gs.exe [directorio]`;
+El generador se puede ejecutar aparte con `generar_feedback_gs.exe [directorio] [--pcsx2]`;
 las capturas usan la ABI del runtime con que se compiló. En RX 5700 XT, CPU ×3
 reproduce los tres End y cuadros exactamente. Hardware ×12 conserva paridad y
 estabilidad para `disjoint` y `nearest` (salida 0). `self` devuelve 1: difiere de
@@ -663,6 +663,47 @@ de feedback. El bucle CPU actual escribe un píxel tras cada muestra y todavía 
 modela esos grupos ni su pipeline. La [nota de PCSX2 sobre caché GS](https://github.com/PCSX2/pcsx2/discussions/4311)
 también distingue la caché de textura de la de framebuffer. Se necesita un control
 de ese patrón para decidir el siguiente cambio.
+
+## Precisión bilineal y referencia independiente
+
+`ps2recomp-gs-bilinear-precision.patch` corrige la interpolación de los canales
+RGBA en CPU y OpenGL. El filtro anterior interpolaba en coma flotante y redondeaba
+al final. Ahora usa una fracción de cuatro bits y trunca cada etapa horizontal y
+la vertical, como el renderer software de
+[PCSX2 v2.8.2](https://github.com/PCSX2/pcsx2/blob/v2.8.2/pcsx2/GS/Renderers/SW/GSDrawScanline.cpp),
+con su operación
+[`lerp16_4`](https://github.com/PCSX2/pcsx2/blob/v2.8.2/pcsx2/GS/GSVector8i.h).
+No incorpora código de esas funciones: usa pesos enteros positivos para obtener
+el mismo truncado sin depender del desplazamiento de enteros negativos.
+
+La referencia se ejecutó con PCSX2 software, sin BIOS ni archivos del juego, sobre
+cuatro texels procedurales RGBA y las 256 combinaciones de fracciones UV. Se
+verificaron también los texels de entrada. La imagen RGBA de 1024 bytes tiene
+SHA256 `9de1ca132c07706433d8e86fedde114379437d2f869884342e2ec0c2353004d6`
+y FNV-1a64 `fdde85267aad850d`. El filtro anterior difiere en 780 bytes; el nuevo
+coincide en todos. Las regresiones comprueban esa huella externa en CPU directo,
+CPU con hilo y OpenGL compute/hardware, con FST y STQ y los cuatro modos de
+redondeo SSE, conservando los controles del productor. Fallan las tres antes del
+arreglo; después pasan las 568 pruebas, incluidas diez OpenGL con GPU real.
+El control literal de textura de una prueba anterior cambia de R/G=44/73 a
+43/72 por el truncado; nearest conserva 58/87.
+
+`generar_feedback_gs --pcsx2` exporta también los tres patrones como `.gs`. El
+helper los genera en `logs\feedback_sintetico` y ejecuta
+`gs_feedback_dump_test`: comprueba el freeze inicial y envía los paquetes A+D
+al frontend GIF PATH3, comparando los cuatro MiB de VRAM con el End de la captura
+CPU. La serialización propia usa el formato legacy y freeze v8 de
+[GSState.cpp](https://github.com/PCSX2/pcsx2/blob/v2.8.2/pcsx2/GS/GSState.cpp) y
+[GSDump.cpp](https://github.com/PCSX2/pcsx2/blob/v2.8.2/pcsx2/GS/GSDump.cpp).
+Es una exportación de estos patrones concretos, no un conversor de trazas del
+juego ni de estados GS arbitrarios. Los binarios generados quedan en `logs/`.
+
+La comparación independiente separa la precisión del feedback: nearest ya
+coincidía; con el filtro corregido, la fuente disjunta también coincide con PCSX2
+software. El feedback bilineal conserva diferencias y requiere decidir la
+política de caché y el orden de acceso. PCSX2 software sirve aquí como referencia
+ejecutada; no sustituye una captura de una PS2 para certificar ese feedback.
+Este cambio no demuestra una mejora de FPS.
 
 ## Referencia Tobiichi-Port
 
