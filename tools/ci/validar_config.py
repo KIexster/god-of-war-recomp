@@ -24,6 +24,7 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parents[2]
 FUNCMAP = RAIZ / "config" / "funcmap.csv"
 PLANTILLA = RAIZ / "config" / "recomp.template.toml"
+LIBM_DOUBLE = {"sin", "cos", "tan", "atan", "atan2", "sqrt", "pow", "exp", "log", "fabs", "floor", "ceil", "fmod"}
 SELECTOR = re.compile(r"^(?P<nombre>[A-Za-z_$][\w$.]*)@0x(?P<dir>[0-9A-Fa-f]{1,8})$")
 
 errores: list[str] = []
@@ -103,6 +104,13 @@ def main() -> int:
                 errores.append(f"{clave}: {nombre}@0x{direccion:08X} no cae dentro de ninguna funcion de funcmap.csv")
             elif clave == "stubs" and direccion != funciones[i][1]:
                 avisos.append(f"stubs: {nombre}@0x{direccion:08X} no empieza una funcion (esta dentro de {funciones[i][0]})")
+
+    # La libm de God of War es double por software ($a0 -> $v0); los handlers del runtime son float
+    # ($f12 -> $f0). Reemplazarla devuelve el argumento intacto (la tabla de senos salía con sin(x) = x).
+    for nombre, direccion in stubs:
+        if nombre in LIBM_DOUBLE:
+            errores.append(f"stubs: {nombre}@0x{direccion:08X} es la libm double por software; "
+                           "el handler float del runtime no respeta su ABI")
 
     por_direccion: dict[int, list[str]] = {}
     for nombre, direccion in stubs + entradas:

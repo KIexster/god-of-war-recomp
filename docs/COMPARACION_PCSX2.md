@@ -70,15 +70,28 @@ reescritos (`0x80606060`), mientras el port conserva los del disco. Con el saves
 partida (`D6385328`), PCSX2 también conserva los colores del disco: es un recálculo posterior del
 nivel, no un fallo del port. Se descarta como causa de la escena oscura.
 
-## Matriz de la cámara
+## Matriz de la cámara: causa y arreglo (2026-10-06)
 
-En la partida del port, la matriz de la cámara que llega a VU1 tiene ejes ortogonales de longitud
-1,27, 1,52 y 1,93; en PCSX2 miden 1. Esto estira toda la escena. Sin `GOW_FAST_BOOT` la intro
-también sale deformada, así que no es un efecto del atajo.
+En la partida del port, la matriz de la cámara que llega a VU1 tenía ejes ortogonales de longitud
+1,27, 1,52 y 1,93; en PCSX2 miden 1. Esto estiraba toda la escena, también en la intro sin
+`GOW_FAST_BOOT`. Siguiendo las escrituras (una vigilancia temporal en `ps2TraceGuestWrite`, ya
+retirada) se llegó a la articulación 1 del esqueleto que anima la cámara de la intro, calculada por
+`makeAnimMatricesRot` (`0x10B9C0`). Esa función toma seno y coseno de una tabla de 4096 floats que se
+copia al scratchpad (`0x70000000`) desde `*(0x304638)` = `0x52C600`.
 
-En PCSX2 la cámara activa es la de la armadura (`BuildCameraMatrixFromArmature`); en el port, el
-estado de cámara copia la matriz de un esqueleto de dos articulaciones que anima la cámara de la
-intro (articulación 1, con esa escala). Seno/coseno, `RotX/Y/Z`, `View`, `ToMatrix` y
-`OrthoNormalise` producen matrices unitarias en el port. Falta comparar esa articulación con PCSX2
-durante la intro para saber si la escala es un dato legítimo del esqueleto o un fallo del cálculo de
-la animación.
+En el port la tabla contenía el ángulo y no su seno (`0,1963 / 0,3927 / 0,7854 / 1,5704` frente a
+`0,1951 / 0,3827 / 0,7071 / 1,0` en PCSX2). La rellena `0x118798` con
+`dptofp(sin(fptodp(x)))`: la libm del juego es **double por software** (argumento en `$a0`,
+resultado en `$v0`), pero `config/recomp.template.toml` reemplazaba `sin@0x00287378` por el handler
+float del runtime (`$f12 -> $f0`). `$v0` conservaba el argumento, así que `sin(x)` devolvía `x`.
+`fabs` y `floor` tenían el mismo problema; solo los usa esa libm (`__ieee754_rem_pio2`,
+`__kernel_rem_pio2`).
+
+**Arreglo:** `sin`, `fabs` y `floor` dejan de ser stubs y se ejecuta la libm original recompilada.
+`tools/ci/validar_config.py` rechaza ahora reemplazar funciones de la libm double.
+
+Comprobación con la compilación completa y `GOW_SKIP_FMV=1`, `GOW_FAST_BOOT=1`: la tabla del port
+coincide con PCSX2 (`0 / 0,1951 / 0,3827 / 0,7071 / 1,0`), la matriz de la cámara a los 190 s mide
+1 en los tres ejes y las capturas de 160 y 190 s muestran la cubierta del barco, los acantilados, el
+cielo y la lluvia sin polígonos estirados. Las animaciones de Kratos y los enemigos usan la misma
+tabla; queda por verificar su aspecto en partida.
