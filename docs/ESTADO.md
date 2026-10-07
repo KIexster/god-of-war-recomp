@@ -1467,3 +1467,74 @@ expliquen toda la deformación que también aparece en CPU. El siguiente paso es
 comprobar el efecto del modo de redondeo del host y reducir el primer dibujo distinto
 a una prueba sintética. Los comandos, coordenadas, VRAM e imágenes originales quedan
 únicamente en `logs/gs_cpu_state_game/`, excluidos de Git.
+
+La CI del commit `681c257` pasa ambos jobs. La captura y repetición ya se pueden
+reproducir con la herramienta pública, sin publicar los volcados originales.
+
+### Aislamiento del redondeo SSE en el renderer CPU (2026-10-06)
+
+Se confirma una dependencia del backend CPU respecto al modo MXCSR del productor.
+VU ejecuta con redondeo hacia cero y envía comandos GS dentro de esa ejecución;
+la cola GS también conserva MXCSR. En la captura anterior **46.950 de los 47.207
+dibujos** llegan con ese modo, incluido el primero que difiere de OpenGL. Una sonda
+sintética de 24 combinaciones de gradiente/UV/STQ, CPU directo/con hilo y cuatro
+modos falla en cuatro casos de gradiente: cambian 178 bytes de color por caso.
+UV/STQ de esa muestra no cambian; no se generaliza ese resultado a toda textura.
+
+Se aísla además el dibujo real 561 tras repetir todos sus comandos anteriores.
+La página CPU cacheada coincide con VRAM. Cambiar únicamente el modo CPU modifica
+cuatro bytes entre más cercano y hacia cero; OpenGL compute difiere en un byte
+respecto al CPU con más cercano. Esto confirma la influencia de MXCSR en ese
+dibujo, pero todavía queda una diferencia de precisión y no se certifica paridad
+completa. Las ejecuciones con hardware habilitado de esta sonda pequeña usan
+compute (129 tiles); el control mixto completo anterior sigue siendo el que
+verifica activación hardware.
+
+`ps2recomp-gs-cpu-rounding.patch` delimita el modo SSE al entrar en `Submit`: usa
+el redondeo habitual al más cercano del rasterizador CPU y restaura el del llamador
+al salir. Conserva máscaras, FTZ/DAZ y flags; no cambia EE, FPU, IOP ni la ejecución
+VU. Es una estabilización del renderer aproximado, no una afirmación de que la
+interpolación actual tenga la precisión exacta del GS de PS2. Dos regresiones nuevas
+comprueban independencia con CPU directo y con hilo, y conservación del control
+MXCSR. Antes del arreglo fallan ambas (**543/545** sin OpenGL); después pasan
+**553/553**, incluidas las ocho pruebas OpenGL. La auditoría verifica **36 parches
+y 79 fuentes** sin diferencias; los scripts y la configuración pasan, con los
+cuatro avisos conocidos.
+
+La compilación completa de los 36 parches termina correctamente y vuelve a generar
+las 6418 unidades. La auditoría posterior conserva las 79 fuentes exactas y la suite
+nativa pasa **553/553**. La sonda independiente de 24 combinaciones pasa ahora todas,
+sin alterar el modo del llamador; la herramienta de captura se reconstruye y su
+test sintético también pasa. El primer control de 200 s no llega a iniciar la
+captura en estado 11 y queda inconcluso; no sirve para comparar renderers.
+
+Tras el arreglo de libm de Claude (`3f349b2`), la compilación completa conjunta
+vuelve a aplicar los 36 parches y ejecuta las funciones originales double de
+`sin`, `fabs` y `floor`. La auditoría verifica las 79 fuentes exactas. El control
+CPU de 330 s alcanza estado 11 con `pending=0` y guarda una captura completa de
+**53.016 dibujos y tres presentaciones**. Repetirla con CPU reproduce exactamente
+VRAM final, estado GS y las presentaciones. Compute y el recorrido mixto divergen
+primero en un sprite (dibujo 510, registro 520), con 917 bytes distintos; al final
+difieren en 387.242 y 386.914 bytes respectivamente y en las tres presentaciones.
+El recorrido mixto activa hardware y ejecuta 17.679 tiles compute, frente a 42.001
+en compute puro. Son comparaciones de la misma entrada; no son mediciones de FPS.
+
+Las imágenes CPU de 160,48 y 191,27 s muestran cubierta, acantilados, cielo y lluvia
+reconocibles, mejorando claramente el control anterior a libm. Una imagen posterior
+vuelve a mostrar deformaciones; todavía no se verifican Kratos ni una partida
+jugable. Se mantienen los controles originales en `logs/gs_camera_libm_cpu_game/`,
+excluidos de Git, y se continúa investigando los desacuerdos GS y los modelos.
+
+El análisis completo de la captura anterior verifica 141.396 vértices finitos. Hay
+5.284 primitivas con XYZ completamente en cero, todas con estado PSMT8; los Q de
+magnitud mayor de `1e10` usados por STQ aparecen solo en 5.260 de estas primitivas
+degeneradas. Esto localiza posiciones cero en la salida final GS, pero no identifica
+todavía su contexto de modelo ni demuestra que deban dibujarse. También se observan
+210 vértices STQ con Q negativo; no se fuerza su signo. Las observaciones anteriores
+de Clip y de miembros no nulos siguen válidas para los contextos que se midieron.
+
+Una sonda privada de 12 triángulos sintéticos grandes reproduce diferencias de Z en
+tres casos con el shader actual. Un borrador que conserva el recíproco y los
+numeradores enteros en double antes de obtener pesos float elimina esas diferencias
+en los 12 casos y en el dibujo real aislado 561. Ese borrador todavía no forma parte
+del ejecutable; se convertirá en un parche separado con regresión y control completo.

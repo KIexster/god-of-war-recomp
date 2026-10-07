@@ -541,6 +541,26 @@ OpenGL real en la RX 5700 XT; el recorrido mixto usa 7.749 tiles compute frente 
 las deformaciones grandes también aparecen en CPU y todavía requieren investigar
 los datos anteriores al backend. Esta captura opcional serializada no mide FPS.
 
+El renderer CPU se estabiliza con `ps2recomp-gs-cpu-rounding.patch`: cada `Submit`
+usa redondeo SSE al más cercano y restaura el modo del llamador, incluidas las
+llamadas en la cola GS. Mantiene FTZ/DAZ, máscaras y flags; los modos EE/VU continúan
+con su semántica anterior. Dos regresiones fallan sin este aislamiento y comparan
+VRAM completa para gradiente, UV y STQ bajo los cuatro modos MXCSR. No sustituye
+una implementación precisa de la interpolación del GS.
+
+Las capturas anteriores pertenecen a la versión CPU que las produjo: después de
+cambiar su rasterizado hay que capturar de nuevo. La verificación de VRAM final
+de la herramienta rechaza certificarlas con una versión que ya no las reproduce.
+
+Con el arreglo de libm `3f349b2` y los 36 parches se captura una entrada nueva:
+53.016 dibujos, tres presentaciones y estado GS final exacto al repetir en CPU.
+OpenGL compute y mixto divergen ya en el sprite 510 (917 bytes); sus finales
+difieren en 387.242 y 386.914 bytes. Este control conjunta el arreglo de cámara y
+el aislamiento SSE. Las imágenes CPU muestran el barco y los acantilados
+reconocibles, aunque una imagen posterior conserva deformaciones y todavía no
+certifica a Kratos. Se usa como nueva referencia para las siguientes correcciones
+GS; la captura opcional no sirve para medir rendimiento.
+
 ## Referencia Tobiichi-Port
 
 Se revisa [YYOzcan/Tobiichi-Port](https://github.com/YYOzcan/Tobiichi-Port/tree/9f02797f8ab7481fddad4d2daf7afad82d11699f)
