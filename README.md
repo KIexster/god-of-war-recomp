@@ -71,7 +71,7 @@ Per-library and per-component breakdown: [`docs/estado/detalle.en.md`](docs/esta
 | Controller/keyboard through libpad2 HLE; menu and difficulty selection | ✅ |
 | Starting a playable game | 🔧 in progress |
 | Audio: emulated SPU2 with output to the PC (not verified in-game yet) | 🔧 in progress |
-| Memory card: emulated SIO2, PCSX2-compatible `Mcd001.ps2` (not verified in-game yet) | 🔧 in progress |
+| Memory card: emulated SIO2, PCSX2-compatible `Mcd001.ps2`; loading and saving verified in-game | ✅ |
 
 The game boots, runs the original IOP modules (including the `smpd` data streamer), streams its data from
 the ISO, enters its main loop and **renders its first screens**: the *"Sony Computer Entertainment America

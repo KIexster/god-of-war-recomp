@@ -71,7 +71,7 @@ Detalhamento por biblioteca e por componente: [`docs/estado/detalle.pt-BR.md`](d
 | Controle/teclado por HLE de libpad2; menu e seleção de dificuldade | ✅ |
 | Início de uma partida jogável | 🔧 em andamento |
 | Áudio: SPU2 emulado com saída para o PC (ainda não verificado no jogo) | 🔧 em progresso |
-| Memory card: SIO2 emulado, `Mcd001.ps2` compatível com o PCSX2 (ainda não verificado no jogo) | 🔧 em progresso |
+| Memory card: SIO2 emulado, `Mcd001.ps2` compatível com o PCSX2; carregar e salvar verificados no jogo | ✅ |
 
 O jogo inicializa, executa os módulos originais no IOP (incluindo o streamer de dados `smpd`), carrega
 seus dados a partir da ISO, entra no loop principal e **renderiza suas primeiras telas**: a tela legal

@@ -72,7 +72,7 @@ Desglose por librería y por componente: [`docs/estado/detalle.es.md`](docs/esta
 | Mando/teclado por HLE de libpad2; menú y selección de dificultad | ✅ |
 | Inicio de una partida jugable | 🔧 en progreso |
 | Audio: SPU2 emulado con salida al PC (aún sin verificar con el juego) | 🔧 en progreso |
-| Memory card: SIO2 emulado, `Mcd001.ps2` compatible con PCSX2 (aún sin verificar con el juego) | 🔧 en progreso |
+| Memory card: SIO2 emulado, `Mcd001.ps2` compatible con PCSX2; cargar y guardar comprobados en el juego | ✅ |
 
 El juego arranca, ejecuta en el IOP los módulos originales (incluido el cargador de datos `smpd`), carga
 sus datos desde la ISO, entra en su bucle principal y **dibuja sus primeras pantallas**: la pantalla legal

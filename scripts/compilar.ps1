@@ -55,6 +55,7 @@ $sprChainPatch = Join-Path $RepoRoot 'patches\ps2recomp-spr-chain.patch'
 $mpegCreatePatch = Join-Path $RepoRoot 'patches\ps2recomp-mpeg-create.patch'
 $audioPcmPatch = Join-Path $RepoRoot 'patches\ps2recomp-audio-pcm.patch'
 $iopSoundPatch = Join-Path $RepoRoot 'patches\ps2recomp-iop-sound.patch'
+$memcardPatch = Join-Path $RepoRoot 'patches\ps2recomp-memcard.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -134,6 +135,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $sprChainPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $mpegCreatePatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $audioPcmPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $iopSoundPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $memcardPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner

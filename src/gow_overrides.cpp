@@ -13,6 +13,9 @@
 #include <array>
 #include <chrono>
 #include <fstream>
+#include <sstream>
+#include <string>
+#include <vector>
 
 namespace
 {
@@ -129,13 +132,50 @@ namespace
                              readGuest32(rdram, 0x29E5A0u), readGuest32(rdram, 0x29E584u),
                              readGuest32(rdram, 0x29CAB4u), readGuest32(rdram, 0x29C838u));
             }
-            constexpr double presses[] = {5, 12, 20, 28, 36, 52, 60, 68, 76, 84, 100, 116, 132};
-            for (size_t i = 0; i < std::size(presses); ++i)
-                if (seconds >= presses[i] && seconds < presses[i] + 0.7)
+            // GOW_PAD_GUION="5:start,12:abajo,16:x": pulsaciones de 0,7 s en esos segundos (en lugar de la
+            // secuencia fija). Botones: start, select, arriba, abajo, izquierda, derecha, x, circulo, cuadrado,
+            // triangulo, l1, r1, l2, r2.
+            struct ScriptedPress { double seconds; uint8_t byte; uint8_t mask; };
+            static const std::vector<ScriptedPress> script = [] {
+                std::vector<ScriptedPress> presses;
+                const char *text = std::getenv("GOW_PAD_GUION");
+                if (!text)
+                    return presses;
+                static const std::pair<const char *, std::pair<uint8_t, uint8_t>> buttons[] = {
+                    {"select", {2, 0x01}}, {"start", {2, 0x08}}, {"arriba", {2, 0x10}}, {"derecha", {2, 0x20}},
+                    {"abajo", {2, 0x40}}, {"izquierda", {2, 0x80}}, {"l2", {3, 0x01}}, {"r2", {3, 0x02}},
+                    {"l1", {3, 0x04}}, {"r1", {3, 0x08}}, {"triangulo", {3, 0x10}}, {"circulo", {3, 0x20}},
+                    {"x", {3, 0x40}}, {"cuadrado", {3, 0x80}}};
+                std::string item;
+                std::istringstream stream(text);
+                while (std::getline(stream, item, ','))
                 {
-                    if (i == 0) state[2] &= ~0x08u; // Start
-                    else state[3] &= ~0x40u; // Cross
+                    const size_t colon = item.find(':');
+                    if (colon == std::string::npos)
+                        continue;
+                    const std::string name = item.substr(colon + 1);
+                    for (const auto &[button, bit] : buttons)
+                        if (name == button)
+                            presses.push_back({std::strtod(item.c_str(), nullptr), bit.first, bit.second});
                 }
+                return presses;
+            }();
+            if (!script.empty())
+            {
+                for (const ScriptedPress &press : script)
+                    if (seconds >= press.seconds && seconds < press.seconds + 0.7)
+                        state[press.byte] &= static_cast<uint8_t>(~press.mask);
+            }
+            else
+            {
+                constexpr double presses[] = {5, 12, 20, 28, 36, 52, 60, 68, 76, 84, 100, 116, 132};
+                for (size_t i = 0; i < std::size(presses); ++i)
+                    if (seconds >= presses[i] && seconds < presses[i] + 0.7)
+                    {
+                        if (i == 0) state[2] &= ~0x08u; // Start
+                        else state[3] &= ~0x40u; // Cross
+                    }
+            }
             static size_t capture = 0;
             constexpr double captures[] = {4, 10, 18, 26, 34, 44, 56, 70, 90, 110, 130, 160, 190, 240, 360, 480, 580};
             if (!noCapture && capture < std::size(captures) && seconds >= captures[capture])
