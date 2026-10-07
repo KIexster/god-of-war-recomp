@@ -25,11 +25,16 @@ def recorrer(ee, inicio, fin=None, limite=500000):
     """Recorre una cadena DMA desde `inicio`. Devuelve (dirección de END, número de etiquetas)."""
     a, pila, n = inicio, [], 0
     while n < limite:
-        if a >= RAM or a & 15:
+        if a < 0 or a + 16 > min(RAM, len(ee)) or a & 15:
             return None, n
         t = struct.unpack_from('<Q', ee, a)[0]
         qwc, tid, addr = t & 0xFFFF, (t >> 28) & 7, (t >> 32) & 0x7FFFFFFF
         n += 1
+        if tid not in (1, 2, 3, 4, 5, 6, 7):
+            return None, n
+        datos = a + 16 if tid in (1, 2, 5, 6, 7) else addr & (RAM - 1)
+        if datos + qwc * 16 > min(RAM, len(ee)):
+            return None, n
         if tid == 1:
             a = a + 16 + qwc * 16
         elif tid == 2:
@@ -52,10 +57,35 @@ def recorrer(ee, inicio, fin=None, limite=500000):
     return None, n
 
 
+def seleccionar_cadena(ee, inicio=None, fin=None):
+    """Exige una sola cabecera válida; una elección explícita no identifica el cuadro actual."""
+    # GOW-Port: ambos búferes pueden conservar cadenas válidas; su orden no identifica el cuadro.
+    candidatos = [inicio] if inicio is not None else dict.fromkeys(INICIOS_CUADRO)
+    validos = []
+    for candidato in candidatos:
+        final, etiquetas = recorrer(ee, candidato, fin)
+        if final is not None:
+            validos.append((candidato, final, etiquetas))
+    destino = '' if fin is None else ' 0x%X' % fin
+    if not validos:
+        if inicio is not None:
+            raise ValueError('La cadena elegida con --inicio 0x%X no termina en END%s' % (inicio, destino))
+        raise ValueError('Ninguna cabecera de cuadro termina en END%s' % destino)
+    if len(validos) > 1:
+        detalle = ', '.join('0x%X -> END 0x%X' % (candidato, final)
+                            for candidato, final, _ in validos)
+        raise ValueError('Selección ambigua: %s. Indica --inicio; elegir una cabecera no demuestra '
+                         'que sea el cuadro actual.' % detalle)
+    return validos[0]
+
+
 def aplanar(ee, inicio):
     """Flujo que recibe VIF1 con CHCR.TTE: los 64 bits altos de cada etiqueta y su carga."""
+    final, etiquetas = recorrer(ee, inicio)
+    if final is None:
+        raise ValueError('Cadena DMA inválida o sin END')
     out, a, pila = bytearray(), inicio, []
-    while a is not None:
+    for _ in range(etiquetas):
         t = struct.unpack_from('<Q', ee, a)[0]
         qwc, tid, addr = t & 0xFFFF, (t >> 28) & 7, (t >> 32) & 0x7FFFFFFF
         out += ee[a + 8:a + 16]
@@ -86,7 +116,8 @@ def main():
     g.add_argument('--pcsx2', help='savestate .p2s de PCSX2')
     g.add_argument('--volcado', help='carpeta con gow_render_ram.bin, gow_render_vram.bin, gow_vu1_*.bin')
     p.add_argument('--inicio', type=lambda v: int(v, 0), default=None,
-                   help='dirección de la primera etiqueta (por defecto prueba 0x450C00 y 0x450A00)')
+                   help='cabecera elegida explícitamente; por defecto exige una única cadena válida '
+                        'entre 0x450C00 y 0x450A00')
     p.add_argument('salida', help='carpeta de salida (en logs/)')
     a = p.parse_args()
 
@@ -109,14 +140,10 @@ def main():
     if len(vram) != 0x400000 or len(ee) != RAM:
         sys.exit('Tamaños inesperados de RAM o VRAM')
 
-    final = None
-    for inicio in ([a.inicio] if a.inicio is not None else INICIOS_CUADRO):
-        final, etiquetas = recorrer(ee, inicio, fin)
-        if final is not None:
-            a.inicio = inicio
-            break
-    if final is None:
-        sys.exit('Ninguna cabecera de cuadro termina en END%s' % ('' if fin is None else ' 0x%X' % fin))
+    try:
+        a.inicio, final, etiquetas = seleccionar_cadena(ee, a.inicio, fin)
+    except ValueError as error:
+        sys.exit(str(error))
     flujo = aplanar(ee, a.inicio)
     for nombre, datos in archivos.items():
         open(os.path.join(a.salida, nombre), 'wb').write(datos)

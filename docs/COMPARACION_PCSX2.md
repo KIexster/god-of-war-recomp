@@ -11,7 +11,8 @@ sin ejecutar el EE:
 - con una cadena de **PCSX2** (savestate), una imagen correcta indica que VIF1/VU1/GS dibujan bien
   esos paquetes;
 - con una cadena **del port** (volcado de `GOW_RENDER_DIAG`), la repetición debe reproducir la imagen
-  del juego. Si lo hace, los defectos vienen de los datos del EE.
+  del juego, siempre que se haya identificado la cadena del cuadro correspondiente. Una semejanza
+  visual con una cabecera elegida entre dos cuadros no certifica esa correspondencia.
 
 ## Uso
 
@@ -30,38 +31,48 @@ python tools\render\extraer_cadena_vif.py --volcado E:\gowport\PS2Recomp\out\bui
 logs\repetir_cadena_vif.exe logs\vif_port logs\vif_port\imagen
 ```
 
+El extractor examina las dos cabeceras. Si ambas terminan en END, se detiene e indica los candidatos
+para elegir mediante `--inicio 0x450C00` o `--inicio 0x450A00`. En un savestate también rechaza la
+selección si varias cadenas terminan en el mismo `D1_TADR`. `--inicio` permite repetir una cadena
+conocida, pero no demuestra que sea la del cuadro actual. El volcado del port todavía no guarda
+`D1_TADR`: si ambas son válidas, hay que comparar las dos y mantener esa limitación en el resultado.
+
 `repetir_cadena_vif` escribe `imagen_antes.ppm` e `imagen_despues.ppm` del framebuffer indicado
 (por defecto `FBP=0`, `FBW=8`, PSMCT32, 512×448, el que usa la partida). Todo lo extraído contiene
 datos del juego y queda en `logs/`.
 
 ### Detalles del formato
 
-- La cadena del cuadro empieza en `0x450C00` (un DIRECT de 15 QW con la configuración del GS y un
-  NEXT a la lista) y termina en el END que apunta `D1_TADR`. Se reproduce lo que recibe VIF1 con
-  `CHCR.TTE`: los 64 bits altos de cada etiqueta seguidos de su carga, siguiendo CALL/RET.
+- El juego alterna las cabeceras `0x450C00` y `0x450A00` (un DIRECT de 15 QW con la configuración
+  del GS y un NEXT a la lista). En un savestate se exige el END que apunta `D1_TADR`.
+  Se reproduce lo que recibe VIF1 con `CHCR.TTE`: los 64 bits altos de cada etiqueta seguidos
+  de su carga, siguiendo CALL/RET.
 - En `GS.bin` del savestate (PCSX2 v2.x), la VRAM son los 4 MB anteriores a los últimos `0x54` bytes
   (cuatro `GIFPath` de 20 bytes y `Q`).
 - Los registros de VIF1 se toman de `eeHwRegs.bin` (`0x3C00`). VU1 empieza con registros a cero; la
   cadena del cuadro sube el microcódigo y las constantes que usa.
+- No se restaura la paleta interna CLUT del GS ni el conjunto completo de registros de VU1.
 - No se repite la cadena del canal GIF (PATH3): las texturas que el juego sube durante el cuadro no
-  se actualizan, así que algunos colores y texturas pueden diferir de la captura de PCSX2.
+  se actualizan. Las diferencias de colores y texturas pueden proceder tanto de esas subidas como
+  del estado interno no restaurado; no se atribuyen exclusivamente a PATH3.
 
 ## Resultados
 
 | Entrada | Resultado |
 |---|---|
-| PCSX2, Egeo (Kratos en el mástil, savestate `6C2355D5`) | Geometría correcta: barco, mástil, rocas, agua y Kratos en su sitio. Difieren colores (Kratos y el agua), atribuibles a texturas/CLUT no actualizadas por PATH3. |
+| PCSX2, Egeo (Kratos en el mástil, savestate `6C2355D5`) | Geometría correcta: barco, mástil, rocas, agua y Kratos en su sitio. Difieren colores (Kratos y el agua); no se separó el efecto de PATH3 del estado interno no restaurado. |
 | PCSX2, Desierto de las Almas Perdidas (`C1CFCB84`) | Escena reconocible y en su sitio, con una neblina más intensa y partículas de fuego con otra textura. |
 | PCSX2, Hades (`CBE116C1`) | Kratos y el HUD correctos; faltan las paredes. Sin investigar. |
-| Port, partida a los 190 s | La repetición reproduce la imagen del juego (fondo de tablas oscuro y una silueta negra). |
+| Port, partida a los 190 s | La repetición produjo una imagen semejante (fondo de tablas oscuro y una silueta negra). Control ambiguo: las dos cabeceras terminan en END y el extractor anterior escogió la primera sin identificar el cuadro actual. |
 
 El microcódigo de VU1 que sube el port coincide con el de los savestates en los primeros `0x24D8`
 bytes; el resto es una zona que el juego reemplaza durante la partida.
 
-**Conclusión:** con paquetes correctos, VIF1, VU1 y el GS del runtime dibujan la geometría del Egeo
-correctamente. Las deformaciones y la oscuridad de la partida vienen de los datos que prepara el EE
-(paquetes, matrices o vértices), no de la interpretación de VIF1/VU1. No se descarta un fallo de VU1
-que solo aparezca con otros datos.
+**Conclusión:** con los paquetes de PCSX2 probados, VIF1, VU1 y el GS del runtime dibujan la
+geometría del Egeo correctamente. Esto no certifica otras entradas ni descarta diferencias GS en
+colores o texturas. El control del port a los 190 s queda inconcluso como comparación del mismo
+cuadro por la selección ambigua. La causa EE de la cámara deformada se comprobó después siguiendo
+la tabla de senos y verificando su arreglo en el juego, como se describe abajo.
 
 ## Colores de vértice (descartado)
 
