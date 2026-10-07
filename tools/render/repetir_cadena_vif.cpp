@@ -7,6 +7,8 @@
 #include "runtime/ps2_vu1.h"
 #include "runtime/gs/gs_frontend.h"
 #include "runtime/gs/ps2_gif_arbiter.h"
+#include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -101,8 +103,18 @@ int main(int argc, char **argv)
         vu1.resume(mem.getVU1Code(), PS2_VU1_CODE_SIZE, mem.getVU1Data(), PS2_VU1_DATA_SIZE, gs, &mem, top, itop, 65536); });
 
     ppm(gs, prefix + "_antes.ppm", fbp, fbw, psm, width, height);
-    mem.processVIF1Data(stream.data(), static_cast<uint32_t>(stream.size()));
-    arbiter.drain();
+    // GOW_REPETIR_VECES=N repite la cadena N veces y mide el tiempo (banco de pruebas de VIF1/VU1).
+    const char *timesText = std::getenv("GOW_REPETIR_VECES");
+    const uint32_t times = timesText ? std::max<uint32_t>(1u, uint32_t(std::strtoul(timesText, nullptr, 10))) : 1u;
+    const auto begin = std::chrono::steady_clock::now();
+    for (uint32_t pass = 0; pass < times; ++pass)
+    {
+        mem.processVIF1Data(stream.data(), static_cast<uint32_t>(stream.size()));
+        arbiter.drain();
+    }
+    const double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - begin).count();
+    if (times > 1u)
+        std::printf("[repetir-vif] %u pasadas en %.3f s (%.1f ms por cuadro)\n", times, elapsed, 1000.0 * elapsed / times);
     ppm(gs, prefix + "_despues.ppm", fbp, fbw, psm, width, height);
     std::printf("[repetir-vif] bytes=%zu lanzamientos_vu1=%llu fbp=%u fbw=%u psm=%u\n", stream.size(),
                 static_cast<unsigned long long>(launches), fbp, fbw, psm);

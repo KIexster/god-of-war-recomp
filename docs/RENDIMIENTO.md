@@ -47,3 +47,23 @@ El tiempo liberado del IOP pasa a VU1, que ahora ocupa más del 80 % del hilo de
 VU1 se reparte entre `commitReadyPipelines`, `normalizeOperand`, `calculatePairReadyCycle`,
 `updateFmacFlags` y el resto del intérprete con modelo de latencias. La suite nativa pasa
 **545/545** con el parche.
+
+## Intérprete de VU1 (2026-10-07)
+
+`tools/render/repetir_cadena_vif.cpp` acepta `GOW_REPETIR_VECES=N`: repite la cadena VIF1 del cuadro
+N veces y mide el tiempo. Con `PS2X_GS_THREAD=1` y `PS2X_GS_DISCARD_DRAWS=1` el rasterizado no
+cuenta, así que es un banco de pruebas determinista de VIF1/VU1. Con el cuadro del savestate del
+inicio del Egeo (`D6385328`, 1.972 lanzamientos de VU1 por cuadro):
+
+| Cambio (`patches/ps2recomp-vu1-perf.patch`) | ms por cuadro |
+|---|---:|
+| Antes | 775 |
+| `commitReadyPipelines` recorre solo las entradas pendientes (máscara de bits por cola) | 594 |
+| `normalizeOperand` en línea | 550 |
+| `calculatePairReadyCycle` recorre solo los registros y componentes leídos | 503 |
+
+La imagen resultante es idéntica byte a byte a la de antes de los cambios (mismo cuadro, renderer
+CPU) y la suite nativa pasa **545/545**. En el juego la diferencia queda dentro de la variación entre
+ventanas (la escena cambia y otros procesos compiten por la CPU); el banco de pruebas es la medida
+de referencia. Lo siguiente en el perfil de VU1 es el cálculo de flags de FMAC
+(`updateFmacFlags`, `calculateFmacProductSticky`, `calculateFmacExactResult`) y `execUpper`.
