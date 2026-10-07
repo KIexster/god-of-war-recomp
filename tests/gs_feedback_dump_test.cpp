@@ -72,8 +72,12 @@ int wmain(int argc,wchar_t **argv)
 int main(int argc,char **argv)
 #endif
 {
-    if(argc!=2) return 2;
-    for(const char *variant:{"self","disjoint","nearest"})
+    if(argc!=2 && argc!=3) return 2;
+    if(argc==3) {
+        if(std::filesystem::path(argv[2])!="--oraculos") return 2;
+        for(const char *variant:{"oraculo_bilinear","oraculo_negativos","oraculo_limites"})
+            if(!verify(std::filesystem::path(argv[1]),variant)) return 1;
+    } else for(const char *variant:{"self","disjoint","nearest"})
         if(!verify(std::filesystem::path(argv[1]),variant)) return 1;
     return 0;
 }

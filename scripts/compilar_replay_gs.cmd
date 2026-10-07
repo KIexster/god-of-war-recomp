@@ -24,6 +24,8 @@ call :compile tests\gs_frame_pixels_test.cpp gs_frame_pixels_test
 if errorlevel 1 exit /b 1
 call :compile tests\gs_feedback_dump_test.cpp gs_feedback_dump_test
 if errorlevel 1 exit /b 1
+call :compile tools\render\generar_oraculos_gs.cpp generar_oraculos_gs
+if errorlevel 1 exit /b 1
 logs\gs_frame_pixels_test.exe > logs\gs_frame_pixels_test.log 2>&1
 if errorlevel 1 exit /b 1
 logs\gs_replay_test.exe logs\gs_replay_synthetic.bin > logs\gs_replay_test.log 2>&1
@@ -36,6 +38,14 @@ logs\gs_feedback_dump_test.exe logs\feedback_sintetico >> logs\feedback_sintetic
 if errorlevel 1 exit /b 1
 for %%V in (self disjoint nearest) do (
     logs\repetir_gs.exe logs\feedback_sintetico\feedback_gs_%%V.bin cpu --repeticiones 3 logs\feedback_sintetico\%%V >> logs\feedback_sintetico.log 2>&1
+    if errorlevel 1 exit /b 1
+)
+logs\generar_oraculos_gs.exe logs\oraculos_gs > logs\oraculos_gs.log 2>&1
+if errorlevel 1 exit /b 1
+logs\gs_feedback_dump_test.exe logs\oraculos_gs --oraculos >> logs\oraculos_gs.log 2>&1
+if errorlevel 1 exit /b 1
+for %%V in (bilinear negativos limites) do (
+    logs\repetir_gs.exe logs\oraculos_gs\feedback_gs_oraculo_%%V.bin cpu --repeticiones 3 logs\oraculos_gs\%%V >> logs\oraculos_gs.log 2>&1
     if errorlevel 1 exit /b 1
 )
 exit /b %errorlevel%

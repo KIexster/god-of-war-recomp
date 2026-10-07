@@ -705,6 +705,47 @@ política de caché y el orden de acceso. PCSX2 software sirve aquí como refere
 ejecutada; no sustituye una captura de una PS2 para certificar ese feedback.
 Este cambio no demuestra una mejora de FPS.
 
+## Coordenadas negativas con nearest
+
+`ps2recomp-gs-nearest-stq.patch` corrige la elección del texel en CPU y OpenGL
+para coordenadas STQ negativas. El cast directo a entero elegía 0 para una
+coordenada como −0,25 en vez del texel −1 que luego envuelve REPEAT. La referencia
+software de [PCSX2 v2.8.2](https://github.com/PCSX2/pcsx2/blob/v2.8.2/pcsx2/GS/Renderers/SW/GSDrawScanline.cpp)
+primero convierte a 16.16 y después extrae la parte entera con signo. Se reproduce
+esa conversión con truncado y `floor`, sin desplazamientos de enteros negativos.
+Aplicar solamente `floor` tampoco basta: con textura 4×4 y REPEAT, −1/65536 elige
+el texel 3, mientras −1/131072 pierde su fracción en la conversión y elige el 0.
+
+Dos controles de 16×16, sin feedback, comparan coordenadas negativas en cuartos
+de texel y valores próximos al límite 16.16. El original difiere de PCSX2 software
+en 624 bytes RGBA/156 píxeles en cada control. Las huellas externas son:
+
+| Control | SHA256 de los 1024 bytes RGBA |
+|---|---|
+| Negativos | `9d1cc63a5a081dbe2e59c8117fadcd6bd8ae49c87b9a08dc60dcb326239d8c81` |
+| Límites | `119eae34f160a97fa9991d028d8a7f514d739f77d1e73f429bd7d854dad22bdc` |
+
+Tres nuevas regresiones fallan antes del ajuste y después pasan las 571 pruebas.
+Comprueban ambas huellas en CPU directo, CPU con hilo y OpenGL, para sprites y
+triángulos, Q=1/2 y los cuatro modos SSE. El control OpenGL exige además contadores
+de las rutas compute y hardware; no basta con tener un contexto creado.
+
+El helper compila también `generar_oraculos_gs.exe [directorio=logs/oraculos_gs]`.
+Exporta los tres patrones de referencia —bilinear, negativos y límites— en
+capturas de repetición `.bin`, dumps de PCSX2 `.gs` y matrices `.rgba` de 16×16.
+Los texels y comandos son procedurales. `gs_feedback_dump_test logs\oraculos_gs --oraculos`
+comprueba freeze/GIF/End y el helper repite los tres controles CPU ×3. Esto permite
+regenerar las entradas de la referencia sin la ISO ni volcados del juego. La
+comparación RGBA externa sigue siendo independiente del renderer del port.
+
+Los tres `.gs` generados son idénticos por SHA256 a los ejecutados en la referencia
+aislada, y las tres matrices CPU tienen las huellas RGBA externas documentadas.
+Freeze/GIF/End y CPU ×3 son exactos en los seis patrones del helper; los controles
+anteriores de feedback conservan sus bytes de dump. En RX 5700 XT, los tres
+oráculos hardware ×8 tienen paridad, estabilidad y estado final exactos; las
+pasadas calientes usan 256 primitivas y cero tiles compute. Estos controles no
+cambian el resultado pendiente del feedback bilineal sobre el propio destino.
+
 ## Referencia Tobiichi-Port
 
 Se revisa [YYOzcan/Tobiichi-Port](https://github.com/YYOzcan/Tobiichi-Port/tree/9f02797f8ab7481fddad4d2daf7afad82d11699f)

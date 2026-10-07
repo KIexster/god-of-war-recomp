@@ -97,7 +97,7 @@ jobs:
             grep -ho 'sub_[0-9A-F]\{8\}_0x[0-9a-f]\+' gow/src/*.cpp | sort -u |
               sed 's/.*/void &(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime);/'
           } > generado/ps2_recompiled_functions.h
-          for f in gow/src/*.cpp gow/tools/render/repetir_gs.cpp gow/tools/render/comparar_feedback_gs.cpp gow/tools/render/generar_feedback_gs.cpp gow/tests/gs_replay_test.cpp gow/tests/gs_frame_pixels_test.cpp gow/tests/gs_feedback_dump_test.cpp; do
+          for f in gow/src/*.cpp gow/tools/render/repetir_gs.cpp gow/tools/render/comparar_feedback_gs.cpp gow/tools/render/generar_feedback_gs.cpp gow/tools/render/generar_oraculos_gs.cpp gow/tests/gs_replay_test.cpp gow/tests/gs_frame_pixels_test.cpp gow/tests/gs_feedback_dump_test.cpp; do
             echo "$f"
             g++ -std=c++20 -march=x86-64-v2 -fsyntax-only \
               -IPS2Recomp/ps2xRuntime/include -IPS2Recomp/ps2xRuntime/src/lib -IPS2Recomp/ps2xIOP/include \

@@ -3,6 +3,7 @@
 // No contiene estado, comandos ni texels del juego. No serializa un GS arbitrario.
 #pragma once
 #include <array>
+#include <bit>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -21,19 +22,17 @@ namespace gow_gs_reference
         void zero(size_t count) { data.resize(data.size()+count); }
     };
 
-    inline bool feedbackDump(const std::filesystem::path &path,std::span<const uint8_t> seed,bool disjoint,bool linear)
+    // Estado inicial mínimo de los patrones procedurales: sin transferencias ni GIF pendientes.
+    inline bool patternDump(const std::filesystem::path &path,std::span<const uint8_t> seed,
+                            const std::array<uint64_t,12> &contextRegisters,const Bytes &commands)
     {
-        if(seed.size()!=4u*1024u*1024u) return false;
-        constexpr uint64_t frame=(8ull<<16)|(0xff000000ull<<32);
-        constexpr uint64_t zbuf=104ull|(1ull<<24)|(1ull<<32);
-        constexpr uint64_t scissor=(511ull<<16)|(447ull<<48);
+        if(seed.size()!=4u*1024u*1024u || commands.data.empty() || commands.data.size()%16 ||
+           commands.data.size()/16>0x7fff) return false;
         constexpr uint64_t display=(511ull<<32)|(447ull<<44);
-        const uint64_t tex0=(disjoint?8192ull:0ull)|(8ull<<14)|(10ull<<26)|(10ull<<30)|(1ull<<34);
-        const uint64_t tex1=linear?0x60ull:0ull;
         Bytes state;state.word(8);
         for(uint64_t value:std::array<uint64_t,15>{0,1,0,0,0,0,0,0,1,0,0,3,0,0,0}) state.reg(value);
         for(unsigned context=0;context<2;++context)
-            for(uint64_t value:std::array<uint64_t,12>{0,tex0,tex1,5,0,0,scissor,0,0x31001,0,frame,zbuf}) state.reg(value);
+            for(uint64_t value:contextRegisters) state.reg(value);
         state.reg(0x3f80000080808080ull);state.reg(0); // RGBAQ y ST.
         state.word(0);state.word(0);state.reg(0); // GSVertex guarda UV/FOG en 32 bits, XYZ en 64.
         state.reg(0);state.word(0);state.word(0); // Registro obsoleto y cursor de transferencia.
@@ -47,6 +46,21 @@ namespace gow_gs_reference
         privileged(0,1);privileged(0x10,0x20006000);privileged(0x70,8ull<<9);
         privileged(0x80,display);privileged(0x1000,0x55190000);
 
+        Bytes packet;packet.reg(commands.data.size()/16|(1ull<<15)|(1ull<<60));packet.reg(0xE);packet.raw(commands.data);
+        Bytes dump;dump.word(0);dump.word(uint32_t(state.data.size()));dump.raw(state.data);dump.raw(registers.data);
+        dump.byte(0);dump.byte(3);dump.word(uint32_t(packet.data.size()));dump.raw(packet.data);
+        for(unsigned field=0;field<2;++field) {dump.byte(3);dump.raw(registers.data);dump.byte(1);dump.byte(uint8_t(field));}
+        std::ofstream output(path,std::ios::binary);output.write(reinterpret_cast<const char*>(dump.data.data()),dump.data.size());
+        output.close();return bool(output);
+    }
+
+    inline bool feedbackDump(const std::filesystem::path &path,std::span<const uint8_t> seed,bool disjoint,bool linear)
+    {
+        constexpr uint64_t frame=(8ull<<16)|(0xff000000ull<<32);
+        constexpr uint64_t zbuf=104ull|(1ull<<24)|(1ull<<32);
+        constexpr uint64_t scissor=(511ull<<16)|(447ull<<48);
+        const uint64_t tex0=(disjoint?8192ull:0ull)|(8ull<<14)|(10ull<<26)|(10ull<<30)|(1ull<<34);
+        const uint64_t tex1=linear?0x60ull:0ull;
         Bytes commands;
         auto ad=[&](uint8_t address,uint64_t value) { commands.reg(value);commands.reg(address); };
         ad(0x1a,1);ad(0x18,0);ad(0x40,scissor);ad(0x4c,frame);ad(0x4e,zbuf);
@@ -58,11 +72,35 @@ namespace gow_gs_reference
             ad(0x03,x1|(y1<<16));ad(0x05,x1|(y1<<16)|(7ull<<32));
         }
         ad(0x61,0);
-        Bytes packet;packet.reg(commands.data.size()/16|(1ull<<15)|(1ull<<60));packet.reg(0xE);packet.raw(commands.data);
-        Bytes dump;dump.word(0);dump.word(uint32_t(state.data.size()));dump.raw(state.data);dump.raw(registers.data);
-        dump.byte(0);dump.byte(3);dump.word(uint32_t(packet.data.size()));dump.raw(packet.data);
-        for(unsigned field=0;field<2;++field) {dump.byte(3);dump.raw(registers.data);dump.byte(1);dump.byte(uint8_t(field));}
-        std::ofstream output(path,std::ios::binary);output.write(reinterpret_cast<const char*>(dump.data.data()),dump.data.size());
-        output.close();return bool(output);
+        return patternDump(path,seed,{0,tex0,tex1,5,0,0,scissor,0,0x31001,0,frame,zbuf},commands);
+    }
+
+    enum class GridCase {Bilinear,Negative,Boundary};
+    inline float gridCoordinate(GridCase fixture,unsigned index)
+    {
+        constexpr std::array<float,16> limits={-2.0f,-1.75f,-1.0f,-0.75f,-0.25f,-1.0f/16,-1.0f/256,
+            -1.0f/65536,-1.0f/131072,-1.0f/1048576,0,1.0f/1048576,1.0f/16,0.25f,0.75f,1.0f};
+        return fixture==GridCase::Boundary?limits.at(index):float(int(index)-8)/4.0f;
+    }
+    inline bool gridDump(const std::filesystem::path &path,std::span<const uint8_t> seed,GridCase fixture)
+    {
+        const bool linear=fixture==GridCase::Bilinear;
+        constexpr uint64_t frame=8ull<<16,zbuf=104ull|(1ull<<24)|(1ull<<32),scissor=(15ull<<16)|(15ull<<48);
+        const uint64_t exponent=linear?1:2,tex1=linear?0x60:0,clamp=linear?5:0;
+        const uint64_t tex0=8192ull|(8ull<<14)|(exponent<<26)|(exponent<<30)|(1ull<<34)|(1ull<<35);
+        Bytes commands;
+        auto ad=[&](uint8_t address,uint64_t value) {commands.reg(value);commands.reg(address);};
+        ad(0x1a,1);ad(0x18,0);ad(0x40,scissor);ad(0x4c,frame);ad(0x4e,zbuf);
+        ad(0x47,0x30000);ad(0x06,tex0);ad(0x14,tex1);ad(0x08,clamp);ad(0x46,1);
+        ad(0x45,0);ad(0x49,0);ad(0x00,6|16|(linear?256:0));ad(0x01,0x3f80000080808080ull);
+        for(unsigned y=0;y<16;++y) for(unsigned x=0;x<16;++x) {
+            const uint64_t coordinate=linear?(8ull+x)|((8ull+y)<<16):
+                uint64_t(std::bit_cast<uint32_t>(gridCoordinate(fixture,x)/4.0f))|
+                (uint64_t(std::bit_cast<uint32_t>(gridCoordinate(fixture,y)/4.0f))<<32);
+            ad(linear?0x03:0x02,coordinate);ad(0x05,x*16ull|((y*16ull)<<16)|(7ull<<32));
+            ad(linear?0x03:0x02,coordinate);ad(0x05,(x+1)*16ull|(((y+1)*16ull)<<16)|(7ull<<32));
+        }
+        ad(0x61,0);
+        return patternDump(path,seed,{0,tex0,tex1,clamp,0,0,scissor,0,0x30000,0,frame,zbuf},commands);
     }
 }

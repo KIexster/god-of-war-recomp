@@ -59,6 +59,7 @@ $memcardPatch = Join-Path $RepoRoot 'patches\ps2recomp-memcard.patch'
 $gsTrianglePrecisionPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-triangle-precision.patch'
 $gsPackedDepthPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-packed-depth.patch'
 $gsBilinearPrecisionPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-bilinear-precision.patch'
+$gsNearestStqPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-nearest-stq.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -142,6 +143,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $memcardPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsTrianglePrecisionPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsPackedDepthPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsBilinearPrecisionPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsNearestStqPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner

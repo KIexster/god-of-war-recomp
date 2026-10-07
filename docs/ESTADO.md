@@ -1764,3 +1764,32 @@ ciclos ni truncamientos. No aparecen instrucciones VU reservadas. No prueba
 todavía combate ni FPS sostenidos. Se retrasan las pulsaciones del guion privado:
 el primer control de 225 s perdió el Start inicial y acabó en la intro de partida
 nueva, por lo que no se usa como prueba de carga guardada.
+
+El siguiente control de referencia confirma un fallo distinto con nearest STQ:
+el cast directo a entero pierde el signo de las fracciones negativas. El nuevo
+`ps2recomp-gs-nearest-stq.patch` convierte primero a 16.16 y extrae la parte entera
+con signo, tanto en CPU como en GLSL. Dos matrices de 16×16 procedurales comparan
+cuartos de texel negativos y los límites próximos a cero: el original difiere
+de PCSX2 software en 624 bytes RGBA/156 píxeles en cada una. Usar solamente
+`floor` falla en los valores que pierden la fracción durante la conversión fija.
+Las tres regresiones nuevas fallan antes y pasan después para sprites/triángulos,
+Q=1/2 y los cuatro modos SSE. Se confirman también las rutas OpenGL por contadores.
+
+La compilación completa vuelve a regenerar las 6418 unidades y termina bien;
+**47 parches y 84 fuentes** coinciden, y la suite posterior pasa **571/571** con
+once controles OpenGL reales. El helper compila siete herramientas: conserva
+los 18 controles de imágenes y añade un generador público de los tres oráculos.
+Sus `.gs` son idénticos por SHA256 a los usados en PCSX2 software; sus matrices
+CPU coinciden byte por byte con las tres referencias RGBA externas. Los seis
+patrones pasan freeze/GIF/End y CPU ×3. Hardware ×8 de los tres oráculos queda
+exacto y estable, con 256 primitivas y cero tiles compute en las pasadas calientes.
+Los tres dumps anteriores de feedback conservan sus bytes. El treemap refleja
+ambos arreglos de muestreo sin cambiar la cobertura parcial ni atribuir FPS.
+
+El control final OpenGL de 330 s con este ejecutable carga de nuevo la copia
+privada de «Docks of Athens», con hardware activo y la tarjeta original intacta.
+Las 14 capturas son distintas; la última muestra a Kratos, HUD, R2 y punto de
+guardado en estado 11 sin carga pendiente. Se conservan 128 muestras de Clip
+finitas/completas, 352 primeras tripletas tardías no nulas y 192 contextos de
+partida sin punteros inválidos, ciclos ni truncamientos. No se registra VU
+reservada. Combate, rendimiento sostenido y feedback bilineal siguen pendientes.
