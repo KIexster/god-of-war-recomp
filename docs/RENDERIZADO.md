@@ -746,6 +746,87 @@ oráculos hardware ×8 tienen paridad, estabilidad y estado final exactos; las
 pasadas calientes usan 256 primitivas y cero tiles compute. Estos controles no
 cambian el resultado pendiente del feedback bilineal sobre el propio destino.
 
+## Separación de lotes y fuente protegida opcional
+
+`generar_feedback_gs --pcsx2 --separaciones` conserva los tres patrones anteriores
+y añade seis controles. El sufijo `_texflush` inserta TEXFLUSH entre los sprites;
+`_scissor` cambia SCISSOR1 de x1=511 a 510 antes del segundo. Ambos sprites siguen
+dibujando x=0..63/y=0..415, de modo que ese cambio de estado no recorta la imagen.
+`gs_feedback_dump_test [directorio] --separaciones` valida los nueve freeze/GIF/End,
+incluidos los registros de separación. También comprueba los bytes completos de
+los contextos, las colas GIF vacías, Q=1 y los tres bloques privilegiados; conservar
+VRAM no basta si PMODE o DISPLAY fueron dañados. El helper ejecuta CPU ×3 para
+cada captura; los archivos generados siguen dentro de `logs/`.
+
+La referencia ejecutada con PCSX2 v2.8.2 software muestra un lote con los dos
+sprites para `self` y `self_texflush`, y dos para `self_scissor`. En el primer
+caso la imagen coincide con la fuente disjunta; TEXFLUSH conserva ese resultado
+en este patrón. El cambio SCISSOR renueva la fuente entre dibujos y cambia
+1238 bytes RGB de los 79872 observados. Se comprueba la fuente original del
+primer dibujo y, para el segundo, la mitad izquierda ya dibujada más la derecha
+original, sin diferencias en los texels muestreados. El RGB final del control
+separado tiene SHA256 `75fb49353fd21ec38c8d4b413f657b57d5fc168bb24c9eba8279edc747079197`
+y FNV-1a64 `f1dd4b246679e740`. Es evidencia de la agrupación de esta referencia;
+no establece una política universal de TEXFLUSH ni reproduce una caché PS2.
+
+`ps2recomp-gs-feedback-snapshot.patch` añade una política **opcional y desactivada
+por defecto** para aislar la lectura/escritura simultánea. Antes de una primitiva
+que lee páginas que también escribe, completa el lote anterior y copia solamente
+esas páginas a la memoria sombra ya usada por las transferencias. Su estado
+conserva el epoch anterior a la copia: el sampler lee la fuente protegida y el
+raster escribe la VRAM normal. Se aplica a puntos, sprites y triángulos; las
+líneas conservan su subdivisión en puntos y protegen la fuente por punto, no
+por segmento completo. Los dibujos sin solapamiento siguen la ruta anterior. El interlock del shader
+ordena escrituras de un mismo píxel, pero no sus vecinos de textura, por lo que
+una barrera entre sprites no resolvía el acceso simultáneo dentro de cada sprite.
+
+En el ejecutable se activa antes del arranque con `PS2X_GS_FEEDBACK_SNAPSHOT=1`.
+La herramienta de repetición requiere su opción explícita:
+
+```powershell
+.\logs\repetir_gs.exe logs\feedback_sintetico\feedback_gs_self_scissor.bin hardware --snapshot-feedback --repeticiones 12 logs\feedback_sintetico\snapshot_scissor
+```
+
+El código de salida sigue comprobando paridad con el renderer CPU, que conserva
+una sola página de textura de 8 KiB. Una fuente congelada por primitiva puede
+ser estable y coincidir con la referencia separada, y aun así devolver 1 por
+diferir de CPU. No convierte esa diferencia en éxito ni cambia el renderer CPU.
+La política no congela una fuente común para todos los sprites de un lote y
+queda pendiente contrastarla con la caché y el pipeline del GS real antes de
+activarla por defecto. Tampoco demuestra una mejora de FPS.
+
+La regresión nativa hardware falla antes del arreglo por RGB y por variación
+entre pasadas; la de compute ya pasaba ese patrón. Después pasan ambas contra
+la huella externa, con ocho restauraciones por patrón, controles nearest/fuente
+disjunta y puntos/triángulos contra una copia CPU disjunta. Se exige al menos una
+pasada hardware sin tiles compute; un fallback CPU no cuenta como validación.
+
+Tras la compilación completa, 48 parches y 84 fuentes coinciden exactamente y
+la suite vuelve a pasar 573/573, con trece controles OpenGL reales. Las siete
+herramientas compilan y pasan los 18 controles de imagen, doce freeze/GIF/End
+y CPU ×3. Se rechazan seis copias dañadas: PMODE deshabilitado en sus tres bloques,
+TEX0 inicial, una cola GIF pendiente, Q alterado, un byte privilegiado reservado
+y EOP ausente. Los tres `.gs` anteriores conservan sus SHA256.
+
+Compute y hardware con snapshot repiten doce veces `self_scissor`, `disjoint`
+y `nearest`: 72 pasadas conservan la VRAM completa, el estado portable y el
+cuadro visible entre restauraciones; sus regiones RGB 64×416 coinciden con las
+tres referencias ejecutadas. Las pasadas hardware calientes tienen dos
+primitivas y cero tiles compute. `self_scissor` mantiene salida 1 y 4557 bytes
+distintos de CPU, incluso al coincidir con la referencia separada; los otros dos
+casos conservan salida 0. Opciones duplicadas y snapshot en modo CPU devuelven 2.
+
+Con el ejecutable completo y la opción activada, un control OpenGL de 390 s
+carga una copia privada de la tarjeta guardada. Las quince imágenes 512×448
+son distintas; la última muestra a Kratos, el punto de guardado y R2, con
+hardware activo y estado 11 sin carga pendiente. Se conservan 128 muestras
+de Clip finitas/completas, 416 tripletas tardías no nulas y 192 contextos de
+partida sin punteros inválidos, ciclos ni truncamientos; no se registra VU
+reservada ni cambia la tarjeta original. La captura final no muestra la barra
+de vida y no se ha probado combate ni rendimiento sostenido con esta opción.
+El guion previo de 330 s eligió una partida nueva y se repitió retrasando
+las pulsaciones; aquella intro no cuenta como carga de una partida guardada.
+
 ## Referencia Tobiichi-Port
 
 Se revisa [YYOzcan/Tobiichi-Port](https://github.com/YYOzcan/Tobiichi-Port/tree/9f02797f8ab7481fddad4d2daf7afad82d11699f)

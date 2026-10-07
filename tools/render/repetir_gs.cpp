@@ -74,7 +74,7 @@ namespace {
     struct Options {
         std::filesystem::path capture,output=".";
         std::string mode;
-        bool lockstep=false;
+        bool lockstep=false,snapshotFeedback=false;
         uint32_t repetitions=1;
         bool gpuMode() const { return mode!="cpu"; }
         bool multiple() const { return repetitions>1; }
@@ -90,6 +90,10 @@ namespace {
         for(int i=3;i<argc;++i) {
             const std::filesystem::path argument(argv[i]);
             if(argument==std::filesystem::path("--lockstep")) { if(options.lockstep) return false; options.lockstep=true; }
+            else if(argument==std::filesystem::path("--snapshot-feedback")) {
+                if(options.snapshotFeedback) return false;
+                options.snapshotFeedback=true;
+            }
             else if(argument==std::filesystem::path("--repeticiones")) {
                 if(repetitions || ++i==argc) return false;
                 const std::filesystem::path number(argv[i]);
@@ -104,7 +108,7 @@ namespace {
                 options.output=argument; directory=true;
             }
         }
-        return true;
+        return !options.snapshotFeedback || options.gpuMode();
     }
     bool restoreInitial(GSRasterBackend &backend,std::vector<uint8_t> &vram,
                         const replay::Snapshot &initial,bool gpuMode,GSGpuBackend *gpu=nullptr) {
@@ -292,8 +296,11 @@ namespace {
         std::unique_ptr<GSRasterBackend> candidate; GSGpuBackend *gpu=nullptr;
         if(options.gpuMode()) {
             auto backend=std::make_unique<GSGpuBackend>(); gpu=backend.get();
+            backend->SetFeedbackSnapshotEnabled(options.snapshotFeedback);
             backend->SetHardwareRasterAllowed(options.mode=="hardware"); candidate=std::make_unique<GSThreadedBackend>(std::move(backend));
         } else candidate=std::make_unique<GSCpuBackend>();
+        if(options.snapshotFeedback)
+            std::cout<<"Feedback experimental: fuente congelada por Submit; no emula la cache PS2 de 8 KiB\n";
         struct Restore { unsigned csr=_mm_getcsr(); ~Restore(){_mm_setcsr(csr);} } restore;
         PassResult previous; bool differencesSeen=false;
         for(uint32_t iteration=0;iteration<options.repetitions;++iteration) {
@@ -322,7 +329,7 @@ int main(int argc,char **argv) {
 #endif
     Options options;
     if(!parse(argc,argv,options)) {
-        std::cerr<<"Uso: repetir_gs captura.bin cpu|compute|hardware [--lockstep] [--repeticiones N] [directorio]\n"
+        std::cerr<<"Uso: repetir_gs captura.bin cpu|compute|hardware [--lockstep] [--snapshot-feedback] [--repeticiones N] [directorio]\n"
                  <<"N debe ser un entero positivo; no se admiten opciones desconocidas ni duplicadas\n"; return 2;
     }
     return run(options);

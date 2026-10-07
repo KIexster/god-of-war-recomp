@@ -30,7 +30,7 @@ _Última actualización: 7 de octubre de 2026_
 - `gowIpuInit` corrige la inicialización del IPU: el stub genérico saltaba a una dirección de otro
   ejecutable y ejecutaba `FilteredCopyTile` con registros incorrectos. Ahora se alcanza la carga del FMV.
 - Con `GOW_SKIP_FMV=1` se alcanza el **estado 11 de partida**, con `pending=0` y el hilo principal activo.
-  Tras integrar los arreglos de Claude, el control OpenGL de 225 segundos carga una copia de su tarjeta
+  Tras integrar los arreglos de Claude, el control OpenGL de 330 segundos carga una copia de su tarjeta
   y muestra a Kratos, el escenario, el HUD y la indicación R2 en «Docks of Athens». El rendimiento sigue
   bajo; faltan controles de combate, otros escenarios y rendimiento sostenido.
 
@@ -1793,3 +1793,58 @@ guardado en estado 11 sin carga pendiente. Se conservan 128 muestras de Clip
 finitas/completas, 352 primeras tripletas tardías no nulas y 192 contextos de
 partida sin punteros inválidos, ciclos ni truncamientos. No se registra VU
 reservada. Combate, rendimiento sostenido y feedback bilineal siguen pendientes.
+
+### Feedback GS: controles separados y fuente protegida opcional (7 de octubre)
+
+Se conserva la rama experimental VU1 de Opus sin integrarla ni modificar EE/IOP.
+El generador GS añade seis controles a los tres patrones procedurales anteriores:
+TEXFLUSH o SCISSOR1 fuera del área dibujada entre dos sprites. Los nueve pasan
+freeze/GIF/End y CPU ×3. La validación del dump comprueba ahora también el freeze
+completo y los tres bloques privilegiados, para detectar cambios en PMODE,
+DISPLAY, contextos, colas GIF y Q que no alterarían la VRAM final.
+
+PCSX2 software v2.8.2 conserva una fuente común en `self`/`self_texflush`; cambiar
+SCISSOR1 fuerza dos dibujos y renueva la fuente. Las fuentes de ambos dibujos se
+verifican contra el patrón y el primer framebuffer, respectivamente. El resultado
+separado difiere en 1238 bytes RGB, demostrando que copiar por primitiva no equivale
+a congelar un lote entero. Este control no certifica el pipeline del GS real.
+
+El nuevo parche `ps2recomp-gs-feedback-snapshot.patch` conserva la fuente antes
+de cada primitiva con lectura/escritura solapada, usando las páginas sombra del
+backend OpenGL y el epoch anterior a la copia. Es opcional, desactivado por
+defecto, y se selecciona con `PS2X_GS_FEEDBACK_SNAPSHOT=1` en el ejecutable o
+`--snapshot-feedback` en la herramienta de repetición. El renderer CPU conserva
+su caché de una página de 8 KiB; la herramienta sigue denunciando sus diferencias.
+
+Antes del cambio, la nueva regresión hardware falla tanto por RGB como por
+variación entre pasadas (572/573); compute ya pasa ese patrón. Después pasa
+573/573 con trece controles OpenGL reales. Ambas rutas reproducen la huella externa
+del caso separado, mantienen estable toda la VRAM restaurada, conservan alpha
+y la fuente disjunta y pasan los controles de puntos/triángulos contra la copia
+CPU disjunta. El modo experimental todavía no está habilitado por defecto y
+no demuestra un aumento de FPS. El treemap conserva cobertura parcial y pesos.
+
+La compilación completa regenera las 6418 unidades y termina con código 0.
+La auditoría posterior confirma los 48 parches/84 fuentes, y la suite vuelve
+a pasar 573/573. El helper compila siete herramientas y valida los 18 controles
+de imagen y los doce patrones freeze/GIF/End con CPU ×3; seis dumps dañados se
+rechazan. Los tres dumps originales siguen idénticos por SHA256.
+
+Las 72 pasadas de repetición opcional (compute/hardware × tres patrones ×12)
+mantienen VRAM, estado y cuadro visible idénticos entre restauraciones y coinciden
+con las tres regiones RGB de referencia. Hardware caliente confirma dos
+primitivas y cero tiles compute. El caso separado conserva su salida 1 por los
+4557 bytes que difieren de la caché CPU; nearest y fuente disjunta conservan
+salida 0. Se rechazan también la opción duplicada y su uso en modo CPU.
+
+El control del juego con la opción activada dura 390 s y carga una copia privada
+de la tarjeta de Claude, cuyo original conserva su SHA256. Las quince capturas
+son distintas y válidas (512×448); la última muestra a Kratos, el punto de guardado
+y R2, en estado 11 sin carga pendiente y con hardware activo. Las 128 muestras
+de Clip son finitas y completas, las 416 primeras tripletas tardías de
+`InitUNPACKData` son no nulas y los 192 contextos de partida no presentan punteros
+inválidos, ciclos ni truncamientos. No se registra VU reservada. La barra de vida
+no aparece en esta captura final; combate y FPS sostenidos siguen sin comprobar.
+El primer guion de 330 s perdió la selección «Load» y llegó a la intro de una
+partida nueva: no se usa como evidencia de carga guardada. Solo se retrasaron
+las pulsaciones del control privado para repetirlo.

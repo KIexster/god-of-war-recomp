@@ -1,4 +1,4 @@
-// GOW-Port: genera tres capturas procedurales GS, sin archivos ni texels del juego.
+// GOW-Port: genera capturas procedurales GS, sin archivos ni texels del juego.
 #include "gow_gs_replay.h"
 #include "runtime/gs/gs_cpu_backend.h"
 #include "runtime/gs/gs_swizzle.h"
@@ -13,13 +13,14 @@ int wmain(int argc,wchar_t **argv)
 int main(int argc,char **argv)
 #endif
 {
-    bool pcsx2=false,hasOutput=false;
+    bool pcsx2=false,separations=false,hasOutput=false;
     auto output=std::filesystem::path("logs");
     for(int i=1;i<argc;++i) {
         const auto argument=std::filesystem::path(argv[i]);
         if(argument=="--pcsx2" && !pcsx2) pcsx2=true;
+        else if(argument=="--separaciones" && !separations) separations=true;
         else if(!hasOutput && !argument.native().empty() && argument.native()[0]!='-') {output=argument;hasOutput=true;}
-        else {std::cerr<<"Uso: generar_feedback_gs [directorio=logs] [--pcsx2]\n";return 2;}
+        else {std::cerr<<"Uso: generar_feedback_gs [directorio=logs] [--pcsx2] [--separaciones]\n";return 2;}
     }
     std::error_code error;
     std::filesystem::create_directories(output,error);
@@ -35,7 +36,10 @@ int main(int argc,char **argv)
         if(location.byte+4>sourceBytes) return 2;
         std::memcpy(seed.data()+location.byte,&color,4);
     }
+    for(unsigned separation=0;separation<(separations?3u:1u);++separation)
     for(unsigned variant=0;variant<3;++variant) {
+        const auto boundary=static_cast<gow_gs_reference::FeedbackBoundary>(separation);
+        const char *suffix=separation==1?"_texflush":separation==2?"_scissor":"";
         const bool disjoint=variant==1,linear=variant!=2;
         const char *name=disjoint?"disjoint":linear?"self":"nearest";
         auto vram=seed;
@@ -53,17 +57,21 @@ int main(int argc,char **argv)
             }
             std::cout<<"Vecinos copiados y verificados="<<checks<<'\n';
         }
-        const auto path=output/(std::string("feedback_gs_")+name+".bin");
-        if(pcsx2 && !gow_gs_reference::feedbackDump(output/(std::string("feedback_gs_")+name+".gs"),vram,disjoint,linear)) return 2;
+        const auto base=std::string("feedback_gs_")+name+suffix;
+        const auto path=output/(base+".bin");
+        if(pcsx2 && !gow_gs_reference::feedbackDump(output/(base+".gs"),vram,disjoint,linear,boundary)) return 2;
         gow_gs_replay::Backend capture(std::make_unique<GSCpuBackend>(),nullptr,path,0,3600);
         capture.Initialize(vram.data(),uint32_t(vram.size()));
         for(unsigned slice=0;slice<2;++slice) {
+            if(slice==1 && boundary==gow_gs_reference::FeedbackBoundary::Texflush) capture.TextureFlush();
             GSPrimitiveBatch batch{}; batch.vertexCount=2; batch.state.prim.type=GS_PRIM_SPRITE;
             batch.state.prim.tme=true; batch.state.prim.fst=true; batch.state.linearFilter=linear;
             batch.state.textureWidth=1024; batch.state.textureHeight=1024; batch.state.colclamp=1;
             auto &context=batch.state.context;
             context.frame.fbw=pitch; context.frame.psm=GS_PSM_CT32; context.frame.fbmsk=0xff000000u;
             context.scissor={0,511,0,447}; context.zbuf.zbp=104;
+            // 510 sigue fuera de x=0..63: cambia el estado, no la cobertura.
+            if(slice==1 && boundary==gow_gs_reference::FeedbackBoundary::Scissor) context.scissor.x1=510;
             context.zbuf.psm=GS_PSM_Z24; context.zbuf.zmask=true;
             context.test=0x31001; context.clamp=5; context.tex1=linear?0x60:0;
             context.tex0.psm=GS_PSM_CT32; context.tex0.tbw=pitch;

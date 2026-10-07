@@ -195,3 +195,17 @@ dos fallos previos de heap/DMA. Las trazas temporales de escrituras se han retir
 
 Tras integrar también `ps2recomp-heap.patch`, el conjunto pasa 443/443 pruebas. Los resultados
 440/442 de arriba documentan la comparación antes de integrar esa corrección de heap/DMA.
+
+### Control experimental del feedback OpenGL
+
+`PS2X_GS_FEEDBACK_SNAPSHOT=1`, establecido antes de lanzar el ejecutable, protege
+la fuente de textura cuando una primitiva escribe en sus mismas páginas. Queda
+desactivado por defecto. Congela la fuente por primitiva y sirve para contrastar
+la inestabilidad de OpenGL; la caché GS de 8 KiB y los lotes compatibles todavía
+requieren verificación. El renderer CPU conserva su comportamiento.
+
+Los controles sin el juego y sus límites están en
+[RENDERIZADO.md](RENDERIZADO.md#separación-de-lotes-y-fuente-protegida-opcional).
+`repetir_gs` selecciona explícitamente esta política con `--snapshot-feedback`
+en modo compute/hardware. Continúa señalando las diferencias con CPU mediante
+salida 1, aunque la imagen GPU se mantenga estable entre repeticiones.

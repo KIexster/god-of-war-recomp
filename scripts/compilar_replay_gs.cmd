@@ -32,11 +32,11 @@ logs\gs_replay_test.exe logs\gs_replay_synthetic.bin > logs\gs_replay_test.log 2
 if errorlevel 1 exit /b 1
 logs\repetir_gs.exe logs\gs_replay_synthetic.bin cpu --lockstep logs >> logs\gs_replay_test.log 2>&1
 if errorlevel 1 exit /b 1
-logs\generar_feedback_gs.exe logs\feedback_sintetico --pcsx2 > logs\feedback_sintetico.log 2>&1
+logs\generar_feedback_gs.exe logs\feedback_sintetico --pcsx2 --separaciones > logs\feedback_sintetico.log 2>&1
 if errorlevel 1 exit /b 1
-logs\gs_feedback_dump_test.exe logs\feedback_sintetico >> logs\feedback_sintetico.log 2>&1
+logs\gs_feedback_dump_test.exe logs\feedback_sintetico --separaciones >> logs\feedback_sintetico.log 2>&1
 if errorlevel 1 exit /b 1
-for %%V in (self disjoint nearest) do (
+for %%V in (self disjoint nearest self_texflush disjoint_texflush nearest_texflush self_scissor disjoint_scissor nearest_scissor) do (
     logs\repetir_gs.exe logs\feedback_sintetico\feedback_gs_%%V.bin cpu --repeticiones 3 logs\feedback_sintetico\%%V >> logs\feedback_sintetico.log 2>&1
     if errorlevel 1 exit /b 1
 )
