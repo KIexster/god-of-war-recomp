@@ -445,3 +445,22 @@ de [atribución GPU](RENDERIZADO.md#atribución-de-tiempos-gpu) conserva el esta
 por variante y corrige también la frontera de 4096 consultas compute.
 Las cifras de ese diagnóstico se conservan localmente; no se interpretan
 como FPS ni se utilizan sus grupos vacíos para elegir una optimización.
+
+Con el profiler corregido del ejecutable de 65 parches, un diagnóstico de
+240,21 s conserva 280 informes GPU completos encerrados por estados de
+partida cargada. Las consultas raster promedian 39,26 ms/frame del profiler.
+Los principales grupos observados son:
+
+| FBP (hex) | Flags (hex) | Timestamp GPU medio por frame |
+|---|---|---:|
+| 0 | 4b | 30,13 ms |
+| 0 | 5a | 2,15 ms |
+| 0 | 12 | 2,08 ms |
+| 0 | c8 | 1,81 ms |
+
+`4b` combina IIP, textura, mezcla alfa y filtrado bilineal. El diagnóstico
+incluye algunos lotes compute durante la preparación de shaders. La vigilancia
+no observa compiladores ni otra partida y la tarjeta original queda intacta.
+Estas cifras proceden de consultas sincronizadas, con registros adicionales
+y escena cambiante. Sirven para elegir dónde investigar; no acreditan FPS ni
+una mejora de rendimiento y no se comparan con el profiler anterior.

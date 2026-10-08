@@ -2316,6 +2316,28 @@ nativas**, incluidas **24 OpenGL efectivas**, los 60 casos VU1, 100.800 FMAC
 aleatorios y 2.016 dirigidos FTZ/DAZ, PAD2 y los dos modos FINISH.
 El renderer CPU y la política habitual de feedback se conservan.
 
+El diagnóstico corregido de **240,21 s**, con copia privada de la tarjeta y
+sin compiladores ni otras partidas observados, alcanza estado 11 con el nivel
+listo. La tarjeta original conserva su SHA256. Se seleccionan **280 informes
+GPU completos**, encerrados por muestras de ese estado. El promedio de
+timestamps raster es **39,26 ms/frame del profiler**; el grupo FBP=0,
+flags=`4b` (textura, IIP, mezcla alfa y bilineal) acumula **30,13 ms/frame**.
+Los siguientes grupos son `5a` (2,15 ms), `12` (2,08 ms) y `c8` (1,81 ms),
+todos en FBP=0. La selección contiene también algunos lotes compute mientras
+se preparan variantes. Es una pista para investigar shaders; no equivale a
+FPS limpios, tiempo exclusivo de CPU ni atribución por primitiva. No se
+compara esta cifra con el profiler anterior, que agrupaba datos vacíos.
+
+Un ensayo privado elimina la llamada previa a `coversPixel` del fragment
+hardware, porque las funciones de sombreado ya comprueban cobertura y bordes.
+El control procedural alterna original/candidato/original: **8,80 / 9,01 /
+8,75 ms** de mediana, 20 lotes por ejecución, 2000 triángulos IIP/STQ/
+bilineal/ABE por lote, hardware efectivo y 4 MiB exactos frente al CPU.
+Incluye envío y readback sincronizado; no mide FPS de partida. No demuestra
+una ganancia, por lo que no se incorpora ni se añade a la cadena de parches.
+Las fuentes y registros del ensayo quedan en `logs/` y el ejecutable publicado
+conserva los 65 parches verificados.
+
 La herramienta pública de rendimiento amplía el control previo a una
 vigilancia cada segundo durante toda la pasada. Ante otra compilación o
 partida, cierra solo su instancia, marca el registro como inválido y restaura
