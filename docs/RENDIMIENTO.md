@@ -402,3 +402,28 @@ FPU del EE ni se activa FINISH asíncrono por defecto.
 
 En Windows, después de compilar el runtime parcheado, se reproduce con
 `scripts\probar_vu1_fmac.cmd`; la salida queda en `logs/vu1_fmac_test.log`.
+
+`scripts\probar_rendimiento.ps1` rechaza el inicio del perfil si observa una
+compilación u otra instancia del juego. Evita comenzar una comparación mientras
+trabaja otro agente; el control es previo y todavía no vigila procesos durante
+toda la ejecución. Los controles privados que sustentan las cifras de partida
+de este documento sí vigilan esos procesos cada segundo y descartan la pasada
+si detectan carga externa.
+
+Con la integración comprobada de 64 parches (`247a9b3`, incluido el arreglo
+FTZ), una pasada privada de 180,55 s con OpenGL y FINISH síncrono conserva
+doce ventanas completas en estado 11, sin carga pendiente y con el nivel
+listo: **7,58 vid::Flip/s** y **57,71 presentaciones/s**, durante 60,04 s
+(103,06–163,12 del reloj del perfil). La vigilancia cada segundo no observa
+compilaciones ni otra partida. Distribución exclusiva del hilo del juego:
+
+| Área | Tiempo transcurrido |
+|---|---:|
+| VU | 43,24 % |
+| GS, incluidas esperas | 38,20 % |
+| EE | 12,20 % |
+| IOP | 6,36 % |
+
+Es una sola pasada con escena cambiante. No demuestra una ganancia atribuible
+a SIMD frente al perfil anterior ni sustituye las mediciones de Opus. El
+siguiente diagnóstico debe separar coste de envío, esperas del GS y GPU.

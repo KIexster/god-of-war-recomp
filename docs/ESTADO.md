@@ -2244,3 +2244,39 @@ de CPU**, por lo que siguen devolviendo 1: estabilidad no implica paridad ni
 fidelidad a la caché PS2. En este prefijo no se presenta ningún cuadro y los
 readbacks/pausas no miden FPS. El corte reduce la investigación del feedback
 de 146.015 registros a 36, sin publicar la traza ni alterar el modo habitual.
+
+### VIF1/temporizadores y VU1 SIMD integrados (8 de octubre)
+
+Se integran los dos commits terminados de la PR #21 (`8841ef0`, `b280247`) y
+el primer commit SIMD de la PR #23 (`5e09b12`), conservando sus autores e
+historia. Los conflictos de documentación y orden de parches se resuelven
+incluyendo los tres cambios. La revisión detecta y corrige en `247a9b3` un
+flag de underflow perdido por ADD/SUB SIMD cuando el PC usa FTZ/DAZ: cero
+redondeado no implica cancelación exacta. La regresión dirigida falla antes
+del arreglo con `status=1c0/c0` y pasa después; los valores de los registros
+ya coincidían, por lo que comprobar solo la imagen no detectaba este fallo.
+
+La compilación oficial de `247a9b3` termina con código 0: **64 parches**,
+501 micromemorias locales y ejecutable de **70.182.400 bytes**, SHA256
+`82ECCA22A4F4600FA60DB255D45176178971D60FF94382CC12D2E08BFC807074`.
+Las **87 fuentes** auditadas coinciden con la cadena. Pasan **587/587 pruebas
+nativas**, las **22 OpenGL efectivas**, los **60 casos VU1**, **100.800 casos
+FMAC aleatorios y 2.016 FTZ/DAZ dirigidos**, PAD2 y ambos controles FINISH.
+La prueba FMAC utiliza 359.856 pares compilados sin fallback al intérprete.
+Configuración y sintaxis PowerShell también quedan correctas.
+
+Un perfil limpio de 180,55 s, con FINISH síncrono, renderer OpenGL y copia
+privada de la tarjeta, no observa compiladores ni otra partida en su vigilancia
+cada segundo. Doce ventanas completas de partida cargada (60,04 s entre
+103,06 y 163,12 del reloj del perfil) miden **7,58 vid::Flip/s**, con **57,71
+presentaciones/s**. Los tiempos exclusivos del hilo del juego son VU **43,24 %**,
+GS **38,20 %** (incluidas esperas), EE **12,20 %** e IOP **6,36 %**. La tarjeta
+original conserva su SHA256. No se atribuye una ganancia a SSE por comparar
+esta única pasada con otra escena; falta una comparación controlada y separar
+el trabajo del GS de sus esperas. El treemap refleja SIMD y la reducción del
+feedback, manteniendo GS y VIF1/VU1 parciales en los tres idiomas.
+
+Durante estas pruebas Opus añade `754c970` (DIV compilada) a la PR #23 y abre
+la rama de flags perezosos. **Esos cambios posteriores todavía no están en
+este ejecutable**: requieren una revisión e integración propias. No se altera
+el árbol de trabajo de Opus ni se anuncia que toda la PR #23 esté aplicada.
