@@ -1,8 +1,22 @@
 diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime/ps2_vu1.h
-index 16b3cb1..c264ac2 100644
+index 16b3cb1..50e548a 100644
 --- a/ps2xRuntime/include/runtime/ps2_vu1.h
 +++ b/ps2xRuntime/include/runtime/ps2_vu1.h
-@@ -65,10 +65,33 @@ public:
+@@ -5,6 +5,13 @@
+ #include <cstring>
+ #include <cstdint>
+ 
++// GOW-Port: las funciones en línea de VU1 usan el mismo modo de coma flotante que ps2_vu1_*.cpp (sin
++// /fp:fast); MSVC no las expande en línea si los modos no coinciden.
++#if defined(_MSC_VER)
++#pragma float_control(precise, on, push)
++#pragma fp_contract(off)
++#endif
++
+ class GS;
+ class PS2Memory;
+ 
+@@ -65,10 +72,33 @@ public:
      // presupuesto sí; por eso las pruebas del modelo de latencias lo dejan desactivado.
      void setDirectRegisterWrites(bool enabled);
  
@@ -36,7 +50,7 @@ index 16b3cb1..c264ac2 100644
      enum Pipeline : uint8_t
      {
          PipelineNone = 0,
-@@ -121,6 +144,7 @@ private:
+@@ -121,6 +151,7 @@ private:
          bool tBit = false;
          uint8_t upperVfShadowReg = 0;
          uint8_t suppressedLowerVf = 0;
@@ -44,7 +58,7 @@ index 16b3cb1..c264ac2 100644
      };
  
      struct FlagPipelineEntry
-@@ -219,6 +243,8 @@ private:
+@@ -219,6 +250,8 @@ private:
      // con colas porque los lectores se detienen hasta que el registro está listo (m_vfReady...) y solo se
      // confirma la última escritura emitida. GOW_VU1_COLAS=1 vuelve al modelo con colas.
      bool m_directRegisterWrites = false;
@@ -53,19 +67,565 @@ index 16b3cb1..c264ac2 100644
      // GOW-Port: ciclo de la próxima entrada de las colas que vence; commitReadyPipelines no hace nada antes.
      uint64_t m_nextCommitCycle = ~0ull;
      // GOW-Port: el microcódigo cargado no lee el registro de estado (FSAND/FSEQ/FSOR); no hace falta
-@@ -304,6 +330,10 @@ private:
+@@ -234,7 +267,10 @@ private:
+     std::array<PendingAccWrite, kMaxPendingAccWrites> m_accWritePipeline{};
+     // GOW-Port: bits de las entradas válidas de cada cola; commitReadyPipelines solo recorre esas
+     // entradas (antes recorría las 48 en cada ciclo, ~30 % del tiempo de VU1).
+-    uint32_t m_flagPending = 0u, m_storePending = 0u, m_vfPending = 0u, m_viPending = 0u, m_accPending = 0u;
++    uint32_t m_storePending = 0u, m_vfPending = 0u, m_viPending = 0u, m_accPending = 0u;
++    // GOW-Port: los flags (MAC/estado/clip) tienen todos la misma latencia, así que se confirman en el orden
++    // en que se emiten: una cola circular (cabeza y número de entradas) en lugar de buscar huecos.
++    uint32_t m_flagHead = 0u, m_flagCount = 0u;
+     XgkickPipeline m_xgkick{};
+     std::array<std::array<uint64_t, 4>, 32> m_vfReady{};
+     std::array<uint64_t, 16> m_viReady{};
+@@ -284,6 +320,7 @@ private:
+     uint8_t normalizeFmacExactResult(float &value, long double exactResult) const;
+     uint32_t calculateFmacProductSticky(uint8_t dest) const;
+     void updateFmacFlags(const uint8_t laneFlags[4], uint8_t dest, uint32_t extraSticky);
++    FlagPipelineEntry *pushFlagEntry();
+     void queueFsset(uint16_t immediate);
+     void queueClip(uint32_t clip);
+     void queueFcset(uint32_t clip);
+@@ -304,6 +341,19 @@ private:
      void finishXgkick();
      uint64_t calculatePairReadyCycle(const DecodedInstructionPair &decoded) const;
      void markPairWrites(const DecodedInstructionPair &decoded);
 +    bool stepPair(const DecodedInstructionPair &decoded, StepContext &context);
++    // GOW-Port: versiones especializadas para el microcódigo compilado (ps2_vu1_compiled.inl).
++    template <uint32_t Upper, uint32_t C>
++    void fmacLaneT(float &result, uint8_t &laneFlags);
++    template <uint32_t Upper>
++    void upperT();
++    template <class T>
++    uint64_t readyCycleT() const;
++    template <class T>
++    bool stepPairT(StepContext &context);
 +    bool stepInterpreted(StepContext &context);
 +    bool compiledPrologue(StepContext &context);
 +    CompiledProgramFn compiledProgramFor(uint8_t *vuCode, uint32_t codeSize, PS2Memory *memory);
      bool pipelinesPending() const;
  
      // GOW-Port: en línea; se llama varias veces por instrucción (~9 % del tiempo de VU1 como llamada).
+@@ -319,12 +369,32 @@ private:
+         std::memcpy(&value, &bits, sizeof(value));
+         return value;
+     }
++    // GOW-Port: atajo de normalizeFmacResult para acc +/- producto. Con el producto y la suma redondeados
++    // por separado, |exacto - resultado| < 2^-23 (|producto| + |resultado|). Si el resultado es normal,
++    // no está cerca de los extremos (exponente 2..0xFD) y no es mucho menor que el producto (2^-20), el
++    // exacto tiene su mismo signo, no es cero y no desborda: el valor no cambia y los flags son el signo.
++    static bool productSumFlagsFast(float result, float product, uint8_t &laneFlags)
++    {
++        uint32_t r = 0u, p = 0u;
++        std::memcpy(&r, &result, sizeof(r));
++        std::memcpy(&p, &product, sizeof(p));
++        const int er = static_cast<int>((r >> 23) & 0xFFu);
++        const int ep = static_cast<int>((p >> 23) & 0xFFu);
++        if (er < 2 || er > 0xFD || er < ep - 20)
++            return false;
++        laneFlags = (r & 0x80000000u) != 0u ? 0x2u : 0u;
++        return true;
++    }
+     float normalizeResult(float value, uint32_t &laneFlags) const;
+-    uint32_t microAddressMask() const;
++    uint32_t microAddressMask() const { return m_unit == Unit::VU1 ? 0x3FFFu : 0x0FFFu; }
+     int32_t readBranchVi(uint8_t reg) const;
+     void recordViWriteForBranch(uint8_t reg, int32_t oldValue);
+     void reportReservedInstruction(bool upper, uint32_t instruction);
+     float broadcast(const float *vf, uint8_t bc);
+ };
+ 
++#if defined(_MSC_VER)
++#pragma float_control(pop)
++#endif
++
+ #endif
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+new file mode 100644
+index 0000000..651f92d
+--- /dev/null
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+@@ -0,0 +1,477 @@
++// GOW-Port: paso de VU1 especializado para microcódigo compilado (tools/vu1/generar_vu1.cpp).
++// stepPairT<T> hace exactamente lo mismo que stepPair con el par T::value, pero como el par es una
++// constante, cada decisión que depende de la decodificación se resuelve al compilar ("if constexpr") y
++// solo queda el trabajo de ese par. Solo se usa con escrituras directas de registros (m_directRegisterWrites).
++// Las operaciones FMAC frecuentes se especializan (upperT); el resto llama al intérprete.
++#ifndef PS2_VU1_COMPILED_INL
++#define PS2_VU1_COMPILED_INL
++
++#include "ps2_vu1_step.inl"
++#include <cmath>
++#include <cstring>
++
++// GOW-Port: la aritmética de VU no depende de /fp:fast. El runtime se compila con /fp:fast, que deja al
++// compilador fusionar a*b+c en FMA según dónde esté el código: el intérprete y el microcódigo compilado
++// (o dos versiones del intérprete) podían dar resultados distintos. Aquí cada operación se redondea por
++// separado, como en las FMAC de la PS2 (y en PCSX2).
++#if defined(_MSC_VER)
++#pragma float_control(precise, on, push)
++#pragma fp_contract(off)
++#endif
++
++namespace vu1c
++{
++    enum class Kind : int
++    {
++        Other,
++        Nop,
++        Add,
++        Sub,
++        Madd,
++        Msub,
++        Mul,
++        Opmsub,
++        Opmula,
++        Max,
++        Mini,
++    };
++    enum class Source : int
++    {
++        Vector,
++        Broadcast,
++        Q,
++        I,
++    };
++
++    struct UpperInfo
++    {
++        Kind kind = Kind::Other;
++        Source source = Source::Vector;
++        bool toAcc = false;
++        uint32_t bc = 0;
++    };
++
++    constexpr UpperInfo classify(uint32_t upper)
++    {
++        const uint32_t op = upper & 0x3Fu;
++        UpperInfo r{};
++        if (op < 0x3Cu)
++        {
++            const uint32_t code = op;
++            if (code <= 0x03u) r = {Kind::Add, Source::Broadcast, false, code & 3u};
++            else if (code <= 0x07u) r = {Kind::Sub, Source::Broadcast, false, code & 3u};
++            else if (code <= 0x0Bu) r = {Kind::Madd, Source::Broadcast, false, code & 3u};
++            else if (code <= 0x0Fu) r = {Kind::Msub, Source::Broadcast, false, code & 3u};
++            else if (code <= 0x13u) r = {Kind::Max, Source::Broadcast, false, code & 3u};
++            else if (code <= 0x17u) r = {Kind::Mini, Source::Broadcast, false, code & 3u};
++            else if (code <= 0x1Bu) r = {Kind::Mul, Source::Broadcast, false, code & 3u};
++            else
++            {
++                switch (code)
++                {
++                case 0x1C: r = {Kind::Mul, Source::Q, false, 0}; break;
++                case 0x1D: r = {Kind::Max, Source::I, false, 0}; break;
++                case 0x1E: r = {Kind::Mul, Source::I, false, 0}; break;
++                case 0x1F: r = {Kind::Mini, Source::I, false, 0}; break;
++                case 0x20: r = {Kind::Add, Source::Q, false, 0}; break;
++                case 0x21: r = {Kind::Madd, Source::Q, false, 0}; break;
++                case 0x22: r = {Kind::Add, Source::I, false, 0}; break;
++                case 0x23: r = {Kind::Madd, Source::I, false, 0}; break;
++                case 0x24: r = {Kind::Sub, Source::Q, false, 0}; break;
++                case 0x25: r = {Kind::Msub, Source::Q, false, 0}; break;
++                case 0x26: r = {Kind::Sub, Source::I, false, 0}; break;
++                case 0x27: r = {Kind::Msub, Source::I, false, 0}; break;
++                case 0x28: r = {Kind::Add, Source::Vector, false, 0}; break;
++                case 0x29: r = {Kind::Madd, Source::Vector, false, 0}; break;
++                case 0x2A: r = {Kind::Mul, Source::Vector, false, 0}; break;
++                case 0x2B: r = {Kind::Max, Source::Vector, false, 0}; break;
++                case 0x2C: r = {Kind::Sub, Source::Vector, false, 0}; break;
++                case 0x2D: r = {Kind::Msub, Source::Vector, false, 0}; break;
++                case 0x2E: r = {Kind::Opmsub, Source::Vector, false, 0}; break;
++                case 0x2F: r = {Kind::Mini, Source::Vector, false, 0}; break;
++                default: break;
++                }
++            }
++            return r;
++        }
++        const uint32_t special = (upper & 3u) | ((upper >> 4) & 0x7Cu);
++        if (special <= 0x03u) return {Kind::Add, Source::Broadcast, true, special & 3u};
++        if (special <= 0x07u) return {Kind::Sub, Source::Broadcast, true, special & 3u};
++        if (special <= 0x0Bu) return {Kind::Madd, Source::Broadcast, true, special & 3u};
++        if (special <= 0x0Fu) return {Kind::Msub, Source::Broadcast, true, special & 3u};
++        if (special >= 0x18u && special <= 0x1Bu) return {Kind::Mul, Source::Broadcast, true, special & 3u};
++        switch (special)
++        {
++        case 0x1C: return {Kind::Mul, Source::Q, true, 0};
++        case 0x1E: return {Kind::Mul, Source::I, true, 0};
++        case 0x20: return {Kind::Add, Source::Q, true, 0};
++        case 0x21: return {Kind::Madd, Source::Q, true, 0};
++        case 0x22: return {Kind::Add, Source::I, true, 0};
++        case 0x23: return {Kind::Madd, Source::I, true, 0};
++        case 0x24: return {Kind::Sub, Source::Q, true, 0};
++        case 0x25: return {Kind::Msub, Source::Q, true, 0};
++        case 0x26: return {Kind::Sub, Source::I, true, 0};
++        case 0x27: return {Kind::Msub, Source::I, true, 0};
++        case 0x28: return {Kind::Add, Source::Vector, true, 0};
++        case 0x29: return {Kind::Madd, Source::Vector, true, 0};
++        case 0x2A: return {Kind::Mul, Source::Vector, true, 0};
++        case 0x2C: return {Kind::Sub, Source::Vector, true, 0};
++        case 0x2D: return {Kind::Msub, Source::Vector, true, 0};
++        case 0x2E: return {Kind::Opmula, Source::Vector, true, 0};
++        case 0x2F:
++        case 0x30: return {Kind::Nop, Source::Vector, false, 0};
++        default: return {};
++        }
++    }
++
++    constexpr uint32_t crossLeft(uint32_t c) { return c == 0 ? 1u : c == 1 ? 2u : c == 2 ? 0u : 3u; }
++    constexpr uint32_t crossRight(uint32_t c) { return c == 0 ? 2u : c == 1 ? 0u : c == 2 ? 1u : 3u; }
++}
++
++// Una componente de una operación FMAC: calcula como execUpper (operandos normalizados, mismas expresiones
++// en float) y aplica normalizeFmacResult a esa componente.
++template <uint32_t Upper, uint32_t C>
++VU1_STEP_INLINE void VU1Interpreter::fmacLaneT(float &result, uint8_t &laneFlags)
++{
++    constexpr vu1c::UpperInfo info = vu1c::classify(Upper);
++    constexpr uint32_t fs = (Upper >> 11) & 0x1Fu;
++    constexpr uint32_t ft = (Upper >> 16) & 0x1Fu;
++    constexpr bool cross = info.kind == vu1c::Kind::Opmsub || info.kind == vu1c::Kind::Opmula;
++    constexpr uint32_t left = cross ? vu1c::crossLeft(C) : C;
++    constexpr uint32_t rightLane = cross ? vu1c::crossRight(C) : (info.source == vu1c::Source::Broadcast ? info.bc : C);
++
++    const float vs = normalizeOperand(m_state.vf[fs][left]);
++    float right;
++    if constexpr (info.source == vu1c::Source::Q)
++        right = normalizeOperand(m_state.q);
++    else if constexpr (info.source == vu1c::Source::I)
++        right = normalizeOperand(m_state.i);
++    else
++        right = normalizeOperand(m_state.vf[ft][rightLane]);
++
++    if constexpr (info.kind == vu1c::Kind::Max)
++    {
++        result = (vs > right) ? vs : right;
++        return;
++    }
++    else if constexpr (info.kind == vu1c::Kind::Mini)
++    {
++        result = (vs < right) ? vs : right;
++        return;
++    }
++    else
++    {
++        float acc = 0.0f;
++        if constexpr (info.kind == vu1c::Kind::Madd || info.kind == vu1c::Kind::Msub || info.kind == vu1c::Kind::Opmsub)
++            acc = normalizeOperand(m_state.acc[C]);
++
++        if constexpr (cross && C == 3u)
++            result = 0.0f;
++        else if constexpr (info.kind == vu1c::Kind::Add)
++            result = vs + right;
++        else if constexpr (info.kind == vu1c::Kind::Sub)
++            result = vs - right;
++        else if constexpr (info.kind == vu1c::Kind::Madd)
++            result = acc + vs * right;
++        else if constexpr (info.kind == vu1c::Kind::Msub || info.kind == vu1c::Kind::Opmsub)
++            result = acc - vs * right;
++        else
++            result = vs * right; // Mul, Opmula
++
++        if constexpr (info.kind == vu1c::Kind::Madd || info.kind == vu1c::Kind::Msub ||
++                      (info.kind == vu1c::Kind::Opmsub && C != 3u))
++        {
++            if (productSumFlagsFast(result, vs * right, laneFlags))
++                return;
++        }
++
++        if constexpr (info.kind == vu1c::Kind::Add || info.kind == vu1c::Kind::Sub || info.kind == vu1c::Kind::Mul)
++        {
++            uint32_t bits = 0u;
++            std::memcpy(&bits, &result, sizeof(bits));
++            const uint32_t exponent = (bits >> 23) & 0xFFu;
++            if (exponent != 0u && exponent < 0xFEu)
++            {
++                laneFlags = (bits & 0x80000000u) != 0u ? 0x2u : 0u;
++                return;
++            }
++        }
++        long double exact = 0.0L;
++        if constexpr (cross && C == 3u)
++            exact = 0.0L;
++        else if constexpr (info.kind == vu1c::Kind::Add)
++            exact = static_cast<long double>(vs) + static_cast<long double>(right);
++        else if constexpr (info.kind == vu1c::Kind::Sub)
++            exact = static_cast<long double>(vs) - static_cast<long double>(right);
++        else if constexpr (info.kind == vu1c::Kind::Madd)
++            exact = static_cast<long double>(acc) + static_cast<long double>(vs) * static_cast<long double>(right);
++        else if constexpr (info.kind == vu1c::Kind::Msub || info.kind == vu1c::Kind::Opmsub)
++            exact = static_cast<long double>(acc) - static_cast<long double>(vs) * static_cast<long double>(right);
++        else
++            exact = static_cast<long double>(vs) * static_cast<long double>(right);
++        laneFlags = normalizeFmacExactResult(result, exact);
++    }
++}
++
++template <uint32_t Upper>
++VU1_STEP_INLINE void VU1Interpreter::upperT()
++{
++    constexpr vu1c::UpperInfo info = vu1c::classify(Upper);
++    if constexpr (info.kind == vu1c::Kind::Nop)
++    {
++        m_currentUpperInstruction = Upper;
++    }
++    else if constexpr (info.kind == vu1c::Kind::Other)
++    {
++        execUpper(Upper);
++    }
++    else
++    {
++        m_currentUpperInstruction = Upper;
++        constexpr uint32_t dest = (Upper >> 21) & 0xFu;
++        constexpr uint32_t fd = (Upper >> 6) & 0x1Fu;
++        float result[4]{};
++        uint8_t laneFlags[4]{};
++        if constexpr ((dest & 8u) != 0u) fmacLaneT<Upper, 0>(result[0], laneFlags[0]);
++        if constexpr ((dest & 4u) != 0u) fmacLaneT<Upper, 1>(result[1], laneFlags[1]);
++        if constexpr ((dest & 2u) != 0u) fmacLaneT<Upper, 2>(result[2], laneFlags[2]);
++        if constexpr ((dest & 1u) != 0u) fmacLaneT<Upper, 3>(result[3], laneFlags[3]);
++        if constexpr (info.kind != vu1c::Kind::Max && info.kind != vu1c::Kind::Mini)
++        {
++            if constexpr (dest != 0u)
++                updateFmacFlags(laneFlags, static_cast<uint8_t>(dest), m_statusUnread ? 0u : calculateFmacProductSticky(static_cast<uint8_t>(dest)));
++        }
++        float *target = info.toAcc ? m_state.acc : m_state.vf[fd];
++        if constexpr ((dest & 8u) != 0u) target[0] = result[0];
++        if constexpr ((dest & 4u) != 0u) target[1] = result[1];
++        if constexpr ((dest & 2u) != 0u) target[2] = result[2];
++        if constexpr ((dest & 1u) != 0u) target[3] = result[3];
++    }
++}
++
++template <class T>
++VU1_STEP_INLINE uint64_t VU1Interpreter::readyCycleT() const
++{
++    constexpr const DecodedInstructionPair &k = T::value;
++    uint64_t ready = m_cycle;
++    // Lecturas de VF de las dos instrucciones (índices y componentes constantes).
++#define VU1C_VF_READS(USAGE)                                                                     \
++    if constexpr (k.USAGE.vfReadCount > 0u)                                                      \
++    {                                                                                            \
++        constexpr uint32_t reg = k.USAGE.vfRead[0].reg, lanes = k.USAGE.vfRead[0].lanes;         \
++        if constexpr ((lanes & 8u) != 0u) ready = std::max(ready, m_vfReady[reg][0]);            \
++        if constexpr ((lanes & 4u) != 0u) ready = std::max(ready, m_vfReady[reg][1]);            \
++        if constexpr ((lanes & 2u) != 0u) ready = std::max(ready, m_vfReady[reg][2]);            \
++        if constexpr ((lanes & 1u) != 0u) ready = std::max(ready, m_vfReady[reg][3]);            \
++    }                                                                                            \
++    if constexpr (k.USAGE.vfReadCount > 1u)                                                      \
++    {                                                                                            \
++        constexpr uint32_t reg = k.USAGE.vfRead[1].reg, lanes = k.USAGE.vfRead[1].lanes;         \
++        if constexpr ((lanes & 8u) != 0u) ready = std::max(ready, m_vfReady[reg][0]);            \
++        if constexpr ((lanes & 4u) != 0u) ready = std::max(ready, m_vfReady[reg][1]);            \
++        if constexpr ((lanes & 2u) != 0u) ready = std::max(ready, m_vfReady[reg][2]);            \
++        if constexpr ((lanes & 1u) != 0u) ready = std::max(ready, m_vfReady[reg][3]);            \
++    }                                                                                            \
++    if constexpr ((k.USAGE.viRead & 0xFFFEu) != 0u)                                              \
++    {                                                                                            \
++        for (uint32_t r = 1; r < 16u; ++r)                                                       \
++            if ((k.USAGE.viRead & (1u << r)) != 0u)                                              \
++                ready = std::max(ready, m_viReady[r]);                                           \
++    }                                                                                            \
++    if constexpr ((k.USAGE.accRead & 8u) != 0u) ready = std::max(ready, m_accReady[0]);          \
++    if constexpr ((k.USAGE.accRead & 4u) != 0u) ready = std::max(ready, m_accReady[1]);          \
++    if constexpr ((k.USAGE.accRead & 2u) != 0u) ready = std::max(ready, m_accReady[2]);          \
++    if constexpr ((k.USAGE.accRead & 1u) != 0u) ready = std::max(ready, m_accReady[3]);
++    VU1C_VF_READS(upperUsage)
++    VU1C_VF_READS(lowerUsage)
++#undef VU1C_VF_READS
++    if constexpr (k.lowerUsage.pipeline == PipelineFdiv || k.lowerUsage.waitQ)
++    {
++        if (m_fdiv.valid)
++            ready = std::max(ready, m_fdiv.readyCycle);
++    }
++    if constexpr (k.lowerUsage.pipeline == PipelineEfu)
++        ready = std::max(ready, m_efuResourceReady);
++    if constexpr (k.lowerUsage.waitP)
++    {
++        for (const ScalarPipelineEntry &entry : m_efu)
++            if (entry.valid)
++                ready = std::max(ready, entry.readyCycle);
++    }
++    if constexpr (k.lowerUsage.pipeline == PipelineXgkick)
++    {
++        if (m_xgkick.active)
++            ready = std::max(ready, m_cycle + 1u);
++    }
++    return ready;
++}
++
++template <class T>
++VU1_STEP_INLINE bool VU1Interpreter::stepPairT(StepContext &context)
++{
++    constexpr const DecodedInstructionPair &k = T::value;
++
++    // Igual que compiledPrologue + stepPair.
++    if (m_cycle >= context.budgetEnd || m_stopRequested)
++        return false;
++    if (m_cycle >= m_nextCommitCycle)
++        commitReadyPipelines();
++
++    uint64_t readyCycle = readyCycleT<T>();
++    if (readyCycle > m_cycle)
++    {
++        while (readyCycle > m_cycle)
++        {
++            if (readyCycle >= context.budgetEnd)
++            {
++                advanceTo(context.budgetEnd);
++                break;
++            }
++            advanceTo(readyCycle);
++            readyCycle = readyCycleT<T>();
++        }
++        if (m_cycle >= context.budgetEnd)
++            return false;
++    }
++
++    constexpr uint32_t viWrites = k.lowerUsage.viWrite & 0xFFFEu;
++    constexpr uint32_t writtenVi = viWrites != 0u ? static_cast<uint32_t>(std::countr_zero(viWrites)) : 0u;
++    int32_t oldVi = 0;
++    if constexpr (writtenVi != 0u)
++        oldVi = m_state.vi[writtenVi];
++
++    constexpr bool lowerNop = k.lower == 0x00000000u || k.lower == 0x8000033Cu;
++    if constexpr (k.iBit)
++    {
++        upperT<k.upper>();
++        float immediate = 0.0f;
++        constexpr uint32_t lowerBits = k.lower;
++        std::memcpy(&immediate, &lowerBits, sizeof(immediate));
++        m_state.i = normalizeOperand(immediate);
++    }
++    else if constexpr (k.upperVfShadowReg != 0u)
++    {
++        constexpr uint32_t sh = k.upperVfShadowReg;
++        float oldVf[4];
++        float upperVf[4];
++        std::memcpy(oldVf, m_state.vf[sh], sizeof(oldVf));
++        upperT<k.upper>();
++        std::memcpy(upperVf, m_state.vf[sh], sizeof(upperVf));
++        std::memcpy(m_state.vf[sh], oldVf, sizeof(oldVf));
++        execLower(k.lower, context.vuData, context.dataSize, *context.gs, context.memory, k.upper);
++        std::memcpy(m_state.vf[sh], upperVf, sizeof(upperVf));
++    }
++    else
++    {
++        upperT<k.upper>();
++        if constexpr (!lowerNop)
++            execLower(k.lower, context.vuData, context.dataSize, *context.gs, context.memory, k.upper);
++    }
++
++    m_viBranchBackupValid = false;
++    if constexpr (writtenVi != 0u)
++        m_state.vi[writtenVi] = static_cast<int16_t>(m_state.vi[writtenVi]);
++
++    // markPairWrites con constantes.
++    {
++        constexpr VfAccess lowerWrite = k.lowerUsage.vfWrite;
++        if constexpr (lowerWrite.reg != 0u && k.suppressedLowerVf != lowerWrite.reg)
++        {
++            constexpr uint32_t latency = k.lowerUsage.vfLatency != 0u ? k.lowerUsage.vfLatency : k.lowerUsage.latency;
++            if constexpr ((lowerWrite.lanes & 8u) != 0u) m_vfReady[lowerWrite.reg][0] = m_cycle + latency;
++            if constexpr ((lowerWrite.lanes & 4u) != 0u) m_vfReady[lowerWrite.reg][1] = m_cycle + latency;
++            if constexpr ((lowerWrite.lanes & 2u) != 0u) m_vfReady[lowerWrite.reg][2] = m_cycle + latency;
++            if constexpr ((lowerWrite.lanes & 1u) != 0u) m_vfReady[lowerWrite.reg][3] = m_cycle + latency;
++        }
++        constexpr VfAccess upperWrite = k.upperUsage.vfWrite;
++        if constexpr (upperWrite.reg != 0u)
++        {
++            constexpr uint32_t latency = k.upperUsage.vfLatency != 0u ? k.upperUsage.vfLatency : k.upperUsage.latency;
++            if constexpr ((upperWrite.lanes & 8u) != 0u) m_vfReady[upperWrite.reg][0] = m_cycle + latency;
++            if constexpr ((upperWrite.lanes & 4u) != 0u) m_vfReady[upperWrite.reg][1] = m_cycle + latency;
++            if constexpr ((upperWrite.lanes & 2u) != 0u) m_vfReady[upperWrite.reg][2] = m_cycle + latency;
++            if constexpr ((upperWrite.lanes & 1u) != 0u) m_vfReady[upperWrite.reg][3] = m_cycle + latency;
++        }
++        if constexpr (viWrites != 0u)
++        {
++            constexpr uint32_t latency = k.lowerUsage.viLatency != 0u ? k.lowerUsage.viLatency : k.lowerUsage.latency;
++            for (uint32_t r = 1; r < 16u; ++r)
++                if ((viWrites & (1u << r)) != 0u)
++                    m_viReady[r] = m_cycle + latency;
++        }
++        constexpr uint32_t accWrite = k.upperUsage.accWrite;
++        if constexpr ((accWrite & 8u) != 0u) m_accReady[0] = m_cycle + kAccForwardLatency;
++        if constexpr ((accWrite & 4u) != 0u) m_accReady[1] = m_cycle + kAccForwardLatency;
++        if constexpr ((accWrite & 2u) != 0u) m_accReady[2] = m_cycle + kAccForwardLatency;
++        if constexpr ((accWrite & 1u) != 0u) m_accReady[3] = m_cycle + kAccForwardLatency;
++    }
++    if constexpr (writtenVi != 0u && k.lowerUsage.delaysNextBranchRead)
++        recordViWriteForBranch(static_cast<uint8_t>(writtenVi), oldVi);
++
++    m_state.vf[0][0] = 0.0f;
++    m_state.vf[0][1] = 0.0f;
++    m_state.vf[0][2] = 0.0f;
++    m_state.vf[0][3] = 1.0f;
++    m_state.vi[0] = 0;
++
++    uint32_t nextPc = m_state.pc + 8u;
++    if (nextPc >= context.codeSize)
++        nextPc = 0u;
++    m_state.pc = nextPc;
++
++    if (m_state.branchPending)
++    {
++        if (m_state.branchDelay == 0u)
++        {
++            m_state.pc = m_state.branchTarget & microAddressMask();
++            m_state.branchPending = false;
++        }
++        else
++        {
++            --m_state.branchDelay;
++        }
++    }
++
++    const bool dHalt = k.dBit && m_state.dBitEnabled;
++    const bool tHalt = k.tBit && m_state.tBitEnabled;
++    const bool haltBit = dHalt || tHalt;
++    const bool haltBranch = haltBit && k.lowerUsage.pipeline == PipelineBranch;
++
++    if (m_state.haltAfterDelaySlot)
++    {
++        m_state.stoppedByD = m_pendingHaltD;
++        m_state.stoppedByT = m_pendingHaltT;
++        context.programEnded = true;
++    }
++    else if (m_state.ebit)
++        context.programEnded = true;
++    else if (haltBit && !haltBranch)
++    {
++        m_state.stoppedByD = dHalt;
++        m_state.stoppedByT = tHalt;
++        context.programEnded = true;
++    }
++    else if (k.eBit)
++        m_state.ebit = true;
++    else if (haltBranch)
++    {
++        m_state.haltAfterDelaySlot = true;
++        m_pendingHaltD = dHalt;
++        m_pendingHaltT = tHalt;
++    }
++
++    // advanceOneCycle con las comprobaciones en línea.
++    ++m_cycle;
++    m_state.cycles = m_cycle;
++    if (m_cycle >= m_nextCommitCycle)
++        commitReadyPipelines();
++    if (m_xgkick.active)
++        progressXgkick();
++    return !context.programEnded;
++}
++
++#if defined(_MSC_VER)
++#pragma float_control(pop)
++#endif
++
++#endif
 diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
-index 246af25..28e926e 100644
+index 246af25..70f8a56 100644
 --- a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
 +++ b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
 @@ -3,6 +3,7 @@
@@ -76,7 +636,7 @@ index 246af25..28e926e 100644
  
  #include <algorithm>
  #include <bit>
-@@ -14,6 +15,7 @@
+@@ -14,9 +15,19 @@
  #include <cstring>
  #include <filesystem>
  #include <limits>
@@ -84,7 +644,223 @@ index 246af25..28e926e 100644
  #include <ps2_log.h>
  #include "runtime/ps2_perf.h"
  
-@@ -1176,85 +1178,6 @@ void VU1Interpreter::flushPipelines()
++// GOW-Port: la aritmética de VU no depende de /fp:fast. El runtime se compila con /fp:fast, que deja al
++// compilador fusionar a*b+c en FMA según dónde esté el código: el intérprete y el microcódigo compilado
++// (o dos versiones del intérprete) podían dar resultados distintos. Aquí cada operación se redondea por
++// separado, como en las FMAC de la PS2 (y en PCSX2).
++#if defined(_MSC_VER)
++#pragma float_control(precise, on, push)
++#pragma fp_contract(off)
++#endif
++
+ namespace
+ {
+     // GOW-Port: GOW_XGKICK_IMMEDIATE se lee una vez (-1 = sin leer). getenv recorre el entorno
+@@ -100,7 +111,8 @@ void VU1Interpreter::resetScheduler()
+     m_vfWritePipeline = {};
+     m_viWritePipeline = {};
+     m_accWritePipeline = {};
+-    m_flagPending = m_storePending = m_vfPending = m_viPending = m_accPending = 0u;
++    m_storePending = m_vfPending = m_viPending = m_accPending = 0u;
++    m_flagHead = m_flagCount = 0u;
+     m_xgkick = {};
+     m_vfReady = {};
+     m_viReady = {};
+@@ -162,11 +174,6 @@ float VU1Interpreter::normalizeResult(float value, uint32_t &laneFlags) const
+     return value;
+ }
+ 
+-uint32_t VU1Interpreter::microAddressMask() const
+-{
+-    return m_unit == Unit::VU1 ? 0x3FFFu : 0x0FFFu;
+-}
+-
+ int32_t VU1Interpreter::readBranchVi(uint8_t reg) const
+ {
+     if (reg == 0u)
+@@ -301,6 +308,18 @@ void VU1Interpreter::normalizeFmacResult(float *result, uint8_t dest,
+             }
+         }
+         const long double right = source == Source::Vector ? vt[component] : scalar;
++        if (kind == Kind::Madd || kind == Kind::Msub)
++        {
++            const float product = static_cast<float>(vs[component]) * static_cast<float>(right);
++            if (productSumFlagsFast(result[component], product, laneFlags[component]))
++                continue;
++        }
++        else if (kind == Kind::Opmsub && component != 3u)
++        {
++            const float product = static_cast<float>(vs[crossLeft[component]]) * static_cast<float>(vt[crossRight[component]]);
++            if (productSumFlagsFast(result[component], product, laneFlags[component]))
++                continue;
++        }
+         long double exact = 0.0L;
+         switch (kind)
+         {
+@@ -619,21 +638,12 @@ void VU1Interpreter::updateFmacFlags(const uint8_t laneFlags[4], uint8_t dest,
+         status |= flags;
+     }
+ 
+-    // GOW-Port: primera entrada libre a partir de la máscara de pendientes.
+-    const uint32_t freeSlots = ~m_flagPending & ((1u << kMaxFlagEntries) - 1u);
+-    FlagPipelineEntry *entry = freeSlots != 0u ? &m_flagPipeline[std::countr_zero(freeSlots)] : nullptr;
++    FlagPipelineEntry *entry = pushFlagEntry();
+     if (!entry)
+     {
+         reportReservedInstruction(true, 0xFFFFFFFFu);
+         return;
+     }
+-
+-    *entry = {};
+-    entry->valid = true;
+-    entry->issueCycle = m_cycle;
+-    entry->readyCycle = m_cycle + kFmacLatency;
+-    m_nextCommitCycle = std::min(m_nextCommitCycle, entry->readyCycle);
+-    m_flagPending |= 1u << static_cast<uint32_t>(entry - m_flagPipeline.data());
+     entry->mac = mac;
+     entry->status = status;
+     entry->extraSticky = extraSticky;
+@@ -657,6 +667,20 @@ void VU1Interpreter::applyFmacDestAcc(float *result, uint8_t dest)
+     applyDestAcc(result, dest);
+ }
+ 
++VU1Interpreter::FlagPipelineEntry *VU1Interpreter::pushFlagEntry()
++{
++    if (m_flagCount >= kMaxFlagEntries)
++        return nullptr;
++    FlagPipelineEntry &entry = m_flagPipeline[(m_flagHead + m_flagCount) % kMaxFlagEntries];
++    ++m_flagCount;
++    entry = {};
++    entry.valid = true;
++    entry.issueCycle = m_cycle;
++    entry.readyCycle = m_cycle + kFmacLatency;
++    m_nextCommitCycle = std::min(m_nextCommitCycle, entry.readyCycle);
++    return &entry;
++}
++
+ void VU1Interpreter::queueFsset(uint16_t immediate)
+ {
+     for (FlagPipelineEntry &entry : m_flagPipeline)
+@@ -665,20 +689,11 @@ void VU1Interpreter::queueFsset(uint16_t immediate)
+             entry.writesStatus = false;
+     }
+ 
+-    for (FlagPipelineEntry &entry : m_flagPipeline)
++    if (FlagPipelineEntry *entry = pushFlagEntry())
+     {
+-        if (!entry.valid)
+-        {
+-            entry = {};
+-            entry.valid = true;
+-            entry.issueCycle = m_cycle;
+-            entry.readyCycle = m_cycle + kFmacLatency;
+-            m_nextCommitCycle = std::min(m_nextCommitCycle, entry.readyCycle);
+-            m_flagPending |= 1u << static_cast<uint32_t>(&entry - m_flagPipeline.data());
+-            entry.status = static_cast<uint32_t>(immediate) & 0xFC0u;
+-            entry.writesSticky = true;
+-            return;
+-        }
++        entry->status = static_cast<uint32_t>(immediate) & 0xFC0u;
++        entry->writesSticky = true;
++        return;
+     }
+     reportReservedInstruction(false, 0xFFFFFFFEu);
+ }
+@@ -686,20 +701,11 @@ void VU1Interpreter::queueFsset(uint16_t immediate)
+ void VU1Interpreter::queueClip(uint32_t clip)
+ {
+     m_workingClip = ((m_workingClip << 6) | (clip & 0x3Fu)) & 0xFFFFFFu;
+-    for (FlagPipelineEntry &entry : m_flagPipeline)
++    if (FlagPipelineEntry *entry = pushFlagEntry())
+     {
+-        if (!entry.valid)
+-        {
+-            entry = {};
+-            entry.valid = true;
+-            entry.issueCycle = m_cycle;
+-            entry.readyCycle = m_cycle + kFmacLatency;
+-            m_nextCommitCycle = std::min(m_nextCommitCycle, entry.readyCycle);
+-            m_flagPending |= 1u << static_cast<uint32_t>(&entry - m_flagPipeline.data());
+-            entry.clip = m_workingClip;
+-            entry.writesClip = true;
+-            return;
+-        }
++        entry->clip = m_workingClip;
++        entry->writesClip = true;
++        return;
+     }
+     reportReservedInstruction(true, 0xFFFFFFFDu);
+ }
+@@ -712,20 +718,11 @@ void VU1Interpreter::queueFcset(uint32_t clip)
+         if (entry.valid && entry.issueCycle == m_cycle)
+             entry.writesClip = false;
+     }
+-    for (FlagPipelineEntry &entry : m_flagPipeline)
++    if (FlagPipelineEntry *entry = pushFlagEntry())
+     {
+-        if (!entry.valid)
+-        {
+-            entry = {};
+-            entry.valid = true;
+-            entry.issueCycle = m_cycle;
+-            entry.readyCycle = m_cycle + kFmacLatency;
+-            m_nextCommitCycle = std::min(m_nextCommitCycle, entry.readyCycle);
+-            m_flagPending |= 1u << static_cast<uint32_t>(&entry - m_flagPipeline.data());
+-            entry.clip = m_workingClip;
+-            entry.writesClip = true;
+-            return;
+-        }
++        entry->clip = m_workingClip;
++        entry->writesClip = true;
++        return;
+     }
+     reportReservedInstruction(false, 0xFFFFFFFAu);
+ }
+@@ -863,13 +860,13 @@ void VU1Interpreter::commitReadyPipelines()
+ {
+     if (m_cycle < m_nextCommitCycle)
+         return;
+-    for (uint32_t pending = m_flagPending; pending != 0u; pending &= pending - 1u)
++    while (m_flagCount != 0u)
+     {
+-        const uint32_t index = static_cast<uint32_t>(std::countr_zero(pending));
+-        FlagPipelineEntry &entry = m_flagPipeline[index];
+-        if (!entry.valid || entry.readyCycle > m_cycle)
+-            continue;
+-        m_flagPending &= ~(1u << index);
++        FlagPipelineEntry &entry = m_flagPipeline[m_flagHead];
++        if (entry.readyCycle > m_cycle)
++            break;
++        m_flagHead = (m_flagHead + 1u) % kMaxFlagEntries;
++        --m_flagCount;
+ 
+         if (entry.writesMac)
+             m_state.mac = entry.mac;
+@@ -974,8 +971,8 @@ void VU1Interpreter::commitReadyPipelines()
+     }
+ 
+     uint64_t next = ~0ull;
+-    for (uint32_t pending = m_flagPending; pending != 0u; pending &= pending - 1u)
+-        next = std::min(next, m_flagPipeline[std::countr_zero(pending)].readyCycle);
++    if (m_flagCount != 0u)
++        next = std::min(next, m_flagPipeline[m_flagHead].readyCycle);
+     for (uint32_t pending = m_storePending; pending != 0u; pending &= pending - 1u)
+         next = std::min(next, m_storePipeline[std::countr_zero(pending)].readyCycle);
+     for (uint32_t pending = m_vfPending; pending != 0u; pending &= pending - 1u)
+@@ -1135,8 +1132,10 @@ void VU1Interpreter::advanceOneCycle()
+     m_state.cycles = m_cycle;
+     // LSU commits become visible at the cycle boundary before PATH1 consumes
+     // its next qword from VU memory.
+-    commitReadyPipelines();
+-    progressXgkick();
++    if (m_cycle >= m_nextCommitCycle)
++        commitReadyPipelines();
++    if (m_xgkick.active)
++        progressXgkick();
+ }
+ 
+ void VU1Interpreter::advanceTo(uint64_t targetCycle)
+@@ -1176,85 +1175,6 @@ void VU1Interpreter::flushPipelines()
          advanceOneCycle();
  }
  
@@ -170,7 +946,7 @@ index 246af25..28e926e 100644
  VU1Interpreter::InstructionUsage VU1Interpreter::decodeUpperUsage(uint32_t upper) const
  {
      InstructionUsage usage;
-@@ -1700,6 +1623,11 @@ VU1Interpreter::DecodedInstructionPair VU1Interpreter::decodeInstructionPair(con
+@@ -1700,6 +1620,11 @@ VU1Interpreter::DecodedInstructionPair VU1Interpreter::decodeInstructionPair(con
      decoded.dBit = (decoded.upper & 0x10000000u) != 0u;
      decoded.tBit = (decoded.upper & 0x08000000u) != 0u;
      decoded.upperUsage = decodeUpperUsage(decoded.upper);
@@ -182,7 +958,7 @@ index 246af25..28e926e 100644
      if (!decoded.iBit)
          decoded.lowerUsage = decodeLowerUsage(decoded.lower);
  
-@@ -1823,199 +1751,14 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
+@@ -1823,199 +1748,14 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
      ps2_perf::Scope perf(ps2_perf::Bucket::Vu); // GOW-Port: VU0/VU1; las llamadas al GS se descuentan.
      const int previousRoundingMode = std::fegetround();
      const bool useVuRounding = std::fesetround(FE_TOWARDZERO) == 0;
@@ -388,7 +1164,7 @@ index 246af25..28e926e 100644
  
      if (programEnded)
      {
-@@ -2030,6 +1773,73 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
+@@ -2030,6 +1770,73 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
          std::fesetround(previousRoundingMode);
  }
  
@@ -462,12 +1238,32 @@ index 246af25..28e926e 100644
  // GOW-Port: volver a leer las variables de entorno de VU1 (las pruebas cambian GOW_XGKICK_IMMEDIATE).
  void ps2Vu1ReloadEnvironmentOptions()
  {
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_lower.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_lower.cpp
+index d15d3a6..1db89dd 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_lower.cpp
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_lower.cpp
+@@ -8,6 +8,15 @@
+ #include <cstring>
+ #include <limits>
+ 
++// GOW-Port: la aritmética de VU no depende de /fp:fast. El runtime se compila con /fp:fast, que deja al
++// compilador fusionar a*b+c en FMA según dónde esté el código: el intérprete y el microcódigo compilado
++// (o dos versiones del intérprete) podían dar resultados distintos. Aquí cada operación se redondea por
++// separado, como en las FMAC de la PS2 (y en PCSX2).
++#if defined(_MSC_VER)
++#pragma float_control(precise, on, push)
++#pragma fp_contract(off)
++#endif
++
+ namespace
+ {
+     float vuEatan(float value)
 diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_step.inl b/ps2xRuntime/src/lib/vu/ps2_vu1_step.inl
 new file mode 100644
-index 0000000..6bca2ae
+index 0000000..b8ed53a
 --- /dev/null
 +++ b/ps2xRuntime/src/lib/vu/ps2_vu1_step.inl
-@@ -0,0 +1,300 @@
+@@ -0,0 +1,313 @@
 +// GOW-Port: un paso del intérprete de VU1 (un par de instrucciones) y su contabilidad de latencias.
 +// Lo usan run() y los microprogramas compilados (tools/vu1/generar_vu1.cpp), que lo llaman con cada par
 +// ya decodificado como constante para que el compilador simplifique la contabilidad.
@@ -478,6 +1274,15 @@ index 0000000..6bca2ae
 +#include <algorithm>
 +#include <bit>
 +#include <cstring>
++
++// GOW-Port: la aritmética de VU no depende de /fp:fast. El runtime se compila con /fp:fast, que deja al
++// compilador fusionar a*b+c en FMA según dónde esté el código: el intérprete y el microcódigo compilado
++// (o dos versiones del intérprete) podían dar resultados distintos. Aquí cada operación se redondea por
++// separado, como en las FMAC de la PS2 (y en PCSX2).
++#if defined(_MSC_VER)
++#pragma float_control(precise, on, push)
++#pragma fp_contract(off)
++#endif
 +
 +#if defined(_MSC_VER)
 +#define VU1_STEP_INLINE __forceinline
@@ -767,4 +1572,28 @@ index 0000000..6bca2ae
 +    return true;
 +}
 +
++#if defined(_MSC_VER)
++#pragma float_control(pop)
 +#endif
++
++#endif
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_upper.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_upper.cpp
+index 6974254..c2765bf 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_upper.cpp
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_upper.cpp
+@@ -5,6 +5,15 @@
+ #include <cstring>
+ #include <limits>
+ 
++// GOW-Port: la aritmética de VU no depende de /fp:fast. El runtime se compila con /fp:fast, que deja al
++// compilador fusionar a*b+c en FMA según dónde esté el código: el intérprete y el microcódigo compilado
++// (o dos versiones del intérprete) podían dar resultados distintos. Aquí cada operación se redondea por
++// separado, como en las FMAC de la PS2 (y en PCSX2).
++#if defined(_MSC_VER)
++#pragma float_control(precise, on, push)
++#pragma fp_contract(off)
++#endif
++
+ namespace
+ {
+     int32_t vuFloatToInt(float value, float scale)

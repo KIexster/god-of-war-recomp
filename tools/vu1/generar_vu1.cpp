@@ -125,12 +125,13 @@ int main(int argc, char **argv)
                 continue;
             char name[32];
             std::snprintf(name, sizeof(name), "p%04X_%zu", pc, cases[pc].size());
-            functions << "    static bool " << name << "(VU1Interpreter &vu, C &c)\n    {\n"
-                      << "        static constexpr P k = " << VU1CompiledGenerator::pairInitializer(pair) << ";\n"
-                      << "        return vu.stepPair(k, c);\n    }\n";
+            functions << "    struct K" << name << "\n    {\n        static constexpr P value = "
+                      << VU1CompiledGenerator::pairInitializer(pair) << ";\n    };\n"
+                      << "    static VU1C_NOINLINE bool " << name << "(VU1Interpreter &vu, C &c)\n    {\n"
+                      << "        return vu.stepPairT<K" << name << ">(c);\n    }\n";
             std::ostringstream test;
-            test << "                if (lower == 0x" << std::hex << lower << "u && upper == 0x" << upper << "u)\n" << std::dec
-                 << "                {\n                    if (!vu.compiledPrologue(c) || !" << name << "(vu, c))\n"
+            test << "                if (lower == 0x" << std::hex << lower << "u && upper == 0x" << upper << "u && inRange(pc))\n" << std::dec
+                 << "                {\n                    ++g_stats.compiled;\n                    if (!" << name << "(vu, c))\n"
                  << "                        return;\n                    continue;\n                }\n";
             cases[pc].push_back(test.str());
             ++total;
@@ -138,7 +139,20 @@ int main(int argc, char **argv)
     }
     std::ostringstream out;
     out << "// Generado por tools/vu1/generar_vu1.cpp a partir del microcódigo del juego. No publicar.\n"
-        << "#include \"runtime/ps2_vu1.h\"\n#include \"ps2_vu1_step.inl\"\n#include <cstring>\n\n"
+        << "#include \"runtime/ps2_vu1.h\"\n#include \"ps2_vu1_compiled.inl\"\n#include <cstring>\n\n"
+        << "#if defined(_MSC_VER)\n#define VU1C_NOINLINE __declspec(noinline)\n#else\n#define VU1C_NOINLINE __attribute__((noinline))\n#endif\n\n"
+        << "#include <cstdio>\n#include <cstdlib>\n\n"
+        << "namespace\n{\n"
+        << "    // GOW_VU1C_DIAG: pares compilados e interpretados al salir. GOW_VU1C_RANGO=inicio-fin (hex): solo usa el\n"
+        << "    // código compilado en ese rango de direcciones (para acotar una diferencia con el intérprete).\n"
+        << "    struct Stats\n    {\n        unsigned long long compiled = 0, interpreted = 0;\n"
+        << "        ~Stats()\n        {\n            if (std::getenv(\"GOW_VU1C_DIAG\"))\n"
+        << "                std::fprintf(stderr, \"[vu1c] compilados=%llu interpretados=%llu\\n\", compiled, interpreted);\n        }\n    } g_stats;\n"
+        << "    struct Range\n    {\n        uint32_t lo = 0, hi = 0xFFFFFFFFu;\n        Range()\n        {\n"
+        << "            if (const char *v = std::getenv(\"GOW_VU1C_RANGO\"))\n            {\n"
+        << "                char *end = nullptr;\n                lo = static_cast<uint32_t>(std::strtoul(v, &end, 16));\n"
+        << "                hi = end && *end == '-' ? static_cast<uint32_t>(std::strtoul(end + 1, nullptr, 16)) : lo;\n            }\n        }\n    } g_range;\n"
+        << "    inline bool inRange(uint32_t pc) { return pc >= g_range.lo && pc <= g_range.hi; }\n}\n\n"
         << "template <int Id>\nstruct VU1CompiledProgram;\n\n"
         << "template <>\nstruct VU1CompiledProgram<0>\n{\n"
         << "    using P = VU1Interpreter::DecodedInstructionPair;\n"
@@ -160,6 +174,7 @@ int main(int argc, char **argv)
         out << "                break;\n";
     }
     out << "                default:\n                    break;\n                }\n            }\n"
+        << "            ++g_stats.interpreted;\n"
         << "            if (!vu.stepInterpreted(c))\n                return;\n        }\n    }\n};\n\n"
         << "static const bool g_registered = (VU1Interpreter::registerCompiledProgram(&VU1CompiledProgram<0>::run), true);\n";
     std::ofstream(argv[1], std::ios::binary) << out.str();

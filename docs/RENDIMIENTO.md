@@ -135,3 +135,27 @@ de cada instrucción (SSE, con las mismas reglas de normalización y redondeo ha
 flags que nadie lee. Es un trabajo de varios días; el prototipo deja preparados la captura, el generador,
 el despachador y la comparación de imágenes.
 
+### Etapa 1 del recompilador (2026-10-08)
+
+- **Aritmética de VU sin `/fp:fast`.** El runtime se compila con `/arch:AVX2 /fp:fast`, y MSVC fusionaba
+  `acc + a*b` en FMA o no según el sitio: el microcódigo compilado y el intérprete daban valores
+  distintos en 1 ulp y el estado divergía a los 80 lanzamientos. `#pragma float_control(precise)` en los
+  archivos de VU (y en `ps2_vu1.h`) redondea el producto y la suma por separado, como las FMAC de la PS2
+  y PCSX2. Cambia ~3 % de los píxeles del cuadro en 1–8 niveles (0,3 % más de 8) respecto a la versión
+  con FMA; conviene revisarlo con las comparaciones contra PCSX2.
+- **Compilado = interpretado, comprobado lanzamiento a lanzamiento.** `GOW_REPETIR_HUELLAS=<archivo>` en
+  `repetir_cadena_vif` escribe una huella del estado de VU1 (VF, VI, flags, ciclos y memoria de datos)
+  tras cada lanzamiento; las 1.972 huellas del cuadro coinciden entre el código compilado y el
+  intérprete. `GOW_VU1C_RANGO=inicio-fin` limita el código compilado a un rango de direcciones para
+  acotar una diferencia.
+- `stepPairT<par>` (en `ps2_vu1_compiled.inl`) resuelve al compilar todo lo que depende de la
+  decodificación y especializa las operaciones FMAC; las demás llaman al intérprete.
+- Intérprete: cola circular para los flags (se confirman en orden de emisión), atajo exacto para
+  `acc ± producto` y comprobaciones baratas antes de llamar a `commitReadyPipelines`/`progressXgkick`.
+
+Tiempos (cuadro `D6385328`, 30 pasadas): intérprete 304 ms, compilado 304 ms. Medido con contadores de
+ciclos, cada par cuesta ~170 ciclos repartidos entre esperas (~20), instrucción superior (~65),
+inferior (~35) y contabilidad del ciclo (~50). El código por par ya no es el problema: hace falta la
+etapa siguiente, con las esperas y la visibilidad de flags/Q/P calculadas por bloque en variables
+locales, los flags que nadie lee eliminados y las instrucciones inferiores especializadas.
+
