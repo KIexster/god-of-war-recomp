@@ -69,6 +69,7 @@ $vu1CompiledPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-compiled.patch'
 $vu1BudgetDiagPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-budget-diag.patch'
 $vu1StickyPreservePatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-sticky-preserve.patch'
 $vu1BlocksPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-blocks.patch'
+$vu1RunnerPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-runner.patch'
 $gsCoordinateAliasPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-coordinate-alias.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
@@ -163,6 +164,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1CompiledPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1BudgetDiagPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1StickyPreservePatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1BlocksPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1RunnerPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsCoordinateAliasPatch)
 Pop-Location
 
@@ -185,6 +187,11 @@ $logsEnabled = if ($Trazas) { 'ON' } else { 'OFF' }
 Run 'cmake' @('-S', $rec, '-B', $bld, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF',
               "-DPS2X_ENABLE_RUNTIME_LOGS=$logsEnabled", "-DPS2X_ENABLE_AGRESSIVE_LOGS=$logsEnabled", "-DPS2X_ENABLE_IOP_RPC_TRACE=$logsEnabled",
               '-DPS2X_ENABLE_RUNNER_UNITY_BUILD=ON', '-DPS2X_ENABLE_RUNNER_PCH=ON')
+# VU1 compilada (opcional): GOW_VU1_MICROCODIGO es una carpeta local con micromemorias capturadas con
+# GOW_VU1_CAPTURA. Sin ella (o vacía) el juego usa el intérprete. Ver docs\RENDIMIENTO.md.
+$vu1Micro = if ($env:GOW_VU1_MICROCODIGO) { (Resolve-Path -LiteralPath $env:GOW_VU1_MICROCODIGO).Path -replace '\\', '/' } else { '' }
+$vu1Gen = if ($vu1Micro) { (Join-Path $RepoRoot 'tools\vu1\generar_vu1.cpp') -replace '\\', '/' } else { '' }
+Run 'cmake' @('-S', $rec, '-B', $bld, "-DPS2X_VU1_MICROCODE_DIR=$vu1Micro", "-DPS2X_VU1_GENERATOR_SOURCE=$vu1Gen")
 
 Paso 'Compilando el recompilador'
 Run 'cmake' @('--build', $bld, '--target', 'ps2_recomp')

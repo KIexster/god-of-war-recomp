@@ -246,3 +246,34 @@ pasa de `copiedBytes`). El qword se copia de una vez cuando no da la vuelta a la
 entradas de flags confirmadas solo se invalidan (`pushFlagEntry` ya inicializa todos los campos). Medido
 alternando ejecutables: compilado 156 → 128 ms, intérprete 337 → 308 ms. Huellas e imágenes idénticas.
 Esto también acelera el intérprete que usa hoy el juego.
+
+### VU1 compilada en el juego (8 de octubre)
+
+`ps2recomp-vu1-runner.patch` añade a la compilación del juego el C++ generado: con la variable
+`GOW_VU1_MICROCODIGO=<carpeta>` (micromemorias capturadas con `GOW_VU1_CAPTURA=<carpeta>`), `compilar.ps1`
+pasa la carpeta a CMake, que compila `tools/vu1/generar_vu1.cpp`, genera `programa0..12.cpp` en la carpeta
+de compilación y los enlaza en `ps2EntryRunner`. Sin la variable el juego usa el intérprete, como antes.
+`GOW_VU1_SIN_COMPILAR=1` desactiva el código compilado al ejecutar. Las micromemorias y el C++ generado son
+datos del juego: no se publican.
+
+El juego sube microcódigo distinto casi en cada cuadro: 90 s de juego dieron 474 micromemorias distintas,
+pero solo ~6.000 pares distintos (11 MB de C++). Para capturarlas:
+
+```powershell
+$env:GOW_VU1_CAPTURA = 'D:\vu1_micro'   # carpeta local
+.\scripts\probar_rendimiento.ps1 -Segundos 90 -Renderer opengl -Etiqueta captura
+$env:GOW_VU1_CAPTURA = $null
+$env:GOW_VU1_MICROCODIGO = 'D:\vu1_micro'
+.\scripts\2_compilar.cmd
+```
+
+Medido en el juego (`probar_rendimiento.ps1 -Renderer opengl`, cuadros por segundo del juego, entre los
+10 y los 35 s):
+
+| VU1 | cuadros/s | VU (ms cada 5 s) |
+|---|---|---|
+| intérprete | 5,6–5,8 | ~3.450 |
+| compilada, 27 micromemorias de las grabaciones | 6,8–7,4 | ~3.050 |
+| compilada, 501 micromemorias (grabaciones + 90 s de juego) | 9,6–10,0 | ~2.430 |
+
+Con el renderizador por CPU (`cpu-hilo`) el GS limita (~2,2 cuadros/s en ambos casos).
