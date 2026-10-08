@@ -212,6 +212,7 @@ nombre = "IOP"
   nombre = { es = "CPU R3000A (intérprete)", en = "R3000A CPU (interpreter)", pt = "CPU R3000A (interpretador)" }
   estado = "ok"
   peso = 3
+  nota = { es = "Planificador ocioso de Opus integrado y validado con GS/VU1: recuerda el próximo despertar; su perfil reduce IOP de ~1300–1500 a ~570–650 ms cada 5 s; falta una comparación de FPS sin compilaciones concurrentes", en = "Opus idle scheduler integrated and validated with GS/VU1: caches the next wake-up; its profile reduces IOP from ~1300–1500 to ~570–650 ms per 5 s; an FPS comparison without concurrent builds remains pending", pt = "Escalonador ocioso de Opus integrado e validado com GS/VU1: guarda o próximo despertar; seu perfil reduz IOP de ~1300–1500 para ~570–650 ms a cada 5 s; falta comparar FPS sem compilações simultâneas" }
 
   [[hardware.grupo.componente]]
   corto = "SPU2"

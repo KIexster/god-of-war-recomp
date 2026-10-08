@@ -26,6 +26,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p test_gif_inspector.py
       - name: Probar la seleccion de cadenas VIF
         run: python3 -m unittest discover -s tests -p test_vif_chain_extractor.py
+      - name: Probar la seleccion de ventanas de rendimiento
+        run: python3 -m unittest discover -s tests -p test_perf_summary.py
       - name: Analizar los scripts de PowerShell
         shell: pwsh
         run: ./tools/ci/analizar_ps1.ps1

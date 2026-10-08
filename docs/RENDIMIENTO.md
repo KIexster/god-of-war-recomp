@@ -1,5 +1,23 @@
 # Rendimiento
 
+## Seleccionar ventanas de partida cargada
+
+El menú y las pantallas de carga también llaman a `vid::Flip`; contar esas entradas no demuestra
+FPS de partida. `tools/rendimiento/resumir.py --partida` conserva únicamente ventanas completas
+encerradas por informes `[gow-pad2:state]` con `state=11`, `pending=0` y `levelReady=1`. Excluye las
+ventanas que tocan una transición observada y falla si no queda ninguna. Los relojes del mando y
+del perfil arrancan en momentos distintos: la selección usa el orden de las líneas del registro.
+
+```powershell
+.\scripts\probar_rendimiento.ps1 -Renderer opengl -Segundos 240 -Etiqueta partida
+python tools/rendimiento/resumir.py logs/perf_partida.log --partida --desde 100 --hasta 220
+```
+
+Este filtro comprueba estados muestreados; todavía hay que comprobar la escena, usar el mismo
+ejecutable y evitar compilaciones u otras partidas durante la comparación. Sin `--partida` se
+conserva la selección anterior por tiempo, útil también para estudiar la carga. Siete controles
+procedurales verifican carga, transiciones, ambos límites, relojes distintos, redondeo y la CLI.
+
 ## Perfil por muestreo (`tools/perfil/muestrear.cpp`)
 
 `GOW_PERF_DIAG` reparte el tiempo por subsistema, pero no dice qué función lo consume. Este

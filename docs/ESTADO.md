@@ -2174,3 +2174,29 @@ efectivos**, **60 casos VU1 exactos** (139 pares compilados y 22
 interpretados), PAD2 y los controles de configuración, scripts, GIF y
 selección VIF. La medición de FPS de Opus se conserva como resultado
 de su tramo, sin extrapolarla al juego completo.
+
+### Integración del planificador y control de partida (8 de octubre)
+
+Se incorpora el `main` de la PR #20, `9f0ebc4`, conservando GS56, la prueba STQ de
+hardware y la VU1 compilada. La compilación oficial termina con código 0, con
+**60 parches**, las 501 micromemorias locales y un ejecutable de 67.710.976 bytes.
+Las **87 fuentes** modificadas (`cpp/h/inl`) coinciden con la aplicación ordenada
+de los parches sobre el commit fijado. Pasan **587/587** pruebas nativas, con
+**22 controles OpenGL reales**, los **60 casos VU1 exactos** (139 pares compilados
+y 22 interpretados), PAD2, configuración, sintaxis PowerShell, inspector GIF
+(8 casos) y selección VIF (11 casos).
+
+Un control limpio de 430 s, sin diagnósticos de geometría y con copia privada de
+la tarjeta, produce **15 capturas distintas de 512×448**. La última, a 360,10 s
+del reloj del mando, muestra a Kratos y varios enemigos en el barco, lluvia,
+fondo y HUD; no se observan polígonos estirados en esa captura. El estado es
+11, sin carga pendiente y con el nivel listo. OpenGL usa hardware y no aparece
+VU reservada. La tarjeta original conserva su SHA256. La prueba anterior del
+ejecutable de 59 parches también muestra esa escena con VU1 compilada.
+
+Se descarta una comparación anterior de FPS: coincidió con otra compilación y
+sus ventanas correspondían a estado 3 con carga pendiente. El nuevo selector
+`resumir.py --partida`, cubierto por siete pruebas, exige informes de partida
+cargada a ambos lados de las ventanas sin igualar los relojes del perfil y del
+mando. Estos controles verifican integración y la escena observada; todavía
+no certifican rendimiento sostenido, combate completo ni feedback GS fiel.

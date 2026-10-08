@@ -1109,3 +1109,14 @@ asíncrono de shaders para que el control bilineal STQ use hardware.
 Cada matriz repetida conserva sus comparaciones RGBA y controles SSE;
 compute por sí solo sigue siendo insuficiente para pasar el test.
 El cambio afecta a la validación y conserva el renderer de producción.
+
+## Control integrado con VU1 compilada y planificador IOP
+
+La compilación oficial de `main` en `9f0ebc4` aplica 60 parches y genera/enlaza
+VU1 a partir de 501 micromemorias locales. Las 87 fuentes modificadas coinciden
+con la cadena publicada; pasan 587/587 pruebas nativas, 22 controles OpenGL
+reales y 60 casos VU1 exactos. El control limpio de 430 s produce 15 imágenes
+distintas. La última muestra a Kratos y enemigos sobre el barco con lluvia y
+HUD, en estado 11, sin carga pendiente y con hardware activo. No se observa
+geometría estirada en esa imagen; sigue pendiente comprobar el combate completo
+y resolver el feedback. Las capturas y los datos del juego permanecen locales.
