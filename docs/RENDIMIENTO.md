@@ -372,3 +372,7 @@ ejecuta con 200 ensayos.
 
 Reproducción alternando ejecutables: 131 → ~100 ms por cuadro.
 En el juego (OpenGL, alternando ejecutables): 11,5–12,0 → 13,2–14,4 cuadros/s.
+
+**DIV compilado.** DIV era la única instrucción inferior frecuente que seguía yendo a `execLower`
+(~130.000 por cuadro). Ahora se genera con los campos resueltos, como copia del caso del intérprete. Huellas
+idénticas; reproducción alternando ejecutables 98 → 96 ms.
