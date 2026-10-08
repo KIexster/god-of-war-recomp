@@ -51,7 +51,7 @@ diff --git a/ps2xTest/src/ps2_gs_backend_tests.cpp b/ps2xTest/src/ps2_gs_backend
 --- a/ps2xTest/src/ps2_gs_backend_tests.cpp
 +++ b/ps2xTest/src/ps2_gs_backend_tests.cpp
 @@ -17,6 +17,158 @@
-
+ 
  namespace
  {
 +// GOW-Port: la cache de paginas de lectura no debe inventar feedback fuera de CLAMP.
