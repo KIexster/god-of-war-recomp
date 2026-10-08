@@ -229,3 +229,12 @@ calculan en la misma componente, con los operandos ya cargados. Medido alternand
 `__forceinline` (`VU1_HOT_INLINE`), `applyDest` tiene una versión con la máscara constante en los pares
 compilados, y las funciones generadas llevan `__declspec(safebuffers)` (sin la comprobación `/GS` de sus
 arreglos locales de tamaño fijo). Medido alternando ejecutables: 180 → 168 ms. Huellas idénticas.
+
+**Más casos sin el intérprete.** Un perfilador por muestreo (RIP del hilo principal cada milisegundo,
+con los símbolos del PDB) señaló `execUpper` (~6 %) y `commitReadyPipelines` (~7 %). ITOF, FTOI, ABS y CLIP
+se generan ahora con los campos resueltos (antes `execUpper` normalizaba 12 operandos por cada una), y
+`commitReadyPipelines` tiene un camino para cuando solo hay flags pendientes, el caso del código FMAC
+denso con escrituras directas. Medido alternando ejecutables: 168 → 158 → 154 ms. Huellas idénticas.
+
+En el mismo perfil, ~15 % del hilo principal es la espera de `GSThreadedBackend::Drain` en el
+hilo del GS; eso no es VU1.
