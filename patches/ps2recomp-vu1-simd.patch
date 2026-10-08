@@ -163,3 +163,33 @@ index 2b7d4d9..807546d 100644
          float result[4]{};
          uint8_t laneFlags[4]{};
          uint8_t productFlags[4]{};
+@@ -531,6 +671,29 @@ VU1_STEP_INLINE void VU1Interpreter::lowerT(StepContext &context, uint32_t upper
+     else if constexpr (opHi == 0x40u && funct >= 0x3Cu && funct2 == 0x3Bu) // WAITQ
+     {
+     }
++    else if constexpr (opHi == 0x40u && funct >= 0x3Cu && funct2 == 0x38u) // DIV
++    {
++        // GOW-Port: DIV resuelto en compilacion; misma normalizacion, flags D/I y latencia que el interprete.
++        constexpr int fsf = (instr >> 21) & 0x3;
++        constexpr int ftf = (instr >> 23) & 0x3;
++        const float num = normalizeOperand(m_state.vf[fs][fsf]);
++        const float den = normalizeOperand(m_state.vf[ft][ftf]);
++        uint32_t statusDi = 0u;
++        float result = 0.0f;
++        if (den == 0.0f)
++        {
++            statusDi = num == 0.0f ? 0x10u : 0x20u;
++            result = std::signbit(num) != std::signbit(den) ? -std::numeric_limits<float>::max()
++                                                            : std::numeric_limits<float>::max();
++        }
++        else
++        {
++            result = num / den;
++        }
++        uint32_t ignoredFlags = 0u;
++        result = normalizeResult(result, ignoredFlags);
++        queueQ(result, 7u, statusDi);
++    }
+     else if constexpr (opHi == 0x40u && funct >= 0x3Cu && funct2 == 0x3Cu) // MTIR
+     {
+         constexpr uint32_t comp = (instr >> 21) & 0x3u;
