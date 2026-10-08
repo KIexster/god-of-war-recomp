@@ -215,3 +215,10 @@ Tiempos con la cadena actual de main, que ya incluye la corrección de flags per
 `D6385328`, 30 pasadas): intérprete 357 ms, compilado antes de esta etapa 233 ms y con ella 206 ms. Las
 huellas por lanzamiento de `vif_pcsx2_inicio2` (1.972) y `vif_port_480s` (1.986) coinciden con el
 intérprete, `scripts\probar_vu1_compilada.cmd` da 60 casos exactos y la suite pasa 565/565.
+
+**Flags persistentes del producto sin `long double`.** `productStickyFlags` obtiene los flags Z/S/U/O
+del producto exacto: si el producto ya redondeado es normal y lejos de los extremos, son solo su signo;
+si no, se calcula en `double` (el producto de dos `float` cabe exacto). Da lo mismo que
+`normalizeFmacExactResult` (huellas idénticas a las de antes del cambio). Los pares compilados lo
+calculan en la misma componente, con los operandos ya cargados. Medido alternando los dos ejecutables
+(20 pasadas, mediana): compilado 203 → 180 ms, intérprete 357 → 346 ms.

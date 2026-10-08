@@ -1,8 +1,26 @@
 diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime/ps2_vu1.h
-index cefe321..de7cc6d 100644
+index cefe321..fd61b92 100644
 --- a/ps2xRuntime/include/runtime/ps2_vu1.h
 +++ b/ps2xRuntime/include/runtime/ps2_vu1.h
-@@ -359,7 +359,7 @@ private:
+@@ -2,7 +2,9 @@
+ #define PS2_VU1_H
+ 
+ #include <array>
++#include <cmath>
+ #include <cstring>
++#include <limits>
+ #include <cstdint>
+ 
+ // GOW-Port: las funciones en línea de VU1 usan el mismo modo de coma flotante que ps2_vu1_*.cpp (sin
+@@ -352,14 +354,14 @@ private:
+     bool stepPair(const DecodedInstructionPair &decoded, StepContext &context);
+     // GOW-Port: versiones especializadas para el microcódigo compilado (ps2_vu1_compiled.inl).
+     template <uint32_t Upper, uint32_t C>
+-    void fmacLaneT(float &result, uint8_t &laneFlags);
++    void fmacLaneT(float &result, uint8_t &laneFlags, uint8_t &productFlags);
+     template <uint32_t Upper, bool DeadFlags>
+     void upperT();
+     template <uint32_t Lower>
      void lowerT(StepContext &context, uint32_t upperInstr);
      template <class T>
      uint64_t readyCycleT() const;
@@ -11,11 +29,84 @@ index cefe321..de7cc6d 100644
      bool stepPairT(StepContext &context);
      bool blockPreconditions(StepContext &context, uint32_t pc, const uint32_t *words, size_t bytes) const;
      bool stepInterpreted(StepContext &context);
+@@ -396,6 +398,28 @@ private:
+         laneFlags = (r & 0x80000000u) != 0u ? 0x2u : 0u;
+         return true;
+     }
++    // GOW-Port: flags Z/S/U/O del producto exacto a*b (lo mismo que normalizeFmacExactResult sobre
++    // a*b en long double). El producto de dos float cabe exacto en un double. Si el producto ya
++    // redondeado es normal y lejos de los extremos (exponente 2..0xFD), el exacto no es cero, no desborda
++    // ni subdesborda y tiene su signo: los flags son solo el signo.
++    static uint8_t productStickyFlags(float a, float b, float rounded)
++    {
++        uint32_t bits = 0u;
++        std::memcpy(&bits, &rounded, sizeof(bits));
++        const uint32_t exponent = (bits >> 23) & 0xFFu;
++        if (exponent >= 2u && exponent <= 0xFDu)
++            return (bits & 0x80000000u) != 0u ? 0x2u : 0u;
++        const double exact = static_cast<double>(a) * static_cast<double>(b);
++        const double magnitude = std::fabs(exact);
++        uint8_t flags = std::signbit(exact) ? 0x2u : 0u;
++        if (magnitude == 0.0)
++            flags |= 0x1u;
++        else if (magnitude > static_cast<double>(std::numeric_limits<float>::max()))
++            flags |= 0x8u;
++        else if (magnitude < static_cast<double>(std::numeric_limits<float>::min()))
++            flags |= 0x5u;
++        return flags;
++    }
+     float normalizeResult(float value, uint32_t &laneFlags) const;
+     uint32_t microAddressMask() const { return m_unit == Unit::VU1 ? 0x3FFFu : 0x0FFFu; }
+     int32_t readBranchVi(uint8_t reg) const;
 diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
-index b1ed790..8e2edec 100644
+index b1ed790..a127392 100644
 --- a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
 +++ b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
-@@ -530,7 +530,7 @@ VU1_STEP_INLINE uint64_t VU1Interpreter::readyCycleT() const
+@@ -132,7 +132,7 @@ namespace vu1c
+ // Una componente de una operación FMAC: calcula como execUpper (operandos normalizados, mismas expresiones
+ // en float) y aplica normalizeFmacResult a esa componente.
+ template <uint32_t Upper, uint32_t C>
+-VU1_STEP_INLINE void VU1Interpreter::fmacLaneT(float &result, uint8_t &laneFlags)
++VU1_STEP_INLINE void VU1Interpreter::fmacLaneT(float &result, uint8_t &laneFlags, uint8_t &productFlags)
+ {
+     constexpr vu1c::UpperInfo info = vu1c::classify(Upper);
+     constexpr uint32_t fs = (Upper >> 11) & 0x1Fu;
+@@ -165,6 +165,9 @@ VU1_STEP_INLINE void VU1Interpreter::fmacLaneT(float &result, uint8_t &laneFlags
+         float acc = 0.0f;
+         if constexpr (info.kind == vu1c::Kind::Madd || info.kind == vu1c::Kind::Msub || info.kind == vu1c::Kind::Opmsub)
+             acc = normalizeOperand(m_state.acc[C]);
++        // Bits pegajosos del producto (calculateFmacProductSticky), también en la componente 3 de OPMSUB.
++        if constexpr (info.kind == vu1c::Kind::Madd || info.kind == vu1c::Kind::Msub || info.kind == vu1c::Kind::Opmsub)
++            productFlags = productStickyFlags(vs, right, vs * right);
+ 
+         if constexpr (cross && C == 3u)
+             result = 0.0f;
+@@ -233,10 +236,11 @@ VU1_STEP_INLINE void VU1Interpreter::upperT()
+         constexpr uint32_t fd = (Upper >> 6) & 0x1Fu;
+         float result[4]{};
+         uint8_t laneFlags[4]{};
+-        if constexpr ((dest & 8u) != 0u) fmacLaneT<Upper, 0>(result[0], laneFlags[0]);
+-        if constexpr ((dest & 4u) != 0u) fmacLaneT<Upper, 1>(result[1], laneFlags[1]);
+-        if constexpr ((dest & 2u) != 0u) fmacLaneT<Upper, 2>(result[2], laneFlags[2]);
+-        if constexpr ((dest & 1u) != 0u) fmacLaneT<Upper, 3>(result[3], laneFlags[3]);
++        uint8_t productFlags[4]{};
++        if constexpr ((dest & 8u) != 0u) fmacLaneT<Upper, 0>(result[0], laneFlags[0], productFlags[0]);
++        if constexpr ((dest & 4u) != 0u) fmacLaneT<Upper, 1>(result[1], laneFlags[1], productFlags[1]);
++        if constexpr ((dest & 2u) != 0u) fmacLaneT<Upper, 2>(result[2], laneFlags[2], productFlags[2]);
++        if constexpr ((dest & 1u) != 0u) fmacLaneT<Upper, 3>(result[3], laneFlags[3], productFlags[3]);
+         if constexpr (info.kind != vu1c::Kind::Max && info.kind != vu1c::Kind::Mini)
+         {
+             if constexpr (dest != 0u)
+@@ -245,7 +249,7 @@ VU1_STEP_INLINE void VU1Interpreter::upperT()
+                 // antes de que nadie pueda leer estos. Con m_statusQuiet solo cuentan sus bits pegajosos,
+                 // que el estado acumula en cualquier orden (y quedan igual al final del bloque).
+                 // GOW-Port: no leer status ahora no hace muertos sus bits persistentes.
+-                const uint32_t productSticky = calculateFmacProductSticky(static_cast<uint8_t>(dest));
++                const uint32_t productSticky = (productFlags[0] | productFlags[1] | productFlags[2] | productFlags[3]) & 0xFu;
+                 if (DeadFlags && m_statusQuiet)
+                     m_state.status |= static_cast<uint32_t>((laneFlags[0] | laneFlags[1] | laneFlags[2] | laneFlags[3] | productSticky) & 0xFu) << 6;
+                 else
+@@ -530,7 +534,7 @@ VU1_STEP_INLINE uint64_t VU1Interpreter::readyCycleT() const
      return ready;
  }
  
@@ -24,7 +115,7 @@ index b1ed790..8e2edec 100644
  VU1_STEP_INLINE bool VU1Interpreter::stepPairT(StepContext &context)
  {
      constexpr const DecodedInstructionPair &k = T::value;
-@@ -638,6 +638,21 @@ VU1_STEP_INLINE bool VU1Interpreter::stepPairT(StepContext &context)
+@@ -638,6 +642,21 @@ VU1_STEP_INLINE bool VU1Interpreter::stepPairT(StepContext &context)
      m_state.vf[0][3] = 1.0f;
      m_state.vi[0] = 0;
  
@@ -46,7 +137,7 @@ index b1ed790..8e2edec 100644
      uint32_t nextPc = m_state.pc + 8u;
      if (nextPc >= context.codeSize)
          nextPc = 0u;
-@@ -700,8 +715,8 @@ struct VU1CompiledAccess
+@@ -700,8 +719,8 @@ struct VU1CompiledAccess
      using P = VU1Interpreter::DecodedInstructionPair;
      using C = VU1Interpreter::StepContext;
      using Pipeline = VU1Interpreter::Pipeline;
@@ -57,3 +148,18 @@ index b1ed790..8e2edec 100644
      static bool interpret(VU1Interpreter &vu, C &c) { return vu.stepInterpreted(c); }
      static uint32_t pc(const VU1Interpreter &vu) { return vu.m_state.pc; }
      static bool block(const VU1Interpreter &vu, C &c, uint32_t pc, const uint32_t *words, size_t bytes)
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+index 31d5df7..b3844b9 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+@@ -603,9 +603,7 @@ uint32_t VU1Interpreter::calculateFmacProductSticky(uint8_t dest) const
+             right = normalizeOperand(m_state.vf[ft][component]);
+         }
+ 
+-        float product = left * right;
+-        const long double exactProduct = static_cast<long double>(left) * static_cast<long double>(right);
+-        const uint8_t productFlags = normalizeFmacExactResult(product, exactProduct);
++        const uint8_t productFlags = productStickyFlags(left, right, left * right);
+         // Product-sum instructions report Z/S/U/O from the add/subtract result
+         // as current flags, while every product condition accumulates into the
+         // corresponding sticky flag.
