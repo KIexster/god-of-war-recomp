@@ -79,6 +79,7 @@ de referencia. Lo siguiente en el perfil de VU1 es el cálculo de flags de FMAC
 | `commitReadyPipelines` no hace nada antes del vencimiento más próximo; sin bits pegajosos si nadie lee el estado | 396 |
 | La operación FMAC exacta (flags) se decodifica una vez por instrucción, no por componente | 386 |
 | Entradas libres y registros VI escritos a partir de máscaras de bits | 339 |
+| ADD/SUB/MUL con resultado normal: flags sin el cálculo exacto en long double | 333 |
 
 **Escrituras directas.** Las colas de VF/VI/ACC no cambian el resultado del programa: quien lee un
 registro se detiene hasta que está listo (`m_vfReady`, `m_viReady`, `m_accReady`) y solo se confirma
