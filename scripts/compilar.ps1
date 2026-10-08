@@ -80,6 +80,7 @@ $gsStqHardwareTestPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-stq-hardware
 $gsFinishAsyncPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-finish-async.patch'
 $gsHardwareProfilePatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-hardware-profile.patch'
 $gsProfileAsyncPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-profile-async.patch'
+$vu1FastFlagsPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-fast-flags.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -184,6 +185,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $gsStqHardwareTestPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsFinishAsyncPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsHardwareProfilePatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsProfileAsyncPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1FastFlagsPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
