@@ -1893,3 +1893,37 @@ punteros inválidos, ciclos ni truncamientos. No aparece VU reservada. La imagen
 de ataque queda comprobada; combate contra enemigos y rendimiento sostenido
 siguen pendientes. La documentación de arquitectura enlaza ahora la lista
 de parches de `scripts/compilar.ps1`, para evitar otra lista manual incompleta.
+
+### Páginas regionales: reducir sincronizaciones sin perder feedback (7 de octubre)
+
+`ps2recomp-gs-region-pages.patch` delimita las lecturas de REGION_CLAMP y
+REGION_REPEAT y guarda ambos extremos U/V en la clave del bitset. En los
+controles procedurales, tres fuentes disjuntas pasan de tres lotes/dos flushes
+a uno/cero; la cuarta lectura de una página escrita conserva dos/uno.
+Se comparan los 4 MiB completos con CPU en los 13 PSM, con paletas CSM2
+coloreadas, nearest/bilinear y caché del bitset activada/desactivada. Cambiar
+solo MIN en REGION_CLAMP prueba que la clave se renueva correctamente.
+
+Los controles de bordes incluyen bases TBP desalineadas, cruces de páginas,
+vuelta de VRAM y máscaras no nulas, con y sin snapshot. Mantienen las
+sincronizaciones reales y exigen hardware efectivo sin tiles compute.
+Son 1184 combinaciones entre ambas rutas. Las regresiones nuevas de lotes
+fallan antes; los controles aislados con el equipo libre descartan los plazos
+de shaders agotados durante una primera ejecución junto a la compilación de
+Claude. Los detalles están en [RENDERIZADO.md](RENDERIZADO.md).
+
+La compilación completa termina con código 0; 50 parches/84 fuentes coinciden
+y la suite final pasa 580/580, con dieciocho controles OpenGL. Las siete
+herramientas pasan 18 controles de imagen y trece freeze/GIF/End con CPU ×3;
+los seis dumps dañados siguen rechazándose. La reducción de envíos es un
+resultado sintético; faltan medir su efecto en FPS y comprobar la caché GS real.
+
+El control posterior dura 510 s en OpenGL, con FMV omitido y snapshot
+experimental desactivado. Carga una copia privada de la tarjeta, cuyo original
+conserva su SHA256. Las dieciséis capturas 512×448 son distintas; la última
+muestra a Kratos atacando con HUD, estelas de armas, R2 y el punto de guardado,
+en estado 11 sin carga pendiente y con hardware activo. Se conservan 128
+muestras de Clip finitas/completas, 736 tripletas tardías no nulas y 192 contextos
+sin punteros inválidos, ciclos ni truncamientos. No aparece VU reservada.
+Esto verifica la imagen de un ataque; combate contra enemigos y FPS sostenidos
+siguen pendientes.

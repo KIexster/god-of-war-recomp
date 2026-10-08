@@ -801,6 +801,66 @@ No se registra VU reservada. El mando recibe las tres pulsaciones de cuadrado
 previstas; esto verifica la imagen de una animación de ataque, sin certificar
 combate contra enemigos ni FPS sostenidos.
 
+## Páginas regionales de textura y lotes OpenGL
+
+`ps2recomp-gs-region-pages.patch` reduce el conjunto conservador de páginas que
+puede leer una textura regional. Antes, REGION_CLAMP y REGION_REPEAT declaraban
+todo el rango 0..1023 de cada eje: un framebuffer ajeno a los texels accesibles
+podía provocar una separación de lotes por feedback inexistente.
+
+REGION_CLAMP válido usa MIN..MAX; REGION_REPEAT, cuyo resultado es
+`(coordenada & MIN) | MAX`, queda dentro de MAX..(MIN | MAX). Los huecos de
+REGION_REPEAT siguen cubiertos por el rectángulo conservador. MIN>MAX mantiene
+el rango completo anterior. REPEAT y CLAMP ordinarios conservan su cobertura.
+La clave de la caché del conjunto de páginas incluye ambos extremos de cada
+eje, para renovarse también si solo cambia MIN. Esta caché guarda un bitset de
+riesgos de acceso; no reproduce los datos de una caché de textura PS2.
+
+El control usa tres fuentes coloreadas fuera del framebuffer y una cuarta
+opcional que lee una página ya escrita. En los 13 PSM, nearest/bilinear y caché
+del bitset activada/desactivada, los tres dibujos disjuntos pasan de tres lotes
+y dos flushes de textura a **un lote y cero flushes**. La cuarta lectura real
+conserva la separación necesaria: **dos lotes y un flush**. El control de
+REGION_CLAMP mantiene MAX=700 y cambia solo MIN para comprobar esa clave.
+Los formatos indexados cargan una paleta CSM2 de colores distintos, evitando
+que una imagen vacía esconda fallos.
+
+Otros controles atraviesan bordes de página, usan máscaras REGION_REPEAT no
+nulas y bases TBP 0, 31 y 16383, incluida la vuelta de los 4 MiB. Se ejecutan
+con feedback snapshot activado y desactivado. Tres sprites de un píxel en una
+página realmente leída conservan tres lotes y dos flushes; TEXFLUSH renueva
+la fuente del control CPU entre Submits. Todas las comparaciones incluyen los
+4 MiB completos, no solo los píxeles visibles.
+
+Son 208 casos de lotes y 384 de bordes por ruta, 1184 combinaciones en compute
+y hardware. Se exige el número de primitivas y hardware efectivo sin tiles
+compute; crear el contexto o caer al renderer CPU no satisface el control.
+Las dos regresiones de lotes fallan con el backend anterior. Un primer intento
+coincidió con la compilación de Claude y agotó además dos plazos de shaders;
+al repetir los controles aislados con el equipo libre fallan solo los lotes
+innecesarios, mientras bordes hardware y feedback externo pasan.
+
+La compilación completa regenera las 6418 unidades y termina con código 0.
+La auditoría posterior confirma 50 parches y 84 fuentes idénticas; la suite
+final pasa 580/580, con dieciocho controles OpenGL reales. Las siete herramientas
+pasan los 18 controles de imagen y los trece patrones freeze/GIF/End con CPU ×3;
+se rechazan las seis copias dañadas.
+
+El control posterior dura 510 s en OpenGL, con FMV omitido y snapshot
+experimental desactivado. Carga una copia privada de la tarjeta, cuyo original
+conserva su SHA256. Las dieciséis capturas 512×448 son distintas; la última
+muestra a Kratos atacando con HUD, estelas de armas, R2 y el punto de guardado,
+en estado 11 sin carga pendiente y con hardware activo. Se conservan 128
+muestras de Clip finitas/completas, 736 tripletas tardías no nulas y 192 contextos
+sin punteros inválidos, ciclos ni truncamientos. No aparece VU reservada.
+Esto verifica la imagen de un ataque; combate contra enemigos y FPS sostenidos
+siguen pendientes.
+
+La mejora demuestra menos envíos en estos patrones; no establece una ganancia
+de FPS en el juego ni resuelve la caché del GS físico. El renderer CPU y la
+política experimental de feedback se mantienen disponibles para comparar.
+
+
 ## Separación de lotes y fuente protegida opcional
 
 `generar_feedback_gs --pcsx2 --separaciones` conserva los tres patrones anteriores
