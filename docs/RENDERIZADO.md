@@ -615,6 +615,31 @@ primitivas y cero tiles compute permite reconocer pasadas sin ese fallback. Tota
 iguales no certifican que toda la ruta sea idéntica. El historial exacto se limita
 a 64 MiB visibles por pasada; si se supera, devuelve 2 y requiere un tramo menor.
 
+Para localizar variación intermedia entre pasadas, añadir `--checkpoints-sync`:
+
+```powershell
+.\logs\repetir_gs.exe .\logs\tramo_gs.bin compute --snapshot-feedback --repeticiones 3 --checkpoints-sync logs\controles_gs
+```
+
+Registra huellas FNV-1a64 de toda la VRAM en las fronteras Flush, Sync, Present y
+End. Informa el primer registro/op/dibujos que cambia, y también rechaza paridad
+si la diferencia intermedia desaparece antes del End. No guarda otra copia de
+4 MiB por control: el historial admite 4096 huellas y se comprueba el límite
+antes de crear el backend. Conserva las comparaciones exactas finales y de las
+imágenes. Una huella igual no certifica identidad byte a byte intermedia.
+Los comandos elegidos ya drenan lotes; TEXFLUSH queda fuera porque en la GPU
+actual no lo hace. Los readbacks añaden espera y la prueba no mide FPS.
+
+En el tramo tardío de 146.015 registros, CPU ×3 mantiene iguales los trece
+controles, el End, el estado y ambas imágenes. Compute ×3 con snapshot cambia
+por primera vez en el Flush del registro 73.288, después de 73.003 dibujos:
+ocho de los trece controles varían entre pasadas, con iguales contadores de
+raster y las dos imágenes visibles estables. Esta frontera localiza variación
+de VRAM anterior al End; sigue pendiente reducir el lote responsable. El
+sprite inicial aislado también queda estable en hardware efectivo, con un
+dibujo y cero tiles compute en las pasadas calientes, aunque conserva los
+1874 bytes distintos de CPU. Son dos diferencias que requieren pruebas propias.
+
 El directorio puede ir con o sin `--lockstep`, antes o después de las opciones.
 Se crea si falta; un fallo al crear/exportar y las opciones inválidas devuelven 2.
 Las imágenes de varias pasadas llevan `replay_pasada_N_` para conservarlas. Si se

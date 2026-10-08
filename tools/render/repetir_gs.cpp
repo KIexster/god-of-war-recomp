@@ -76,7 +76,7 @@ namespace {
     struct Options {
         std::filesystem::path capture,output=".";
         std::string mode;
-        bool lockstep=false,snapshotFeedback=false;
+        bool lockstep=false,snapshotFeedback=false,syncCheckpoints=false;
         uint32_t repetitions=1,pauseMs=0;
         bool gpuMode() const { return mode!="cpu"; }
         bool multiple() const { return repetitions>1; }
@@ -92,6 +92,10 @@ namespace {
         for(int i=3;i<argc;++i) {
             const std::filesystem::path argument(argv[i]);
             if(argument==std::filesystem::path("--lockstep")) { if(options.lockstep) return false; options.lockstep=true; }
+            else if(argument==std::filesystem::path("--checkpoints-sync")) {
+                if(options.syncCheckpoints) return false;
+                options.syncCheckpoints=true;
+            }
             else if(argument==std::filesystem::path("--snapshot-feedback")) {
                 if(options.snapshotFeedback) return false;
                 options.snapshotFeedback=true;
@@ -118,7 +122,8 @@ namespace {
                 options.output=argument; directory=true;
             }
         }
-        return (!options.snapshotFeedback || options.gpuMode()) && (!options.pauseMs || options.multiple());
+        return (!options.snapshotFeedback || options.gpuMode()) &&
+               (!(options.pauseMs || options.syncCheckpoints) || options.multiple());
     }
     bool restoreInitial(GSRasterBackend &backend,std::vector<uint8_t> &vram,
                         const replay::Snapshot &initial,bool gpuMode,GSGpuBackend *gpu=nullptr) {
@@ -149,12 +154,36 @@ namespace {
         std::vector<uint8_t> pixels;
     };
     struct PassResult {
+        struct Checkpoint { size_t record=0,draws=0; replay::Op op{}; uint64_t hash=0; };
         std::vector<uint8_t> vram;
         GSBackendState state;
         std::vector<VisibleFrame> frames;
+        std::vector<Checkpoint> checkpoints;
         GSGpuBackend::Stats stats{};
         bool parity=true;
     };
+    // GOW-Port: huellas acotadas para localizar variación ANTES del estado final.
+    // No guardar una copia de 4 MiB por control. End y cuadros conservan comparación exacta.
+    bool checkpoint(PassResult &result,size_t index,size_t draws,replay::Op op,const std::vector<uint8_t> &vram) {
+        if(vram.size()!=PS2_GS_VRAM_SIZE || result.checkpoints.size()>=4096) {
+            std::cerr<<"VRAM inválida o límite de 4096 controles sincronizados excedido\n"; return false;
+        }
+        uint64_t hash=14695981039346656037ull;
+        for(const auto byte:vram) { hash^=byte; hash*=1099511628211ull; }
+        result.checkpoints.push_back({index,draws,op,hash}); return true;
+    }
+    bool validateCheckpoints(const std::filesystem::path &path) {
+        replay::Reader reader(path); replay::Record record; size_t count=0; bool ended=false;
+        while(reader.next(record)) {
+            if(record.op==replay::Op::Flush || record.op==replay::Op::Sync ||
+               record.op==replay::Op::Present || record.op==replay::Op::End) {
+                if(++count>4096) { std::cerr<<"Límite de 4096 controles sincronizados excedido\n"; return false; }
+            }
+            ended=record.op==replay::Op::End;
+        }
+        if(!reader.error.empty() || !ended) { std::cerr<<"Captura incompleta: "<<reader.error<<'\n'; return false; }
+        return true;
+    }
     GSGpuBackend::Stats statsDelta(const GSGpuBackend::Stats &a,const GSGpuBackend::Stats &b) {
         return {b.prims-a.prims,b.batches-a.batches,b.tiles-a.tiles,b.clutLoads-a.clutLoads,
                 b.flushTarget-a.flushTarget,b.flushTexture-a.flushTexture,b.flushOther-a.flushOther};
@@ -220,6 +249,7 @@ namespace {
                 if(const char *field=stateDifference(state,result.state,options.gpuMode())) {
                     stateMismatch=true; std::cout<<"CPU vs "<<options.mode<<" estado final distinto: "<<field<<'\n';
                 }
+                if(options.syncCheckpoints && !checkpoint(result,index,draws,record.op,actualB)) return 2;
                 result.vram=std::move(actualB); ended=true; break;
             }
             if(record.op==replay::Op::Initial || !apply(reference,record,a) || !apply(candidate,record,b)) {
@@ -246,6 +276,13 @@ namespace {
                     result.frames.push_back({b.width,b.height,std::move(visibleB)});
                 }
             }
+            // Estos comandos ya drenan el lote en los backends. TEXFLUSH no lo hace
+            // en GPU: excluirlo para no introducir cortes de lote nuevos en esta sonda.
+            if(options.syncCheckpoints && (record.op==replay::Op::Flush || record.op==replay::Op::Sync ||
+                                          record.op==replay::Op::Present)) {
+                candidate.Sync(GSSyncReason::DebugReadback); candidate.SnapshotVram(actualB);
+                if(!checkpoint(result,index,draws,record.op,actualB)) return 2;
+            }
             if(options.lockstep && firstMismatch==SIZE_MAX && (record.op==replay::Op::Submit || record.op==replay::Op::Upload || record.op==replay::Op::Transfer ||
                             record.op==replay::Op::Clear || record.op==replay::Op::Write || record.op==replay::Op::Reset)) {
                 reference.Sync(GSSyncReason::DebugReadback); reference.SnapshotVram(actualA);
@@ -269,6 +306,21 @@ namespace {
     bool comparePasses(uint32_t pass,const PassResult &previous,const PassResult &current,bool gpuMode) {
         size_t first=0; const auto bytes=differences(previous.vram,current.vram,first);
         const char *field=stateDifference(previous.state,current.state);
+        bool equalCheckpoints=previous.checkpoints.size()==current.checkpoints.size();
+        const size_t checkpointCount=std::min(previous.checkpoints.size(),current.checkpoints.size());
+        size_t changedCheckpoints=0;
+        for(size_t i=0;i<checkpointCount;++i) {
+            const auto &a=previous.checkpoints[i],&b=current.checkpoints[i];
+            if(a.record!=b.record || a.op!=b.op || a.draws!=b.draws || a.hash!=b.hash) {
+                if(!changedCheckpoints) std::cout<<"Primer control variable: registro="<<b.record
+                    <<" op="<<unsigned(b.op)<<" draws="<<b.draws<<" pasada="<<pass-1<<"->"<<pass
+                    <<" huella="<<std::hex<<a.hash<<"->"<<b.hash<<std::dec<<'\n';
+                ++changedCheckpoints; equalCheckpoints=false;
+            }
+        }
+        if(!previous.checkpoints.empty() || !current.checkpoints.empty())
+            std::cout<<"Controles sincronizados: previos="<<previous.checkpoints.size()
+                     <<" actuales="<<current.checkpoints.size()<<" distintos="<<changedCheckpoints<<'\n';
         const size_t common=std::min(previous.frames.size(),current.frames.size());
         size_t frames=std::max(previous.frames.size(),current.frames.size())-common;
         for(size_t i=0;i<common;++i) {
@@ -288,10 +340,10 @@ namespace {
         if(gpuMode) {
             std::cout<<(equalRaster?"Contadores de raster iguales":"Contadores de raster distintos")
                      <<": prims="<<previous.stats.prims<<"->"<<current.stats.prims<<" tiles="<<previous.stats.tiles<<"->"<<current.stats.tiles<<'\n';
-            if(!equalRaster && (bytes || field || frames))
+            if(!equalRaster && (bytes || field || frames || !equalCheckpoints))
                 std::cout<<"El resultado distinto entre pasadas no certifica inestabilidad de una misma ruta de raster\n";
         }
-        return bytes==0 && field==nullptr && frames==0;
+        return bytes==0 && field==nullptr && frames==0 && equalCheckpoints;
     }
     int run(const Options &options) {
         std::error_code outputError;
@@ -302,6 +354,8 @@ namespace {
         replay::Reader reader(options.capture); replay::Record record; replay::Snapshot initial;
         if(!reader.next(record) || record.op!=replay::Op::Initial) { std::cerr<<reader.error<<"; falta estado inicial\n"; return 2; }
         if(!replay::decodeSnapshot(record,initial)) { std::cerr<<"Estado inicial inválido\n"; return 2; }
+        // Rechazar exceso de readbacks antes de crear el backend o repetir dibujos.
+        if(options.syncCheckpoints && !validateCheckpoints(options.capture)) return 2;
         if(initial.state.cachePageBase!=UINT32_MAX) {
             const auto base=initial.state.cachePageBase; const auto size=initial.state.cacheBytes.size();
             if(base%size || uint64_t(base)+size>initial.vram.size()) return 2;
@@ -322,6 +376,8 @@ namespace {
             std::cout<<"Feedback experimental: fuente congelada por Submit; no emula la cache PS2 de 8 KiB\n";
         if(options.pauseMs)
             std::cout<<"Pausa de diagnostico entre pasadas: "<<options.pauseMs<<" ms\n";
+        if(options.syncCheckpoints)
+            std::cout<<"Controles de variación en Flush/Sync/Present/End: añaden readback, no miden FPS\n";
         struct Restore { unsigned csr=_mm_getcsr(); ~Restore(){_mm_setcsr(csr);} } restore;
         PassResult previous; bool differencesSeen=false;
         for(uint32_t iteration=0;iteration<options.repetitions;++iteration) {
@@ -352,7 +408,7 @@ int main(int argc,char **argv) {
 #endif
     Options options;
     if(!parse(argc,argv,options)) {
-        std::cerr<<"Uso: repetir_gs captura.bin cpu|compute|hardware [--lockstep] [--snapshot-feedback] [--repeticiones N] [--pausa-ms M] [directorio]\n"
+        std::cerr<<"Uso: repetir_gs captura.bin cpu|compute|hardware [--lockstep] [--snapshot-feedback] [--repeticiones N] [--pausa-ms M] [--checkpoints-sync] [directorio]\n"
                  <<"N positivo; M=1..1000 requiere varias pasadas; no se admiten opciones desconocidas ni duplicadas\n"; return 2;
     }
     return run(options);

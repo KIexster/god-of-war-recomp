@@ -93,5 +93,9 @@ Se registran con `PS2_REGISTER_GAME_OVERRIDE` para el ELF `SCUS_973.99` (entry `
   ejecutar `tests/gs_replay_test.cpp`: captura/replay CPU, parser, truncamiento, opciones inválidas y
   comienzo después de TEXFLUSH, sin el juego ni contexto OpenGL. Los archivos sintéticos quedan
   en el directorio temporal de compilación.
+  También compila la CLI `repetir_gs` y ejecuta los controles de
+  `tests/gs_replay_checkpoints_test.cpp` y `tests/gs_replay_cli_test.py`:
+  variación intermedia aunque el End coincida, argumentos, repetición CPU
+  y límite previo de controles sincronizados. No requieren contexto OpenGL.
 
 `.github/workflows/estado.yml` regenera el mapa de estado (`docs/estado/`) cuando cambian sus datos.

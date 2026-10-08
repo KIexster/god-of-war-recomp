@@ -88,7 +88,7 @@ jobs:
           CMAKE
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPS2X_BUILD_STUDIO=OFF \
             -DCMAKE_C_FLAGS=-march=x86-64-v2 -DCMAKE_CXX_FLAGS=-march=x86-64-v2
-          ninja -C build ps2x_tests gow_gs_replay_test
+          ninja -C build ps2x_tests gow_gs_replay_test gow_gs_replay gow_gs_replay_checkpoints_test
 
       # src/gow_overrides.cpp solo se compila de verdad junto al codigo generado del juego (Windows). Aqui se
       # comprueba contra las cabeceras del runtime ya parcheado, declarando las sub_* que usa.
@@ -110,6 +110,11 @@ jobs:
 
       - name: Probar captura, opciones, frontera TEXFLUSH y replay CPU sin el juego
         run: PS2Recomp/build/gow_gs_replay_test PS2Recomp/build/gow_gs_replay_synthetic.bin
+
+      - name: Probar la CLI de controles sincronizados GS
+        run: |
+          PS2Recomp/build/gow_gs_replay_checkpoints_test
+          python3 gow/tests/gs_replay_cli_test.py PS2Recomp/build/gow_gs_replay PS2Recomp/build/gow_gs_replay_synthetic.bin
 
       - name: Ejecutar la suite
         working-directory: PS2Recomp

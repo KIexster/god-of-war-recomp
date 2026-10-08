@@ -232,3 +232,14 @@ shaders termine mientras se conserva el mismo backend. Ocho pasadas sin espera
 pueden completar sus imágenes en compute antes de que hardware esté listo:
 se deben comprobar `prims` y `tiles`, además del código de salida. La espera
 no cambia el estado inicial ni las comparaciones y no mide los FPS del juego.
+
+`--checkpoints-sync`, junto a `--repeticiones N` con N mayor que 1, compara
+huellas FNV-1a64 de los 4 MiB de VRAM después de Flush, Sync, Present y End.
+Indica el primer control que varía entre pasadas, con registro, operación y
+dibujos acumulados. Las comparaciones exactas del End, estado y cuadros se
+mantienen. Una huella distinta también produce salida 1, aunque el End coincida.
+El historial está limitado a 4096 controles y un exceso se rechaza antes de
+repetir dibujos. Añade readbacks y puede cambiar los tiempos: no mide FPS.
+Se excluye TEXFLUSH porque no drena un lote GPU en el backend actual; observarlo
+con readback introduciría un corte nuevo. Las huellas sirven para localizar
+variación y no certifican igualdad byte a byte de los estados intermedios.

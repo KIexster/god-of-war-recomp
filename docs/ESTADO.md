@@ -1975,3 +1975,34 @@ la misma diferencia de 1874 bytes y permanece estable entre pasadas. La
 presentación reducida sigue idéntica porque esa escritura no cambia el buffer
 visible actual. Proteger la fuente de toda la primitiva no resuelve este caso;
 queda por contrastar el orden de lectura de páginas y la caché CPU de 8 KiB.
+
+### Controles intermedios de variación OpenGL (7 de octubre)
+
+`repetir_gs --checkpoints-sync --repeticiones N` compara huellas de los 4 MiB
+en Flush, Sync, Present y End. El informe identifica el primer control que
+varía entre pasadas. Los comandos elegidos ya drenan lotes; TEXFLUSH no lo
+hace en GPU y queda fuera de esta sonda. Se mantiene la comparación exacta
+del End, estado e imágenes. El historial se limita a 4096 controles, con
+rechazo previo al replay. Añade readback, no mide FPS ni certifica igualdad
+byte a byte intermedia cuando coinciden las huellas.
+
+La CLI pública pasa cinco argumentos inválidos, tres recorridos CPU y el
+rechazo del exceso antes de dibujar. Una regresión C++ usa la comparación
+real del tool: una diferencia intermedia debe fallar aunque el End sea
+idéntico. También verifica cantidad y metadatos. Ambas se ejecutan en CI
+sin datos del juego; el helper Windows compila y ejecuta la regresión C++.
+
+El tramo real CPU ×3 pasa sus trece controles y conserva igualdad exacta
+final y visible. Compute ×3 con snapshot muestra el primer control variable
+en el Flush del registro 73.288, tras 73.003 dibujos; ocho controles varían,
+las dos imágenes visibles entre pasadas siguen idénticas y los contadores
+son 632 lotes/99.402 primitivas/53.757 tiles en las tres pasadas. Los End GPU
+consecutivos difieren en 4296 y 3977 bytes. No acredita estabilidad de toda
+la VRAM ni paridad con CPU. El control reducido al primer sprite conserva
+1874 bytes de diferencia también en hardware caliente, con cero tiles
+compute; ese dibujo aislado permanece estable entre pasadas.
+
+El control privado que elimina la caché de lectura del CPU altera 34.262
+bytes del End de ese sprite y tampoco iguala OpenGL: no se incorporó al
+runtime. Próximo paso: reducir el lote anterior al primer Flush variable y
+contrastarlo con fuentes protegidas y formatos de VRAM, conservando CPU.

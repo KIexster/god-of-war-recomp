@@ -20,6 +20,9 @@ if not errorlevel 0 goto :failed
 call :compile tests\gs_replay_test.cpp gs_replay_test
 if errorlevel 1 goto :failed
 if not errorlevel 0 goto :failed
+call :compile tests\gs_replay_checkpoints_test.cpp gs_replay_checkpoints_test
+if errorlevel 1 goto :failed
+if not errorlevel 0 goto :failed
 call :compile tools\render\comparar_feedback_gs.cpp comparar_feedback_gs
 if errorlevel 1 goto :failed
 if not errorlevel 0 goto :failed
@@ -39,6 +42,9 @@ logs\gs_frame_pixels_test.exe > logs\gs_frame_pixels_test.log 2>&1
 if errorlevel 1 goto :failed
 if not errorlevel 0 goto :failed
 logs\gs_replay_test.exe logs\gs_replay_synthetic.bin > logs\gs_replay_test.log 2>&1
+if errorlevel 1 goto :failed
+if not errorlevel 0 goto :failed
+logs\gs_replay_checkpoints_test.exe > logs\gs_replay_checkpoints_test.log 2>&1
 if errorlevel 1 goto :failed
 if not errorlevel 0 goto :failed
 logs\repetir_gs.exe logs\gs_replay_synthetic.bin cpu --lockstep logs >> logs\gs_replay_test.log 2>&1
