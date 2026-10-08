@@ -965,7 +965,7 @@
 <text class="badge-t" x="750.1" y="331.9" font-size="11" text-anchor="middle" transform="rotate(-90 750.1 328)" pointer-events="none">Timers</text>
 <rect class="ok" x="767.2" y="113.5" width="45.5" height="106.5"><title>GIF (PATH1-3)</title></rect>
 <text class="badge-t" x="789.9" y="170.6" font-size="11" text-anchor="middle" pointer-events="none">GIF</text>
-<rect class="parcial" x="813.7" y="113.5" width="68.8" height="106.5"><title>GS: primitivas y framebuffer — CPU/OpenGL conservados; barco, Kratos, enemigos y HUD visibles. Orden color/Z y alias por ancho/vuelta validados. Feedback inestable acotado a 33 envíos; snapshot opcional estable en 64 pasadas, aún distinto de CPU. Z de solo lectura retenido; falta cobertura completa</title></rect>
+<rect class="parcial" x="813.7" y="113.5" width="68.8" height="106.5"><title>GS: primitivas y framebuffer — CPU/OpenGL conservados; barco, Kratos, enemigos y HUD visibles. Orden color/Z y alias por ancho/vuelta validados. Feedback inestable acotado a 33 envíos; snapshot opcional estable en 64 pasadas, aún distinto de CPU. Z de solo lectura retenido; profiler GPU por variante y frontera de consultas verificado; falta cobertura completa</title></rect>
 <rect x="813.7" y="113.5" width="68.8" height="106.5" fill="url(#rayas)" pointer-events="none"/>
 <text class="badge-v-oscuro" x="848.1" y="170.6" font-size="11" text-anchor="middle" pointer-events="none">GS</text>
 <rect class="parcial" x="767.2" y="221" width="115.3" height="63.5"><title>VIF1 y VU1 — Bloques compilados, flags persistentes, SSE de cuatro carriles y enlace opcional del microcódigo local integrados; regresión FTZ/DAZ conserva underflow. Modelos y HUD visibles tras MMI/EFU/SPR; falta certificar cobertura y rendimiento sostenido</title></rect>

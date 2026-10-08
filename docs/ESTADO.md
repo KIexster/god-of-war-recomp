@@ -2308,6 +2308,14 @@ dos variantes dentro del mismo lote y la frontera de 4096 lotes compute.
 En ambos casos conservan exactamente los 4 MiB frente al CPU y exigen la ruta
 GPU efectiva. La compilación oficial integrada se valida por separado.
 
+La compilación oficial de `23fbce4` termina con código 0: **65 parches**,
+501 micromemorias locales y ejecutable de **70.182.912 bytes**, SHA256
+`6D7BA3034436D28141D4F429BD3D42ABD7BBA5F79166808CBD8410902F5736A1`.
+Las **87 fuentes** auditadas coinciden con la cadena. Pasan **589/589 pruebas
+nativas**, incluidas **24 OpenGL efectivas**, los 60 casos VU1, 100.800 FMAC
+aleatorios y 2.016 dirigidos FTZ/DAZ, PAD2 y los dos modos FINISH.
+El renderer CPU y la política habitual de feedback se conservan.
+
 La herramienta pública de rendimiento amplía el control previo a una
 vigilancia cada segundo durante toda la pasada. Ante otra compilación o
 partida, cierra solo su instancia, marca el registro como inválido y restaura
