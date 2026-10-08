@@ -364,3 +364,23 @@ Mismo resultado: huellas de VU1 e imágenes de `vif_pcsx2_inicio2` y `vif_port_4
 (~1,5 millones de veces por segundo) y buscaba GIF_STAT en el `unordered_map` de registros cada vez.
 `ps2recomp-ee-timers-fast.patch` guarda la dirección del elemento (los elementos de un `unordered_map` no se
 mueven; solo `clear()` en la inicialización la invalida). Mismo comportamiento; suite 565/565.
+
+## FMAC de VU1 con SSE (8 de octubre)
+
+`ps2recomp-vu1-simd.patch`: los pares compilados calculan las cuatro componentes de una FMAC (ADD, SUB, MUL,
+MADD, MSUB, MAX, MINI, OPMULA y OPMSUB sin la componente w, con sus variantes bc/q/i/A) con SSE: la misma
+normalización de operandos, y cada producto y suma redondeados por separado con el MXCSR del VU, así que el
+resultado es el mismo bit a bit que en `fmacLaneT`. Los flags se calculan en vector cuando todos los carriles
+activos están en el camino rápido del intérprete (resultado y producto lejos de cero y de los extremos, o
+resultado exactamente cero); si no, se rehace la instrucción con el código escalar. Sin SSE4.1 (GCC sin
+`-msse4.1`) se compila solo el escalar.
+
+Comprobación: huellas por lanzamiento idénticas en las dos reproducciones, la prueba de 60 casos de GPT y
+una prueba nueva, `tests/vu1_fmac_test.cpp`, que compila las 252 variantes de FMAC (todas las fuentes, tres
+máscaras DEST, cruzadas) y las compara con el intérprete con valores límite aleatorios (ceros con signo,
+subnormales, FLT_MIN/FLT_MAX, Inf/NaN y patrones de bits cualesquiera): 504.000 casos exactos con 1.000
+ensayos. Un fallo inyectado a propósito (el flag Z del producto) lo detecta en el primer ensayo. La CI la
+ejecuta con 200 ensayos.
+
+Reproducción alternando ejecutables: 131 → ~100 ms por cuadro.
+En el juego (OpenGL, alternando ejecutables): 11,5–12,0 → 13,2–14,4 cuadros/s.
