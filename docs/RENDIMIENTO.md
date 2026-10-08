@@ -262,7 +262,7 @@ pero solo ~6.000 pares distintos (11 MB de C++). Para capturarlas:
 ```powershell
 $env:GOW_VU1_CAPTURA = 'D:\vu1_micro'   # carpeta local
 .\scripts\probar_rendimiento.ps1 -Segundos 90 -Renderer opengl -Etiqueta captura
-$env:GOW_VU1_CAPTURA = $null
+Remove-Item Env:GOW_VU1_CAPTURA
 $env:GOW_VU1_MICROCODIGO = 'D:\vu1_micro'
 .\scripts\2_compilar.cmd
 ```
