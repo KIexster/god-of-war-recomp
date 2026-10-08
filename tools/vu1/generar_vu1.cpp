@@ -184,16 +184,30 @@ int main(int argc, char **argv)
     constexpr size_t kParts = 12;
     std::vector<std::ostringstream> parts(kParts);
     std::ostringstream declarations;
+    // Par decodificado (pc, palabras) -> nombre del struct K; cada archivo define los que usa.
+    std::map<std::tuple<uint32_t, uint32_t, uint32_t>, std::string> kNames;
+    std::vector<std::set<std::string>> kInPart(kParts);
+    const auto kStruct = [&](const Code &code, uint32_t pc, size_t part) -> std::string
+    {
+        const auto key = std::make_tuple(pc, code.lower(pc), code.upper(pc));
+        auto it = kNames.find(key);
+        if (it == kNames.end())
+            it = kNames.emplace(key, "K" + hex4(pc) + "_" + std::to_string(variantCount[pc]++)).first;
+        if (kInPart[part].insert(it->second).second)
+            parts[part] << "    struct " << it->second << "\n    {\n        static constexpr P value = "
+                        << VU1CompiledGenerator::pairInitializer(code.pairs[pc / 8u]) << ";\n    };\n";
+        return it->second;
+    };
     const auto pairFunction = [&](const Code &code, uint32_t pc, bool dead) -> std::string
     {
         const auto key = std::make_tuple(pc, code.lower(pc), code.upper(pc), dead);
         if (const auto it = pairFns.find(key); it != pairFns.end())
             return it->second;
-        const std::string name = "p" + hex4(pc) + "_" + std::to_string(variantCount[pc]++) + (dead ? "d" : "");
-        parts[pairFns.size() % kParts] << "    struct K" << name << "\n    {\n        static constexpr P value = "
-                  << VU1CompiledGenerator::pairInitializer(code.pairs[pc / 8u]) << ";\n    };\n"
-                  << "    bool " << name << "(VU1Interpreter &vu, C &c)\n    {\n"
-                  << "        return VU1CompiledAccess::step<K" << name << ", " << (dead ? "true" : "false") << ">(vu, c);\n    }\n";
+        const size_t part = pairFns.size() % kParts;
+        const std::string k = kStruct(code, pc, part);
+        const std::string name = "p" + k.substr(1) + (dead ? "d" : "");
+        parts[part] << "    bool " << name << "(VU1Interpreter &vu, C &c)\n    {\n"
+                    << "        return VU1CompiledAccess::step<" << k << ", " << (dead ? "true" : "false") << ">(vu, c);\n    }\n";
         declarations << "    bool " << name << "(VU1Interpreter &vu, C &c);\n";
         pairFns[key] = name;
         return name;
@@ -219,7 +233,6 @@ int main(int argc, char **argv)
     // Bloques.
     std::map<uint32_t, std::vector<std::string>> blockCases;
     std::set<std::pair<uint32_t, std::vector<uint32_t>>> seenBlocks;
-    std::ostringstream blocks;
     size_t blockCount = 0, deadCount = 0, fmacCount = 0;
     for (const Code &code : codes)
     {
@@ -304,21 +317,31 @@ int main(int argc, char **argv)
                 deadCount += dead[i] ? 1u : 0u;
             }
 
+            // El bloque es una sola función con los pasos en línea, en el mismo archivo que sus structs K.
+            // Los pares intermedios que no saltan ni terminan ("simples") no comprueban saltos ni finales.
             const std::string name = "b" + hex4(head) + "_" + std::to_string(blockCases[head].size());
-            blocks << "    int " << name << "(VU1Interpreter &vu, C &c)\n    {\n"
-                   << "        static constexpr uint32_t words[" << words.size() << "] = {";
+            const size_t part = blockCount % kParts;
+            std::ostringstream body;
+            body << "    int " << name << "(VU1Interpreter &vu, C &c)\n    {\n"
+                 << "        static constexpr uint32_t words[" << words.size() << "] = {";
             for (size_t w = 0; w < words.size(); ++w)
-                blocks << (w ? ", " : "") << "0x" << std::hex << words[w] << "u" << std::dec;
-            blocks << "};\n"
-                   << "        if (!VU1CompiledAccess::block(vu, c, " << head << "u, words, sizeof(words)))\n            return 0;\n";
+                body << (w ? ", " : "") << "0x" << std::hex << words[w] << "u" << std::dec;
+            body << "};\n"
+                 << "        if (!VU1CompiledAccess::block(vu, c, " << head << "u, words, sizeof(words)))\n            return 0;\n"
+                 << "        g_blockPairs += " << length << "u;\n";
             for (size_t i = 0; i < length; ++i)
             {
-                const std::string fn = pairFunction(code, pcs[i], dead[i]);
-                blocks << "        ++g_stats.compiled;\n        if (!" << fn << "(vu, c))\n            return 2;\n";
-                if (i + 1u < length)
-                    blocks << "        if (VU1CompiledAccess::pc(vu) != " << pcs[i + 1u] << "u)\n            return 1;\n";
+                const Pair &p = code.pairs[pcs[i] / 8u];
+                const bool plain = i + 1u < length && !VU1CompiledGenerator::isBranch(p) && !p.eBit && !p.dBit && !p.tBit;
+                const std::string k = kStruct(code, pcs[i], part);
+                body << "        if (!VU1CompiledAccess::step<" << k << ", " << (dead[i] ? "true" : "false") << ", "
+                     << (plain ? "true" : "false") << ">(vu, c))\n            return 2;\n";
+                if (i + 1u < length && !plain)
+                    body << "        if (VU1CompiledAccess::pc(vu) != " << pcs[i + 1u] << "u)\n            return 1;\n";
             }
-            blocks << "        return 1;\n    }\n";
+            body << "        return 1;\n    }\n";
+            parts[part] << body.str();
+            declarations << "    int " << name << "(VU1Interpreter &vu, C &c);\n";
             std::ostringstream test;
             test << "                if (inRange(pc))\n                {\n                    const int r = " << name << "(vu, c);\n"
                  << "                    if (r == 2)\n                        return;\n                    if (r == 1)\n                        continue;\n                }\n";
@@ -332,7 +355,8 @@ int main(int argc, char **argv)
         "#include \"runtime/ps2_vu1.h\"\n#include \"ps2_vu1_compiled.inl\"\n#include <cstdio>\n#include <cstdlib>\n#include <cstring>\n\n"
         "// Mismo modo de coma flotante que el intérprete de VU (MSVC no expande en línea entre modos distintos).\n"
         "#if defined(_MSC_VER)\n#pragma float_control(precise, on, push)\n#pragma fp_contract(off)\n#endif\n\n"
-        "using P = VU1CompiledAccess::P;\nusing C = VU1CompiledAccess::C;\n\n";
+        "using P = VU1CompiledAccess::P;\nusing C = VU1CompiledAccess::C;\n\n"
+        "namespace vu1c_gen\n{\n    inline unsigned long long g_blockPairs = 0;\n}\n\n";
     const std::string footer = "\n#if defined(_MSC_VER)\n#pragma float_control(pop)\n#endif\n";
     const std::string base = argv[1];
     for (size_t k = 0; k < kParts; ++k)
@@ -347,14 +371,14 @@ int main(int argc, char **argv)
         << "    // GOW_VU1C_SIN_BLOQUES: sin bloques (solo pares sueltos).\n"
         << "    struct Stats\n    {\n        unsigned long long compiled = 0, interpreted = 0;\n"
         << "        ~Stats()\n        {\n            if (std::getenv(\"GOW_VU1C_DIAG\"))\n"
-        << "                std::fprintf(stderr, \"[vu1c] compilados=%llu interpretados=%llu\\n\", compiled, interpreted);\n        }\n    } g_stats;\n"
+        << "                std::fprintf(stderr, \"[vu1c] compilados=%llu interpretados=%llu\\n\", compiled + vu1c_gen::g_blockPairs, interpreted);\n        }\n    } g_stats;\n"
         << "    struct Range\n    {\n        uint32_t lo = 0, hi = 0xFFFFFFFFu;\n        bool blocks = true;\n        Range()\n        {\n"
         << "            if (const char *v = std::getenv(\"GOW_VU1C_RANGO\"))\n            {\n"
         << "                char *end = nullptr;\n                lo = static_cast<uint32_t>(std::strtoul(v, &end, 16));\n"
         << "                hi = end && *end == '-' ? static_cast<uint32_t>(std::strtoul(end + 1, nullptr, 16)) : lo;\n            }\n"
         << "            blocks = std::getenv(\"GOW_VU1C_SIN_BLOQUES\") == nullptr;\n        }\n    } g_range;\n"
         << "    inline bool inRange(uint32_t pc) { return pc >= g_range.lo && pc <= g_range.hi; }\n}\n\n"
-        << "namespace vu1c_gen\n{\n" << declarations.str() << blocks.str()
+        << "namespace vu1c_gen\n{\n" << declarations.str()
         << "    void run(VU1Interpreter &vu, C &c)\n    {\n        for (;;)\n        {\n"
         << "            const uint32_t pc = VU1CompiledAccess::pc(vu);\n"
         << "            if (pc + 8u <= c.codeSize)\n            {\n"

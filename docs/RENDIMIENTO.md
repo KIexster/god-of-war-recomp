@@ -203,3 +203,15 @@ control de rutas; no enlaza ni publica microcódigo del juego.
 La compilación oficial añade la infraestructura y las escrituras directas.
 El despachador necesita generar y enlazar C++ a partir de microprogramas
 locales para acelerar el juego; sin esas unidades utiliza el intérprete.
+
+### Etapa 2b: un bloque, una función (8 de octubre)
+
+`ps2recomp-vu1-blocks.patch` y el generador escriben cada bloque como una sola función con los pasos en
+línea, en el mismo archivo que sus pares (antes, cada par era una llamada a otro archivo). Los pares
+intermedios que no saltan ni terminan (`stepPairT<..., Plain=true>`) solo avanzan el PC: al entrar al
+bloque no había salto, bit E ni final pendientes, y solo el último par puede crearlos.
+
+Tiempos con la cadena actual de main, que ya incluye la corrección de flags persistentes (cuadro
+`D6385328`, 30 pasadas): intérprete 357 ms, compilado antes de esta etapa 233 ms y con ella 206 ms. Las
+huellas por lanzamiento de `vif_pcsx2_inicio2` (1.972) y `vif_port_480s` (1.986) coinciden con el
+intérprete, `scripts\probar_vu1_compilada.cmd` da 60 casos exactos y la suite pasa 565/565.

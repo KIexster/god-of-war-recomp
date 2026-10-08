@@ -1,0 +1,59 @@
+diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime/ps2_vu1.h
+index cefe321..de7cc6d 100644
+--- a/ps2xRuntime/include/runtime/ps2_vu1.h
++++ b/ps2xRuntime/include/runtime/ps2_vu1.h
+@@ -359,7 +359,7 @@ private:
+     void lowerT(StepContext &context, uint32_t upperInstr);
+     template <class T>
+     uint64_t readyCycleT() const;
+-    template <class T, bool DeadFlags>
++    template <class T, bool DeadFlags, bool Plain = false>
+     bool stepPairT(StepContext &context);
+     bool blockPreconditions(StepContext &context, uint32_t pc, const uint32_t *words, size_t bytes) const;
+     bool stepInterpreted(StepContext &context);
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+index b1ed790..8e2edec 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+@@ -530,7 +530,7 @@ VU1_STEP_INLINE uint64_t VU1Interpreter::readyCycleT() const
+     return ready;
+ }
+ 
+-template <class T, bool DeadFlags>
++template <class T, bool DeadFlags, bool Plain>
+ VU1_STEP_INLINE bool VU1Interpreter::stepPairT(StepContext &context)
+ {
+     constexpr const DecodedInstructionPair &k = T::value;
+@@ -638,6 +638,21 @@ VU1_STEP_INLINE bool VU1Interpreter::stepPairT(StepContext &context)
+     m_state.vf[0][3] = 1.0f;
+     m_state.vi[0] = 0;
+ 
++    // Plain: par intermedio de un bloque que no salta ni termina. blockPreconditions garantiza que al
++    // entrar no había salto, bit E ni final pendientes, y solo el último par del bloque puede crearlos, así
++    // que basta con avanzar el PC (el par siguiente está en el bloque, sin pasar del final de la memoria).
++    if constexpr (Plain)
++    {
++        m_state.pc += 8u;
++        ++m_cycle;
++        m_state.cycles = m_cycle;
++        if (m_cycle >= m_nextCommitCycle)
++            commitReadyPipelines();
++        if (m_xgkick.active)
++            progressXgkick();
++        return true;
++    }
++
+     uint32_t nextPc = m_state.pc + 8u;
+     if (nextPc >= context.codeSize)
+         nextPc = 0u;
+@@ -700,8 +715,8 @@ struct VU1CompiledAccess
+     using P = VU1Interpreter::DecodedInstructionPair;
+     using C = VU1Interpreter::StepContext;
+     using Pipeline = VU1Interpreter::Pipeline;
+-    template <class T, bool DeadFlags>
+-    static VU1_STEP_INLINE bool step(VU1Interpreter &vu, C &c) { return vu.stepPairT<T, DeadFlags>(c); }
++    template <class T, bool DeadFlags, bool Plain = false>
++    static VU1_STEP_INLINE bool step(VU1Interpreter &vu, C &c) { return vu.stepPairT<T, DeadFlags, Plain>(c); }
+     static bool interpret(VU1Interpreter &vu, C &c) { return vu.stepInterpreted(c); }
+     static uint32_t pc(const VU1Interpreter &vu) { return vu.m_state.pc; }
+     static bool block(const VU1Interpreter &vu, C &c, uint32_t pc, const uint32_t *words, size_t bytes)

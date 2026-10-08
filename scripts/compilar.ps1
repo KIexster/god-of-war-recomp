@@ -68,6 +68,7 @@ $vu1DirectPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-direct.patch'
 $vu1CompiledPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-compiled.patch'
 $vu1BudgetDiagPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-budget-diag.patch'
 $vu1StickyPreservePatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-sticky-preserve.patch'
+$vu1BlocksPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-blocks.patch'
 $gsCoordinateAliasPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-coordinate-alias.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
@@ -161,6 +162,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1DirectPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1CompiledPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1BudgetDiagPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1StickyPreservePatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1BlocksPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsCoordinateAliasPatch)
 Pop-Location
 
