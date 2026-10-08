@@ -476,8 +476,18 @@ una mejora de rendimiento y no se comparan con el profiler anterior.
 
 ### Integracion de DIV compilado (PR #23)
 
-La especializacion de `DIV` del commit `754c970` conserva los selectores de componentes,
-la normalizacion del interprete, la saturacion con signo, los flags D/I y `queueQ(..., 7, ...)`.
-Opus informa de huellas identicas y 98 -> 96 ms en su reproduccion alternando ejecutables.
+La especialización de `DIV` del commit `754c970` conserva los selectores de componentes,
+la normalización del intérprete, la saturación con signo, los flags D/I y `queueQ(..., 7, ...)`.
+Opus informa de huellas idénticas y 98 → 96 ms en su reproducción alternando ejecutables.
 Esta cifra pertenece a su captura y no se extrapola al perfil de partida cargada.
-La integracion conserva el arreglo FTZ/DAZ de `247a9b3` y sus 2016 casos dirigidos.
+La integración conserva el arreglo FTZ/DAZ de `247a9b3` y sus 2016 casos dirigidos.
+
+El control anterior de 60 casos no ejecutaba `DIV`. Se amplía con **38.144 casos**
+que comparan registros bit a bit, Q, flags, ciclos y memoria entre compilado e
+intérprete: los 16 selectores, ceros con signo, subnormales, límites, Inf/NaN,
+patrones aleatorios, WAITQ y cortes/reanudaciones, con FTZ/DAZ activado y desactivado.
+Un fallo privado que cambia siete por seis ciclos falla en el primer caso, con
+`cycles=19/18`, aunque Q y flags finales coincidan. El generador compila tanto
+bloques como pares reales; la CLI exige que aparezca el control DIV completo.
+Se reproduce con `scripts\probar_vu1_compilada.cmd` en Windows o en la CI.
+Pasar estas pruebas confirma paridad semántica en esos casos; no mide una ganancia de FPS.

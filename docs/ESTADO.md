@@ -2355,3 +2355,27 @@ esa segunda vista y cerrar sus handles de hilos. La espera procedural de
 `scripts\probar_perfil.cmd` falla antes de los cambios y pasa después, sin
 usar el juego. Falta repetir el muestreo con esa atribución para distinguir
 esperas de cola, driver y sincronización; no se asigna todavía una causa.
+
+### Revisión de DIV compilado y PR #23 (8 de octubre)
+
+La parte FMAC SSE de `5e09b12` ya estaba integrada; la novedad de la PR es
+`754c970`, que especializa la instrucción inferior DIV. Se resuelven sus conflictos
+con `main` conservando el arreglo FTZ/DAZ de `247a9b3` y los cambios posteriores.
+No se incluye la optimización separada de flags de `df8c740`.
+
+Los 60 controles anteriores no ejercitaban DIV. Se añaden **38.144 casos**:
+16 selectores de componentes, valores límite y aleatorios, Q antes y después de
+WAITQ, flags D/I, escrituras directas/con colas y cortes/reanudaciones, con y sin
+FTZ/DAZ. Registros, Q y memoria coinciden bit a bit; flags y ciclos también.
+Un fallo inyectado solo en una copia privada (latencia 6 en lugar de 7) falla en
+el primer caso: Q y flags coinciden, pero los ciclos son `19/18`.
+
+La compilación oficial integrada termina con código 0, **65 parches** y las
+501 micromemorias locales. El ejecutable tiene **70.226.432 bytes**, SHA256
+`EB8479487D9E572250BE1FFE618E2A8110386B5B1A14423A2AF924C45410068F`.
+La auditoría de las **87 fuentes** no encuentra diferencias con los parches.
+Pasan **589/589 pruebas nativas**, incluidas **24 OpenGL efectivas**, los 60 casos
+VU1 anteriores y los nuevos de DIV, **100.800 FMAC aleatorios**, **2.016 FTZ/DAZ**,
+PAD2 y FINISH default/asíncrono. La CI de la integración también pasa en Linux.
+Las cifras de mejora de Opus pertenecen a sus capturas; esta revisión valida
+paridad y compilación y no certifica nuevos FPS de la partida cargada.
