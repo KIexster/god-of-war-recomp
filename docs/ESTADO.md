@@ -2379,3 +2379,32 @@ VU1 anteriores y los nuevos de DIV, **100.800 FMAC aleatorios**, **2.016 FTZ/DAZ
 PAD2 y FINISH default/asíncrono. La CI de la integración también pasa en Linux.
 Las cifras de mejora de Opus pertenecen a sus capturas; esta revisión valida
 paridad y compilación y no certifica nuevos FPS de la partida cargada.
+
+### Perfil GPU diferido en revisión (8 de octubre)
+
+Se prepara como propuesta aislada el parche 67
+`ps2recomp-gs-profile-async.patch`: consulta disponibilidad antes de leer
+timestamps, conserva ventanas y contadores juntos, limita las muestras y
+elimina los objetos de consulta al cerrar. La inspiración procede del
+perfilador de ICO PC; la implementación es propia y no altera el render.
+
+Se añaden ocho controles nativos con timestamps simulados. La compilación
+oficial Windows, OpenGL efectivo y la prueba del juego quedan pendientes:
+las herramientas locales no pudieron iniciar procesos durante este trabajo.
+GitHub rechazó crear el blob y la rama con 403 en el primer intento.
+No se cambia el estado de los componentes ni se certifican nuevos FPS.
+Detalles y límites de atribución temporal:
+[Perfil GPU sin esperas durante el render](RENDIMIENTO_PERFIL_GPU.md).
+
+Al reintentar, la ejecución fuera del sandbox funciona. El registro identifica
+un bloqueo de `node_repl.exe` al actualizar sus permisos (error Windows 32).
+Se actualiza la base a `9e34bff`, conservando la PR #24 de flags de VU1; el
+profiler ocupa ahora el lugar **67** de la cadena. La sesión de GitHub CLI es
+válida aunque la integración siga rechazando escritura.
+
+Las ocho regresiones aisladas pasan con MSVC, C++20 y `/O2 /W4 /WX`. Un
+control negativo invierte la guarda de disponibilidad en una copia temporal:
+compila, ejecuta las ocho pruebas y falla en cuatro, incluida la lectura
+prematura; después se restaura la copia. La compilación oficial se lanza con
+cuatro trabajos simultáneos en `E:\gowgpuprof`, que apunta a una carpeta privada
+del workspace. Los controles OpenGL y de juego siguen pendientes de esa build.
