@@ -196,6 +196,22 @@ dos fallos previos de heap/DMA. Las trazas temporales de escrituras se han retir
 Tras integrar también `ps2recomp-heap.patch`, el conjunto pasa 443/443 pruebas. Los resultados
 440/442 de arriba documentan la comparación antes de integrar esa corrección de heap/DMA.
 
+### Captura de comandos GS
+
+Para elegir un tramo de comandos del GS, `GOW_GS_REPLAY_TRACE` indica el archivo
+local de salida. `GOW_GS_REPLAY_AFTER` fija la espera desde la instalación del
+backend (0..3600 segundos, 150 por defecto); `GOW_GS_REPLAY_SECONDS` fija la
+duración (0,1..60 segundos, 3 por defecto). Los valores usan punto decimal.
+`GOW_GS_REPLAY_TEXFLUSH=1` exige además un TEXFLUSH del juego en estado 11 y guarda
+el estado inicial después de esa invalidación. Por defecto vale `0`. No fuerza
+una invalidación ni una transición del juego. Los comandos de presentación no
+inician la captura. El límite sigue siendo 64 MiB y puede cerrar el tramo antes
+del plazo. Las opciones mal formadas desactivan la captura con un mensaje antes
+de abrir el archivo; sin `GOW_GS_REPLAY_TRACE` no se instala el diagnóstico.
+El perfil limpia las cuatro variables. Esta captura serializa el GS y no sirve
+para medir FPS; los volcados permanecen en `logs/`, excluidos de Git.
+Ejemplo y repetición: [RENDERIZADO.md](RENDERIZADO.md#repetición-local-de-comandos-gs).
+
 ### Control experimental del feedback OpenGL
 
 `PS2X_GS_FEEDBACK_SNAPSHOT=1`, establecido antes de lanzar el ejecutable, protege

@@ -89,5 +89,9 @@ Se registran con `PS2_REGISTER_GAME_OVERRIDE` para el ELF `SCUS_973.99` (entry `
   que use una función del runtime que ningún parche define falla aquí y no solo en Windows.
   `tools/ci/comprobar_pruebas.py` solo falla por pruebas que no estén en `tests/fallos_conocidos.txt`
   (hoy vacía: la suite pasa entera). Cuando una prueba de la lista pase, la CI lo avisa para quitarla.
+  La CI incluye `tools/ci/pruebas_gs.cmake` en su checkout temporal de PS2Recomp para compilar y
+  ejecutar `tests/gs_replay_test.cpp`: captura/replay CPU, parser, truncamiento, opciones inválidas y
+  comienzo después de TEXFLUSH, sin el juego ni contexto OpenGL. Los archivos sintéticos quedan
+  en el directorio temporal de compilación.
 
 `.github/workflows/estado.yml` regenera el mapa de estado (`docs/estado/`) cuando cambian sus datos.

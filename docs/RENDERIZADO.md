@@ -496,18 +496,34 @@ snapshots inválidos se rechazan antes de modificar el estado del destino.
 
 El diagnóstico opcional `GOW_GS_REPLAY_TRACE` instala un wrapper en los overrides,
 conservando la selección CPU/hilo/OpenGL. Comienza después de 150 s del reloj del
-host y solo en estado 11; captura tres segundos con límite de 64 MiB. Guarda el
+host y solo en estado 11; captura tres segundos con límite de 64 MiB. Los plazos
+se pueden elegir con `GOW_GS_REPLAY_AFTER` (0..3600 s) y `GOW_GS_REPLAY_SECONDS`
+(0,1..60 s), usando punto decimal. El reloj comienza al instalar el backend;
+es distinto del reloj de las pulsaciones PAD. Guarda el
 estado inicial y final y los comandos, incluidos presentación y modo MXCSR.
 Serializa las llamadas al backend durante esta prueba: no se usa para medir FPS.
-Sin la variable no instala el wrapper. El perfil la elimina explícitamente.
+Sin la variable no instala el wrapper. El perfil elimina todas estas opciones.
+
+`GOW_GS_REPLAY_TEXFLUSH=1` espera además al primer TEXFLUSH que envíe el juego
+después del plazo, en estado 11. El estado inicial se guarda **después** de ese
+comando y de sincronizar la cola; el TEXFLUSH inicial queda representado por ese
+estado. No añade un TEXFLUSH ni invalida antes la caché del renderer. La opción
+vale `0` por defecto y permite capturar una entrada con la página CPU invalidada
+para importar el mismo estado en GPU. Si el juego no envía esa frontera, la
+captura no comienza. Las opciones inválidas desactivan el diagnóstico con un
+mensaje, antes de abrir o reemplazar el archivo de salida.
 
 ```powershell
 # Primero compilar el port con todos los parches y después la herramienta.
 .\scripts\compilar_replay_gs.cmd
 $env:GOW_GS_REPLAY_TRACE = "$PWD\logs\tramo_gs.bin"
-# Ejecutar el control del juego con CPU; mantenerlo abierto al menos 160 s.
+$env:GOW_GS_REPLAY_AFTER = '470'
+$env:GOW_GS_REPLAY_SECONDS = '3'
+$env:GOW_GS_REPLAY_TEXFLUSH = '1'
+# Ejecutar el control del juego con CPU; mantenerlo abierto después del plazo
+# hasta que el registro confirme inicio en estado 11 y fin completo=1.
 # Al terminar, quitar la variable antes de otros controles.
-Remove-Item Env:GOW_GS_REPLAY_TRACE
+Remove-Item Env:GOW_GS_REPLAY_TRACE, Env:GOW_GS_REPLAY_AFTER, Env:GOW_GS_REPLAY_SECONDS, Env:GOW_GS_REPLAY_TEXFLUSH
 .\logs\repetir_gs.exe .\logs\tramo_gs.bin cpu --lockstep logs
 .\logs\repetir_gs.exe .\logs\tramo_gs.bin compute --lockstep logs
 .\logs\repetir_gs.exe .\logs\tramo_gs.bin hardware --lockstep logs
@@ -520,7 +536,10 @@ rechaza esa comparación y requiere capturar desde una frontera TEXFLUSH.
 Compara después la VRAM y las presentaciones de ambos backends. `--lockstep`
 localiza el primer comando que cambia la VRAM de forma distinta; los códigos de
 salida son 0 (coincidencia), 1 (divergencia), 2 (archivo/contexto inválido) y 3
-(la repetición no reproduce la captura o una lectura esperada). Comprueba que
+(la repetición no reproduce la captura o una lectura esperada). El informe del
+primer dibujo incluye TBP/TBW, dimensiones/filtro, TEX0/TEX1/TEXA, CLAMP,
+FBP/FBW/PSM, máscara, profundidad y scissor, para identificar lecturas y escrituras
+en la misma región de VRAM. Comprueba que
 OpenGL esté activo; un fallback CPU no certifica paridad GPU. Las variantes de
 hardware pueden usar compute mientras compilan: los contadores se muestran para
 comprobar qué trabajo ejecutaron. El formato binario es local y requiere el

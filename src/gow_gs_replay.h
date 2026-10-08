@@ -8,7 +8,10 @@
 #include "runtime/gs/gs_frontend.h"
 #include "runtime/gs/gs_threaded_backend.h"
 #include "runtime/ps2_memory.h"
+#include <charconv>
 #include <chrono>
+#include <cmath>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -21,6 +24,28 @@ namespace gow_gs_replay
 {
     constexpr uint64_t kLimit = 64ull << 20;
     constexpr uint32_t kRecordLimit = 16u << 20;
+    // GOW-Port: seleccionar un tramo tardío sin cambiar el límite del volcado.
+    struct CaptureOptions { double after=150, seconds=3; bool atTextureFlush=false; };
+    inline bool captureOptions(const char *after,const char *seconds,const char *texflush,
+                               CaptureOptions &out,const char *&error) {
+        CaptureOptions candidate; error=nullptr;
+        const auto number=[](const char *text,double minimum,double maximum,double &value) {
+            if(!text) return true;
+            double parsed=0;
+            const char *end=text+std::strlen(text);
+            const auto result=std::from_chars(text,end,parsed);
+            if(result.ec!=std::errc{} || result.ptr!=end || !std::isfinite(parsed) ||
+               parsed<minimum || parsed>maximum) return false;
+            value=parsed; return true;
+        };
+        if(!number(after,0,3600,candidate.after)) error="GOW_GS_REPLAY_AFTER: intervalo válido 0..3600 s";
+        else if(!number(seconds,0.1,60,candidate.seconds)) error="GOW_GS_REPLAY_SECONDS: intervalo válido 0.1..60 s";
+        else if(texflush && std::strcmp(texflush,"0") && std::strcmp(texflush,"1"))
+            error="GOW_GS_REPLAY_TEXFLUSH: valores válidos 0 o 1";
+        if(error) return false;
+        candidate.atTextureFlush=texflush && !std::strcmp(texflush,"1");
+        out=candidate; return true;
+    }
     enum class Op : uint8_t { Initial=1, Submit, Clut, Transfer, Upload, TextureFlush,
                              Clear, Consume, Write, Reset, Read, Present, Flush, Sync, Mxcsr, End };
     struct Header { char magic[8]={'G','O','W','G','S','R','1',0};
@@ -92,7 +117,7 @@ namespace gow_gs_replay
         std::ofstream file; mutable std::recursive_mutex mutex;
         std::chrono::steady_clock::time_point created=std::chrono::steady_clock::now(),started;
         double after, duration; uint64_t bytes=sizeof(Header); uint32_t mxcsr=UINT32_MAX;
-        bool active=false, finished=false;
+        bool active=false, finished=false, waitForTextureFlush=false;
         bool write(Op op,const void *p,uint32_t n) {
             const auto tag=uint8_t(op); file.write(reinterpret_cast<const char*>(&tag),1);
             file.write(reinterpret_cast<const char*>(&n),4);
@@ -117,10 +142,11 @@ namespace gow_gs_replay
             if(bytes+5+payload.size()>kLimit) return false;
             const bool ok=write(op,payload.data(),uint32_t(payload.size())); file.flush(); return ok;
         }
-        bool recording(uint32_t nextSize=0,bool allowStart=false) {
+        bool recording(uint32_t nextSize=0,bool allowStart=false,bool atTextureFlush=false) {
             if(finished) return false;
             const auto now=std::chrono::steady_clock::now();
             if(!active) {
+                if(waitForTextureFlush && !atTextureFlush) return false;
                 // El hilo de presentación no debe leer variables que escribe el EE.
                 // Solo empezar al recibir sus comandos de dibujo/transferencia.
                 if(memory && !allowStart) return false;
@@ -129,7 +155,8 @@ namespace gow_gs_replay
                 if((memory && state!=11) || std::chrono::duration<double>(now-created).count()<after) return false;
                 started=now; active=snapshot(Op::Initial);
                 if(!active) { finished=true; file.close(); std::fprintf(stderr,"[gow-gs:replay] error de estado inicial\n"); return false; }
-                std::fprintf(stderr,"[gow-gs:replay] inicio state=%u\n",state);
+                std::fprintf(stderr,"[gow-gs:replay] inicio state=%u host=%.3f texflush=%u\n",state,
+                    std::chrono::duration<double>(now-created).count(),unsigned(atTextureFlush));
             }
             // Reserva espacio para el estado final incluso con readback grande.
             if(std::chrono::duration<double>(now-started).count()>=duration ||
@@ -144,8 +171,9 @@ namespace gow_gs_replay
         }
     public:
         Backend(std::unique_ptr<GSRasterBackend> backend,PS2Memory *mem,
-                const std::filesystem::path &path,double delay=150,double seconds=3)
-            :inner(std::move(backend)),memory(mem),file(path,std::ios::binary),after(delay),duration(seconds) {
+                const std::filesystem::path &path,double delay=150,double seconds=3,bool atTextureFlush=false)
+            :inner(std::move(backend)),memory(mem),file(path,std::ios::binary),after(delay),duration(seconds),
+             waitForTextureFlush(atTextureFlush) {
             Header h{}; file.write(reinterpret_cast<const char*>(&h),sizeof(h)); finished=!file;
             if(finished) std::fprintf(stderr,"[gow-gs:replay] no se pudo abrir el archivo\n");
         }
@@ -160,7 +188,16 @@ namespace gow_gs_replay
         void LoadClut(const GSTex0Reg &a,const GSTexClutReg &b) override { std::lock_guard lock(mutex); Clut v{a,b}; if(recording(sizeof(v))) write(Op::Clut,v); inner->LoadClut(a,b); }
         void BeginTransfer(const GSTransferCommand &v) override { std::lock_guard lock(mutex); if(recording(sizeof(v),true)) write(Op::Transfer,v); inner->BeginTransfer(v); }
         void UploadImage(const uint8_t *p,uint32_t n) override { std::lock_guard lock(mutex); if(recording(n)) write(Op::Upload,p,n); inner->UploadImage(p,n); }
-        void TextureFlush() override { std::lock_guard lock(mutex); if(recording()) write(Op::TextureFlush,nullptr,0); inner->TextureFlush(); }
+        void TextureFlush() override {
+            std::lock_guard lock(mutex);
+            if(waitForTextureFlush && !active) {
+                // GOW-Port: empezar DESPUÉS del TEXFLUSH recibido del juego. No añadir
+                // otro ni borrar la caché antes de tiempo; el snapshot sincroniza la cola.
+                inner->TextureFlush(); recording(0,true,true); return;
+            }
+            if(recording()) write(Op::TextureFlush,nullptr,0);
+            inner->TextureFlush();
+        }
         void Flush() override { std::lock_guard lock(mutex); if(recording()) write(Op::Flush,nullptr,0); inner->Flush(); }
         void Sync(GSSyncReason v) override { std::lock_guard lock(mutex); if(recording(sizeof(v))) write(Op::Sync,v); inner->Sync(v); }
         PresentationFrame Present(const GSPresentationRequest &v) override { std::lock_guard lock(mutex); if(recording(sizeof(v))) write(Op::Present,v); return inner->Present(v); }
@@ -192,6 +229,14 @@ namespace gow_gs_replay
         if(const auto *p=std::getenv("GOW_GS_REPLAY_TRACE");p && *p) path=p;
 #endif
         if(path.empty()) return;
-        gs.setRasterBackend(std::make_unique<Backend>(GSThreadedBackend::MakeDefault(),&memory,path));
+        CaptureOptions options; const char *error=nullptr;
+        if(!captureOptions(std::getenv("GOW_GS_REPLAY_AFTER"),std::getenv("GOW_GS_REPLAY_SECONDS"),
+                           std::getenv("GOW_GS_REPLAY_TEXFLUSH"),options,error)) {
+            std::fprintf(stderr,"[gow-gs:replay] %s; captura desactivada\n",error); return;
+        }
+        std::fprintf(stderr,"[gow-gs:replay] espera=%.3f duracion=%.3f texflush=%u\n",
+            options.after,options.seconds,unsigned(options.atTextureFlush));
+        gs.setRasterBackend(std::make_unique<Backend>(GSThreadedBackend::MakeDefault(),&memory,path,
+            options.after,options.seconds,options.atTextureFlush));
     }
 }

@@ -173,6 +173,15 @@ namespace {
         GSPrimitiveBatch batch{}; replay::pod(record,batch); const auto &s=batch.state;
         std::cout<<std::setprecision(17)<<"prim="<<unsigned(s.prim.type)<<" tme="<<s.prim.tme<<" fst="<<s.prim.fst<<" psm="<<unsigned(s.context.tex0.psm)
                  <<" frame="<<s.context.frame.fbp<<" test="<<std::hex<<s.context.test<<" alpha="<<s.context.alpha<<std::dec<<'\n';
+        const auto &tex=s.context.tex0; const auto &frame=s.context.frame; const auto &z=s.context.zbuf;
+        std::cout<<"textura tbp="<<tex.tbp0<<" tbw="<<unsigned(tex.tbw)<<" dimensiones="<<s.textureWidth<<','<<s.textureHeight
+                 <<" linear="<<s.linearFilter<<" tfx="<<unsigned(tex.tfx)<<" tcc="<<unsigned(tex.tcc)
+                 <<" clamp="<<std::hex<<s.context.clamp<<" tex1="<<s.context.tex1<<std::dec
+                 <<" texa="<<unsigned(s.texa.ta0)<<','<<s.texa.aem<<','<<unsigned(s.texa.ta1)<<'\n';
+        std::cout<<"destino fbp="<<frame.fbp<<" fbw="<<frame.fbw<<" psm="<<unsigned(frame.psm)
+                 <<" mask="<<std::hex<<frame.fbmsk<<std::dec<<" zbp="<<z.zbp<<" zpsm="<<unsigned(z.psm)
+                 <<" zmask="<<z.zmask<<" scissor="<<s.context.scissor.x0<<','<<s.context.scissor.x1
+                 <<','<<s.context.scissor.y0<<','<<s.context.scissor.y1<<'\n';
         for(unsigned i=0;i<batch.vertexCount;++i) { const auto &v=batch.vertices[i];
             std::cout<<"v"<<i<<" xy="<<v.x<<','<<v.y<<" z="<<v.z<<" stq="<<v.s<<','<<v.t<<','<<v.q<<" uv="<<v.u<<','<<v.v<<'\n'; }
     }

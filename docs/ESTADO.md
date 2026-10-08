@@ -1927,3 +1927,51 @@ muestras de Clip finitas/completas, 736 tripletas tardías no nulas y 192 contex
 sin punteros inválidos, ciclos ni truncamientos. No aparece VU reservada.
 Esto verifica la imagen de un ataque; combate contra enemigos y FPS sostenidos
 siguen pendientes.
+
+### Captura GS tardía desde TEXFLUSH (7 de octubre)
+
+El diagnóstico permite elegir espera y duración con `GOW_GS_REPLAY_AFTER` y
+`GOW_GS_REPLAY_SECONDS`. `GOW_GS_REPLAY_TEXFLUSH=1` inicia el tramo después del
+primer TEXFLUSH del juego en estado 11 que cumpla el plazo. No añade una
+invalidación: conserva los comandos anteriores en el estado inicial y los
+posteriores en la traza. Sin archivo de captura no se instala el wrapper;
+las opciones inválidas se rechazan antes de abrirlo. El perfil limpia las
+cuatro variables. Valores y límites: [CONTROLES.md](CONTROLES.md#captura-de-comandos-gs).
+
+La regresión falla con el comportamiento de inicio anterior y pasa con la
+frontera. Comprueba caché antigua sin borrar antes de tiempo, TEXFLUSH del menú
+y anterior al plazo, presentación sin inicio, bytes CT24 pendientes, comandos
+previos excluidos de la traza y repetición exacta de toda la VRAM final.
+La prueba cierra sus lectores antes de borrar los archivos en Windows. El
+helper ahora rechaza también errores negativos de proceso: `ERRORLEVEL 1`
+por sí solo dejó pasar el cierre anómalo de una primera versión de este test.
+La CI compila **y ejecuta** el control CPU sin el juego ni OpenGL.
+
+Tras `2_recompilar_rapido.cmd`, el control CPU de 520 s carga una copia privada
+de la tarjeta de Claude, con FMV omitido. El original conserva su SHA256.
+Las dieciséis imágenes son distintas; la última muestra a Kratos atacando
+junto al punto de guardado, con HUD y estelas. Estado final 11 sin carga
+pendiente, 128 Clip finitos/completos, 368 tripletas tardías no nulas y 192
+contextos sin punteros inválidos, ciclos ni truncamientos; cero VU reservada.
+
+Con espera 470 s y duración 3 s, el inicio ocurre a 470,287 s desde el backend,
+después de TEXFLUSH. El archivo completo ocupa 54.535.037 bytes: 146.015
+registros, 145.469 dibujos y dos presentaciones. CPU ×3 reproduce el End, toda
+la VRAM, el estado y ambas imágenes exactamente, entre pasadas y frente al
+original. La página inicial está invalidada y permite importar el estado en GPU.
+
+Compute sigue divergiendo: el primer dibujo es un sprite UV PSMCT32 de 32×416,
+con 1874 bytes distintos desde la dirección 65540. La primera divergencia está
+en el registro 3; los finales y las dos presentaciones difieren de CPU. Las
+tres pasadas conservan los contadores de raster pero varían algunos bytes
+de VRAM, y una transición cambia también el primer cuadro visible. Esta traza
+delimita un fallo de GS en una escena tardía; no acredita paridad GPU ni FPS.
+Los datos de juego y las imágenes permanecen bajo `logs/`, excluidos de Git.
+
+El sprite se redujo a una traza local de un dibujo: TBP=0/FBP=0, TBW=FBW=8,
+CLAMP en ambos ejes, bilinear, textura declarada 1024×1024 y máscara de alpha.
+CPU ×3 queda exacto. Compute ×3, con y sin snapshot de feedback, conserva
+la misma diferencia de 1874 bytes y permanece estable entre pasadas. La
+presentación reducida sigue idéntica porque esa escritura no cambia el buffer
+visible actual. Proteger la fuente de toda la primitiva no resuelve este caso;
+queda por contrastar el orden de lectura de páginas y la caché CPU de 8 KiB.
