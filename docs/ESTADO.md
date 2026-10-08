@@ -2075,3 +2075,41 @@ La compilación oficial usa el intérprete si no se enlaza C++ VU1 derivado
 de microprogramas locales. La infraestructura compilada queda verificada
 con código procedural; falta integrarla en el flujo de compilación local
 y repetir las medidas de rendimiento con los flags corregidos.
+
+### Alias de coordenadas por ancho y vuelta de VRAM (8 de octubre)
+
+El siguiente control procedural detecta un riesgo distinto del cruce color/Z:
+con FBW=1, `(0,32)` y `(64,0)` de CT32 apuntan al mismo pixel. También se
+repite una dirección al superar las 512 páginas de los 4 MiB. Compute ordena
+primitivas por XY dentro de un tile; el interlock hardware también se aplica
+al pixel XY. Ninguno ordenaba esos dos XY distintos del mismo destino.
+
+Un lote con 64 sprites sobre el primer XY y otro sobre su alias pierde
+6144 bytes en CT32/CT24 o 8192 en CT16/CT16S frente a CPU. Los controles
+con páginas disjuntas y coordenadas repetidas dentro del ancho coinciden.
+La base FBP=511 permite comprobar además el cruce del final de VRAM.
+
+`ps2recomp-gs-coordinate-alias.patch`, aplicado al final de los 55 anteriores,
+conserva por separado el riesgo de coordenadas en color y profundidad.
+Completa el lote si el destino actual comparte páginas con uno anterior y
+alguno supera el ancho de fila o las 512 páginas lógicas. La base FBP por
+sí sola no activa el riesgo. La detección es conservadora por página: dos
+escrituras fuera del dominio normal pueden separar lotes aunque sus pixels
+sean distintos. No ordena alias internos de una sola primitiva.
+
+Las dos regresiones opcionales cubren cuatro formatos de color, ambos
+sentidos del alias, vuelta de VRAM, Z32/Z16 con color disjunto, Z inactivo
+y controles que mantienen un único lote. Comparan los 4 MiB y comprueban
+los contadores de rasterizado, sin aceptar fallback CPU como OpenGL.
+El candidato pasa **587/587** pruebas nativas, incluidas 22 de OpenGL real.
+Ambas regresiones fallan, también por los bytes de VRAM, al enlazarlas con
+el backend anterior y el mismo resto del runtime.
+
+La compilación oficial completa termina con código 0. Los **56 parches**
+aplican en orden y las **85 fuentes** auditadas coinciden. La repetición
+CPU ×2 conserva los trece controles, End y ambas imágenes exactos. Compute
+×4 sin snapshot y ×4 con él también quedan estables; los 4 MiB del End y
+las imágenes coinciden byte a byte con el backend anterior. No añade lotes
+a esa traza: mantiene 648, con 99.402 primitivas/53.757 tiles y los mismos
+contadores de CLUT y sincronización. Sigue difiriendo de CPU en 739.502
+bytes y dos presentaciones; este arreglo no acredita paridad ni más FPS.

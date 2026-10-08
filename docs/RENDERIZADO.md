@@ -1066,3 +1066,24 @@ Es una observación de entrada: no certifica que el método se haya invocado, qu
 visibles ni que se haya enviado o dibujado geometría. Conserva los registros y la memoria
 del juego y llama siempre al original, también en las reanudaciones. El perfil de rendimiento
 elimina la variable para evitar mezclar este diagnóstico con la medición.
+
+## Coordenadas distintas sobre el mismo destino
+
+`ps2recomp-gs-coordinate-alias.patch` ordena primitivas cuyo color o Z
+comparten páginas físicas cuando las coordenadas superan el ancho FBW o
+las 512 páginas lógicas de VRAM. Por ejemplo, con FBW=1, CT32 `(0,32)` y
+`(64,0)` son la misma dirección: ni los tiles compute ni el interlock por
+pixel XY protegían ese acceso. Antes del parche, el control procedural
+pierde 6144–8192 bytes frente a CPU. Después coinciden los 4 MiB.
+
+La detección es conservadora por página, separa color y profundidad y se
+reinicia con cada lote. Conserva lotes de coordenadas normales y páginas
+disjuntas, incluso cuando FBP atraviesa el final de VRAM. Dos controles
+OpenGL reales cubren CT32/24/16/16S, Z32/Z16, ambos sentidos del alias,
+Z inactivo y vuelta de memoria. Fallan con el backend anterior; la suite
+nativa integrada pasa 587/587, con 22 controles OpenGL.
+
+En la traza de partida comparada, los End e imágenes quedan exactamente
+iguales al backend previo y siguen siendo 648 lotes. No certifica una
+ganancia de FPS. El alias dentro de una sola primitiva y la diferencia
+de feedback entre CPU y GPU siguen pendientes.
