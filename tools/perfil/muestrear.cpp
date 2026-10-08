@@ -41,7 +41,13 @@ int main(int argc, char **argv)
     // Muestras atribuidas al primer marco del ejecutable (útil cuando el PC está en una DLL del sistema).
     std::unordered_map<DWORD, std::unordered_map<DWORD64, uint32_t>> callers;
     SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS);
-    SymInitialize(process, nullptr, TRUE);
+    // GOW-Port: una sola sesion DbgHelp por proceso; repetirla produce ERROR_INVALID_PARAMETER.
+    if (!SymInitialize(process, nullptr, TRUE))
+    {
+        std::fprintf(stderr, "SymInitialize falló (%lu)\n", GetLastError());
+        CloseHandle(process);
+        return 1;
+    }
     DWORD64 exeBase = 0;
     {
         HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, pid);
@@ -106,10 +112,6 @@ int main(int argc, char **argv)
         Sleep(1);
     }
 
-    SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS);
-    if (!SymInitialize(process, nullptr, TRUE))
-        std::fprintf(stderr, "SymInitialize falló (%lu)\n", GetLastError());
-
     // Ordenar los hilos por muestras fuera de esperas del sistema (los más ocupados primero).
     alignas(SYMBOL_INFO) char buffer[sizeof(SYMBOL_INFO) + 512];
     auto resolve = [&](DWORD64 pc)
@@ -153,7 +155,30 @@ int main(int argc, char **argv)
         std::sort(sorted.rbegin(), sorted.rend());
         for (size_t i = 0; i < sorted.size() && i < maxFunctions; ++i)
             std::printf("  %5.1f%%  %s\n", 100.0 * sorted[i].first / report.total, sorted[i].second.c_str());
+        // GOW-Port: atribuir las muestras en DLLs al primer marco recuperado del ejecutable.
+        // Son una segunda vista de esas mismas muestras, no tiempo adicional ni CPU exclusiva.
+        const auto recovered = callers.find(report.tid);
+        if (recovered != callers.end() && !recovered->second.empty())
+        {
+            std::map<std::string, uint64_t> names;
+            uint64_t recoveredCount = 0u;
+            for (const auto &[pc, n] : recovered->second)
+            {
+                names[resolve(pc)] += n;
+                recoveredCount += n;
+            }
+            std::vector<std::pair<uint64_t, std::string>> ranked;
+            for (const auto &[name, n] : names)
+                ranked.push_back({n, name});
+            std::sort(ranked.rbegin(), ranked.rend());
+            std::printf("  marcos del ejecutable desde DLL: %llu/%llu muestras (porcentaje del hilo)\n",
+                        static_cast<unsigned long long>(recoveredCount), static_cast<unsigned long long>(report.total));
+            for (size_t i = 0; i < ranked.size() && i < maxFunctions; ++i)
+                std::printf("    %5.1f%%  %s\n", 100.0 * ranked[i].first / report.total, ranked[i].second.c_str());
+        }
     }
+    for (auto &[tid, handle] : threads)
+        CloseHandle(handle);
     SymCleanup(process);
     CloseHandle(process);
     return 0;

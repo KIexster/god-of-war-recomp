@@ -2344,3 +2344,14 @@ partida, cierra solo su instancia, marca el registro como inválido y restaura
 el entorno; el selector impide usarlo para calcular FPS o exportar JSON.
 Pasan cuatro controles de scripts con procesos simulados y nueve del selector,
 sin lanzar ni detener juegos o compiladores ajenos.
+
+El siguiente diagnóstico de CPU utiliza una copia privada enlazada con
+símbolos públicos a partir de los objetos optimizados. No sustituye el EXE
+normal ni sirve para comparar FPS. El muestreo de 30 s en estado 11 muestra
+esperas en el hilo principal y el del GS, pero descubre dos problemas de la
+herramienta: inicialización duplicada de DbgHelp (error 87) y marcos de
+llamadores recogidos sin imprimirlos. Se corrige el perfilador para mostrar
+esa segunda vista y cerrar sus handles de hilos. La espera procedural de
+`scripts\probar_perfil.cmd` falla antes de los cambios y pasa después, sin
+usar el juego. Falta repetir el muestreo con esa atribución para distinguir
+esperas de cola, driver y sincronización; no se asigna todavía una causa.

@@ -41,6 +41,15 @@ Las unidades de C++ generado deben recompilarse para incluir la información de 
 archivos `Unity\*.cxx` de `ps2EntryRunner`, como hace `2_recompilar_rapido.cmd`). Las muestras en
 DLLs del sistema se atribuyen, cuando la pila se puede recorrer, al primer marco del ejecutable.
 
+El perfilador imprime esa atribución en `marcos del ejecutable desde DLL`:
+es una segunda vista de las muestras, con el porcentaje respecto al total
+del mismo hilo, y no tiempo adicional ni CPU exclusiva. Conserva también
+la vista del contador de programa. La revisión corrige la inicialización
+duplicada de DbgHelp (error 87) y la omisión de esos marcos en la salida.
+`scripts\probar_perfil.cmd` ejecuta una regresión Windows sin el juego: una
+espera en una DLL recupera el llamador procedural propio. Falla con el
+perfilador anterior y pasa con ambos arreglos.
+
 ## getenv en bucles calientes (2026-10-07)
 
 Con OpenGL, `GOW_SKIP_FMV=1` y `GOW_FAST_BOOT=1`, el perfil de la partida mostraba un **38 % del
