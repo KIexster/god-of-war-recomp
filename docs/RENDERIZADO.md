@@ -640,6 +640,33 @@ sprite inicial aislado también queda estable en hardware efectivo, con un
 dibujo y cero tiles compute en las pasadas calientes, aunque conserva los
 1874 bytes distintos de CPU. Son dos diferencias que requieren pruebas propias.
 
+La reducción posterior acota una dependencia color/Z: el prefijo hasta el registro
+68.897 permanece estable en cinco pasadas; añadir el sprite siguiente cambia
+64–128 bytes entre algunas pasadas. Ambos sprites usan FBP=ZBP=320, FBW=1 y
+PSMCT24/PSMZ24, con prueba/escritura Z. Sus rectángulos XY son disjuntos, pero
+sus direcciones físicas de color y profundidad se cruzan por el swizzle.
+Separarlos elimina esa variación en ocho pasadas del prefijo. La búsqueda por
+prefijos no prueba que la variación sea monótona ni que sea el primer fallo global.
+
+`ps2recomp-gs-target-alias.patch` conserva bitsets distintos para las páginas de
+color y los accesos de profundidad del lote. Si la siguiente primitiva cruza
+color con Z del lote anterior, lo completa antes de añadirla, también cuando Z
+solo se lee. Los buffers disjuntos y Z sin lectura/escritura mantienen su lote.
+No sustituye el orden interno de un dibujo ni resuelve alias entre píxeles de
+una sola primitiva; tampoco implementa la caché GS de 8 KiB. La detección por
+página es conservadora y puede añadir sincronizaciones.
+
+El control procedural CT24/Z24 difiere en 6144 bytes con el backend anterior;
+el backend integrado separa los dos dibujos y coincide en los 4 MiB con CPU.
+La compilación oficial completa y las 582 pruebas nativas pasan, incluidas
+veinte pruebas OpenGL con regresiones de alias en compute y hardware efectivo.
+El tramo real completo, en compute con cuatro pasadas con snapshot y cuatro
+sin él, conserva
+los trece controles, toda la VRAM final, el estado y ambas imágenes exactamente
+entre pasadas. Sigue difiriendo de CPU en 739.502 bytes y dos presentaciones.
+Los lotes pasan de 632 a 648, con las mismas 99.402 primitivas/53.757 tiles: esta
+corrección protege el orden y no acredita una mejora de FPS.
+
 El directorio puede ir con o sin `--lockstep`, antes o después de las opciones.
 Se crea si falta; un fallo al crear/exportar y las opciones inválidas devuelven 2.
 Las imágenes de varias pasadas llevan `replay_pasada_N_` para conservarlas. Si se

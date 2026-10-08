@@ -2006,3 +2006,32 @@ El control privado que elimina la caché de lectura del CPU altera 34.262
 bytes del End de ese sprite y tampoco iguala OpenGL: no se incorporó al
 runtime. Próximo paso: reducir el lote anterior al primer Flush variable y
 contrastarlo con fuentes protegidas y formatos de VRAM, conservando CPU.
+
+### Dependencia de color y profundidad en lotes OpenGL (7 de octubre)
+
+La reducción mediante End derivados de CPU acota la variación observada a
+los prefijos 68.897/68.898: el primero queda estable en cinco pasadas y el
+segundo cambia 64–128 bytes entre algunas pasadas. El nuevo sprite pertenece
+a una pareja que usa FBP=ZBP=320, FBW=1, PSMCT24/PSMZ24 y Z activo. Aunque
+los rectángulos XY son disjuntos, color y Z reinterpretan la misma memoria.
+Completar el lote antes del segundo sprite elimina la variación en ocho
+pasadas. Esta bisección no certifica monotonicidad ni primer fallo global.
+
+El caso procedural independiente del juego difiere de CPU en 6144 bytes
+antes del cambio y coincide en los 4 MiB después. El nuevo parche
+`ps2recomp-gs-target-alias.patch` separa lotes cuando páginas de color y
+profundidad se cruzan entre primitivas. Conserva el renderer CPU y se aplica
+después de los cincuenta parches anteriores. La detección es conservadora;
+el alias interno de una sola primitiva sigue fuera del arreglo.
+
+Tras la compilación oficial completa (código 0), el backend integrado repite el
+tramo real en compute cuatro veces con snapshot y cuatro sin él: trece controles estables, End, estado y ambas imágenes exactamente
+iguales entre pasadas. Son 648 lotes frente a los 632 anteriores y se
+conservan 99.402 primitivas/53.757 tiles. Todavía difiere de CPU en 739.502
+bytes y las dos presentaciones. No acredita paridad ni mejoras de FPS.
+
+Validación integrada: **582/582** pruebas nativas, incluidas veinte pruebas
+OpenGL; los controles nuevos cubren CT24/Z24 y CT32/Z32 compartidos, Z de
+solo lectura, Z inactivo y buffers disjuntos, en compute y hardware efectivo.
+También pasan las herramientas GS y las pruebas de argumentos/controles de la CLI.
+El modo por defecto conserva trece controles estables igual que el snapshot.

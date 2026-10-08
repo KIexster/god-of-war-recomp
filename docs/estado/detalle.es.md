@@ -37,7 +37,7 @@ Generado por `tools/estado/generar.py` a partir de `docs/estado/datos.toml` y `c
 | EE | INTC: VSync e interrupción del GS | 2 | ✅ Funciona |  |
 | EE | Controlador DMA | 2 | ✅ Funciona | Las cadenas fromSPR/toSPR ya copian la paleta de huesos; formas de Kratos y enemigos verificadas en partida |
 | EE | Temporizadores | 1 | ✅ Funciona |  |
-| GS / VU | GS: primitivas y framebuffer | 3 | 🔧 Parcial | CPU y OpenGL conservados; barco, Kratos, enemigos y HUD visibles tras el arreglo SPR; persisten diferencias CPU/OpenGL y falta certificar cobertura completa |
+| GS / VU | GS: primitivas y framebuffer | 3 | 🔧 Parcial | CPU y OpenGL conservados; barco, Kratos, enemigos y HUD visibles tras el arreglo SPR; orden color/Z validado en CPU, compute y hardware; tramo real compute estable con y sin snapshot; persisten diferencias CPU/OpenGL y falta certificar cobertura completa |
 | GS / VU | VIF1 y VU1 | 3 | 🔧 Parcial | MMI/EFU y cadenas SPR corregidos: modelos y HUD con formas correctas; cobertura aún parcial. Máscaras VU1: 35 % menos tiempo en una repetición con imagen idéntica, sin medir la mejora de FPS globales |
 | GS / VU | GS: texturas, CLUT y fuentes | 2 | 🔧 Parcial | HUD visible; bilineal y nearest STQ CPU/OpenGL verificados, incluidos límites 16.16 con signo, con patrones procedurales de PCSX2 software; feedback GPU estable en modo experimental; lotes de texturas regionales optimizados y verificados en los 13 PSM; quedan pendientes la caché GS real y la cobertura de fuentes/CLUT |
 | GS / VU | GIF (PATH1-3) | 2 | ✅ Funciona |  |

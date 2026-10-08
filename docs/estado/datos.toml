@@ -175,7 +175,7 @@ nombre = "GS / VU"
   nombre = { es = "GS: primitivas y framebuffer", en = "GS: primitives and framebuffer", pt = "GS: primitivas e framebuffer" }
   estado = "parcial"
   peso = 3
-  nota = { es = "CPU y OpenGL conservados; barco, Kratos, enemigos y HUD visibles tras el arreglo SPR; persisten diferencias CPU/OpenGL y falta certificar cobertura completa", en = "CPU and OpenGL retained; ship, Kratos, enemies and HUD visible after the SPR fix; CPU/OpenGL differences remain and complete coverage is unverified", pt = "CPU e OpenGL mantidos; barco, Kratos, inimigos e HUD visíveis após a correção SPR; persistem diferenças CPU/OpenGL e falta verificar a cobertura completa" }
+  nota = { es = "CPU y OpenGL conservados; barco, Kratos, enemigos y HUD visibles tras el arreglo SPR; orden color/Z validado en CPU, compute y hardware; tramo real compute estable con y sin snapshot; persisten diferencias CPU/OpenGL y falta certificar cobertura completa", en = "CPU and OpenGL retained; ship, Kratos, enemies and HUD visible after the SPR fix; color/Z ordering validated on CPU, compute and hardware; real compute replay stable with and without snapshot; CPU/OpenGL differences remain and complete coverage is unverified", pt = "CPU e OpenGL mantidos; barco, Kratos, inimigos e HUD visíveis após a correção SPR; ordem cor/Z validada em CPU, compute e hardware; replay real compute estável com e sem snapshot; persistem diferenças CPU/OpenGL e falta verificar a cobertura completa" }
 
   [[hardware.grupo.componente]]
   corto = "VIF1/VU1"

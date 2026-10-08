@@ -63,6 +63,7 @@ $gsNearestStqPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-nearest-stq.patch
 $gsFeedbackSnapshotPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-feedback-snapshot.patch'
 $gsBilinearStqPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-bilinear-stq.patch'
 $gsRegionPagesPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-region-pages.patch'
+$gsTargetAliasPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-target-alias.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -150,6 +151,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $gsNearestStqPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsFeedbackSnapshotPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsBilinearStqPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsRegionPagesPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsTargetAliasPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
