@@ -2200,3 +2200,47 @@ sus ventanas correspondían a estado 3 con carga pendiente. El nuevo selector
 cargada a ambos lados de las ventanas sin igualar los relojes del perfil y del
 mando. Estos controles verifican integración y la escena observada; todavía
 no certifican rendimiento sostenido, combate completo ni feedback GS fiel.
+
+### Validación de 61 parches y reducción del feedback (8 de octubre)
+
+La compilación oficial de `main` en `63c8a02` termina con código 0, con
+**61 parches**, 501 micromemorias locales y un ejecutable de 67.710.976 bytes.
+Las **87 fuentes** auditadas coinciden con la cadena publicada. FINISH sigue
+síncrono por defecto; el test con backend retenido pasa en modo default y en
+modo opcional asíncrono. Pasan también PAD2 y los **60 casos VU1 exactos**,
+con 139 pares compilados y 22 interpretados.
+
+El primer control local OpenGL pasa 584/587: tres casos coinciden en píxeles
+pero no alcanzan su requisito de hardware efectivo. Se conserva ese registro.
+Una repetición posterior pasa **587/587**, incluidas las **22 pruebas OpenGL**;
+sus variantes se compilan en menos de dos segundos. No se amplían los plazos
+ni se cambia el renderer para aceptar el primer fallo. La causa del fallo
+intermitente de hardware todavía no se ha demostrado.
+
+`repetir_gs --hasta-registro R` permite detener una traza en un Flush, Sync,
+Present o End ya registrado. Compara exactamente los 4 MiB y el estado portable
+CPU/candidato al terminar el prefijo, sin validar el End original cuando no se
+ejecuta. Rechaza otros comandos e índices fuera del archivo antes de crear el
+backend. El límite de 4096 controles se aplica al prefijo. Los controles CLI
+cubren once argumentos inválidos, fronteras, un End alterado y límites.
+
+El prefijo hasta el Flush **36**, después de **33 envíos**, reproduce la
+referencia CPU y queda idéntico en CPU ×2. Se hacen 64 pasadas por política,
+con restauración inicial exacta, los mismos 33 lotes y readback sincronizado:
+
+| Ruta | Comparaciones consecutivas de la misma ruta | Comparaciones con VRAM distinta |
+|---|---:|---:|
+| Compute habitual | 63 | 4 (59 o 890 bytes) |
+| Compute con snapshot | 63 | 0 |
+| Hardware habitual, shaders listos | 61 | 61 |
+| Hardware con snapshot, shaders listos | 48 | 0 |
+
+Las pasadas compute tienen 544 primitivas/1760 tiles; las de hardware caliente,
+544 primitivas/cero tiles. Las primeras 2 pasadas hardware habituales y las
+primeras 15 con snapshot usan compute durante la compilación de shaders; se
+excluyen de esas dos filas, junto con la transición a hardware. Las políticas
+con snapshot conservan **515.877 bytes distintos
+de CPU**, por lo que siguen devolviendo 1: estabilidad no implica paridad ni
+fidelidad a la caché PS2. En este prefijo no se presenta ningún cuadro y los
+readbacks/pausas no miden FPS. El corte reduce la investigación del feedback
+de 146.015 registros a 36, sin publicar la traza ni alterar el modo habitual.

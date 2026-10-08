@@ -248,3 +248,12 @@ repetir dibujos. Añade readbacks y puede cambiar los tiempos: no mide FPS.
 Se excluye TEXFLUSH porque no drena un lote GPU en el backend actual; observarlo
 con readback introduciría un corte nuevo. Las huellas sirven para localizar
 variación y no certifican igualdad byte a byte de los estados intermedios.
+
+`--hasta-registro R` termina la repetición en un Flush, Sync, Present o End
+registrado, con `Initial=0`. Permite reducir una diferencia a un tramo corto
+sin añadir un corte entre dibujos. Comprueba la frontera antes de crear el
+backend; rechaza Submit, TEXFLUSH, índices inexistentes y opciones duplicadas.
+En un prefijo compara exactamente los 4 MiB y el estado CPU/candidato y las
+presentaciones que ya ocurrieron. El End original y el resto de la captura
+quedan sin validar; seleccionar su registro End conserva la comprobación
+completa. El límite de 4096 controles se aplica solo al tramo seleccionado.
