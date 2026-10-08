@@ -1,5 +1,5 @@
 diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime/ps2_vu1.h
-index cefe321..fd61b92 100644
+index cefe321..410a0ed 100644
 --- a/ps2xRuntime/include/runtime/ps2_vu1.h
 +++ b/ps2xRuntime/include/runtime/ps2_vu1.h
 @@ -2,7 +2,9 @@
@@ -12,7 +12,22 @@ index cefe321..fd61b92 100644
  #include <cstdint>
  
  // GOW-Port: las funciones en línea de VU1 usan el mismo modo de coma flotante que ps2_vu1_*.cpp (sin
-@@ -352,14 +354,14 @@ private:
+@@ -12,6 +14,14 @@
+ #pragma fp_contract(off)
+ #endif
+ 
++// GOW-Port: funciones pequeñas que el código de VU1 generado debe expandir siempre (en funciones de bloque
++// grandes MSVC agota su presupuesto de expansión y las llama).
++#if defined(_MSC_VER)
++#define VU1_HOT_INLINE __forceinline
++#else
++#define VU1_HOT_INLINE inline __attribute__((always_inline))
++#endif
++
+ class GS;
+ class PS2Memory;
+ 
+@@ -352,14 +362,14 @@ private:
      bool stepPair(const DecodedInstructionPair &decoded, StepContext &context);
      // GOW-Port: versiones especializadas para el microcódigo compilado (ps2_vu1_compiled.inl).
      template <uint32_t Upper, uint32_t C>
@@ -29,7 +44,25 @@ index cefe321..fd61b92 100644
      bool stepPairT(StepContext &context);
      bool blockPreconditions(StepContext &context, uint32_t pc, const uint32_t *words, size_t bytes) const;
      bool stepInterpreted(StepContext &context);
-@@ -396,6 +398,28 @@ private:
+@@ -368,7 +378,7 @@ private:
+     bool pipelinesPending() const;
+ 
+     // GOW-Port: en línea; se llama varias veces por instrucción (~9 % del tiempo de VU1 como llamada).
+-    float normalizeOperand(float value) const
++    VU1_HOT_INLINE float normalizeOperand(float value) const
+     {
+         uint32_t bits = 0;
+         std::memcpy(&bits, &value, sizeof(bits));
+@@ -384,7 +394,7 @@ private:
+     // por separado, |exacto - resultado| < 2^-23 (|producto| + |resultado|). Si el resultado es normal,
+     // no está cerca de los extremos (exponente 2..0xFD) y no es mucho menor que el producto (2^-20), el
+     // exacto tiene su mismo signo, no es cero y no desborda: el valor no cambia y los flags son el signo.
+-    static bool productSumFlagsFast(float result, float product, uint8_t &laneFlags)
++    static VU1_HOT_INLINE bool productSumFlagsFast(float result, float product, uint8_t &laneFlags)
+     {
+         uint32_t r = 0u, p = 0u;
+         std::memcpy(&r, &result, sizeof(r));
+@@ -396,6 +406,32 @@ private:
          laneFlags = (r & 0x80000000u) != 0u ? 0x2u : 0u;
          return true;
      }
@@ -37,13 +70,17 @@ index cefe321..fd61b92 100644
 +    // a*b en long double). El producto de dos float cabe exacto en un double. Si el producto ya
 +    // redondeado es normal y lejos de los extremos (exponente 2..0xFD), el exacto no es cero, no desborda
 +    // ni subdesborda y tiene su signo: los flags son solo el signo.
-+    static uint8_t productStickyFlags(float a, float b, float rounded)
++    static VU1_HOT_INLINE uint8_t productStickyFlags(float a, float b, float rounded)
 +    {
 +        uint32_t bits = 0u;
 +        std::memcpy(&bits, &rounded, sizeof(bits));
 +        const uint32_t exponent = (bits >> 23) & 0xFFu;
 +        if (exponent >= 2u && exponent <= 0xFDu)
 +            return (bits & 0x80000000u) != 0u ? 0x2u : 0u;
++        return productStickyFlagsExact(a, b);
++    }
++    static uint8_t productStickyFlagsExact(float a, float b)
++    {
 +        const double exact = static_cast<double>(a) * static_cast<double>(b);
 +        const double magnitude = std::fabs(exact);
 +        uint8_t flags = std::signbit(exact) ? 0x2u : 0u;
@@ -59,10 +96,26 @@ index cefe321..fd61b92 100644
      uint32_t microAddressMask() const { return m_unit == Unit::VU1 ? 0x3FFFu : 0x0FFFu; }
      int32_t readBranchVi(uint8_t reg) const;
 diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
-index b1ed790..a127392 100644
+index b1ed790..32958b5 100644
 --- a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
 +++ b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
-@@ -132,7 +132,7 @@ namespace vu1c
+@@ -125,6 +125,15 @@ namespace vu1c
+         }
+     }
+ 
++    // applyDest con la máscara constante.
++    template <uint32_t Dest>
++    VU1_STEP_INLINE void applyDestT(float *dst, const float *src)
++    {
++        if constexpr ((Dest & 8u) != 0u) dst[0] = src[0];
++        if constexpr ((Dest & 4u) != 0u) dst[1] = src[1];
++        if constexpr ((Dest & 2u) != 0u) dst[2] = src[2];
++        if constexpr ((Dest & 1u) != 0u) dst[3] = src[3];
++    }
+     constexpr uint32_t crossLeft(uint32_t c) { return c == 0 ? 1u : c == 1 ? 2u : c == 2 ? 0u : 3u; }
+     constexpr uint32_t crossRight(uint32_t c) { return c == 0 ? 2u : c == 1 ? 0u : c == 2 ? 1u : 3u; }
+ }
+@@ -132,7 +141,7 @@ namespace vu1c
  // Una componente de una operación FMAC: calcula como execUpper (operandos normalizados, mismas expresiones
  // en float) y aplica normalizeFmacResult a esa componente.
  template <uint32_t Upper, uint32_t C>
@@ -71,7 +124,7 @@ index b1ed790..a127392 100644
  {
      constexpr vu1c::UpperInfo info = vu1c::classify(Upper);
      constexpr uint32_t fs = (Upper >> 11) & 0x1Fu;
-@@ -165,6 +165,9 @@ VU1_STEP_INLINE void VU1Interpreter::fmacLaneT(float &result, uint8_t &laneFlags
+@@ -165,6 +174,9 @@ VU1_STEP_INLINE void VU1Interpreter::fmacLaneT(float &result, uint8_t &laneFlags
          float acc = 0.0f;
          if constexpr (info.kind == vu1c::Kind::Madd || info.kind == vu1c::Kind::Msub || info.kind == vu1c::Kind::Opmsub)
              acc = normalizeOperand(m_state.acc[C]);
@@ -81,7 +134,7 @@ index b1ed790..a127392 100644
  
          if constexpr (cross && C == 3u)
              result = 0.0f;
-@@ -233,10 +236,11 @@ VU1_STEP_INLINE void VU1Interpreter::upperT()
+@@ -233,10 +245,11 @@ VU1_STEP_INLINE void VU1Interpreter::upperT()
          constexpr uint32_t fd = (Upper >> 6) & 0x1Fu;
          float result[4]{};
          uint8_t laneFlags[4]{};
@@ -97,7 +150,7 @@ index b1ed790..a127392 100644
          if constexpr (info.kind != vu1c::Kind::Max && info.kind != vu1c::Kind::Mini)
          {
              if constexpr (dest != 0u)
-@@ -245,7 +249,7 @@ VU1_STEP_INLINE void VU1Interpreter::upperT()
+@@ -245,7 +258,7 @@ VU1_STEP_INLINE void VU1Interpreter::upperT()
                  // antes de que nadie pueda leer estos. Con m_statusQuiet solo cuentan sus bits pegajosos,
                  // que el estado acumula en cualquier orden (y quedan igual al final del bloque).
                  // GOW-Port: no leer status ahora no hace muertos sus bits persistentes.
@@ -106,7 +159,49 @@ index b1ed790..a127392 100644
                  if (DeadFlags && m_statusQuiet)
                      m_state.status |= static_cast<uint32_t>((laneFlags[0] | laneFlags[1] | laneFlags[2] | laneFlags[3] | productSticky) & 0xFu) << 6;
                  else
-@@ -530,7 +534,7 @@ VU1_STEP_INLINE uint64_t VU1Interpreter::readyCycleT() const
+@@ -292,7 +305,7 @@ VU1_STEP_INLINE void VU1Interpreter::lowerT(StepContext &context, uint32_t upper
+         {
+             float tmp[4];
+             std::memcpy(tmp, vuData + addr, 16);
+-            applyDest(m_state.vf[ft], tmp, dest);
++            vu1c::applyDestT<dest>(m_state.vf[ft], tmp);
+         }
+     }
+     else if constexpr (opHi == 0x01u) // SQ
+@@ -401,12 +414,12 @@ VU1_STEP_INLINE void VU1Interpreter::lowerT(StepContext &context, uint32_t upper
+     {
+         float tmp[4];
+         std::memcpy(tmp, m_state.vf[fs], 16);
+-        applyDest(m_state.vf[ft], tmp, dest);
++        vu1c::applyDestT<dest>(m_state.vf[ft], tmp);
+     }
+     else if constexpr (opHi == 0x40u && funct >= 0x3Cu && funct2 == 0x31u) // MR32
+     {
+         float tmp[4] = {m_state.vf[fs][1], m_state.vf[fs][2], m_state.vf[fs][3], m_state.vf[fs][0]};
+-        applyDest(m_state.vf[ft], tmp, dest);
++        vu1c::applyDestT<dest>(m_state.vf[ft], tmp);
+     }
+     else if constexpr (opHi == 0x40u && funct >= 0x3Cu && funct2 == 0x34u) // LQI
+     {
+@@ -416,7 +429,7 @@ VU1_STEP_INLINE void VU1Interpreter::lowerT(StepContext &context, uint32_t upper
+         {
+             float tmp[4];
+             std::memcpy(tmp, vuData + addr, 16);
+-            applyDest(m_state.vf[ft], tmp, dest);
++            vu1c::applyDestT<dest>(m_state.vf[ft], tmp);
+         }
+         if constexpr (viS != 0)
+             m_state.vi[viS] = static_cast<int16_t>(m_state.vi[viS] + 1);
+@@ -453,7 +466,7 @@ VU1_STEP_INLINE void VU1Interpreter::lowerT(StepContext &context, uint32_t upper
+         result[1] = result[0];
+         result[2] = result[0];
+         result[3] = result[0];
+-        applyDest(m_state.vf[ft], result, dest);
++        vu1c::applyDestT<dest>(m_state.vf[ft], result);
+     }
+     else
+     {
+@@ -530,7 +543,7 @@ VU1_STEP_INLINE uint64_t VU1Interpreter::readyCycleT() const
      return ready;
  }
  
@@ -115,7 +210,7 @@ index b1ed790..a127392 100644
  VU1_STEP_INLINE bool VU1Interpreter::stepPairT(StepContext &context)
  {
      constexpr const DecodedInstructionPair &k = T::value;
-@@ -638,6 +642,21 @@ VU1_STEP_INLINE bool VU1Interpreter::stepPairT(StepContext &context)
+@@ -638,6 +651,21 @@ VU1_STEP_INLINE bool VU1Interpreter::stepPairT(StepContext &context)
      m_state.vf[0][3] = 1.0f;
      m_state.vi[0] = 0;
  
@@ -137,7 +232,7 @@ index b1ed790..a127392 100644
      uint32_t nextPc = m_state.pc + 8u;
      if (nextPc >= context.codeSize)
          nextPc = 0u;
-@@ -700,8 +719,8 @@ struct VU1CompiledAccess
+@@ -700,8 +728,8 @@ struct VU1CompiledAccess
      using P = VU1Interpreter::DecodedInstructionPair;
      using C = VU1Interpreter::StepContext;
      using Pipeline = VU1Interpreter::Pipeline;

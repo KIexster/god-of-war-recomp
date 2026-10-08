@@ -206,7 +206,7 @@ int main(int argc, char **argv)
         const size_t part = pairFns.size() % kParts;
         const std::string k = kStruct(code, pc, part);
         const std::string name = "p" + k.substr(1) + (dead ? "d" : "");
-        parts[part] << "    bool " << name << "(VU1Interpreter &vu, C &c)\n    {\n"
+        parts[part] << "    VU1C_FAST bool " << name << "(VU1Interpreter &vu, C &c)\n    {\n"
                     << "        return VU1CompiledAccess::step<" << k << ", " << (dead ? "true" : "false") << ">(vu, c);\n    }\n";
         declarations << "    bool " << name << "(VU1Interpreter &vu, C &c);\n";
         pairFns[key] = name;
@@ -322,7 +322,7 @@ int main(int argc, char **argv)
             const std::string name = "b" + hex4(head) + "_" + std::to_string(blockCases[head].size());
             const size_t part = blockCount % kParts;
             std::ostringstream body;
-            body << "    int " << name << "(VU1Interpreter &vu, C &c)\n    {\n"
+            body << "    VU1C_FAST int " << name << "(VU1Interpreter &vu, C &c)\n    {\n"
                  << "        static constexpr uint32_t words[" << words.size() << "] = {";
             for (size_t w = 0; w < words.size(); ++w)
                 body << (w ? ", " : "") << "0x" << std::hex << words[w] << "u" << std::dec;
@@ -356,7 +356,9 @@ int main(int argc, char **argv)
         "// Mismo modo de coma flotante que el intérprete de VU (MSVC no expande en línea entre modos distintos).\n"
         "#if defined(_MSC_VER)\n#pragma float_control(precise, on, push)\n#pragma fp_contract(off)\n#endif\n\n"
         "using P = VU1CompiledAccess::P;\nusing C = VU1CompiledAccess::C;\n\n"
-        "namespace vu1c_gen\n{\n    inline unsigned long long g_blockPairs = 0;\n}\n\n";
+        "namespace vu1c_gen\n{\n    inline unsigned long long g_blockPairs = 0;\n}\n\n"
+        "// Sin comprobaciones de desbordamiento de pila (/GS): los arreglos locales son de tamaño fijo.\n"
+        "#if defined(_MSC_VER)\n#define VU1C_FAST __declspec(safebuffers)\n#else\n#define VU1C_FAST\n#endif\n\n";
     const std::string footer = "\n#if defined(_MSC_VER)\n#pragma float_control(pop)\n#endif\n";
     const std::string base = argv[1];
     for (size_t k = 0; k < kParts; ++k)

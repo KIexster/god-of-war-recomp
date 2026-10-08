@@ -222,3 +222,10 @@ si no, se calcula en `double` (el producto de dos `float` cabe exacto). Da lo mi
 `normalizeFmacExactResult` (huellas idénticas a las de antes del cambio). Los pares compilados lo
 calculan en la misma componente, con los operandos ya cargados. Medido alternando los dos ejecutables
 (20 pasadas, mediana): compilado 203 → 180 ms, intérprete 357 → 346 ms.
+
+**Expansión en línea.** Un perfil por muestreo del cuadro mostró que, dentro de las funciones de bloque
+(grandes), MSVC agotaba su presupuesto de expansión y llamaba a `normalizeOperand`,
+`productSumFlagsFast`, `productStickyFlags` y `applyDest` (~12 % del tiempo). Ahora son
+`__forceinline` (`VU1_HOT_INLINE`), `applyDest` tiene una versión con la máscara constante en los pares
+compilados, y las funciones generadas llevan `__declspec(safebuffers)` (sin la comprobación `/GS` de sus
+arreglos locales de tamaño fijo). Medido alternando ejecutables: 180 → 168 ms. Huellas idénticas.
