@@ -182,7 +182,7 @@ nombre = "GS / VU"
   nombre = { es = "VIF1 y VU1", en = "VIF1 and VU1", pt = "VIF1 e VU1" }
   estado = "parcial"
   peso = 3
-  nota = { es = "MMI/EFU y cadenas SPR corregidos: modelos y HUD con formas correctas; cobertura aún parcial. Máscaras VU1: 35 % menos tiempo en una repetición con imagen idéntica, sin medir la mejora de FPS globales", en = "MMI/EFU and SPR chains fixed: models and HUD have correct shapes; coverage remains partial. VU1 masks: 35% less time in a replay with an identical image; overall FPS improvement unmeasured", pt = "MMI/EFU e cadeias SPR corrigidos: modelos e HUD com formas corretas; cobertura ainda parcial. Máscaras VU1: 35% menos tempo em uma repetição com imagem idêntica; melhora dos FPS gerais não medida" }
+  nota = { es = "MMI/EFU y cadenas SPR corregidos: modelos y HUD con formas correctas; cobertura aún parcial. VU1: despachador compilado y escrituras directas integrados; flags persistentes corregidos y 60 casos procedurales exactos; acelerar el juego requiere generar/enlazar microcódigo local, FPS globales sin certificar", en = "MMI/EFU and SPR chains fixed: models and HUD have correct shapes; coverage remains partial. VU1: compiled dispatcher and direct writes integrated; persistent flags fixed and 60 exact procedural cases; game acceleration requires locally generated/linked microcode, overall FPS unverified", pt = "MMI/EFU e cadeias SPR corrigidos: modelos e HUD com formas corretas; cobertura ainda parcial. VU1: despachante compilado e escritas diretas integrados; flags persistentes corrigidos e 60 casos procedurais exatos; acelerar o jogo requer gerar/vincular microcódigo local, FPS gerais não verificados" }
 
   [[hardware.grupo.componente]]
   corto = "Tex/CLUT"

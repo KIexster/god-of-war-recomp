@@ -79,16 +79,17 @@ jobs:
             libgl1-mesa-dev libavcodec-dev libavformat-dev libavutil-dev libswresample-dev libswscale-dev
 
       # -march=x86-64-v2: el runtime usa intrinsecos SSE4.1 que GCC solo acepta con ese objetivo
-      - name: Compilar ps2x_tests y el control CPU de captura GS
+      - name: Compilar ps2x_tests y los controles procedurales GS y VU1
         working-directory: PS2Recomp
         run: |
           cat >> CMakeLists.txt <<'CMAKE'
 
           include("${CMAKE_SOURCE_DIR}/../gow/tools/ci/pruebas_gs.cmake")
+          include("${CMAKE_SOURCE_DIR}/../gow/tools/ci/pruebas_vu1.cmake")
           CMAKE
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPS2X_BUILD_STUDIO=OFF \
             -DCMAKE_C_FLAGS=-march=x86-64-v2 -DCMAKE_CXX_FLAGS=-march=x86-64-v2
-          ninja -C build ps2x_tests gow_gs_replay_test gow_gs_replay gow_gs_replay_checkpoints_test
+          ninja -C build ps2x_tests gow_gs_replay_test gow_gs_replay gow_gs_replay_checkpoints_test gow_vu1_compiled_test
 
       # src/gow_overrides.cpp solo se compila de verdad junto al codigo generado del juego (Windows). Aqui se
       # comprueba contra las cabeceras del runtime ya parcheado, declarando las sub_* que usa.
@@ -115,6 +116,9 @@ jobs:
         run: |
           PS2Recomp/build/gow_gs_replay_checkpoints_test
           python3 gow/tests/gs_replay_cli_test.py PS2Recomp/build/gow_gs_replay PS2Recomp/build/gow_gs_replay_synthetic.bin
+
+      - name: Probar el generador VU1 y los pares compilados con microcodigo procedural
+        run: python3 gow/tests/vu1_compiled_cli_test.py PS2Recomp/build/gow_vu1_compiled_test
 
       - name: Ejecutar la suite
         working-directory: PS2Recomp

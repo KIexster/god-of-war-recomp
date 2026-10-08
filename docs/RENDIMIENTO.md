@@ -174,3 +174,32 @@ locales, los flags que nadie lee eliminados y las instrucciones inferiores espec
 
 Tiempos (mismo cuadro): intérprete 304 ms, compilado 237 ms con bloques y flags muertos, 224 ms con las
 inferiores especializadas. Las 1.972 huellas siguen idénticas al intérprete y la suite pasa 563/563.
+
+### Integración y flags persistentes (8 de octubre)
+
+La PR #18 incluye #17 y se integra después de los parches actuales de GS.
+Al revisarla, un MADD cuyo producto subdesborda y cuya suma queda normal
+conserva `status=0x140` con colas, pero daba `0x000` con escrituras directas si
+el microprograma no contenía FSAND/FSEQ/FSOR. La ausencia de lectores en el
+programa actual no garantiza que un programa posterior no observe esos bits.
+
+`ps2recomp-vu1-sticky-preserve.patch` conserva el cálculo de los flags del
+producto en el intérprete y en los pares compilados; los bloques que eliminan
+MAC/estado temporal acumulan también los bits persistentes del producto.
+Una regresión ejecuta el producto y luego un programa lector distinto. Los
+tiempos anteriores describen la rama original: hay que volver a medir con
+esta corrección antes de atribuirlos al ejecutable integrado.
+
+`tests/vu1_compiled_test.cpp` construye microcódigo procedural, lo pasa por
+el generador real y compara **60 casos** con el intérprete: bloques, salto con
+retardo, stores, palabras modificadas, instrucción reservada, presupuestos
+cero/corto y reanudación. Coinciden VF/VI/ACC, escalares, flags, ciclos, PC y
+memoria de datos. En Windows se ejecutan 139 pares compilados y 22 interpretados;
+la CLI exige que ambas rutas se utilicen. Ejecutar `scripts\probar_vu1_compilada.cmd`
+y, con Python, `tests/vu1_compiled_cli_test.py logs/vu1_compiled_test.exe`.
+La CI incluye el generador, las trece unidades generadas procedurales y el
+control de rutas; no enlaza ni publica microcódigo del juego.
+
+La compilación oficial añade la infraestructura y las escrituras directas.
+El despachador necesita generar y enlazar C++ a partir de microprogramas
+locales para acelerar el juego; sin esas unidades utiliza el intérprete.

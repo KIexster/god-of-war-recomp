@@ -2049,5 +2049,29 @@ La pieza nueva de #12 es `ps2recomp-vu1-budget-diag.patch`, adaptada a
 `StepContext` de #18. `GOW_VU1_BUDGET_DIAG=1` informa de cortes por presupuesto
 con mensajes limitados; no aumenta los 65536 ciclos ni modifica el programa.
 La regresión cubre presupuesto corto/cero, reanudación hasta E y reset, con
-escrituras directas y con colas. Validación conjunta en curso; el generador
-requiere datos locales del usuario y el C++ derivado nunca se publica.
+escrituras directas y con colas. El generador requiere datos locales del
+usuario y el C++ derivado del juego nunca se publica.
+
+La revisión detectó un fallo de flags persistentes en #17/#18: MADD con
+producto subnormal y suma normal daba `status=0x000` con escrituras directas
+y `0x140` con colas. `ps2recomp-vu1-sticky-preserve.patch` conserva los flags
+del producto tanto en el intérprete como en los pares/bloques compilados.
+La prueba nueva verifica también que un microprograma lector posterior los
+observe. Se conserva el análisis de flags MAC temporales que nadie lee.
+
+Resultado integrado: **55 parches** aplican en orden y sus **85 fuentes**
+comparadas coinciden con el runtime compilado; `scripts\2_compilar.cmd`
+termina con código 0 y actualiza el ejecutable. La suite nativa pasa
+**565/565**, sin excluir fallos, y el generador pasa **60 casos procedurales**
+con 139 pares compilados y 22 interpretados reales. CI recibe el mismo
+control del generador; la validación GS anterior pasó además veinte pruebas
+OpenGL opcionales. Dos cadenas VIF históricas del juego (`vif_pcsx2_inicio2`
+y `vif_port_480s`) producen imágenes exactamente iguales con colas y
+escrituras directas en el runtime integrado. Esta comparación no acredita
+paridad con PCSX2 ni los FPS de una partida; las imágenes históricas no
+son una referencia equivalente al nuevo modo aritmético.
+
+La compilación oficial usa el intérprete si no se enlaza C++ VU1 derivado
+de microprogramas locales. La infraestructura compilada queda verificada
+con código procedural; falta integrarla en el flujo de compilación local
+y repetir las medidas de rendimiento con los flags corregidos.

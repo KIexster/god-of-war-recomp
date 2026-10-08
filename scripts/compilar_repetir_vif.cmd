@@ -13,7 +13,7 @@ if errorlevel 1 exit /b 1
 if defined GOW_WORK (set "WORK=%GOW_WORK%") else (set "WORK=%~d0\gowport")
 set "BUILD=%WORK%\PS2Recomp\out\build"
 if not exist "%BUILD%\ps2xRuntime\ps2_runtime.lib" exit /b 1
-cl /nologo /std:c++20 /EHsc /O2 /Zi /MD /utf-8 /I "%WORK%\PS2Recomp\ps2xRuntime\include" /c tools\render\repetir_cadena_vif.cpp /Fo"logs\repetir_cadena_vif.obj" > logs\repetir_cadena_vif_build.log 2>&1
+cl /nologo /std:c++20 /EHsc /O2 /Zi /MD /utf-8 /I "%WORK%\PS2Recomp\ps2xRuntime\include" /c tools\render\repetir_cadena_vif.cpp /Fo"logs\repetir_cadena_vif.obj" /Fd"logs\repetir_cadena_vif_compile.pdb" > logs\repetir_cadena_vif_build.log 2>&1
 if errorlevel 1 exit /b 1
 link /nologo /DEBUG /out:"logs\repetir_cadena_vif.exe" "logs\repetir_cadena_vif.obj" "%BUILD%\ps2xRuntime\ps2_runtime.lib" "%BUILD%\_deps\fmt-build\fmt.lib" "%BUILD%\_deps\raylib-build\raylib\raylib.lib" "%BUILD%\ps2xIOP\ps2_iop.lib" glu32.lib winmm.lib opengl32.lib gdi32.lib user32.lib shell32.lib ole32.lib advapi32.lib bcrypt.lib secur32.lib ws2_32.lib >> logs\repetir_cadena_vif_build.log 2>&1
 exit /b %errorlevel%
