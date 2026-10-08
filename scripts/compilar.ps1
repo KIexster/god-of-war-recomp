@@ -70,6 +70,7 @@ $vu1BudgetDiagPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-budget-diag.pat
 $vu1StickyPreservePatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-sticky-preserve.patch'
 $vu1BlocksPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-blocks.patch'
 $vu1RunnerPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-runner.patch'
+$iopSchedulerPatch = Join-Path $RepoRoot 'patches\ps2recomp-iop-scheduler.patch'
 $gsCoordinateAliasPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-coordinate-alias.patch'
 $gsStqHardwareTestPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-stq-hardware-test.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
@@ -166,6 +167,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1BudgetDiagPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1StickyPreservePatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1BlocksPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1RunnerPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $iopSchedulerPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsCoordinateAliasPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsStqHardwareTestPatch)
 Pop-Location

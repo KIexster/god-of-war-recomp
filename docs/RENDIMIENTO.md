@@ -277,3 +277,19 @@ Medido en el juego (`probar_rendimiento.ps1 -Renderer opengl`, cuadros por segun
 | compilada, 501 micromemorias (grabaciones + 90 s de juego) | 9,6–10,0 | ~2.430 |
 
 Con el renderizador por CPU (`cpu-hilo`) el GS limita (~2,2 cuadros/s en ambos casos).
+
+## Planificador del IOP (8 de octubre)
+
+Un perfil por muestreo de todos los hilos del juego (renderizador OpenGL, VU1 compilada) mostró el 41 %
+del hilo principal en `IopKernel::beginNextReady` y `nextWakeCycle`. El EE avanza el IOP ~1,5 millones
+de veces por segundo de a ~4 ciclos y casi siempre no hay hilos listos, pero cada llamada recorría dos
+veces los 21 hilos (un `std::map`) y una tercera para el próximo despertar.
+
+`ps2recomp-iop-scheduler.patch`: `beginNextReady` hace un solo recorrido (despertar los Delay vencidos y
+elegir el listo de menor prioridad e id no dependen del orden) y, si no hay ninguno listo, recuerda el
+primer despertar. Cada operación del núcleo que puede cambiar los hilos incrementa `m_version`; mientras
+no cambie y no llegue ese despertar, `beginNextReady` devuelve lo mismo sin recorrer y `nextWakeCycle`
+usa el valor guardado. El resultado es idéntico por construcción; la suite pasa 565/565.
+
+En el juego, `iop_ms` baja de ~1.300–1.500 a ~570–650 ms cada 5 s y las dos funciones desaparecen del
+perfil. Los cuadros por segundo no se pudieron comparar bien: otra compilación ocupaba la máquina.
