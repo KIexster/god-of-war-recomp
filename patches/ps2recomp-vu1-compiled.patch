@@ -1,5 +1,5 @@
 diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime/ps2_vu1.h
-index 16b3cb1..50e548a 100644
+index 16b3cb1..5d357b9 100644
 --- a/ps2xRuntime/include/runtime/ps2_vu1.h
 +++ b/ps2xRuntime/include/runtime/ps2_vu1.h
 @@ -5,6 +5,13 @@
@@ -16,7 +16,7 @@ index 16b3cb1..50e548a 100644
  class GS;
  class PS2Memory;
  
-@@ -65,10 +72,33 @@ public:
+@@ -65,10 +72,34 @@ public:
      // presupuesto sí; por eso las pruebas del modelo de latencias lo dejan desactivado.
      void setDirectRegisterWrites(bool enabled);
  
@@ -46,11 +46,12 @@ index 16b3cb1..50e548a 100644
 +    template <int Id>
 +    friend struct VU1CompiledProgram;
 +    friend struct VU1CompiledGenerator;
++    friend struct VU1CompiledAccess;
 +
      enum Pipeline : uint8_t
      {
          PipelineNone = 0,
-@@ -121,6 +151,7 @@ private:
+@@ -121,6 +152,7 @@ private:
          bool tBit = false;
          uint8_t upperVfShadowReg = 0;
          uint8_t suppressedLowerVf = 0;
@@ -58,7 +59,7 @@ index 16b3cb1..50e548a 100644
      };
  
      struct FlagPipelineEntry
-@@ -219,6 +250,8 @@ private:
+@@ -219,11 +251,16 @@ private:
      // con colas porque los lectores se detienen hasta que el registro está listo (m_vfReady...) y solo se
      // confirma la última escritura emitida. GOW_VU1_COLAS=1 vuelve al modelo con colas.
      bool m_directRegisterWrites = false;
@@ -67,7 +68,15 @@ index 16b3cb1..50e548a 100644
      // GOW-Port: ciclo de la próxima entrada de las colas que vence; commitReadyPipelines no hace nada antes.
      uint64_t m_nextCommitCycle = ~0ull;
      // GOW-Port: el microcódigo cargado no lee el registro de estado (FSAND/FSEQ/FSOR); no hace falta
-@@ -234,7 +267,10 @@ private:
+     // calcular los bits pegajosos de los productos (calculateFmacProductSticky).
+     bool m_statusUnread = false;
++    // GOW-Port: además, nadie escribe el estado con FSSET; el código compilado puede omitir los flags de
++    // una FMAC que nadie llega a ver (solo acumula sus bits pegajosos).
++    bool m_statusQuiet = false;
+ 
+     std::array<FlagPipelineEntry, kMaxFlagEntries> m_flagPipeline{};
+     ScalarPipelineEntry m_fdiv{};
+@@ -234,7 +271,10 @@ private:
      std::array<PendingAccWrite, kMaxPendingAccWrites> m_accWritePipeline{};
      // GOW-Port: bits de las entradas válidas de cada cola; commitReadyPipelines solo recorre esas
      // entradas (antes recorría las 48 en cada ciclo, ~30 % del tiempo de VU1).
@@ -79,7 +88,7 @@ index 16b3cb1..50e548a 100644
      XgkickPipeline m_xgkick{};
      std::array<std::array<uint64_t, 4>, 32> m_vfReady{};
      std::array<uint64_t, 16> m_viReady{};
-@@ -284,6 +320,7 @@ private:
+@@ -284,6 +324,7 @@ private:
      uint8_t normalizeFmacExactResult(float &value, long double exactResult) const;
      uint32_t calculateFmacProductSticky(uint8_t dest) const;
      void updateFmacFlags(const uint8_t laneFlags[4], uint8_t dest, uint32_t extraSticky);
@@ -87,7 +96,7 @@ index 16b3cb1..50e548a 100644
      void queueFsset(uint16_t immediate);
      void queueClip(uint32_t clip);
      void queueFcset(uint32_t clip);
-@@ -304,6 +341,19 @@ private:
+@@ -304,6 +345,20 @@ private:
      void finishXgkick();
      uint64_t calculatePairReadyCycle(const DecodedInstructionPair &decoded) const;
      void markPairWrites(const DecodedInstructionPair &decoded);
@@ -95,19 +104,20 @@ index 16b3cb1..50e548a 100644
 +    // GOW-Port: versiones especializadas para el microcódigo compilado (ps2_vu1_compiled.inl).
 +    template <uint32_t Upper, uint32_t C>
 +    void fmacLaneT(float &result, uint8_t &laneFlags);
-+    template <uint32_t Upper>
++    template <uint32_t Upper, bool DeadFlags>
 +    void upperT();
 +    template <class T>
 +    uint64_t readyCycleT() const;
-+    template <class T>
++    template <class T, bool DeadFlags>
 +    bool stepPairT(StepContext &context);
++    bool blockPreconditions(StepContext &context, uint32_t pc, const uint32_t *words, size_t bytes) const;
 +    bool stepInterpreted(StepContext &context);
 +    bool compiledPrologue(StepContext &context);
 +    CompiledProgramFn compiledProgramFor(uint8_t *vuCode, uint32_t codeSize, PS2Memory *memory);
      bool pipelinesPending() const;
  
      // GOW-Port: en línea; se llama varias veces por instrucción (~9 % del tiempo de VU1 como llamada).
-@@ -319,12 +369,32 @@ private:
+@@ -319,12 +374,32 @@ private:
          std::memcpy(&value, &bits, sizeof(value));
          return value;
      }
@@ -143,10 +153,10 @@ index 16b3cb1..50e548a 100644
  #endif
 diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
 new file mode 100644
-index 0000000..651f92d
+index 0000000..038b97b
 --- /dev/null
 +++ b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
-@@ -0,0 +1,477 @@
+@@ -0,0 +1,514 @@
 +// GOW-Port: paso de VU1 especializado para microcódigo compilado (tools/vu1/generar_vu1.cpp).
 +// stepPairT<T> hace exactamente lo mismo que stepPair con el par T::value, pero como el par es una
 +// constante, cada decisión que depende de la decodificación se resuelve al compilar ("if constexpr") y
@@ -156,6 +166,7 @@ index 0000000..651f92d
 +#define PS2_VU1_COMPILED_INL
 +
 +#include "ps2_vu1_step.inl"
++
 +#include <cmath>
 +#include <cstring>
 +
@@ -362,7 +373,7 @@ index 0000000..651f92d
 +    }
 +}
 +
-+template <uint32_t Upper>
++template <uint32_t Upper, bool DeadFlags>
 +VU1_STEP_INLINE void VU1Interpreter::upperT()
 +{
 +    constexpr vu1c::UpperInfo info = vu1c::classify(Upper);
@@ -388,7 +399,15 @@ index 0000000..651f92d
 +        if constexpr (info.kind != vu1c::Kind::Max && info.kind != vu1c::Kind::Mini)
 +        {
 +            if constexpr (dest != 0u)
-+                updateFmacFlags(laneFlags, static_cast<uint8_t>(dest), m_statusUnread ? 0u : calculateFmacProductSticky(static_cast<uint8_t>(dest)));
++            {
++                // DeadFlags: el generador comprobó que, en este bloque, otra FMAC posterior escribe los flags
++                // antes de que nadie pueda leer estos. Con m_statusQuiet solo cuentan sus bits pegajosos,
++                // que el estado acumula en cualquier orden (y quedan igual al final del bloque).
++                if (DeadFlags && m_statusQuiet)
++                    m_state.status |= static_cast<uint32_t>((laneFlags[0] | laneFlags[1] | laneFlags[2] | laneFlags[3]) & 0xFu) << 6;
++                else
++                    updateFmacFlags(laneFlags, static_cast<uint8_t>(dest), m_statusUnread ? 0u : calculateFmacProductSticky(static_cast<uint8_t>(dest)));
++            }
 +        }
 +        float *target = info.toAcc ? m_state.acc : m_state.vf[fd];
 +        if constexpr ((dest & 8u) != 0u) target[0] = result[0];
@@ -396,6 +415,18 @@ index 0000000..651f92d
 +        if constexpr ((dest & 2u) != 0u) target[2] = result[2];
 +        if constexpr ((dest & 1u) != 0u) target[3] = result[3];
 +    }
++}
++
++// Un bloque compilado se ejecuta entero en orden: sus palabras coinciden con las de la micromemoria, no
++// hay un salto ni un final de programa pendiente y queda presupuesto de ciclos de sobra (el análisis de
++// vida de flags supone que se llega al final del bloque).
++inline bool VU1Interpreter::blockPreconditions(StepContext &context, uint32_t pc, const uint32_t *words, size_t bytes) const
++{
++    if (m_state.branchPending || m_state.ebit || m_state.haltAfterDelaySlot || m_stopRequested)
++        return false;
++    if (m_cycle + 16384u >= context.budgetEnd || pc + bytes > context.codeSize)
++        return false;
++    return std::memcmp(context.vuCode + pc, words, bytes) == 0;
 +}
 +
 +template <class T>
@@ -455,7 +486,7 @@ index 0000000..651f92d
 +    return ready;
 +}
 +
-+template <class T>
++template <class T, bool DeadFlags>
 +VU1_STEP_INLINE bool VU1Interpreter::stepPairT(StepContext &context)
 +{
 +    constexpr const DecodedInstructionPair &k = T::value;
@@ -492,7 +523,7 @@ index 0000000..651f92d
 +    constexpr bool lowerNop = k.lower == 0x00000000u || k.lower == 0x8000033Cu;
 +    if constexpr (k.iBit)
 +    {
-+        upperT<k.upper>();
++        upperT<k.upper, DeadFlags>();
 +        float immediate = 0.0f;
 +        constexpr uint32_t lowerBits = k.lower;
 +        std::memcpy(&immediate, &lowerBits, sizeof(immediate));
@@ -504,7 +535,7 @@ index 0000000..651f92d
 +        float oldVf[4];
 +        float upperVf[4];
 +        std::memcpy(oldVf, m_state.vf[sh], sizeof(oldVf));
-+        upperT<k.upper>();
++        upperT<k.upper, DeadFlags>();
 +        std::memcpy(upperVf, m_state.vf[sh], sizeof(upperVf));
 +        std::memcpy(m_state.vf[sh], oldVf, sizeof(oldVf));
 +        execLower(k.lower, context.vuData, context.dataSize, *context.gs, context.memory, k.upper);
@@ -512,7 +543,7 @@ index 0000000..651f92d
 +    }
 +    else
 +    {
-+        upperT<k.upper>();
++        upperT<k.upper, DeadFlags>();
 +        if constexpr (!lowerNop)
 +            execLower(k.lower, context.vuData, context.dataSize, *context.gs, context.memory, k.upper);
 +    }
@@ -619,13 +650,29 @@ index 0000000..651f92d
 +    return !context.programEnded;
 +}
 +
++// Acceso del código generado (repartido en varios archivos) a lo que necesita del intérprete.
++struct VU1CompiledAccess
++{
++    using P = VU1Interpreter::DecodedInstructionPair;
++    using C = VU1Interpreter::StepContext;
++    using Pipeline = VU1Interpreter::Pipeline;
++    template <class T, bool DeadFlags>
++    static VU1_STEP_INLINE bool step(VU1Interpreter &vu, C &c) { return vu.stepPairT<T, DeadFlags>(c); }
++    static bool interpret(VU1Interpreter &vu, C &c) { return vu.stepInterpreted(c); }
++    static uint32_t pc(const VU1Interpreter &vu) { return vu.m_state.pc; }
++    static bool block(const VU1Interpreter &vu, C &c, uint32_t pc, const uint32_t *words, size_t bytes)
++    {
++        return vu.blockPreconditions(c, pc, words, bytes);
++    }
++};
++
 +#if defined(_MSC_VER)
 +#pragma float_control(pop)
 +#endif
 +
 +#endif
 diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
-index 246af25..70f8a56 100644
+index 246af25..80a76e1 100644
 --- a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
 +++ b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
 @@ -3,6 +3,7 @@
@@ -656,7 +703,15 @@ index 246af25..70f8a56 100644
  namespace
  {
      // GOW-Port: GOW_XGKICK_IMMEDIATE se lee una vez (-1 = sin leer). getenv recorre el entorno
-@@ -100,7 +111,8 @@ void VU1Interpreter::resetScheduler()
+@@ -88,6 +99,7 @@ void VU1Interpreter::setDirectRegisterWrites(bool enabled)
+     m_directRegisterWrites = enabled && m_unit == Unit::VU1;
+     m_decodedCodeCacheValid = false; // recalcula m_statusUnread
+     m_statusUnread = false;
++    m_statusQuiet = false;
+ }
+ 
+ void VU1Interpreter::resetScheduler()
+@@ -100,7 +112,8 @@ void VU1Interpreter::resetScheduler()
      m_vfWritePipeline = {};
      m_viWritePipeline = {};
      m_accWritePipeline = {};
@@ -666,7 +721,7 @@ index 246af25..70f8a56 100644
      m_xgkick = {};
      m_vfReady = {};
      m_viReady = {};
-@@ -162,11 +174,6 @@ float VU1Interpreter::normalizeResult(float value, uint32_t &laneFlags) const
+@@ -162,11 +175,6 @@ float VU1Interpreter::normalizeResult(float value, uint32_t &laneFlags) const
      return value;
  }
  
@@ -678,7 +733,7 @@ index 246af25..70f8a56 100644
  int32_t VU1Interpreter::readBranchVi(uint8_t reg) const
  {
      if (reg == 0u)
-@@ -301,6 +308,18 @@ void VU1Interpreter::normalizeFmacResult(float *result, uint8_t dest,
+@@ -301,6 +309,18 @@ void VU1Interpreter::normalizeFmacResult(float *result, uint8_t dest,
              }
          }
          const long double right = source == Source::Vector ? vt[component] : scalar;
@@ -697,7 +752,7 @@ index 246af25..70f8a56 100644
          long double exact = 0.0L;
          switch (kind)
          {
-@@ -619,21 +638,12 @@ void VU1Interpreter::updateFmacFlags(const uint8_t laneFlags[4], uint8_t dest,
+@@ -619,21 +639,12 @@ void VU1Interpreter::updateFmacFlags(const uint8_t laneFlags[4], uint8_t dest,
          status |= flags;
      }
  
@@ -720,7 +775,7 @@ index 246af25..70f8a56 100644
      entry->mac = mac;
      entry->status = status;
      entry->extraSticky = extraSticky;
-@@ -657,6 +667,20 @@ void VU1Interpreter::applyFmacDestAcc(float *result, uint8_t dest)
+@@ -657,6 +668,20 @@ void VU1Interpreter::applyFmacDestAcc(float *result, uint8_t dest)
      applyDestAcc(result, dest);
  }
  
@@ -741,7 +796,7 @@ index 246af25..70f8a56 100644
  void VU1Interpreter::queueFsset(uint16_t immediate)
  {
      for (FlagPipelineEntry &entry : m_flagPipeline)
-@@ -665,20 +689,11 @@ void VU1Interpreter::queueFsset(uint16_t immediate)
+@@ -665,20 +690,11 @@ void VU1Interpreter::queueFsset(uint16_t immediate)
              entry.writesStatus = false;
      }
  
@@ -766,7 +821,7 @@ index 246af25..70f8a56 100644
      }
      reportReservedInstruction(false, 0xFFFFFFFEu);
  }
-@@ -686,20 +701,11 @@ void VU1Interpreter::queueFsset(uint16_t immediate)
+@@ -686,20 +702,11 @@ void VU1Interpreter::queueFsset(uint16_t immediate)
  void VU1Interpreter::queueClip(uint32_t clip)
  {
      m_workingClip = ((m_workingClip << 6) | (clip & 0x3Fu)) & 0xFFFFFFu;
@@ -791,7 +846,7 @@ index 246af25..70f8a56 100644
      }
      reportReservedInstruction(true, 0xFFFFFFFDu);
  }
-@@ -712,20 +718,11 @@ void VU1Interpreter::queueFcset(uint32_t clip)
+@@ -712,20 +719,11 @@ void VU1Interpreter::queueFcset(uint32_t clip)
          if (entry.valid && entry.issueCycle == m_cycle)
              entry.writesClip = false;
      }
@@ -816,7 +871,7 @@ index 246af25..70f8a56 100644
      }
      reportReservedInstruction(false, 0xFFFFFFFAu);
  }
-@@ -863,13 +860,13 @@ void VU1Interpreter::commitReadyPipelines()
+@@ -863,13 +861,13 @@ void VU1Interpreter::commitReadyPipelines()
  {
      if (m_cycle < m_nextCommitCycle)
          return;
@@ -836,7 +891,7 @@ index 246af25..70f8a56 100644
  
          if (entry.writesMac)
              m_state.mac = entry.mac;
-@@ -974,8 +971,8 @@ void VU1Interpreter::commitReadyPipelines()
+@@ -974,8 +972,8 @@ void VU1Interpreter::commitReadyPipelines()
      }
  
      uint64_t next = ~0ull;
@@ -847,7 +902,7 @@ index 246af25..70f8a56 100644
      for (uint32_t pending = m_storePending; pending != 0u; pending &= pending - 1u)
          next = std::min(next, m_storePipeline[std::countr_zero(pending)].readyCycle);
      for (uint32_t pending = m_vfPending; pending != 0u; pending &= pending - 1u)
-@@ -1135,8 +1132,10 @@ void VU1Interpreter::advanceOneCycle()
+@@ -1135,8 +1133,10 @@ void VU1Interpreter::advanceOneCycle()
      m_state.cycles = m_cycle;
      // LSU commits become visible at the cycle boundary before PATH1 consumes
      // its next qword from VU memory.
@@ -860,7 +915,7 @@ index 246af25..70f8a56 100644
  }
  
  void VU1Interpreter::advanceTo(uint64_t targetCycle)
-@@ -1176,85 +1175,6 @@ void VU1Interpreter::flushPipelines()
+@@ -1176,85 +1176,6 @@ void VU1Interpreter::flushPipelines()
          advanceOneCycle();
  }
  
@@ -946,7 +1001,7 @@ index 246af25..70f8a56 100644
  VU1Interpreter::InstructionUsage VU1Interpreter::decodeUpperUsage(uint32_t upper) const
  {
      InstructionUsage usage;
-@@ -1700,6 +1620,11 @@ VU1Interpreter::DecodedInstructionPair VU1Interpreter::decodeInstructionPair(con
+@@ -1700,6 +1621,11 @@ VU1Interpreter::DecodedInstructionPair VU1Interpreter::decodeInstructionPair(con
      decoded.dBit = (decoded.upper & 0x10000000u) != 0u;
      decoded.tBit = (decoded.upper & 0x08000000u) != 0u;
      decoded.upperUsage = decodeUpperUsage(decoded.upper);
@@ -958,7 +1013,21 @@ index 246af25..70f8a56 100644
      if (!decoded.iBit)
          decoded.lowerUsage = decodeLowerUsage(decoded.lower);
  
-@@ -1823,199 +1748,14 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
+@@ -1734,6 +1660,13 @@ void VU1Interpreter::rebuildDecodedCodeCache(const uint8_t *vuCode, uint32_t cod
+         if (!pair.iBit && (op == 0x14u || op == 0x16u || op == 0x17u))
+             m_statusUnread = false;
+     }
++    m_statusQuiet = m_statusUnread;
++    for (uint32_t i = 0; i < pairCount && m_statusQuiet; ++i)
++    {
++        const DecodedInstructionPair &pair = m_decodedCodeCache[i];
++        if (!pair.iBit && (pair.lower >> 25) == 0x15u) // FSSET
++            m_statusQuiet = false;
++    }
+ }
+ 
+ const VU1Interpreter::DecodedInstructionPair &VU1Interpreter::getDecodedInstructionPairForPc(
+@@ -1823,199 +1756,14 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
      ps2_perf::Scope perf(ps2_perf::Bucket::Vu); // GOW-Port: VU0/VU1; las llamadas al GS se descuentan.
      const int previousRoundingMode = std::fegetround();
      const bool useVuRounding = std::fesetround(FE_TOWARDZERO) == 0;
@@ -1164,7 +1233,7 @@ index 246af25..70f8a56 100644
  
      if (programEnded)
      {
-@@ -2030,6 +1770,73 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
+@@ -2030,6 +1778,73 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
          std::fesetround(previousRoundingMode);
  }
  
