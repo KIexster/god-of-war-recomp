@@ -64,6 +64,8 @@ $gsFeedbackSnapshotPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-feedback-sn
 $gsBilinearStqPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-bilinear-stq.patch'
 $gsRegionPagesPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-region-pages.patch'
 $gsTargetAliasPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-target-alias.patch'
+$vu1DirectPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-direct.patch'
+$vu1CompiledPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-compiled.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -152,6 +154,8 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $gsFeedbackSnapshotPatch
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsBilinearStqPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsRegionPagesPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsTargetAliasPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1DirectPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1CompiledPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner

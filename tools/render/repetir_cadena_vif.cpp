@@ -92,15 +92,70 @@ int main(int argc, char **argv)
 
     // Igual que PS2Runtime::syncCoreSubsystems, sin los bits D/T del EE.
     VU1Interpreter vu1;
+    {
+        // Como PS2Runtime: escrituras directas salvo con GOW_VU1_COLAS=1.
+        const char *queues = std::getenv("GOW_VU1_COLAS");
+        vu1.setDirectRegisterWrites(!(queues && std::strcmp(queues, "1") == 0));
+    }
     uint64_t launches = 0;
+    if (std::getenv("GOW_VU1_SIN_COMPILAR"))
+        vu1.setCompiledProgramsEnabled(false);
+    // GOW_REPETIR_HUELLAS=<archivo>: tras cada lanzamiento escribe una huella del estado de VU1 (registros,
+    // flags, ciclos y memoria de datos). Comparar las de dos ejecuciones da el primer lanzamiento distinto.
+    std::FILE *prints = nullptr;
+    if (const char *path = std::getenv("GOW_REPETIR_HUELLAS"))
+        prints = std::fopen(path, "w");
+    const auto fingerprint = [&](uint32_t pc)
+    {
+        if (!prints)
+            return;
+        const VU1State &st = vu1.state();
+        uint64_t hash = 1469598103934665603ull;
+        const auto mix = [&](const void *data, size_t size)
+        {
+            const uint8_t *bytes = static_cast<const uint8_t *>(data);
+            for (size_t i = 0; i < size; ++i)
+                hash = (hash ^ bytes[i]) * 1099511628211ull;
+        };
+        // Una huella por grupo para saber qué parte diverge.
+        uint64_t parts[6]{};
+        const auto part = [&](int index)
+        {
+            parts[index] = hash;
+            hash = 1469598103934665603ull;
+        };
+        mix(st.vf, sizeof(st.vf));
+        part(0);
+        mix(st.vi, sizeof(st.vi));
+        mix(st.acc, sizeof(st.acc));
+        mix(&st.q, sizeof(st.q));
+        mix(&st.p, sizeof(st.p));
+        mix(&st.i, sizeof(st.i));
+        part(1);
+        mix(&st.mac, sizeof(st.mac));
+        mix(&st.status, sizeof(st.status));
+        mix(&st.clip, sizeof(st.clip));
+        part(2);
+        mix(&st.cycles, sizeof(st.cycles));
+        mix(&st.pc, sizeof(st.pc));
+        part(3);
+        mix(mem.getVU1Data(), PS2_VU1_DATA_SIZE);
+        part(4);
+        std::fprintf(prints, "%llu pc=%04x vf=%016llx vi=%016llx flags=%016llx ciclos=%016llx datos=%016llx\n",
+                     static_cast<unsigned long long>(launches), pc, static_cast<unsigned long long>(parts[0]),
+                     static_cast<unsigned long long>(parts[1]), static_cast<unsigned long long>(parts[2]),
+                     static_cast<unsigned long long>(parts[3]), static_cast<unsigned long long>(parts[4]));
+    };
     mem.setVu1MscalCallback([&](uint32_t pc, uint32_t top, uint32_t itop)
                             {
         ++launches;
-        vu1.execute(mem.getVU1Code(), PS2_VU1_CODE_SIZE, mem.getVU1Data(), PS2_VU1_DATA_SIZE, gs, &mem, pc, top, itop, 65536); });
+        vu1.execute(mem.getVU1Code(), PS2_VU1_CODE_SIZE, mem.getVU1Data(), PS2_VU1_DATA_SIZE, gs, &mem, pc, top, itop, 65536);
+        fingerprint(pc); });
     mem.setVu1MscntCallback([&](uint32_t top, uint32_t itop)
                             {
         ++launches;
-        vu1.resume(mem.getVU1Code(), PS2_VU1_CODE_SIZE, mem.getVU1Data(), PS2_VU1_DATA_SIZE, gs, &mem, top, itop, 65536); });
+        vu1.resume(mem.getVU1Code(), PS2_VU1_CODE_SIZE, mem.getVU1Data(), PS2_VU1_DATA_SIZE, gs, &mem, top, itop, 65536);
+        fingerprint(0xFFFF); });
 
     ppm(gs, prefix + "_antes.ppm", fbp, fbw, psm, width, height);
     // GOW_REPETIR_VECES=N repite la cadena N veces y mide el tiempo (banco de pruebas de VIF1/VU1).

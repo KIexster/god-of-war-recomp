@@ -67,3 +67,110 @@ CPU) y la suite nativa pasa **545/545**. En el juego la diferencia queda dentro 
 ventanas (la escena cambia y otros procesos compiten por la CPU); el banco de pruebas es la medida
 de referencia. Lo siguiente en el perfil de VU1 es el cálculo de flags de FMAC
 (`updateFmacFlags`, `calculateFmacProductSticky`, `calculateFmacExactResult`) y `execUpper`.
+
+## VU1 sin colas de escritura (rama `vu1-rapido`, 2026-10-07)
+
+`patches/ps2recomp-vu1-direct.patch`, con el mismo banco de pruebas (cuadro `D6385328`, 30 pasadas):
+
+| Cambio | ms por cuadro |
+|---|---:|
+| Antes (main) | 503 |
+| VF/VI/ACC se escriben al ejecutar en vez de encolarse con su latencia | 427 |
+| `commitReadyPipelines` no hace nada antes del vencimiento más próximo; sin bits pegajosos si nadie lee el estado | 396 |
+| La operación FMAC exacta (flags) se decodifica una vez por instrucción, no por componente | 386 |
+| Entradas libres y registros VI escritos a partir de máscaras de bits | 339 |
+| ADD/SUB/MUL con resultado normal: flags sin el cálculo exacto en long double | 333 |
+
+**Escrituras directas.** Las colas de VF/VI/ACC no cambian el resultado del programa: quien lee un
+registro se detiene hasta que está listo (`m_vfReady`, `m_viReady`, `m_accReady`) y solo se confirma
+la última escritura emitida. Lo que sí cambia es el estado intermedio que ve quien corta la ejecución
+por presupuesto de ciclos (las pruebas del modelo de latencias). Por eso es opcional:
+`VU1Interpreter::setDirectRegisterWrites(true)` lo activa y `PS2Runtime` lo hace para VU1 salvo con
+`GOW_VU1_COLAS=1`. VU0 sigue con colas (el EE lee sus registros en modo macro). Las colas de flags,
+Q, P y stores se mantienen.
+
+**Bits pegajosos.** Si el microcódigo cargado no tiene `FSAND`/`FSEQ`/`FSOR`, no se calculan los
+bits pegajosos de los productos (`calculateFmacProductSticky`). Se vuelve a comprobar cada vez que
+cambia el microcódigo; un programa posterior que lea el estado vería los pegajosos que no se
+calcularon antes (con el microcódigo de este cuadro no ocurre: no hay ninguna de esas instrucciones).
+
+Comprobación: la imagen es idéntica byte a byte con y sin colas en dos cuadros (`vif_pcsx2_inicio2`
+de PCSX2 y `vif_port_480s` del port) y en modo con colas coincide con la referencia anterior. La
+suite pasa **551/551** con la prueba nueva `direct register writes finish a VU1 program like the
+queued model` (mismo resultado, mismos ciclos y mismas escrituras en memoria).
+
+En el juego (OpenGL, ventanas de 5 s entre 220 y 235 s del mismo ejecutable): `vid::Flip` pasa de
+2,2–2,4 por segundo con `GOW_VU1_COLAS=1` a 2,4–3,2 sin colas. VU1 sigue ocupando casi todo el hilo;
+para llegar a tiempo real hace falta un recompilador de VU1.
+
+## Microcódigo de VU1 compilado: primer prototipo (rama `vu1-compilado`, 2026-10-08)
+
+Datos del cuadro de referencia (`D6385328`): **1.972 lanzamientos de VU1 y 3,34 millones de pares de
+instrucciones** (4,40 millones de ciclos con las esperas), 1.188 direcciones distintas. Los bucles más
+calientes son `0x2840–0x28E8` (~22 pares × 26.500 vueltas) y `0x2B90–0x2C10` (~19.000 vueltas). A
+~330 ms por cuadro, cada par cuesta ~100 ns: para 30 cuadros por segundo haría falta ~10 veces menos.
+
+Comprobaciones:
+
+- **El modelo de tiempos importa.** Sin las esperas por dependencias (`GOW_VU1_SIN_ESPERAS`, solo en el
+  experimento) más del 80 % de los píxeles del cuadro cambian: Q, P y los flags llegan en otro ciclo.
+  Un recompilador tiene que conservar el mismo modelo de latencias.
+- **Retoques del intérprete agotados.** Normalizar operandos con SSE2 y reutilizarlos fue *más lento*
+  (369 frente a 336 ms); saltarse `execUpper` en los NOP superiores no cambió nada (330–337 ms).
+
+`patches/ps2recomp-vu1-compiled.patch` separa un paso del intérprete (`stepPair`, en
+`ps2_vu1_step.inl`) y permite registrar un despachador compilado. `tools/vu1/generar_vu1.cpp` genera
+C++ a partir de micromemorias capturadas con `GOW_VU1_CAPTURA=<carpeta>` (27 imágenes distintas en tres
+cuadros: el juego carga varios microprogramas por cuadro). Cada par se compila ya decodificado y el
+despachador comprueba en cada par que las dos palabras de la micromemoria son las compiladas; si no,
+interpreta ese par. El código generado sale de datos del juego y no se publica.
+
+Resultado: **imagen idéntica byte a byte, pero más lento (525 ms frente a 336)**. Con `stepPair`
+copiado en cada uno de los 4.360 pares, el código caliente ocupa varios MB y no cabe en la caché. La suite
+pasa 563/563 y, sin código generado enlazado, el intérprete se comporta igual que antes.
+
+Lo que sí haría falta (plan): un recompilador que, como microVU de PCSX2, calcule por bloque las esperas
+y la visibilidad de flags/Q/P a partir del estado del pipeline a la entrada, genere solo la aritmética
+de cada instrucción (SSE, con las mismas reglas de normalización y redondeo hacia cero) y omita los
+flags que nadie lee. Es un trabajo de varios días; el prototipo deja preparados la captura, el generador,
+el despachador y la comparación de imágenes.
+
+### Etapa 1 del recompilador (2026-10-08)
+
+- **Aritmética de VU sin `/fp:fast`.** El runtime se compila con `/arch:AVX2 /fp:fast`, y MSVC fusionaba
+  `acc + a*b` en FMA o no según el sitio: el microcódigo compilado y el intérprete daban valores
+  distintos en 1 ulp y el estado divergía a los 80 lanzamientos. `#pragma float_control(precise)` en los
+  archivos de VU (y en `ps2_vu1.h`) redondea el producto y la suma por separado, como las FMAC de la PS2
+  y PCSX2. Cambia ~3 % de los píxeles del cuadro en 1–8 niveles (0,3 % más de 8) respecto a la versión
+  con FMA; conviene revisarlo con las comparaciones contra PCSX2.
+- **Compilado = interpretado, comprobado lanzamiento a lanzamiento.** `GOW_REPETIR_HUELLAS=<archivo>` en
+  `repetir_cadena_vif` escribe una huella del estado de VU1 (VF, VI, flags, ciclos y memoria de datos)
+  tras cada lanzamiento; las 1.972 huellas del cuadro coinciden entre el código compilado y el
+  intérprete. `GOW_VU1C_RANGO=inicio-fin` limita el código compilado a un rango de direcciones para
+  acotar una diferencia.
+- `stepPairT<par>` (en `ps2_vu1_compiled.inl`) resuelve al compilar todo lo que depende de la
+  decodificación y especializa las operaciones FMAC; las demás llaman al intérprete.
+- Intérprete: cola circular para los flags (se confirman en orden de emisión), atajo exacto para
+  `acc ± producto` y comprobaciones baratas antes de llamar a `commitReadyPipelines`/`progressXgkick`.
+
+Tiempos (cuadro `D6385328`, 30 pasadas): intérprete 304 ms, compilado 304 ms. Medido con contadores de
+ciclos, cada par cuesta ~170 ciclos repartidos entre esperas (~20), instrucción superior (~65),
+inferior (~35) y contabilidad del ciclo (~50). El código por par ya no es el problema: hace falta la
+etapa siguiente, con las esperas y la visibilidad de flags/Q/P calculadas por bloque en variables
+locales, los flags que nadie lee eliminados y las instrucciones inferiores especializadas.
+
+
+### Etapa 2 del recompilador (2026-10-08)
+
+- **Bloques.** El generador agrupa los pares en bloques (cortan en destinos de salto, ranuras de retardo,
+  bit E y bits D/T). Un bloque entra solo si sus palabras coinciden con la micromemoria, no hay salto ni
+  fin pendientes y queda presupuesto de ciclos; si no, se ejecuta par a par.
+- **Flags que nadie lee.** Una FMAC cuyos flags MAC pisa otra FMAC posterior del mismo bloque sin que
+  nadie lea MAC entre medias (FMAND/FMEQ/FMOR) no los calcula; si el programa no usa FSAND/FSEQ/FSOR/FSSET,
+  solo acumula los bits pegajosos del status.
+- **Instrucciones inferiores especializadas.** LQ, SQ, ILW, ISW, IADDIU/ISUBIU, B, IBxx, IADD/ISUB/IADDI,
+  IAND/IOR, MOVE, MR32, LQI, SQI, WAITQ, MTIR y MFIR se generan con los campos ya resueltos; el resto
+  llama al intérprete.
+
+Tiempos (mismo cuadro): intérprete 304 ms, compilado 237 ms con bloques y flags muertos, 224 ms con las
+inferiores especializadas. Las 1.972 huellas siguen idénticas al intérprete y la suite pasa 563/563.
