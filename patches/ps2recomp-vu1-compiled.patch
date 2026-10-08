@@ -1,5 +1,5 @@
 diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime/ps2_vu1.h
-index 16b3cb1..5d357b9 100644
+index 16b3cb1..27c4b3d 100644
 --- a/ps2xRuntime/include/runtime/ps2_vu1.h
 +++ b/ps2xRuntime/include/runtime/ps2_vu1.h
 @@ -5,6 +5,13 @@
@@ -96,7 +96,7 @@ index 16b3cb1..5d357b9 100644
      void queueFsset(uint16_t immediate);
      void queueClip(uint32_t clip);
      void queueFcset(uint32_t clip);
-@@ -304,6 +345,20 @@ private:
+@@ -304,6 +345,22 @@ private:
      void finishXgkick();
      uint64_t calculatePairReadyCycle(const DecodedInstructionPair &decoded) const;
      void markPairWrites(const DecodedInstructionPair &decoded);
@@ -106,6 +106,8 @@ index 16b3cb1..5d357b9 100644
 +    void fmacLaneT(float &result, uint8_t &laneFlags);
 +    template <uint32_t Upper, bool DeadFlags>
 +    void upperT();
++    template <uint32_t Lower>
++    void lowerT(StepContext &context, uint32_t upperInstr);
 +    template <class T>
 +    uint64_t readyCycleT() const;
 +    template <class T, bool DeadFlags>
@@ -117,7 +119,7 @@ index 16b3cb1..5d357b9 100644
      bool pipelinesPending() const;
  
      // GOW-Port: en línea; se llama varias veces por instrucción (~9 % del tiempo de VU1 como llamada).
-@@ -319,12 +374,32 @@ private:
+@@ -319,12 +376,32 @@ private:
          std::memcpy(&value, &bits, sizeof(value));
          return value;
      }
@@ -153,10 +155,10 @@ index 16b3cb1..5d357b9 100644
  #endif
 diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
 new file mode 100644
-index 0000000..038b97b
+index 0000000..1b68d87
 --- /dev/null
 +++ b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
-@@ -0,0 +1,514 @@
+@@ -0,0 +1,715 @@
 +// GOW-Port: paso de VU1 especializado para microcódigo compilado (tools/vu1/generar_vu1.cpp).
 +// stepPairT<T> hace exactamente lo mismo que stepPair con el par T::value, pero como el par es una
 +// constante, cada decisión que depende de la decodificación se resuelve al compilar ("if constexpr") y
@@ -417,6 +419,207 @@ index 0000000..038b97b
 +    }
 +}
 +
++// Instrucciones inferiores frecuentes especializadas. Cada caso es copia exacta del de execLower
++// (ps2_vu1_lower.cpp); las demás llaman a execLower. Las huellas de repetir_cadena_vif comprueban que
++// coinciden con el intérprete.
++template <uint32_t Lower>
++VU1_STEP_INLINE void VU1Interpreter::lowerT(StepContext &context, uint32_t upperInstr)
++{
++    constexpr uint32_t instr = Lower;
++    constexpr uint32_t opHi = (instr >> 25) & 0x7Fu;
++    constexpr uint32_t funct = instr & 0x3Fu;
++    constexpr uint32_t funct2 = (instr & 0x3u) | ((instr >> 4) & 0x7Cu);
++    constexpr uint8_t ft = static_cast<uint8_t>((instr >> 16) & 0x1Fu);
++    constexpr uint8_t fs = static_cast<uint8_t>((instr >> 11) & 0x1Fu);
++    constexpr uint8_t viT = static_cast<uint8_t>((instr >> 16) & 0xFu);
++    constexpr uint8_t viS = static_cast<uint8_t>((instr >> 11) & 0xFu);
++    constexpr uint8_t viD = static_cast<uint8_t>((instr >> 6) & 0xFu);
++    constexpr uint8_t dest = static_cast<uint8_t>((instr >> 21) & 0xFu);
++    constexpr int16_t imm11 = static_cast<int16_t>(static_cast<int32_t>(instr << 21) >> 21);
++    uint8_t *vuData = context.vuData;
++    const uint32_t dataSize = context.dataSize;
++
++    if constexpr (instr == 0x00000000u || instr == 0x8000033Cu)
++    {
++        return;
++    }
++    else if constexpr (opHi == 0x00u) // LQ
++    {
++        uint32_t addr = static_cast<uint32_t>(static_cast<int32_t>(m_state.vi[viS] + imm11)) * 16u;
++        addr &= (dataSize - 1);
++        if (addr + 16 <= dataSize)
++        {
++            float tmp[4];
++            std::memcpy(tmp, vuData + addr, 16);
++            applyDest(m_state.vf[ft], tmp, dest);
++        }
++    }
++    else if constexpr (opHi == 0x01u) // SQ
++    {
++        uint32_t addr = static_cast<uint32_t>(static_cast<int32_t>(m_state.vi[viT] + imm11)) * 16u;
++        addr &= (dataSize - 1);
++        if (addr + 16 <= dataSize)
++        {
++            uint32_t words[4]{};
++            std::memcpy(words, m_state.vf[fs], sizeof(words));
++            queueStore(addr, words, dest);
++        }
++    }
++    else if constexpr (opHi == 0x04u) // ILW
++    {
++        uint32_t addr = static_cast<uint32_t>(static_cast<int32_t>(m_state.vi[viS] + imm11)) * 16u;
++        addr &= (dataSize - 1);
++        if (addr + 16 <= dataSize)
++        {
++            constexpr int comp = (dest & 0x8) ? 0 : (dest & 0x4) ? 1 : (dest & 0x2) ? 2 : 3;
++            uint32_t v;
++            std::memcpy(&v, vuData + addr + comp * 4, 4);
++            if constexpr (viT != 0)
++                m_state.vi[viT] = static_cast<int32_t>(static_cast<int16_t>(v & 0xFFFF));
++        }
++    }
++    else if constexpr (opHi == 0x05u) // ISW
++    {
++        uint32_t addr = static_cast<uint32_t>(static_cast<int32_t>(m_state.vi[viS] + imm11)) * 16u;
++        addr &= (dataSize - 1);
++        if (addr + 16 <= dataSize)
++        {
++            const uint32_t val = static_cast<uint32_t>(static_cast<uint16_t>(m_state.vi[viT] & 0xFFFF));
++            const uint32_t words[4] = {val, val, val, val};
++            queueStore(addr, words, dest);
++        }
++    }
++    else if constexpr (opHi == 0x08u || opHi == 0x09u) // IADDIU / ISUBIU
++    {
++        constexpr int16_t imm = static_cast<int16_t>(static_cast<int16_t>(instr & 0x7FF) | ((instr >> 10) & 0x7800));
++        if constexpr (viT != 0)
++        {
++            if constexpr (opHi == 0x08u)
++                m_state.vi[viT] = static_cast<int16_t>(m_state.vi[viS] + imm);
++            else
++                m_state.vi[viT] = static_cast<int16_t>(m_state.vi[viS] - imm);
++        }
++    }
++    else if constexpr (opHi == 0x20u) // B
++    {
++        const uint32_t target = (m_state.pc + 8 + imm11 * 8) & microAddressMask();
++        m_state.branchPending = true;
++        m_state.branchTarget = target;
++        m_state.branchDelay = 1;
++    }
++    else if constexpr (opHi == 0x28u || opHi == 0x29u || (opHi >= 0x2Cu && opHi <= 0x2Fu)) // IBxx
++    {
++        bool taken;
++        if constexpr (opHi == 0x28u)
++            taken = static_cast<int16_t>(readBranchVi(viS)) == static_cast<int16_t>(readBranchVi(viT));
++        else if constexpr (opHi == 0x29u)
++            taken = static_cast<int16_t>(readBranchVi(viS)) != static_cast<int16_t>(readBranchVi(viT));
++        else if constexpr (opHi == 0x2Cu)
++            taken = static_cast<int16_t>(readBranchVi(viS)) < 0;
++        else if constexpr (opHi == 0x2Du)
++            taken = static_cast<int16_t>(readBranchVi(viS)) > 0;
++        else if constexpr (opHi == 0x2Eu)
++            taken = static_cast<int16_t>(readBranchVi(viS)) <= 0;
++        else
++            taken = static_cast<int16_t>(readBranchVi(viS)) >= 0;
++        if (taken)
++        {
++            const uint32_t target = (m_state.pc + 8 + imm11 * 8) & microAddressMask();
++            m_state.branchPending = true;
++            m_state.branchTarget = target;
++            m_state.branchDelay = 1;
++        }
++    }
++    else if constexpr (opHi == 0x40u && funct == 0x30u) // IADD
++    {
++        if constexpr (viD != 0)
++            m_state.vi[viD] = static_cast<int16_t>(m_state.vi[viS] + m_state.vi[viT]);
++    }
++    else if constexpr (opHi == 0x40u && funct == 0x31u) // ISUB
++    {
++        if constexpr (viD != 0)
++            m_state.vi[viD] = static_cast<int16_t>(m_state.vi[viS] - m_state.vi[viT]);
++    }
++    else if constexpr (opHi == 0x40u && funct == 0x32u) // IADDI
++    {
++        constexpr int16_t imm5 = static_cast<int16_t>(static_cast<int32_t>((instr >> 6) & 0x1F) << 27 >> 27);
++        if constexpr (viT != 0)
++            m_state.vi[viT] = static_cast<int16_t>(m_state.vi[viS] + imm5);
++    }
++    else if constexpr (opHi == 0x40u && funct == 0x34u) // IAND
++    {
++        if constexpr (viD != 0)
++            m_state.vi[viD] = m_state.vi[viS] & m_state.vi[viT];
++    }
++    else if constexpr (opHi == 0x40u && funct == 0x35u) // IOR
++    {
++        if constexpr (viD != 0)
++            m_state.vi[viD] = m_state.vi[viS] | m_state.vi[viT];
++    }
++    else if constexpr (opHi == 0x40u && funct >= 0x3Cu && funct2 == 0x30u) // MOVE
++    {
++        float tmp[4];
++        std::memcpy(tmp, m_state.vf[fs], 16);
++        applyDest(m_state.vf[ft], tmp, dest);
++    }
++    else if constexpr (opHi == 0x40u && funct >= 0x3Cu && funct2 == 0x31u) // MR32
++    {
++        float tmp[4] = {m_state.vf[fs][1], m_state.vf[fs][2], m_state.vf[fs][3], m_state.vf[fs][0]};
++        applyDest(m_state.vf[ft], tmp, dest);
++    }
++    else if constexpr (opHi == 0x40u && funct >= 0x3Cu && funct2 == 0x34u) // LQI
++    {
++        uint32_t addr = static_cast<uint32_t>(static_cast<uint16_t>(m_state.vi[viS])) * 16u;
++        addr &= (dataSize - 1);
++        if (addr + 16 <= dataSize)
++        {
++            float tmp[4];
++            std::memcpy(tmp, vuData + addr, 16);
++            applyDest(m_state.vf[ft], tmp, dest);
++        }
++        if constexpr (viS != 0)
++            m_state.vi[viS] = static_cast<int16_t>(m_state.vi[viS] + 1);
++    }
++    else if constexpr (opHi == 0x40u && funct >= 0x3Cu && funct2 == 0x35u) // SQI
++    {
++        uint32_t addr = static_cast<uint32_t>(static_cast<uint16_t>(m_state.vi[viT])) * 16u;
++        addr &= (dataSize - 1);
++        if (addr + 16 <= dataSize)
++        {
++            uint32_t words[4]{};
++            std::memcpy(words, m_state.vf[fs], sizeof(words));
++            queueStore(addr, words, dest);
++        }
++        if constexpr (viT != 0)
++            m_state.vi[viT] = static_cast<int16_t>(m_state.vi[viT] + 1);
++    }
++    else if constexpr (opHi == 0x40u && funct >= 0x3Cu && funct2 == 0x3Bu) // WAITQ
++    {
++    }
++    else if constexpr (opHi == 0x40u && funct >= 0x3Cu && funct2 == 0x3Cu) // MTIR
++    {
++        constexpr uint32_t comp = (instr >> 21) & 0x3u;
++        uint32_t fval;
++        std::memcpy(&fval, &m_state.vf[fs][comp], 4);
++        if constexpr (viT != 0)
++            m_state.vi[viT] = static_cast<int32_t>(static_cast<int16_t>(fval & 0xFFFF));
++    }
++    else if constexpr (opHi == 0x40u && funct >= 0x3Cu && funct2 == 0x3Du) // MFIR
++    {
++        float result[4];
++        const int32_t val = static_cast<int32_t>(static_cast<int16_t>(m_state.vi[viS] & 0xFFFF));
++        std::memcpy(&result[0], &val, 4);
++        result[1] = result[0];
++        result[2] = result[0];
++        result[3] = result[0];
++        applyDest(m_state.vf[ft], result, dest);
++    }
++    else
++    {
++        execLower(instr, vuData, dataSize, *context.gs, context.memory, upperInstr);
++    }
++}
++
 +// Un bloque compilado se ejecuta entero en orden: sus palabras coinciden con las de la micromemoria, no
 +// hay un salto ni un final de programa pendiente y queda presupuesto de ciclos de sobra (el análisis de
 +// vida de flags supone que se llega al final del bloque).
@@ -538,14 +741,14 @@ index 0000000..038b97b
 +        upperT<k.upper, DeadFlags>();
 +        std::memcpy(upperVf, m_state.vf[sh], sizeof(upperVf));
 +        std::memcpy(m_state.vf[sh], oldVf, sizeof(oldVf));
-+        execLower(k.lower, context.vuData, context.dataSize, *context.gs, context.memory, k.upper);
++        lowerT<k.lower>(context, k.upper);
 +        std::memcpy(m_state.vf[sh], upperVf, sizeof(upperVf));
 +    }
 +    else
 +    {
 +        upperT<k.upper, DeadFlags>();
 +        if constexpr (!lowerNop)
-+            execLower(k.lower, context.vuData, context.dataSize, *context.gs, context.memory, k.upper);
++            lowerT<k.lower>(context, k.upper);
 +    }
 +
 +    m_viBranchBackupValid = false;

@@ -159,3 +159,18 @@ inferior (~35) y contabilidad del ciclo (~50). El código por par ya no es el pr
 etapa siguiente, con las esperas y la visibilidad de flags/Q/P calculadas por bloque en variables
 locales, los flags que nadie lee eliminados y las instrucciones inferiores especializadas.
 
+
+### Etapa 2 del recompilador (2026-10-08)
+
+- **Bloques.** El generador agrupa los pares en bloques (cortan en destinos de salto, ranuras de retardo,
+  bit E y bits D/T). Un bloque entra solo si sus palabras coinciden con la micromemoria, no hay salto ni
+  fin pendientes y queda presupuesto de ciclos; si no, se ejecuta par a par.
+- **Flags que nadie lee.** Una FMAC cuyos flags MAC pisa otra FMAC posterior del mismo bloque sin que
+  nadie lea MAC entre medias (FMAND/FMEQ/FMOR) no los calcula; si el programa no usa FSAND/FSEQ/FSOR/FSSET,
+  solo acumula los bits pegajosos del status.
+- **Instrucciones inferiores especializadas.** LQ, SQ, ILW, ISW, IADDIU/ISUBIU, B, IBxx, IADD/ISUB/IADDI,
+  IAND/IOR, MOVE, MR32, LQI, SQI, WAITQ, MTIR y MFIR se generan con los campos ya resueltos; el resto
+  llama al intérprete.
+
+Tiempos (mismo cuadro): intérprete 304 ms, compilado 237 ms con bloques y flags muertos, 224 ms con las
+inferiores especializadas. Las 1.972 huellas siguen idénticas al intérprete y la suite pasa 563/563.
