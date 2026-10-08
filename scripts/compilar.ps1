@@ -71,6 +71,7 @@ $vu1StickyPreservePatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-sticky-pres
 $vu1BlocksPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-blocks.patch'
 $vu1RunnerPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-runner.patch'
 $iopSchedulerPatch = Join-Path $RepoRoot 'patches\ps2recomp-iop-scheduler.patch'
+$vif1UnpackFastPatch = Join-Path $RepoRoot 'patches\ps2recomp-vif1-unpack-fast.patch'
 $gsCoordinateAliasPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-coordinate-alias.patch'
 $gsStqHardwareTestPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-stq-hardware-test.patch'
 $gsFinishAsyncPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-finish-async.patch'
@@ -169,6 +170,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1StickyPreservePatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1BlocksPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1RunnerPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $iopSchedulerPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vif1UnpackFastPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsCoordinateAliasPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsStqHardwareTestPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsFinishAsyncPatch)
