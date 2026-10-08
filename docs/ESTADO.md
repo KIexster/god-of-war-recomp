@@ -2113,3 +2113,64 @@ las imágenes coinciden byte a byte con el backend anterior. No añade lotes
 a esa traza: mantiene 648, con 99.402 primitivas/53.757 tiles y los mismos
 contadores de CLUT y sincronización. Sigue difiriendo de CPU en 739.502
 bytes y dos presentaciones; este arreglo no acredita paridad ni más FPS.
+
+El control del ejecutable GS56 dura 510 s, con OpenGL, FMV omitido, VU1
+directa por defecto y copia privada de la tarjeta guardada. Las 16 imágenes
+512×448 son distintas; se observa a Kratos con forma correcta, ataques y
+HUD con barras verde/azul, 87 orbes y R2 visible. El estado final es 11 sin carga
+pendiente. Hay 128 muestras Clip finitas/completas, 848 tripletas tardías
+no nulas y 192 contextos sin errores; no se registra VU reservada. La
+tarjeta original conserva su SHA256. Estas capturas no certifican combate
+completo ni FPS sostenidos.
+
+### Ensayo de Z de solo lectura retenido (8 de octubre)
+
+`writePages` incluye las páginas consultadas por el test Z aun con
+ZMASK=1. Un ensayo local separó lecturas y escrituras para que textura/CLUT
+y profundidad pudieran compartir un lote sin modificar esas páginas.
+Sus controles procedurales pasaron en CPU, compute y hardware, incluidas
+subidas sobre Z y escrituras antes/después de lectores.
+
+En la traza real, el ensayo reduce 648 a 543 lotes y 53.757 a 46.543 tiles
+compute, conservando 99.402 primitivas. Ocho pasadas compute y ocho
+hardware con snapshot conservan End e imágenes anteriores. Estos
+contadores no miden FPS ni certifican la caché física del PS2.
+
+Sin embargo, el prototipo sin snapshot varió 200 bytes finales y una
+presentación en una de 24 pasadas. Limitarlo a snapshot y conservar los
+cortes anteriores en el modo habitual tampoco bastó: otra prueba larga
+varió 128 bytes finales y una presentación, desde el registro 73.326,
+Flush tras 73.036 envíos. **Se retiró la optimización completa de la
+cadena publicada**, incluidas sus dos pruebas; código y datos quedan en
+`logs/`, excluidos de Git. No se anuncia una mejora de FPS por este ensayo.
+
+El control largo del GS56 real también varía una presentación (190 bytes)
+en una de 24 pasadas; su primer control distinto está en el registro 36,
+Flush tras 33 envíos. El End y el estado final son idénticos en las 24.
+Hay feedback bilineal sobre el framebuffer en los tramos investigados,
+pero la causa exacta sigue pendiente. Cuatro pasadas iguales no
+certifican estabilidad. La referencia anterior al control largo no
+incluía aún el parche de alias de coordenadas; aquí sí se enlaza GS56.
+
+### Control STQ de hardware e integración de VU1 (8 de octubre)
+
+El control STQ bilineal terminaba sus 16 matrices antes de que el
+compilador asíncrono de shaders ofreciera hardware. Los píxeles y SSE
+eran correctos, pero el control de hardware falló. El nuevo parche
+`ps2recomp-gs-stq-hardware-test.patch` repite las matrices durante un
+máximo de 12 s, conservando todos los oráculos RGBA, controles SSE y la
+exigencia de hardware sin tiles compute. Un resultado correcto solo en
+compute sigue fallando; no se modifica el renderer de producción.
+
+Se integraron los siete commits terminados de Opus hasta `e507ac6`,
+con sus bloques compilados, helpers, XGKICK y enlace opcional de VU1.
+La compilación oficial final utiliza sus 501 micromemorias locales,
+sin modificar ni publicar esos datos.
+
+La compilación oficial final termina con código 0: **59 parches** en
+orden y **87 fuentes** (`cpp/h/inl`) auditadas sin diferencias con el
+runtime. Pasa **587/587** pruebas nativas, con **22 controles OpenGL
+efectivos**, **60 casos VU1 exactos** (139 pares compilados y 22
+interpretados), PAD2 y los controles de configuración, scripts, GIF y
+selección VIF. La medición de FPS de Opus se conserva como resultado
+de su tramo, sin extrapolarla al juego completo.

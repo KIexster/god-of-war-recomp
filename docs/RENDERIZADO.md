@@ -1087,3 +1087,25 @@ En la traza de partida comparada, los End e imágenes quedan exactamente
 iguales al backend previo y siguen siendo 648 lotes. No certifica una
 ganancia de FPS. El alias dentro de una sola primitiva y la diferencia
 de feedback entre CPU y GPU siguen pendientes.
+
+## Ensayo de profundidad de solo lectura
+
+Separar las lecturas de Z de sus escrituras permitió bajar de 648 a 543
+lotes en una traza local. El ensayo pasó los controles procedurales y
+conservó los End e imágenes en ocho pasadas compute y ocho hardware con
+snapshot. No acredita más FPS del juego ni una caché GS fiel al PS2.
+
+Se retiró completo de la cadena publicada: la repetición larga sin
+snapshot varió 200 bytes finales, y una versión limitada a snapshot
+también varió 128 bytes en su modo habitual. GS56 conserva una limitación
+previa: una de 24 presentaciones varió 190 bytes aunque los End fueran
+idénticos. Resolver el feedback sigue pendiente. El código y los datos
+del ensayo permanecen en `logs/`, fuera de Git.
+
+## Espera del control STQ de hardware
+
+`ps2recomp-gs-stq-hardware-test.patch` da hasta 12 s al compilador
+asíncrono de shaders para que el control bilineal STQ use hardware.
+Cada matriz repetida conserva sus comparaciones RGBA y controles SSE;
+compute por sí solo sigue siendo insuficiente para pasar el test.
+El cambio afecta a la validación y conserva el renderer de producción.
