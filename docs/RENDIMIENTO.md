@@ -491,3 +491,21 @@ Un fallo privado que cambia siete por seis ciclos falla en el primer caso, con
 bloques como pares reales; la CLI exige que aparezca el control DIV completo.
 Se reproduce con `scripts\probar_vu1_compilada.cmd` en Windows o en la CI.
 Pasar estas pruebas confirma paridad semántica en esos casos; no mide una ganancia de FPS.
+
+**DIV compilado.** DIV era la única instrucción inferior frecuente que seguía yendo a `execLower`
+(~130.000 por cuadro). Ahora se genera con los campos resueltos, como copia del caso del intérprete. Huellas
+idénticas; reproducción alternando ejecutables 98 → 96 ms.
+
+## Flags de VU1 confirmados al leerlos (8 de octubre)
+
+`ps2recomp-vu1-lazy-flags.patch`: las entradas de la cola de flags (MAC, estado y clip) ya no fuerzan una
+llamada a `commitReadyPipelines` en su ciclo. Se aplican, en orden y solo las ya listas en el ciclo actual,
+cuando alguien las lee (FSEQ/FSAND/FSOR, FMEQ/FMAND/FMOR, FCEQ/FCAND/FCOR/FCGET), cuando
+`commitReadyPipelines` corre por otra cola (Q, P, stores), cuando la cola se llena, al final de cada
+ejecución y en `resetScheduler`. Lo que ve una lectura es lo mismo que con la confirmación ciclo a ciclo.
+Las demás escrituras del estado conmutan con ellas: Q/P tocan otros bits y la suma de bits pegajosos de los
+flags muertos solo existe en programas sin FSSET.
+
+Huellas de VU1 (intérprete y compilado) idénticas a las anteriores, prueba de FMAC (151.200 casos), prueba
+procedural de 60 casos y suite 565/565. Reproducción con el intérprete, que es lo que usa el juego sin
+microcódigo capturado: 333 → 293 ms por cuadro. Con el código compilado la diferencia es pequeña (~1 %).

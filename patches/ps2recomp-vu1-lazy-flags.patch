@@ -1,0 +1,194 @@
+diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime/ps2_vu1.h
+index 0b2dfaa..2b4d023 100644
+--- a/ps2xRuntime/include/runtime/ps2_vu1.h
++++ b/ps2xRuntime/include/runtime/ps2_vu1.h
+@@ -361,6 +361,11 @@ private:
+ 
+     void resetScheduler();
+     void commitReadyPipelines();
++    // GOW-Port: los flags MAC/estado/clip se confirman cuando alguien los lee (FS*/FM*/FC*), al final de una
++    // ejecución o cuando lo hace commitReadyPipelines por otra cola, aplicando las entradas ya listas en este
++    // ciclo en orden: el resultado es el mismo que confirmándolas en su ciclo, sin llamar a
++    // commitReadyPipelines en cada ciclo de código FMAC.
++    void commitReadyFlags();
+     void advanceOneCycle();
+     void advanceTo(uint64_t targetCycle);
+     void flushPipelines();
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+index 76e9a72..a896402 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+@@ -104,6 +104,7 @@ void VU1Interpreter::setDirectRegisterWrites(bool enabled)
+ 
+ void VU1Interpreter::resetScheduler()
+ {
++    commitReadyFlags(); // GOW-Port: las ya listas se habrían confirmado en su ciclo
+     m_lastRunHitBudget = false; // GOW-Port
+     m_nextCommitCycle = ~0ull;
+     m_flagPipeline = {};
+@@ -669,6 +670,8 @@ void VU1Interpreter::applyFmacDestAcc(float *result, uint8_t dest)
+ 
+ VU1Interpreter::FlagPipelineEntry *VU1Interpreter::pushFlagEntry()
+ {
++    if (m_flagCount >= kMaxFlagEntries)
++        commitReadyFlags();
+     if (m_flagCount >= kMaxFlagEntries)
+         return nullptr;
+     FlagPipelineEntry &entry = m_flagPipeline[(m_flagHead + m_flagCount) % kMaxFlagEntries];
+@@ -678,7 +681,6 @@ VU1Interpreter::FlagPipelineEntry *VU1Interpreter::pushFlagEntry()
+     entry.valid = true;
+     entry.issueCycle = m_cycle;
+     entry.readyCycle = m_cycle + kFmacLatency;
+-    m_nextCommitCycle = std::min(m_nextCommitCycle, entry.readyCycle);
+     return &entry;
+ }
+ 
+@@ -886,7 +888,7 @@ void VU1Interpreter::commitReadyPipelines()
+                 m_state.clip = entry.clip;
+             entry.valid = false;
+         }
+-        m_nextCommitCycle = m_flagCount != 0u ? m_flagPipeline[m_flagHead].readyCycle : ~0ull;
++        m_nextCommitCycle = ~0ull; // los flags se confirman al leerlos (commitReadyFlags)
+         return;
+     }
+     while (m_flagCount != 0u)
+@@ -999,9 +1001,7 @@ void VU1Interpreter::commitReadyPipelines()
+         write = {};
+     }
+ 
+-    uint64_t next = ~0ull;
+-    if (m_flagCount != 0u)
+-        next = std::min(next, m_flagPipeline[m_flagHead].readyCycle);
++    uint64_t next = ~0ull; // sin la cola de flags: se confirman al leerlos (commitReadyFlags)
+     for (uint32_t pending = m_storePending; pending != 0u; pending &= pending - 1u)
+         next = std::min(next, m_storePipeline[std::countr_zero(pending)].readyCycle);
+     for (uint32_t pending = m_vfPending; pending != 0u; pending &= pending - 1u)
+@@ -1204,8 +1204,36 @@ bool VU1Interpreter::pipelinesPending() const
+ 
+ void VU1Interpreter::flushPipelines()
+ {
++    commitReadyFlags();
+     while (pipelinesPending())
++    {
+         advanceOneCycle();
++        commitReadyFlags();
++    }
++}
++
++void VU1Interpreter::commitReadyFlags()
++{
++    while (m_flagCount != 0u)
++    {
++        FlagPipelineEntry &entry = m_flagPipeline[m_flagHead];
++        if (entry.readyCycle > m_cycle)
++            break;
++        m_flagHead = (m_flagHead + 1u) % kMaxFlagEntries;
++        --m_flagCount;
++        if (entry.writesMac)
++            m_state.mac = entry.mac;
++        if (entry.writesStatus)
++        {
++            const uint32_t current = entry.status & 0xFu;
++            m_state.status = (m_state.status & 0xFF0u) | current | ((current | entry.extraSticky) << 6);
++        }
++        if (entry.writesSticky)
++            m_state.status = (m_state.status & 0x03Fu) | (entry.status & 0xFC0u);
++        if (entry.writesClip)
++            m_state.clip = entry.clip;
++        entry.valid = false;
++    }
+ }
+ 
+ VU1Interpreter::InstructionUsage VU1Interpreter::decodeUpperUsage(uint32_t upper) const
+@@ -1807,6 +1835,7 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
+         m_pendingHaltT = false;
+     }
+     m_lastRunHitBudget = !programEnded && !m_stopRequested && m_cycle >= context.budgetEnd; // GOW-Port
++    commitReadyFlags(); // GOW-Port: el estado visible tras la ejecución
+     m_state.cycles = m_cycle;
+     if (useVuRounding && previousRoundingMode != -1)
+         std::fesetround(previousRoundingMode);
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_lower.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_lower.cpp
+index 1db89dd..ab62b2d 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_lower.cpp
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_lower.cpp
+@@ -185,6 +185,7 @@ void VU1Interpreter::execLower(uint32_t instr, uint8_t *vuData, uint32_t dataSiz
+     }
+     case 0x10: // FCEQ
+     {
++        commitReadyFlags(); // GOW-Port: flags listos en este ciclo
+         uint32_t imm24 = instr & 0xFFFFFF;
+         if (1 != 0)
+             m_state.vi[1] = ((m_state.clip & 0xFFFFFF) == imm24) ? 1 : 0;
+@@ -197,6 +198,7 @@ void VU1Interpreter::execLower(uint32_t instr, uint8_t *vuData, uint32_t dataSiz
+     }
+     case 0x12: // FCAND
+     {
++        commitReadyFlags(); // GOW-Port: flags listos en este ciclo
+         uint32_t imm24 = instr & 0xFFFFFF;
+         if (1 != 0)
+             m_state.vi[1] = ((m_state.clip & imm24) != 0) ? 1 : 0;
+@@ -204,6 +206,7 @@ void VU1Interpreter::execLower(uint32_t instr, uint8_t *vuData, uint32_t dataSiz
+     }
+     case 0x13: // FCOR
+     {
++        commitReadyFlags(); // GOW-Port: flags listos en este ciclo
+         uint32_t imm24 = instr & 0xFFFFFF;
+         if (1 != 0)
+             m_state.vi[1] = ((m_state.clip | imm24) == 0xFFFFFF) ? 1 : 0;
+@@ -211,6 +214,7 @@ void VU1Interpreter::execLower(uint32_t instr, uint8_t *vuData, uint32_t dataSiz
+     }
+     case 0x14: // FSEQ
+     {
++        commitReadyFlags(); // GOW-Port: flags listos en este ciclo
+         const uint8_t it = VIT(instr);
+         const uint16_t imm12 = static_cast<uint16_t>((((instr >> 21) & 0x1u) << 11) | (instr & 0x7FFu));
+         if (it != 0)
+@@ -225,6 +229,7 @@ void VU1Interpreter::execLower(uint32_t instr, uint8_t *vuData, uint32_t dataSiz
+     }
+     case 0x16: // FSAND
+     {
++        commitReadyFlags(); // GOW-Port: flags listos en este ciclo
+         const uint8_t it = VIT(instr);
+         const uint16_t imm12 = static_cast<uint16_t>((((instr >> 21) & 0x1u) << 11) | (instr & 0x7FFu));
+         if (it != 0)
+@@ -233,6 +238,7 @@ void VU1Interpreter::execLower(uint32_t instr, uint8_t *vuData, uint32_t dataSiz
+     }
+     case 0x17: // FSOR
+     {
++        commitReadyFlags(); // GOW-Port: flags listos en este ciclo
+         const uint8_t it = VIT(instr);
+         const uint16_t imm12 = static_cast<uint16_t>((((instr >> 21) & 0x1u) << 11) | (instr & 0x7FFu));
+         if (it != 0)
+@@ -241,6 +247,7 @@ void VU1Interpreter::execLower(uint32_t instr, uint8_t *vuData, uint32_t dataSiz
+     }
+     case 0x18: // FMEQ
+     {
++        commitReadyFlags(); // GOW-Port: flags listos en este ciclo
+         uint8_t it = VIT(instr);
+         uint8_t is = VIS(instr);
+         if (it != 0)
+@@ -249,6 +256,7 @@ void VU1Interpreter::execLower(uint32_t instr, uint8_t *vuData, uint32_t dataSiz
+     }
+     case 0x1A: // FMAND
+     {
++        commitReadyFlags(); // GOW-Port: flags listos en este ciclo
+         uint8_t it = VIT(instr);
+         uint8_t is = VIS(instr);
+         if (it != 0)
+@@ -257,6 +265,7 @@ void VU1Interpreter::execLower(uint32_t instr, uint8_t *vuData, uint32_t dataSiz
+     }
+     case 0x1B: // FMOR
+     {
++        commitReadyFlags(); // GOW-Port: flags listos en este ciclo
+         uint8_t it = VIT(instr);
+         uint8_t is = VIS(instr);
+         if (it != 0)
+@@ -265,6 +274,7 @@ void VU1Interpreter::execLower(uint32_t instr, uint8_t *vuData, uint32_t dataSiz
+     }
+     case 0x1C: // FCGET
+     {
++        commitReadyFlags(); // GOW-Port: flags listos en este ciclo
+         const uint8_t it = VIT(instr);
+         if (it != 0)
+             m_state.vi[it] = static_cast<int32_t>(m_state.clip & 0x0FFFu);
