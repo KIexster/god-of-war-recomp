@@ -103,3 +103,35 @@ En el juego (OpenGL, ventanas de 5 s entre 220 y 235 s del mismo ejecutable): `v
 2,2–2,4 por segundo con `GOW_VU1_COLAS=1` a 2,4–3,2 sin colas. VU1 sigue ocupando casi todo el hilo;
 para llegar a tiempo real hace falta un recompilador de VU1.
 
+## Microcódigo de VU1 compilado: primer prototipo (rama `vu1-compilado`, 2026-10-08)
+
+Datos del cuadro de referencia (`D6385328`): **1.972 lanzamientos de VU1 y 3,34 millones de pares de
+instrucciones** (4,40 millones de ciclos con las esperas), 1.188 direcciones distintas. Los bucles más
+calientes son `0x2840–0x28E8` (~22 pares × 26.500 vueltas) y `0x2B90–0x2C10` (~19.000 vueltas). A
+~330 ms por cuadro, cada par cuesta ~100 ns: para 30 cuadros por segundo haría falta ~10 veces menos.
+
+Comprobaciones:
+
+- **El modelo de tiempos importa.** Sin las esperas por dependencias (`GOW_VU1_SIN_ESPERAS`, solo en el
+  experimento) más del 80 % de los píxeles del cuadro cambian: Q, P y los flags llegan en otro ciclo.
+  Un recompilador tiene que conservar el mismo modelo de latencias.
+- **Retoques del intérprete agotados.** Normalizar operandos con SSE2 y reutilizarlos fue *más lento*
+  (369 frente a 336 ms); saltarse `execUpper` en los NOP superiores no cambió nada (330–337 ms).
+
+`patches/ps2recomp-vu1-compiled.patch` separa un paso del intérprete (`stepPair`, en
+`ps2_vu1_step.inl`) y permite registrar un despachador compilado. `tools/vu1/generar_vu1.cpp` genera
+C++ a partir de micromemorias capturadas con `GOW_VU1_CAPTURA=<carpeta>` (27 imágenes distintas en tres
+cuadros: el juego carga varios microprogramas por cuadro). Cada par se compila ya decodificado y el
+despachador comprueba en cada par que las dos palabras de la micromemoria son las compiladas; si no,
+interpreta ese par. El código generado sale de datos del juego y no se publica.
+
+Resultado: **imagen idéntica byte a byte, pero más lento (525 ms frente a 336)**. Con `stepPair`
+copiado en cada uno de los 4.360 pares, el código caliente ocupa varios MB y no cabe en la caché. La suite
+pasa 563/563 y, sin código generado enlazado, el intérprete se comporta igual que antes.
+
+Lo que sí haría falta (plan): un recompilador que, como microVU de PCSX2, calcule por bloque las esperas
+y la visibilidad de flags/Q/P a partir del estado del pipeline a la entrada, genere solo la aritmética
+de cada instrucción (SSE, con las mismas reglas de normalización y redondeo hacia cero) y omita los
+flags que nadie lee. Es un trabajo de varios días; el prototipo deja preparados la captura, el generador,
+el despachador y la comparación de imágenes.
+
