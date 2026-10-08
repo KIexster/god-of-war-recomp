@@ -382,5 +382,23 @@ subnormales, FLT_MIN/FLT_MAX, Inf/NaN y patrones de bits cualesquiera): 504.000 
 ensayos. Un fallo inyectado a propósito (el flag Z del producto) lo detecta en el primer ensayo. La CI la
 ejecuta con 200 ensayos.
 
-Reproducción alternando ejecutables: 131 → ~100 ms por cuadro.
-En el juego (OpenGL, alternando ejecutables): 11,5–12,0 → 13,2–14,4 cuadros/s.
+Mediciones de Opus en sus tramos, alternando ejecutables: 131 → ~100 ms por cuadro
+en la reproducción; en el juego con OpenGL, 11,5–12,0 → 13,2–14,4 cuadros/s.
+Son segmentos distintos del perfil de partida cargada documentado arriba.
+
+La revisión de integración encuentra un caso adicional: con FTZ/DAZ del PC
+activado, ADD/SUB pueden redondear una cancelación subnormal a cero sin que
+la operación exacta sea cero. El atajo SIMD omitía entonces el flag U
+persistente de VU1. Un ensayo aleatorio lo detecta en el ensayo 15; la
+regresión dirigida falla antes del arreglo con `status=1c0/c0`, aunque los
+valores de los registros coincidan.
+
+El parche exige operandos opuestos/iguales para reconocer un cero exacto
+de ADD/SUB y conserva la ruta escalar para esos underflows. La prueba añade
+2016 casos dirigidos con FTZ/DAZ, ambos signos y escrituras directas/con colas,
+y restaura el MXCSR del proceso. Pasan esos casos y 100.800 casos aleatorios
+con el código corregido, enlazados contra el runtime local. No se cambia la
+FPU del EE ni se activa FINISH asíncrono por defecto.
+
+En Windows, después de compilar el runtime parcheado, se reproduce con
+`scripts\probar_vu1_fmac.cmd`; la salida queda en `logs/vu1_fmac_test.log`.
