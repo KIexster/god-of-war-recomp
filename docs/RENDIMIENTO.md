@@ -293,3 +293,12 @@ usa el valor guardado. El resultado es idéntico por construcción; la suite pas
 
 En el juego, `iop_ms` baja de ~1.300–1.500 a ~570–650 ms cada 5 s y las dos funciones desaparecen del
 perfil. Los cuadros por segundo no se pudieron comparar bien: otra compilación ocupaba la máquina.
+
+## FINISH del GS asíncrono (opcional, 8 de octubre)
+
+Con el renderizador OpenGL, cada escritura del registro FINISH hace `Flush` y `Sync` síncronos y
+`glFinish`: el hilo del juego espera a que el hilo del GS y la GPU terminen. En el perfil del juego eso era
+el 14 % del hilo principal. `GOW_GS_FINISH_ASINCRONO=1` (`ps2recomp-gs-finish-async.patch`, desactivado
+por defecto) encola FINISH en el hilo del GS y el EE ve el bit enseguida; el hilo del GS mantiene el orden
+y las lecturas de VRAM desde el EE siguen sincronizando. Medido en el juego alternando la variable: 12,1 →
+12,7–13,1 cuadros/s. Queda por decidir si es seguro activarlo siempre.
