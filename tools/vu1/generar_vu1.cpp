@@ -361,9 +361,20 @@ int main(int argc, char **argv)
         "#if defined(_MSC_VER)\n#define VU1C_FAST __declspec(safebuffers)\n#else\n#define VU1C_FAST\n#endif\n\n";
     const std::string footer = "\n#if defined(_MSC_VER)\n#pragma float_control(pop)\n#endif\n";
     const std::string base = argv[1];
+    // Solo se reescribe un archivo si cambia: así la compilación (Ninja con restat) no recompila el código
+    // generado cada vez que se reenlaza el generador.
+    const auto writeIfChanged = [](const std::string &path, const std::string &text)
+    {
+        std::ifstream in(path, std::ios::binary);
+        const std::string old((std::istreambuf_iterator<char>(in)), {});
+        const bool existed = in.is_open();
+        in.close();
+        if (!existed || old != text)
+            std::ofstream(path, std::ios::binary) << text;
+    };
     for (size_t k = 0; k < kParts; ++k)
-        std::ofstream(base + "/programa" + std::to_string(k + 1u) + ".cpp", std::ios::binary)
-            << header << "namespace vu1c_gen\n{\n" << parts[k].str() << "}\n" << footer;
+        writeIfChanged(base + "/programa" + std::to_string(k + 1u) + ".cpp",
+                       header + "namespace vu1c_gen\n{\n" + parts[k].str() + "}\n" + footer);
 
     std::ostringstream out;
     out << header
@@ -412,7 +423,7 @@ int main(int argc, char **argv)
         << "            if (!VU1CompiledAccess::interpret(vu, c))\n                return;\n        }\n    }\n}\n\n"
         << "static const bool g_registered = (VU1Interpreter::registerCompiledProgram(&vu1c_gen::run), true);\n"
         << footer;
-    std::ofstream(base + "/programa0.cpp", std::ios::binary) << out.str();
+    writeIfChanged(base + "/programa0.cpp", out.str());
     std::printf("[generar_vu1] %zu funciones de par, %zu bloques, %zu de %zu FMAC con flags muertos, %zu imagenes\n",
                 pairFns.size(), blockCount, deadCount, fmacCount, codes.size());
     return 0;
