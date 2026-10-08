@@ -352,3 +352,15 @@ exclusivo del hilo del juego se reparte así:
 La escena cambia durante el tramo; esta pasada no demuestra una ganancia frente a otro ejecutable
 ni FPS sostenidos del juego completo. El siguiente perfil debe separar el trabajo del GS de su
 espera y repetir el mismo tramo después de cada mejora.
+
+## Desempaquetado de VIF1 (8 de octubre)
+
+`ps2recomp-vif1-unpack-fast.patch`: en UNPACK sin máscara, con datos y sin STMOD que sume la fila, cada
+componente es el valor descomprimido; se escribe el qword de una vez en lugar del bucle por componente.
+Mismo resultado: huellas de VU1 e imágenes de `vif_pcsx2_inicio2` y `vif_port_480s` idénticas, suite
+565/565. Reproducción alternando ejecutables: 136 → 133 ms por cuadro.
+
+**Temporizadores del EE.** `advanceEeTimers` se llama en cada punto de control del código recompilado
+(~1,5 millones de veces por segundo) y buscaba GIF_STAT en el `unordered_map` de registros cada vez.
+`ps2recomp-ee-timers-fast.patch` guarda la dirección del elemento (los elementos de un `unordered_map` no se
+mueven; solo `clear()` en la inicialización la invalida). Mismo comportamiento; suite 565/565.
