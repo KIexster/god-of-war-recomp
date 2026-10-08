@@ -2307,3 +2307,10 @@ OpenGL reales fallan con el backend anterior y pasan con el borrador corregido:
 dos variantes dentro del mismo lote y la frontera de 4096 lotes compute.
 En ambos casos conservan exactamente los 4 MiB frente al CPU y exigen la ruta
 GPU efectiva. La compilación oficial integrada se valida por separado.
+
+La herramienta pública de rendimiento amplía el control previo a una
+vigilancia cada segundo durante toda la pasada. Ante otra compilación o
+partida, cierra solo su instancia, marca el registro como inválido y restaura
+el entorno; el selector impide usarlo para calcular FPS o exportar JSON.
+Pasan cuatro controles de scripts con procesos simulados y nueve del selector,
+sin lanzar ni detener juegos o compiladores ajenos.

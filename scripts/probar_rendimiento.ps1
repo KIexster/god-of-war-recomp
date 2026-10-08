@@ -38,8 +38,19 @@ try {
     foreach ($name in $clear) { Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue }
     foreach ($name in $set.Keys) { [Environment]::SetEnvironmentVariable($name, $set[$name], 'Process') }
     Write-Host "Renderer: $Renderer"
-    & (Join-Path $PSScriptRoot 'ejecutar.ps1') -Segundos $Segundos
     $destination = Join-Path $LogsDir "perf_$Etiqueta.log"
+    try {
+        & (Join-Path $PSScriptRoot 'ejecutar.ps1') -Segundos $Segundos -VigilarRendimiento
+    }
+    catch {
+        # GOW-Port: conservar el registro marcado, sin anunciarlo como perfil valido.
+        $failedLog = Join-Path $LogsDir 'ejecutar_err.log'
+        if ((Test-Path -LiteralPath $failedLog) -and
+            (Select-String -LiteralPath $failedLog -SimpleMatch '[gow-perf:invalid]' -Quiet)) {
+            Copy-Item -LiteralPath $failedLog -Destination $destination -Force
+        }
+        throw
+    }
     Copy-Item -LiteralPath (Join-Path $LogsDir 'ejecutar_err.log') -Destination $destination -Force
     Write-Host "Perfil guardado en $destination"
 }

@@ -31,6 +31,9 @@ jobs:
       - name: Analizar los scripts de PowerShell
         shell: pwsh
         run: ./tools/ci/analizar_ps1.ps1
+      - name: Probar la vigilancia del perfil de rendimiento
+        shell: pwsh
+        run: ./tests/perf_guard_test.ps1
       - name: Compilar y ejecutar tests/pad2_packet_test.cpp
         run: |
           g++ -std=c++20 -Wall -Wextra -Werror tests/pad2_packet_test.cpp -o pad2_packet_test

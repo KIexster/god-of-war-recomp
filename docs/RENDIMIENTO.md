@@ -15,8 +15,9 @@ python tools/rendimiento/resumir.py logs/perf_partida.log --partida --desde 100 
 
 Este filtro comprueba estados muestreados; todavía hay que comprobar la escena, usar el mismo
 ejecutable y evitar compilaciones u otras partidas durante la comparación. Sin `--partida` se
-conserva la selección anterior por tiempo, útil también para estudiar la carga. Siete controles
-procedurales verifican carga, transiciones, ambos límites, relojes distintos, redondeo y la CLI.
+conserva la selección anterior por tiempo, útil también para estudiar la carga. Nueve controles
+procedurales verifican carga, transiciones, ambos límites, relojes distintos, redondeo, la CLI
+y el rechazo de pasadas invalidadas.
 El script retira también `PS2X_GS_DISCARD_DRAWS` y los diagnósticos de GS/VU1 durante el perfil,
 y restaura sus valores al terminar.
 
@@ -404,11 +405,20 @@ En Windows, después de compilar el runtime parcheado, se reproduce con
 `scripts\probar_vu1_fmac.cmd`; la salida queda en `logs/vu1_fmac_test.log`.
 
 `scripts\probar_rendimiento.ps1` rechaza el inicio del perfil si observa una
-compilación u otra instancia del juego. Evita comenzar una comparación mientras
-trabaja otro agente; el control es previo y todavía no vigila procesos durante
-toda la ejecución. Los controles privados que sustentan las cifras de partida
-de este documento sí vigilan esos procesos cada segundo y descartan la pasada
-si detectan carga externa.
+compilación u otra instancia del juego y vigila esos procesos cada segundo
+durante la ejecución. Si aparece carga externa, cierra únicamente su PID,
+conserva el perfil con la marca `[gow-perf:invalid]`, restaura el entorno y
+termina con error. El selector rechaza toda la pasada marcada, incluso si se
+solicitan ventanas anteriores a la interferencia, y no exporta un resumen.
+Los controles privados que sustentan las cifras anteriores de este documento
+también vigilan procesos cada segundo. Es una vigilancia por muestreo; una
+carga externa más corta que el intervalo puede pasar inadvertida.
+
+Cuatro controles de PowerShell, sin ejecutar el juego, comprueban compilación
+previa, compilación iniciada durante el perfil, otra partida y el PID propio
+sin interferencia. Verifican el registro marcado, la restauración del entorno
+y que solo se detiene el proceso propio. Dos controles adicionales del selector
+verifican el rechazo del perfil y de la exportación JSON: nueve en total.
 
 Con la integración comprobada de 64 parches (`247a9b3`, incluido el arreglo
 FTZ), una pasada privada de 180,55 s con OpenGL y FINISH síncrono conserva

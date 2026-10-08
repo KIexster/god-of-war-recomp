@@ -1,6 +1,6 @@
 # Ejecuta el port y guarda la salida en logs\.
 #   -Segundos N : lo cierra pasados N segundos (0 = sin limite). Por defecto 60.
-param([int]$Segundos = 60)
+param([int]$Segundos = 60, [switch]$VigilarRendimiento)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'common.ps1')
 
@@ -40,8 +40,44 @@ if ($env:GOW_PAD_TEST -eq '1') {
     Get-ChildItem -LiteralPath $exe.DirectoryName -Filter 'gow_pad_test_*.ppm' -File |
         Remove-Item -Force
 }
-$p = Start-Process -FilePath $exe.FullName -ArgumentList ('"' + $elf + '"') -WorkingDirectory $exe.DirectoryName `
-        -RedirectStandardOutput $out -RedirectStandardError $err -PassThru
-if ($Segundos -le 0) { $p.WaitForExit(); Write-Host "Terminado (codigo $($p.ExitCode))" }
+$launch = @{
+    FilePath = $exe.FullName; ArgumentList = ('"' + $elf + '"'); WorkingDirectory = $exe.DirectoryName
+    RedirectStandardOutput = $out; RedirectStandardError = $err; PassThru = $true
+}
+if ($VigilarRendimiento) { $launch.WindowStyle = 'Hidden' }
+$p = Start-Process @launch
+if ($VigilarRendimiento) {
+    # GOW-Port: vigilar toda la pasada, excluyendo solo el PID que acabamos de lanzar.
+    # No detener compiladores ni otras partidas: cerrar unicamente nuestra instancia.
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    $invalid = $null
+    try {
+        while ($true) {
+            $busy = @(Get-Process -Name cl,link,clang,clang-cl,cc1plus,ninja,cmake,ps2EntryRunner -ErrorAction SilentlyContinue |
+                      Where-Object { $_.Id -ne $p.Id })
+            if ($busy.Count -gt 0) {
+                throw ('Perfil invalidado por carga externa: ' +
+                       (($busy.ProcessName | Sort-Object -Unique) -join ', ') + '.')
+            }
+            if ($Segundos -gt 0 -and $watch.Elapsed.TotalSeconds -ge $Segundos) { break }
+            $waitMs = 1000
+            if ($Segundos -gt 0) {
+                $waitMs = [Math]::Max(1, [Math]::Min(1000, [int](($Segundos - $watch.Elapsed.TotalSeconds) * 1000)))
+            }
+            if ($p.WaitForExit($waitMs)) { break }
+        }
+    }
+    catch { $invalid = $_ }
+    finally {
+        if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue }
+        $p.WaitForExit() # Vaciar las redirecciones antes de marcar o copiar el registro.
+    }
+    if ($null -ne $invalid) {
+        Add-Content -LiteralPath $err -Value ('[gow-perf:invalid] ' + $invalid.Exception.Message) -Encoding utf8
+        throw $invalid
+    }
+    Write-Host ('Perfil vigilado terminado a los {0:N2} s' -f $watch.Elapsed.TotalSeconds)
+}
+elseif ($Segundos -le 0) { $p.WaitForExit(); Write-Host "Terminado (codigo $($p.ExitCode))" }
 elseif (-not $p.WaitForExit($Segundos * 1000)) { Stop-Process -Id $p.Id -Force; Write-Host "Detenido a los $Segundos s" }
 else { Write-Host "El programa termino solo (codigo $($p.ExitCode))" }
