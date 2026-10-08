@@ -17,6 +17,8 @@ Este filtro comprueba estados muestreados; todavía hay que comprobar la escena,
 ejecutable y evitar compilaciones u otras partidas durante la comparación. Sin `--partida` se
 conserva la selección anterior por tiempo, útil también para estudiar la carga. Siete controles
 procedurales verifican carga, transiciones, ambos límites, relojes distintos, redondeo y la CLI.
+El script retira también `PS2X_GS_DISCARD_DRAWS` y los diagnósticos de GS/VU1 durante el perfil,
+y restaura sus valores al terminar.
 
 ## Perfil por muestreo (`tools/perfil/muestrear.cpp`)
 
@@ -320,3 +322,33 @@ el 14 % del hilo principal. `GOW_GS_FINISH_ASINCRONO=1` (`ps2recomp-gs-finish-as
 por defecto) encola FINISH en el hilo del GS y el EE ve el bit enseguida; el hilo del GS mantiene el orden
 y las lecturas de VRAM desde el EE siguen sincronizando. Medido en el juego alternando la variable: 12,1 →
 12,7–13,1 cuadros/s. Queda por decidir si es seguro activarlo siempre.
+
+`tests/gs_finish_async_test.cpp` controla ambos modos en procesos separados: un backend procedural
+retiene FINISH, comprueba cuándo vuelve la escritura y cuándo se publica CSR, y exige que una lectura
+de VRAM espere. Los dibujos, FINISH y la lectura deben conservar el orden. Con el runtime anterior a
+la PR #22, el control default pasa y el control async falla. Ejecutar en Windows
+`scripts\probar_finish_gs.cmd`. Este control no acredita el momento de terminación de una GPU real:
+el modo opcional publica FINISH antes de completarla y continúa desactivado por defecto.
+
+## Perfil de partida integrada sin otros compiladores (8 de octubre)
+
+El ejecutable de `9f0ebc4` (60 parches, GS56, VU1 compilada con 501 micromemorias y planificador IOP),
+OpenGL y FINISH síncrono, se prueba durante 180 s con FMV omitido y una copia privada de tarjeta.
+Se vigilan cada segundo compiladores, enlazadores, Ninja/CMake y otras instancias del juego. No se
+detectan durante la primera pasada; la segunda no comienza porque aparece otra compilación.
+
+El selector `--partida` conserva 12 ventanas completas entre 104,79 y 164,84 s, 60,04 s en total,
+encerradas por estados 11 sin carga pendiente y con el nivel listo. Media ponderada: **7,13
+`vid::Flip`/s**; presentaciones del host: **58,45/s**. Son contadores distintos. El tiempo transcurrido
+exclusivo del hilo del juego se reparte así:
+
+| Subsistema | Porcentaje |
+|---|---:|
+| VU1 | 49,08 % |
+| GS, incluidas sus esperas | 31,08 % |
+| EE | 13,71 % |
+| IOP | 6,13 % |
+
+La escena cambia durante el tramo; esta pasada no demuestra una ganancia frente a otro ejecutable
+ni FPS sostenidos del juego completo. El siguiente perfil debe separar el trabajo del GS de su
+espera y repetir el mismo tramo después de cada mejora.

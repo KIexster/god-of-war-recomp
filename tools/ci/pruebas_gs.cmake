@@ -8,3 +8,5 @@ target_include_directories(gow_gs_replay PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../.
 add_executable(gow_gs_replay_checkpoints_test "${CMAKE_CURRENT_LIST_DIR}/../../tests/gs_replay_checkpoints_test.cpp")
 target_link_libraries(gow_gs_replay_checkpoints_test PRIVATE ps2_runtime)
 target_include_directories(gow_gs_replay_checkpoints_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src")
+add_executable(gow_gs_finish_async_test "${CMAKE_CURRENT_LIST_DIR}/../../tests/gs_finish_async_test.cpp")
+target_link_libraries(gow_gs_finish_async_test PRIVATE ps2_runtime)
