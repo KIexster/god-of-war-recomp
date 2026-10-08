@@ -79,6 +79,7 @@ $gsCoordinateAliasPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-coordinate-a
 $gsStqHardwareTestPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-stq-hardware-test.patch'
 $gsFinishAsyncPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-finish-async.patch'
 $gsHardwareProfilePatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-hardware-profile.patch'
+$gsProfileAsyncPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-profile-async.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -182,6 +183,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $gsCoordinateAliasPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsStqHardwareTestPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsFinishAsyncPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsHardwareProfilePatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsProfileAsyncPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner

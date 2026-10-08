@@ -1,0 +1,626 @@
+diff --git a/ps2xRuntime/src/lib/gs/gpu/gs_gpu_backend.cpp b/ps2xRuntime/src/lib/gs/gpu/gs_gpu_backend.cpp
+--- a/ps2xRuntime/src/lib/gs/gpu/gs_gpu_backend.cpp
++++ b/ps2xRuntime/src/lib/gs/gpu/gs_gpu_backend.cpp
+@@ -5,6 +5,7 @@
+ #include "runtime/gs/gs_swizzle.h"
+ #include "runtime/gs/ps2_gs_memory.h"
+ #include "../gs_gpu_helpers.h"
++#include "../gs_gpu_profile.h" // GOW-Port: ventanas de perfil sin esperas durante el render.
+ #include "../gs_sprite_rules.h"
+ #include "../gs_triangle_rules.h"
+ #include "gs_gl.h"
+@@ -416,31 +417,7 @@
+         uint32_t composites = 0u;
+     } presentStats;
+
+-    struct GpuProf
+-    {
+-        struct Pending
+-        {
+-            uint32_t kind;
+-            GLuint begin;
+-            GLuint end;
+-            std::array<uint32_t, 8> info;
+-        };
+-        std::vector<std::pair<uint64_t, std::array<uint32_t, 8>>> rasterTimes;
+-        std::array<uint32_t, 8> nextInfo{};
+-        bool enabled = false;
+-        std::vector<GLuint> freeQueries;
+-        std::vector<Pending> pending;
+-        std::array<uint64_t, 8> ns{};
+-        std::array<uint64_t, 8> count{};
+-        uint64_t pairs = 0u;
+-        uint64_t tiles = 0u;
+-        uint64_t maxBin = 0u;
+-        uint64_t sumMaxBin = 0u;
+-        uint64_t prims = 0u;
+-        uint64_t frames = 0u;
+-        std::array<uint64_t, 6> reasons{};
+-        std::array<uint64_t, 3> uploadHazards{};
+-    } prof;
++    GSGpuProfile::Queue prof; // GOW-Port: contadores y timestamps de la misma ventana.
+
+     void flushFor(uint32_t reason)
+     {
+@@ -463,7 +440,7 @@
+
+     GLuint profBegin()
+     {
+-        if (!prof.enabled)
++        if (!prof.enabled || !prof.sampleAllowed())
+             return 0u;
+         const GLuint query = profQuery();
+         gl().QueryCounter(query, kTimestamp);
+@@ -474,72 +451,77 @@
+     {
+         if (!prof.enabled)
+             return;
+-        const GLuint end = profQuery();
+-        gl().QueryCounter(end, kTimestamp);
+-        prof.pending.push_back({kind, begin, end, prof.nextInfo});
++        if (begin != 0u)
++        {
++            const GLuint end = profQuery();
++            gl().QueryCounter(end, kTimestamp);
++            prof.pending.push_back({kind, begin, end, prof.nextInfo});
++        }
+         prof.nextInfo = {};
+-        if (prof.pending.size() >= 4096u)
+-            profResolve();
+     }
+
+     void profFrame()
+     {
+         if (!prof.enabled)
+             return;
+-        profResolve();
+-        if (++prof.frames < 4u)
+-            return;
+-        profReport();
++        profCollect(false);
++        prof.endFrame();
++        profCollect(false);
+     }
+
+-    void profResolve()
++    // GOW-Port: QUERY_RESULT solo se lee tras AVAILABLE; esperar se reserva al cierre.
++    void profCollect(bool wait)
+     {
+-        for (const GpuProf::Pending &item : prof.pending)
+-        {
+-            GLuint64 a = 0u;
+-            GLuint64 b = 0u;
+-            gl().GetQueryObjectui64v(item.begin, kQueryResult, &a);
+-            gl().GetQueryObjectui64v(item.end, kQueryResult, &b);
+-            prof.ns[item.kind] += b - a;
+-            if (item.kind == 0u)
+-                prof.rasterTimes.push_back({b - a, item.info});
+-            ++prof.count[item.kind];
+-            prof.freeQueries.push_back(item.begin);
+-            prof.freeQueries.push_back(item.end);
+-        }
+-        prof.pending.clear();
++        prof.collect(
++            [this](uint32_t query)
++            {
++                GLuint64 available = 0u;
++                gl().GetQueryObjectui64v(query, kQueryResultAvailable, &available);
++                return available != 0u;
++            },
++            [this](uint32_t query)
++            {
++                GLuint64 result = 0u;
++                gl().GetQueryObjectui64v(query, kQueryResult, &result);
++                return result;
++            },
++            [this](GSGpuProfile::Window &window) { profReport(window); }, wait);
+     }
+
+-    void profReport()
++    void profReport(GSGpuProfile::Window &window)
+     {
+-        prof.frames = std::max<uint64_t>(prof.frames, 1u);
++        window.frames = std::max<uint64_t>(window.frames, 1u);
+         static const char *kNames[8] = {"raster", "clut", "upload", "copyRead", "copyWrite", "present", "clear", "other"};
++        if (window.skippedQueries != 0u)
++            std::fprintf(stderr, "[gs-gpu-prof] partial profile: %llu samples skipped; GPU times are incomplete\n",
++                         static_cast<unsigned long long>(window.skippedQueries));
++        std::fprintf(stderr, "[gs-gpu-prof] window: %llu frames\n", static_cast<unsigned long long>(window.frames));
+         std::fprintf(stderr, "[gs-gpu-prof] per frame:");
+         for (uint32_t kind = 0; kind < 8u; ++kind)
+-            if (prof.count[kind] != 0u)
+-                std::fprintf(stderr, " %s %.2f ms (%.0f)", kNames[kind], prof.ns[kind] / 1e6 / prof.frames,
+-                             static_cast<double>(prof.count[kind]) / prof.frames);
+-        std::fprintf(stderr, " | prims %.0f tiles %.0f pairs %.0f maxBin %llu\n", static_cast<double>(prof.prims) / prof.frames,
+-                     static_cast<double>(prof.tiles) / prof.frames, static_cast<double>(prof.pairs) / prof.frames,
+-                     static_cast<unsigned long long>(prof.maxBin));
++            if (window.count[kind] != 0u)
++                std::fprintf(stderr, " %s %.2f ms (%.0f)", kNames[kind], window.ns[kind] / 1e6 / window.frames,
++                             static_cast<double>(window.count[kind]) / window.frames);
++        std::fprintf(stderr, " | prims %.0f tiles %.0f pairs %.0f maxBin %llu\n", static_cast<double>(window.prims) / window.frames,
++                     static_cast<double>(window.tiles) / window.frames, static_cast<double>(window.pairs) / window.frames,
++                     static_cast<unsigned long long>(window.maxBin));
+         std::fprintf(stderr, "[gs-gpu-prof] flushes: target %llu texture %llu clut %llu transfer %llu external %llu sync %llu\n",
+-                     static_cast<unsigned long long>(prof.reasons[0]), static_cast<unsigned long long>(prof.reasons[1]),
+-                     static_cast<unsigned long long>(prof.reasons[2]), static_cast<unsigned long long>(prof.reasons[3]),
+-                     static_cast<unsigned long long>(prof.reasons[4]), static_cast<unsigned long long>(prof.reasons[5]));
+-        prof.reasons = {};
+-        std::fprintf(stderr, "[gs-gpu-prof] upload hazards: target %llu clut %llu texture-read %llu\n", static_cast<unsigned long long>(prof.uploadHazards[0]),
+-                     static_cast<unsigned long long>(prof.uploadHazards[1]), static_cast<unsigned long long>(prof.uploadHazards[2]));
+-        prof.uploadHazards = {};
+-        std::fprintf(stderr, "[gs-gpu-prof] sum of per-dispatch longest bins %.0f per frame\n", static_cast<double>(prof.sumMaxBin) / prof.frames);
+-        std::sort(prof.rasterTimes.begin(), prof.rasterTimes.end(), [](const auto &l, const auto &r) { return l.first > r.first; });
+-        for (size_t i = 0; i < std::min<size_t>(prof.rasterTimes.size(), 15u); ++i)
++                     static_cast<unsigned long long>(window.reasons[0]), static_cast<unsigned long long>(window.reasons[1]),
++                     static_cast<unsigned long long>(window.reasons[2]), static_cast<unsigned long long>(window.reasons[3]),
++                     static_cast<unsigned long long>(window.reasons[4]), static_cast<unsigned long long>(window.reasons[5]));
++        window.reasons = {};
++        std::fprintf(stderr, "[gs-gpu-prof] upload hazards: target %llu clut %llu texture-read %llu\n", static_cast<unsigned long long>(window.uploadHazards[0]),
++                     static_cast<unsigned long long>(window.uploadHazards[1]), static_cast<unsigned long long>(window.uploadHazards[2]));
++        window.uploadHazards = {};
++        std::fprintf(stderr, "[gs-gpu-prof] sum of per-dispatch longest bins %.0f per frame\n", static_cast<double>(window.sumMaxBin) / window.frames);
++        std::sort(window.rasterTimes.begin(), window.rasterTimes.end(), [](const auto &l, const auto &r) { return l.first > r.first; });
++        for (size_t i = 0; i < std::min<size_t>(window.rasterTimes.size(), 15u); ++i)
+         {
+-            const auto &[ns, info] = prof.rasterTimes[i];
++            const auto &[ns, info] = window.rasterTimes[i];
+             std::fprintf(stderr, "[gs-gpu-prof]   %.2f ms prims %u tiles %u pairs %u maxBin %u fbp %x fpsm %x zbp %x flags %x\n", ns / 1e6, info[0], info[1],
+                          info[2], info[3], info[4], info[5], info[6], info[7]);
+         }
+         std::map<std::pair<uint32_t, uint32_t>, std::array<uint64_t, 4>> byTarget;
+-        for (const auto &[ns, info] : prof.rasterTimes)
++        for (const auto &[ns, info] : window.rasterTimes)
+         {
+             auto &entry = byTarget[{info[4], info[7]}];
+             entry[0] += ns;
+@@ -555,15 +537,15 @@
+         {
+             const auto &entry = byTarget[targets[i].second];
+             std::fprintf(stderr, "[gs-gpu-prof]   target fbp %x flags %x: %.2f ms in %llu dispatches, %llu pairs, %llu prims\n", targets[i].second.first,
+-                         targets[i].second.second, entry[0] / 1e6 / prof.frames, static_cast<unsigned long long>(entry[1]),
++                         targets[i].second.second, entry[0] / 1e6 / window.frames, static_cast<unsigned long long>(entry[1]),
+                          static_cast<unsigned long long>(entry[2]), static_cast<unsigned long long>(entry[3]));
+         }
+-        prof.rasterTimes.clear();
++        window.rasterTimes.clear();
+         std::fflush(stderr);
+-        prof.ns = {};
+-        prof.count = {};
+-        prof.pairs = prof.tiles = prof.prims = prof.maxBin = prof.sumMaxBin = 0u;
+-        prof.frames = 0u;
++        window.ns = {};
++        window.count = {};
++        window.pairs = window.tiles = window.prims = window.maxBin = window.sumMaxBin = 0u;
++        window.frames = 0u;
+     }
+
+     GSTransferCommand transfer{};
+@@ -591,12 +573,14 @@
+         stopCompileWorker();
+         if (initialized && prof.enabled)
+         {
+-            profResolve();
+-            profReport();
++            prof.finish();
++            profCollect(true); // GOW-Port: esperar solo al destruir el contexto.
+         }
+         if (initialized)
+         {
+             const Api &gl = context.gl();
++            if (!prof.freeQueries.empty())
++                gl.DeleteQueries(static_cast<GLsizei>(prof.freeQueries.size()), prof.freeQueries.data());
+             if (context.Shared())
+                 DestroyShared(gl);
+             for (Readback &slot : readbacks)
+diff --git a/ps2xRuntime/src/lib/gs/gpu/gs_gl.h b/ps2xRuntime/src/lib/gs/gpu/gs_gl.h
+--- a/ps2xRuntime/src/lib/gs/gpu/gs_gl.h
++++ b/ps2xRuntime/src/lib/gs/gpu/gs_gl.h
+@@ -63,6 +63,7 @@
+     constexpr GLbitfield kClientStorageBit = 0x0200;
+     constexpr GLenum kTimeElapsed = 0x88BF;
+     constexpr GLenum kQueryResult = 0x8866;
++    constexpr GLenum kQueryResultAvailable = 0x8867; // GOW-Port: consulta sin espera.
+     constexpr GLenum kTimestamp = 0x8E28;
+     constexpr GLenum kTexture2D = 0x0DE1;
+     constexpr GLenum kRgba8 = 0x8058;
+diff --git a/ps2xRuntime/src/lib/gs/gs_gpu_profile.h b/ps2xRuntime/src/lib/gs/gs_gpu_profile.h
+new file mode 100644
+--- /dev/null
++++ b/ps2xRuntime/src/lib/gs/gs_gpu_profile.h
+@@ -0,0 +1,114 @@
++// GOW-Port: recolector propio de timestamps OpenGL, sin dependencias del driver.
++// Inspiración: nathanialf/ico-pc, rd_perf.c @ 46de16d393b817290e1bbf5de63a6de10cf9575c.
++// No se copia código de ICO. Las ventanas conservan contadores y muestras juntos.
++#pragma once
++
++#include <array>
++#include <cstddef>
++#include <cstdint>
++#include <deque>
++#include <utility>
++#include <vector>
++
++namespace GSGpuProfile
++{
++    constexpr size_t kMaxSamplesPerWindow = 4096u;
++    constexpr size_t kMaxWaitingWindows = 3u;
++    constexpr uint64_t kFramesPerWindow = 4u;
++
++    struct Pending
++    {
++        uint32_t kind;
++        uint32_t begin;
++        uint32_t end;
++        std::array<uint32_t, 8> info;
++    };
++
++    struct Window
++    {
++        std::vector<Pending> pending;
++        std::vector<std::pair<uint64_t, std::array<uint32_t, 8>>> rasterTimes;
++        std::array<uint64_t, 8> ns{};
++        std::array<uint64_t, 8> count{};
++        uint64_t pairs = 0u;
++        uint64_t tiles = 0u;
++        uint64_t maxBin = 0u;
++        uint64_t sumMaxBin = 0u;
++        uint64_t prims = 0u;
++        uint64_t frames = 0u;
++        uint64_t skippedQueries = 0u;
++        std::array<uint64_t, 6> reasons{};
++        std::array<uint64_t, 3> uploadHazards{};
++    };
++
++    class Queue : public Window
++    {
++    public:
++        bool enabled = false;
++        std::vector<uint32_t> freeQueries;
++        std::array<uint32_t, 8> nextInfo{};
++
++        // GOW-Port: bajo presión se deja de medir, sin detener el render.
++        bool sampleAllowed()
++        {
++            if (pending.size() < kMaxSamplesPerWindow)
++                return true;
++            ++skippedQueries;
++            return false;
++        }
++
++        void endFrame()
++        {
++            ++frames;
++            if (frames >= kFramesPerWindow && waiting.size() < kMaxWaitingWindows)
++                seal();
++        }
++
++        size_t waitingWindows() const { return waiting.size(); }
++
++        // GOW-Port: solo el cierre permite recoger resultados todavía pendientes.
++        void finish()
++        {
++            if (frames != 0u || !pending.empty() || skippedQueries != 0u ||
++                prims != 0u || pairs != 0u || tiles != 0u || maxBin != 0u || sumMaxBin != 0u ||
++                reasons != std::array<uint64_t, 6>{} || uploadHazards != std::array<uint64_t, 3>{})
++                seal();
++        }
++
++        template <class Available, class Read, class Report>
++        void collect(Available available, Read read, Report report, bool wait = false)
++        {
++            while (!waiting.empty())
++            {
++                Window &window = waiting.front();
++                // GOW-Port: todos son TIMESTAMP del mismo contexto. OpenGL garantiza
++                // que el último disponible implica los anteriores disponibles.
++                if (!wait && !window.pending.empty() && !available(window.pending.back().end))
++                    break;
++                for (const Pending &item : window.pending)
++                {
++                    const uint64_t begin = read(item.begin);
++                    const uint64_t end = read(item.end);
++                    window.ns[item.kind] += end - begin;
++                    ++window.count[item.kind];
++                    if (item.kind == 0u)
++                        window.rasterTimes.push_back({end - begin, item.info});
++                    freeQueries.push_back(item.begin);
++                    freeQueries.push_back(item.end);
++                }
++                window.pending.clear();
++                report(window);
++                waiting.pop_front();
++            }
++        }
++
++    private:
++        std::deque<Window> waiting;
++
++        void seal()
++        {
++            waiting.emplace_back(std::move(static_cast<Window &>(*this)));
++            static_cast<Window &>(*this) = Window{};
++        }
++    };
++}
+diff --git a/ps2xTest/src/ps2_gpu_profile_tests.cpp b/ps2xTest/src/ps2_gpu_profile_tests.cpp
+new file mode 100644
+--- /dev/null
++++ b/ps2xTest/src/ps2_gpu_profile_tests.cpp
+@@ -0,0 +1,247 @@
++// GOW-Port: timestamps simulados para probar el perfil sin juego ni driver.
++#include "MiniTest.h"
++#include "gs/gs_gpu_profile.h"
++
++#include <set>
++#include <vector>
++
++namespace
++{
++    using GSGpuProfile::Queue;
++    using GSGpuProfile::Window;
++
++    void frames(Queue &queue, unsigned count = 4u)
++    {
++        for (unsigned i = 0u; i < count; ++i)
++            queue.endFrame();
++    }
++
++    bool sample(Queue &queue, uint32_t kind, uint32_t begin, uint32_t end,
++                std::array<uint32_t, 8> info = {})
++    {
++        if (!queue.sampleAllowed())
++            return false;
++        queue.pending.push_back({kind, begin, end, info});
++        return true;
++    }
++}
++
++void register_ps2_gpu_profile_tests()
++{
++    MiniTest::Case("GS GPU perfil diferido", [](TestCase &tc)
++    {
++        tc.Run("GPU ocupada no lee resultados ni recicla consultas", [](TestCase &t)
++        {
++            Queue q;
++            sample(q, 0u, 1u, 2u);
++            frames(q);
++            unsigned probes = 0u, reads = 0u, reports = 0u;
++            q.collect([&](uint32_t id)
++                      {
++                          ++probes;
++                          t.Equals(id, 2u, "Solo consulta disponibilidad del último timestamp");
++                          return false;
++                      },
++                      [&](uint32_t) { ++reads; t.Fail("Lectura prematura"); return uint64_t{0}; },
++                      [&](const Window &) { ++reports; });
++            t.Equals(probes, 1u, "Una consulta, sin bucle de espera");
++            t.Equals(reads, 0u, "No lee QUERY_RESULT pendiente");
++            t.Equals(reports, 0u, "No informa una ventana incompleta");
++            t.Equals(q.waitingWindows(), size_t{1}, "Retiene la ventana");
++            t.IsTrue(q.freeQueries.empty(), "No reutiliza handles pendientes");
++        });
++
++        tc.Run("Recoge ventanas listas en orden y una sola vez", [](TestCase &t)
++        {
++            Queue q;
++            sample(q, 0u, 1u, 2u); q.prims = 11u; frames(q);
++            sample(q, 2u, 3u, 4u); q.prims = 29u; frames(q);
++            std::vector<Window> reports;
++            std::vector<uint32_t> reads;
++            bool secondReady = false;
++            auto collect = [&]
++            {
++                q.collect([&](uint32_t id) { return id == 2u || secondReady; },
++                          [&](uint32_t id)
++                          {
++                              t.IsTrue(id <= 2u || secondReady, "No lee la segunda ventana prematuramente");
++                              reads.push_back(id);
++                              const uint64_t values[] = {0u, 100u, 160u, 200u, 320u};
++                              return values[id];
++                          },
++                          [&](const Window &w) { reports.push_back(w); });
++            };
++            collect();
++            t.Equals(reports.size(), size_t{1}, "Solo recoge la primera ventana");
++            t.Equals(q.waitingWindows(), size_t{1}, "Conserva la segunda");
++            t.Equals(reads, std::vector<uint32_t>({1u, 2u}), "Lee una vez los timestamps listos");
++            secondReady = true;
++            collect(); collect();
++            t.Equals(reports.size(), size_t{2}, "No duplica informes");
++            t.Equals(reads, std::vector<uint32_t>({1u, 2u, 3u, 4u}), "Orden estable");
++            if (reports.size() != 2u)
++                return;
++            t.Equals(reports[0].ns[0], uint64_t{60}, "Tiempo raster original");
++            t.Equals(reports[1].ns[2], uint64_t{120}, "Tiempo upload original");
++            t.Equals(reports[0].prims, uint64_t{11}, "Contadores de la primera ventana");
++            t.Equals(reports[1].prims, uint64_t{29}, "Contadores de la segunda");
++            t.Equals(reports[0].frames, uint64_t{4}, "Cuatro cuadros originales");
++            t.Equals(reports[1].frames, uint64_t{4}, "Cuatro cuadros siguientes");
++            t.Equals(q.freeQueries, std::vector<uint32_t>({1u, 2u, 3u, 4u}), "Recicla tras leer");
++        });
++
++        tc.Run("Preserva metadatos y contadores con sus timestamps", [](TestCase &t)
++        {
++            Queue q;
++            const std::array<uint32_t, 8> info = {7u, 8u, 9u, 10u, 0xd0u, 2u, 0x120u, 0x4bu};
++            sample(q, 0u, 1u, 2u, info); sample(q, 0u, 3u, 4u, info);
++            q.prims = 14u; q.pairs = 18u; q.tiles = 16u;
++            q.maxBin = 10u; q.sumMaxBin = 20u;
++            q.reasons[3] = 2u; q.uploadHazards[1] = 3u;
++            frames(q);
++            t.Equals(q.prims, uint64_t{0}, "Reinicia contadores activos");
++            t.Equals(q.reasons[3], uint64_t{0}, "Reinicia razones activas");
++            q.prims = 999u; q.reasons[3] = 999u; q.uploadHazards[1] = 999u; q.nextInfo.fill(999u);
++            unsigned reports = 0u;
++            q.collect([](uint32_t) { return true; },
++                      [](uint32_t id) { return uint64_t{id} * 50u; },
++                      [&](const Window &w)
++                      {
++                          ++reports;
++                          t.Equals(w.ns[0], uint64_t{100}, "Suma las dos muestras");
++                          t.Equals(w.count[0], uint64_t{2}, "Cuenta las dos muestras");
++                          t.Equals(w.prims, uint64_t{14}, "No mezcla primitivas nuevas");
++                          t.Equals(w.pairs, uint64_t{18}, "Conserva pares");
++                          t.Equals(w.tiles, uint64_t{16}, "Conserva tiles");
++                          t.Equals(w.maxBin, uint64_t{10}, "Conserva máximo");
++                          t.Equals(w.sumMaxBin, uint64_t{20}, "Conserva suma");
++                          t.Equals(w.reasons[3], uint64_t{2}, "Conserva razones");
++                          t.Equals(w.uploadHazards[1], uint64_t{3}, "Conserva hazards");
++                          t.Equals(w.rasterTimes.size(), size_t{2}, "Retiene muestras raster");
++                          for (const auto &entry : w.rasterTimes)
++                          {
++                              t.Equals(entry.first, uint64_t{50}, "Duración correcta");
++                              t.Equals(entry.second, info, "FBP, PSM, ZBP y flags originales");
++                          }
++                      });
++            t.Equals(reports, 1u, "Informa la ventana congelada");
++            t.Equals(q.prims, uint64_t{999}, "No altera contadores nuevos al recoger");
++        });
++
++        tc.Run("Cola llena conserva cuadros sin esperar", [](TestCase &t)
++        {
++            Queue q;
++            for (uint32_t i = 1u; i <= 3u; ++i)
++            {
++                sample(q, 0u, i * 2u - 1u, i * 2u); q.prims = i; frames(q);
++            }
++            sample(q, 0u, 7u, 8u); q.prims = 4u; frames(q);
++            t.Equals(q.waitingWindows(), GSGpuProfile::kMaxWaitingWindows, "Cola limitada");
++            t.Equals(q.frames, uint64_t{4}, "Conserva ventana activa");
++            t.Equals(q.prims, uint64_t{4}, "Conserva contadores activos");
++            std::vector<Window> reports;
++            q.collect([](uint32_t) { return false; },
++                      [&](uint32_t) { t.Fail("No espera con la cola llena"); return uint64_t{0}; },
++                      [&](const Window &) { t.Fail("No informa resultados pendientes"); });
++            auto collect = [&]
++            {
++                q.collect([](uint32_t) { return true; },
++                          [](uint32_t id) { return uint64_t{id} * 10u; },
++                          [&](const Window &w) { reports.push_back(w); });
++            };
++            collect(); q.endFrame(); collect();
++            t.Equals(q.frames, uint64_t{0}, "Sella al liberarse espacio");
++            t.Equals(reports.size(), size_t{4}, "No pierde ventanas");
++            uint64_t totalFrames = 0u, totalPrims = 0u;
++            for (const auto &w : reports)
++            {
++                totalFrames += w.frames; totalPrims += w.prims;
++                t.Equals(w.ns[0], uint64_t{10}, "Cada ventana conserva su muestra");
++            }
++            t.Equals(totalFrames, uint64_t{17}, "Cuenta 17 cuadros reales");
++            t.Equals(totalPrims, uint64_t{10}, "Cuenta 10 primitivas reales");
++            if (reports.size() == 4u)
++                t.Equals(reports[3].frames, uint64_t{5}, "Divisor real con contrapresión");
++        });
++
++        tc.Run("Limita consultas y marca omisiones sin perder contadores", [](TestCase &t)
++        {
++            Queue q;
++            for (uint32_t i = 0u; i < GSGpuProfile::kMaxSamplesPerWindow + 3u; ++i)
++            {
++                sample(q, 0u, i * 2u + 1u, i * 2u + 2u); ++q.prims;
++            }
++            t.Equals(q.pending.size(), GSGpuProfile::kMaxSamplesPerWindow, "Máximo 4096 pares");
++            frames(q);
++            unsigned reports = 0u;
++            q.collect([](uint32_t) { return true; },
++                      [](uint32_t id) { return uint64_t{id} * 100u; },
++                      [&](const Window &w)
++                      {
++                          ++reports;
++                          t.Equals(w.skippedQueries, uint64_t{3}, "Perfil explícitamente parcial");
++                          t.Equals(w.prims, uint64_t{4099}, "Conserva trabajo sin muestra");
++                          t.Equals(w.count[0], uint64_t{4096}, "Cuenta muestras aceptadas");
++                          t.Equals(w.ns[0], uint64_t{409600}, "Tiempo de muestras aceptadas");
++                          t.Equals(w.rasterTimes.size(), size_t{4096}, "Memoria raster limitada");
++                      });
++            t.Equals(reports, 1u, "Informe parcial único");
++            t.Equals(q.freeQueries.size(), size_t{8192}, "Recicla consultas aceptadas");
++            const std::set<uint32_t> handles(q.freeQueries.begin(), q.freeQueries.end());
++            t.Equals(handles.size(), size_t{8192}, "No recicla handles dos veces");
++            t.IsTrue(q.sampleAllowed(), "Siguiente ventana vuelve a medir");
++            t.Equals(q.skippedQueries, uint64_t{0}, "No arrastra omisiones");
++        });
++
++        tc.Run("Cierre recoge ventana corta y recicla todos los handles", [](TestCase &t)
++        {
++            Queue q;
++            sample(q, 0u, 1u, 2u); frames(q);
++            sample(q, 5u, 3u, 4u); frames(q, 2u);
++            q.finish(); q.finish();
++            unsigned probes = 0u;
++            std::vector<Window> reports;
++            q.collect([&](uint32_t) { ++probes; return false; },
++                      [](uint32_t id) { return uint64_t{id} * 10u; },
++                      [&](const Window &w) { reports.push_back(w); }, true);
++            t.Equals(probes, 0u, "Solo el cierre permite lectura forzada");
++            t.Equals(reports.size(), size_t{2}, "Cerrar dos veces no duplica");
++            if (reports.size() == 2u)
++            {
++                t.Equals(reports[0].frames, uint64_t{4}, "Ventana completa");
++                t.Equals(reports[1].frames, uint64_t{2}, "Divisor de ventana corta");
++                t.Equals(reports[1].ns[5], uint64_t{10}, "Timestamp de presentación");
++            }
++            t.Equals(q.waitingWindows(), size_t{0}, "No quedan pendientes");
++            t.Equals(q.freeQueries.size(), size_t{4}, "Handles listos para DeleteQueries");
++        });
++
++        tc.Run("Cierre vacío no inventa cuadros", [](TestCase &t)
++        {
++            Queue q;
++            q.finish();
++            q.collect([](uint32_t) { return true; },
++                      [&](uint32_t) { t.Fail("No hay consultas"); return uint64_t{0}; },
++                      [&](const Window &) { t.Fail("No hay ventanas"); }, true);
++            t.Equals(q.waitingWindows(), size_t{0}, "Cola vacía");
++            t.IsTrue(q.freeQueries.empty(), "No crea handles");
++        });
++
++        tc.Run("Ventana sin muestras conserva cuadros y contadores", [](TestCase &t)
++        {
++            Queue q;
++            q.reasons[5] = 2u; frames(q);
++            unsigned reports = 0u;
++            q.collect([&](uint32_t) { t.Fail("No necesita disponibilidad"); return false; },
++                      [&](uint32_t) { t.Fail("No hay timestamps"); return uint64_t{0}; },
++                      [&](const Window &w)
++                      {
++                          ++reports;
++                          t.Equals(w.frames, uint64_t{4}, "Cuatro cuadros sin consultas");
++                          t.Equals(w.reasons[5], uint64_t{2}, "Conserva flushes");
++                          t.Equals(w.count[0], uint64_t{0}, "No inventa muestras");
++                      });
++            t.Equals(reports, 1u, "Informa contadores reales");
++        });
++    });
++}
+diff --git a/ps2xTest/CMakeLists.txt b/ps2xTest/CMakeLists.txt
+--- a/ps2xTest/CMakeLists.txt
++++ b/ps2xTest/CMakeLists.txt
+@@ -33,6 +33,7 @@
+     src/ps2_vu_tests.cpp
+     src/ps2_gs_tests.cpp
+     src/ps2_gs_backend_tests.cpp # GOW-Port: cola, VRAM y comparación CPU/OpenGL.
++    src/ps2_gpu_profile_tests.cpp # GOW-Port: ventanas y lecturas de timestamps sin espera.
+     src/ps2_iop_tests.cpp
+     src/ps2_sif_rpc_tests.cpp
+     src/ps2_sif_dma_tests.cpp
+diff --git a/ps2xTest/src/main.cpp b/ps2xTest/src/main.cpp
+--- a/ps2xTest/src/main.cpp
++++ b/ps2xTest/src/main.cpp
+@@ -14,6 +14,7 @@
+ void register_ps2_vu_tests();
+ void register_ps2_gs_tests();
+ void register_ps2_gs_backend_tests(); // GOW-Port
++void register_ps2_gpu_profile_tests(); // GOW-Port
+ void register_ps2_iop_tests();
+ void register_ps2_sif_rpc_tests();
+ void register_ps2_sif_dma_tests();
+@@ -37,6 +38,7 @@
+     register_ps2_vu_tests();
+     register_ps2_gs_tests();
+     register_ps2_gs_backend_tests();
++    register_ps2_gpu_profile_tests();
+     register_ps2_iop_tests();
+     register_ps2_sif_rpc_tests();
+     register_ps2_sif_dma_tests();
