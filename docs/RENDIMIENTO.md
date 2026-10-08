@@ -238,3 +238,11 @@ denso con escrituras directas. Medido alternando ejecutables: 168 → 158 → 15
 
 En el mismo perfil, ~15 % del hilo principal es la espera de `GSThreadedBackend::Drain` en el
 hilo del GS; eso no es VU1.
+
+**XGKICK sin borrar 64 KB.** `m_xgkick = {}` ponía a cero el búfer de 64 KB del paquete en cada XGKICK y
+en cada `resetScheduler` (~2.000 veces por cuadro). Ahora `XgkickPipeline::reset()` reinicia solo los
+contadores: del búfer solo se leen bytes ya copiados (los GIFtags y el envío hasta `totalBytes`, que no
+pasa de `copiedBytes`). El qword se copia de una vez cuando no da la vuelta a la memoria de datos, y las
+entradas de flags confirmadas solo se invalidan (`pushFlagEntry` ya inicializa todos los campos). Medido
+alternando ejecutables: compilado 156 → 128 ms, intérprete 337 → 308 ms. Huellas e imágenes idénticas.
+Esto también acelera el intérprete que usa hoy el juego.

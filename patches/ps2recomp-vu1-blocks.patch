@@ -1,5 +1,5 @@
 diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime/ps2_vu1.h
-index cefe321..410a0ed 100644
+index cefe321..0b2dfaa 100644
 --- a/ps2xRuntime/include/runtime/ps2_vu1.h
 +++ b/ps2xRuntime/include/runtime/ps2_vu1.h
 @@ -2,7 +2,9 @@
@@ -27,7 +27,23 @@ index cefe321..410a0ed 100644
  class GS;
  class PS2Memory;
  
-@@ -352,14 +362,14 @@ private:
+@@ -230,6 +240,15 @@ private:
+         uint64_t issueCycle = 0;
+         bool active = false;
+         bool currentTagEop = false;
++
++        // GOW-Port: como *this = {} pero sin poner a cero los 64 KB de packet (solo se leen los bytes ya
++        // copiados: los GIFtags en copiedBytes y el envío hasta totalBytes <= copiedBytes).
++        void reset()
++        {
++            sourceAddress = totalBytes = copiedBytes = currentTagEnd = cycleCredit = 0u;
++            issueCycle = 0u;
++            active = currentTagEop = false;
++        }
+     };
+ 
+     static constexpr uint32_t kFmacLatency = 4u;
+@@ -352,14 +371,14 @@ private:
      bool stepPair(const DecodedInstructionPair &decoded, StepContext &context);
      // GOW-Port: versiones especializadas para el microcódigo compilado (ps2_vu1_compiled.inl).
      template <uint32_t Upper, uint32_t C>
@@ -44,7 +60,7 @@ index cefe321..410a0ed 100644
      bool stepPairT(StepContext &context);
      bool blockPreconditions(StepContext &context, uint32_t pc, const uint32_t *words, size_t bytes) const;
      bool stepInterpreted(StepContext &context);
-@@ -368,7 +378,7 @@ private:
+@@ -368,7 +387,7 @@ private:
      bool pipelinesPending() const;
  
      // GOW-Port: en línea; se llama varias veces por instrucción (~9 % del tiempo de VU1 como llamada).
@@ -53,7 +69,7 @@ index cefe321..410a0ed 100644
      {
          uint32_t bits = 0;
          std::memcpy(&bits, &value, sizeof(bits));
-@@ -384,7 +394,7 @@ private:
+@@ -384,7 +403,7 @@ private:
      // por separado, |exacto - resultado| < 2^-23 (|producto| + |resultado|). Si el resultado es normal,
      // no está cerca de los extremos (exponente 2..0xFD) y no es mucho menor que el producto (2^-20), el
      // exacto tiene su mismo signo, no es cero y no desborda: el valor no cambia y los flags son el signo.
@@ -62,7 +78,7 @@ index cefe321..410a0ed 100644
      {
          uint32_t r = 0u, p = 0u;
          std::memcpy(&r, &result, sizeof(r));
-@@ -396,6 +406,32 @@ private:
+@@ -396,6 +415,32 @@ private:
          laneFlags = (r & 0x80000000u) != 0u ? 0x2u : 0u;
          return true;
      }
@@ -332,9 +348,18 @@ index b1ed790..2b7d4d9 100644
      static uint32_t pc(const VU1Interpreter &vu) { return vu.m_state.pc; }
      static bool block(const VU1Interpreter &vu, C &c, uint32_t pc, const uint32_t *words, size_t bytes)
 diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
-index 31d5df7..1579010 100644
+index 31d5df7..76e9a72 100644
 --- a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
 +++ b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+@@ -115,7 +115,7 @@ void VU1Interpreter::resetScheduler()
+     m_accWritePipeline = {};
+     m_storePending = m_vfPending = m_viPending = m_accPending = 0u;
+     m_flagHead = m_flagCount = 0u;
+-    m_xgkick = {};
++    m_xgkick.reset();
+     m_vfReady = {};
+     m_viReady = {};
+     m_accReady = {};
 @@ -603,9 +603,7 @@ uint32_t VU1Interpreter::calculateFmacProductSticky(uint8_t dest) const
              right = normalizeOperand(m_state.vf[ft][component]);
          }
@@ -346,7 +371,17 @@ index 31d5df7..1579010 100644
          // Product-sum instructions report Z/S/U/O from the add/subtract result
          // as current flags, while every product condition accumulates into the
          // corresponding sticky flag.
-@@ -862,6 +860,34 @@ void VU1Interpreter::commitReadyPipelines()
+@@ -675,7 +673,8 @@ VU1Interpreter::FlagPipelineEntry *VU1Interpreter::pushFlagEntry()
+         return nullptr;
+     FlagPipelineEntry &entry = m_flagPipeline[(m_flagHead + m_flagCount) % kMaxFlagEntries];
+     ++m_flagCount;
+-    entry = {};
++    entry.mac = entry.status = entry.extraSticky = entry.clip = 0u;
++    entry.writesMac = entry.writesStatus = entry.writesSticky = entry.writesClip = false;
+     entry.valid = true;
+     entry.issueCycle = m_cycle;
+     entry.readyCycle = m_cycle + kFmacLatency;
+@@ -862,6 +861,34 @@ void VU1Interpreter::commitReadyPipelines()
  {
      if (m_cycle < m_nextCommitCycle)
          return;
@@ -373,7 +408,7 @@ index 31d5df7..1579010 100644
 +                m_state.status = (m_state.status & 0x03Fu) | (entry.status & 0xFC0u);
 +            if (entry.writesClip)
 +                m_state.clip = entry.clip;
-+            entry = {};
++            entry.valid = false;
 +        }
 +        m_nextCommitCycle = m_flagCount != 0u ? m_flagPipeline[m_flagHead].readyCycle : ~0ull;
 +        return;
@@ -381,3 +416,42 @@ index 31d5df7..1579010 100644
      while (m_flagCount != 0u)
      {
          FlagPipelineEntry &entry = m_flagPipeline[m_flagHead];
+@@ -883,7 +910,7 @@ void VU1Interpreter::commitReadyPipelines()
+         }
+         if (entry.writesClip)
+             m_state.clip = entry.clip;
+-        entry = {};
++        entry.valid = false; // GOW-Port: pushFlagEntry inicializa todos los campos
+     }
+ 
+     if (m_fdiv.valid && m_fdiv.readyCycle <= m_cycle)
+@@ -1022,11 +1049,15 @@ void VU1Interpreter::progressXgkick()
+         }
+ 
+         const uint32_t qwordOffset = m_xgkick.copiedBytes;
+-        for (uint32_t i = 0; i < 16u; ++i)
+-        {
+-            const uint32_t source = (m_xgkick.sourceAddress + m_xgkick.copiedBytes + i) % m_activeVuDataSize;
+-            m_xgkick.packet[m_xgkick.copiedBytes + i] = m_activeVuData[source];
+-        }
++        const uint32_t first = (m_xgkick.sourceAddress + m_xgkick.copiedBytes) % m_activeVuDataSize;
++        if (first + 16u <= m_activeVuDataSize) // GOW-Port: un qword sin dar la vuelta, de una vez
++            std::memcpy(m_xgkick.packet.data() + m_xgkick.copiedBytes, m_activeVuData + first, 16u);
++        else
++            for (uint32_t i = 0; i < 16u; ++i)
++            {
++                const uint32_t source = (m_xgkick.sourceAddress + m_xgkick.copiedBytes + i) % m_activeVuDataSize;
++                m_xgkick.packet[m_xgkick.copiedBytes + i] = m_activeVuData[source];
++            }
+         m_xgkick.copiedBytes += 16u;
+ 
+         if (m_xgkick.currentTagEnd == 0u)
+@@ -1113,7 +1144,7 @@ void VU1Interpreter::startXgkick(uint32_t qwordAddress)
+         return;
+ 
+     const uint32_t sourceAddress = (qwordAddress * 16u) % m_activeVuDataSize;
+-    m_xgkick = {};
++    m_xgkick.reset();
+     m_xgkick.active = true;
+     m_xgkick.sourceAddress = sourceAddress;
+     m_xgkick.cycleCredit = 1u; // XGKICK's issue cycle counts toward PATH1.
