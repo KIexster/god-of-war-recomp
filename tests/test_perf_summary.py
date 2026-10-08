@@ -1,6 +1,7 @@
 """No confundir FPS de carga con partida ni igualar relojes distintos."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -49,6 +50,25 @@ class PerfSummaryTest(unittest.TestCase):
     def test_interval_and_normal_mode_are_preserved(self):
         self.assertEqual([row['t'] for row in summary.select_windows(sample(), 10, 20)], [15, 20])
         self.assertEqual(summary.select_windows(sample(), 20, 30, True), [])
+
+    def test_invalidated_run_is_rejected_even_outside_selected_interval(self):
+        marker = '[gow-perf:invalid] Perfil invalidado por carga externa: cl.'
+        for loaded in (False, True):
+            for text in (marker+'\n'+sample(), sample()+'\n'+marker):
+                with self.assertRaisesRegex(ValueError, 'perfil invalidado'):
+                    summary.select_windows(text, 10, 20, loaded)
+
+    def test_cli_does_not_export_a_summary_for_invalidated_run(self):
+        with tempfile.TemporaryDirectory() as folder:
+            log, output = Path(folder)/'perfil.log', Path(folder)/'resumen.json'
+            log.write_text(sample()+'\n[gow-perf:invalid] otra partida', encoding='utf-8')
+            result = subprocess.run([sys.executable, str(SCRIPT), str(log), '--desde', '0',
+                                     '--hasta', '100', '--json', str(output)],
+                                    capture_output=True, text=True, encoding='utf-8',
+                                    env={**os.environ, 'PYTHONIOENCODING': 'utf-8'})
+            self.assertEqual(result.returncode, 2)
+            self.assertIn('perfil invalidado', result.stderr)
+            self.assertFalse(output.exists())
 
     def test_separately_rounded_times_do_not_drop_full_window(self):
         text = '\n'.join([state(), perf(5.01), state(), perf(10.01, 5.01), state()])

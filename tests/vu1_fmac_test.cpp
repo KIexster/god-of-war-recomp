@@ -14,9 +14,22 @@
 #include <limits>
 #include <random>
 #include <vector>
+#if defined(_M_X64) || defined(_M_IX86) || defined(__x86_64__) || defined(__i386__)
+#include <xmmintrin.h>
+#define GOW_FMAC_MXCSR 1
+#else
+#define GOW_FMAC_MXCSR 0
+#endif
 
 namespace
 {
+#if GOW_FMAC_MXCSR
+struct RestoreMxcsr
+{
+    unsigned value = _mm_getcsr();
+    ~RestoreMxcsr() { _mm_setcsr(value); }
+};
+#endif
 constexpr uint32_t kNop = 0x2ffu, kLowerNop = 0x8000033cu, kEbit = 0x40000000u;
 constexpr uint32_t kPairsPerProgram = 7u;
 constexpr uint32_t kProgramBytes = kPairsPerProgram * 8u;
@@ -153,6 +166,10 @@ int main(int argc, char **argv)
         return f ? 0 : 2;
     }
     const unsigned trials = argc == 2 ? static_cast<unsigned>(std::atoi(argv[1])) : 40u;
+#if GOW_FMAC_MXCSR
+    RestoreMxcsr restore;
+    _mm_setcsr(restore.value & ~0x8040u);
+#endif
     PS2Memory mem;
     if (!mem.initialize())
         return 2;
@@ -189,5 +206,40 @@ int main(int argc, char **argv)
     }
     std::printf("VU1 FMAC: %llu casos exactos (%zu instrucciones, %u ensayos con valores límite)\n", cases, list.size(),
                 trials);
+#if GOW_FMAC_MXCSR
+    // GOW-Port: FTZ/DAZ puede dar cero redondeado sin cancelación exacta. La FMAC
+    // posterior pisa Z/S, pero el underflow U debe persistir en status (bit 8).
+    _mm_setcsr(_mm_getcsr() | 0x8040u);
+    unsigned ftzCases = 0;
+    for (uint32_t sign1 : {0u, 0x80000000u})
+        for (uint32_t sign2 : {0u, 0x80000000u})
+        {
+            Inputs in{};
+            for (unsigned c = 0; c < 4; ++c)
+            {
+                in.vf1[c] = bitsToFloat(sign1 | 0x00800000u);
+                in.vf2[c] = bitsToFloat(sign2 | 0x00800001u);
+                in.vf4[c] = 1.0f;
+                in.vf5[c] = 2.0f;
+            }
+            in.q = in.i = in.vf2[0];
+            for (bool queues : {false, true})
+                for (size_t k = 0; k < list.size(); ++k)
+                {
+                    const uint32_t pc = static_cast<uint32_t>(k * kProgramBytes);
+                    const VU1State ref = run(mem, gs, false, queues, pc, in);
+                    const VU1State got = run(mem, gs, true, queues, pc, in);
+                    if (!same(ref, got))
+                    {
+                        std::fprintf(stderr,
+                                     "FMAC FTZ distinta: instr=%08x colas=%d signos=%x/%x status=%x/%x\n",
+                                     list[k], queues, sign1, sign2, ref.status, got.status);
+                        return 1;
+                    }
+                    ++ftzCases;
+                }
+        }
+    std::printf("VU1 FMAC FTZ/DAZ: %u casos exactos (cancelaciones subnormales, signos y colas)\n", ftzCases);
+#endif
     return 0;
 }

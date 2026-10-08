@@ -11,5 +11,8 @@ result = subprocess.run([sys.argv[1]], env=env, capture_output=True, text=True, 
 match = re.search(r"\[vu1c\] compilados=(\d+) interpretados=(\d+)", result.stderr)
 if result.returncode or not match or int(match[1]) == 0 or int(match[2]) == 0:
     raise AssertionError((result.returncode, result.stdout, result.stderr))
+div = re.search(r"VU1 DIV: (\d+) casos exactos", result.stdout)
+if not div or int(div[1]) < 19072:
+    raise AssertionError(("Falta el control DIV completo", result.stdout, result.stderr))
 print(result.stdout.strip())
 print(f"Ruta real: {match[1]} pares compilados y {match[2]} interpretados")

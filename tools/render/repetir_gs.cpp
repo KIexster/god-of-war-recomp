@@ -77,7 +77,7 @@ namespace {
         std::filesystem::path capture,output=".";
         std::string mode;
         bool lockstep=false,snapshotFeedback=false,syncCheckpoints=false;
-        uint32_t repetitions=1,pauseMs=0;
+        uint32_t repetitions=1,pauseMs=0,lastRecord=0;
         bool gpuMode() const { return mode!="cpu"; }
         bool multiple() const { return repetitions>1; }
         std::filesystem::path image(uint32_t pass,const std::string &name) const {
@@ -107,6 +107,14 @@ namespace {
                 uint32_t count=0;const auto result=std::from_chars(value.data(),value.data()+value.size(),count);
                 if(result.ec!=std::errc{} || result.ptr!=value.data()+value.size() || count==0 || count>1000) return false;
                 options.pauseMs=count;
+            }
+            else if(argument==std::filesystem::path("--hasta-registro")) {
+                if(options.lastRecord || ++i==argc) return false;
+                const auto encoded=std::filesystem::path(argv[i]).u8string();
+                const std::string value(encoded.begin(),encoded.end());
+                uint32_t count=0; const auto result=std::from_chars(value.data(),value.data()+value.size(),count);
+                if(result.ec!=std::errc{} || result.ptr!=value.data()+value.size() || count==0) return false;
+                options.lastRecord=count;
             }
             else if(argument==std::filesystem::path("--repeticiones")) {
                 if(repetitions || ++i==argc) return false;
@@ -172,14 +180,34 @@ namespace {
         for(const auto byte:vram) { hash^=byte; hash*=1099511628211ull; }
         result.checkpoints.push_back({index,draws,op,hash}); return true;
     }
-    bool validateCheckpoints(const std::filesystem::path &path) {
-        replay::Reader reader(path); replay::Record record; size_t count=0; bool ended=false;
+    // GOW-Port: recortar solo en una frontera registrada. TEXFLUSH no drena GPU.
+    bool validatePrefix(const std::filesystem::path &path,uint32_t last) {
+        replay::Reader reader(path); replay::Record record;
+        if(!reader.next(record) || record.op!=replay::Op::Initial) return false;
+        size_t index=0;
         while(reader.next(record)) {
+            ++index;
+            if(index==last) {
+                if(record.op==replay::Op::Flush || record.op==replay::Op::Sync ||
+                   record.op==replay::Op::Present || record.op==replay::Op::End) return true;
+                std::cerr<<"--hasta-registro requiere Flush, Sync, Present o End; registro="<<last<<'\n';
+                return false;
+            }
+            if(record.op==replay::Op::End) break;
+        }
+        std::cerr<<"--hasta-registro excede la captura o el prefijo está incompleto: "<<reader.error<<'\n';
+        return false;
+    }
+    bool validateCheckpoints(const std::filesystem::path &path,uint32_t last=0) {
+        replay::Reader reader(path); replay::Record record; size_t count=0,index=0; bool ended=false;
+        while(reader.next(record)) {
+            if(record.op!=replay::Op::Initial) ++index;
             if(record.op==replay::Op::Flush || record.op==replay::Op::Sync ||
                record.op==replay::Op::Present || record.op==replay::Op::End) {
                 if(++count>4096) { std::cerr<<"Límite de 4096 controles sincronizados excedido\n"; return false; }
             }
             ended=record.op==replay::Op::End;
+            if(last && index==last) { ended=true; break; }
         }
         if(!reader.error.empty() || !ended) { std::cerr<<"Captura incompleta: "<<reader.error<<'\n'; return false; }
         return true;
@@ -227,30 +255,39 @@ namespace {
         size_t index=0,draws=0,firstMismatch=SIZE_MAX,frameMismatch=0,visibleBytes=0;
         bool ended=false,stateMismatch=false;
         std::vector<uint8_t> actualA,actualB;
+        const auto finish=[&](const replay::Snapshot *captured,replay::Op op) {
+            reference.Sync(GSSyncReason::DebugReadback); reference.SnapshotVram(actualA);
+            size_t first=0;
+            if(captured) {
+                const auto n=differences(captured->vram,actualA,first);
+                std::cout<<"CPU vs captura final: bytes="<<n<<" first="<<first<<'\n';
+                if(n) return 3;
+            } else std::cout<<"Prefijo hasta registro="<<index<<"; el End original no se compara\n";
+            GSBackendState state;
+            if(!reference.ExportState(state)) return 3;
+            if(captured) if(const char *field=stateDifference(captured->state,state)) {
+                std::cerr<<"El estado CPU final no reproduce la captura: "<<field<<'\n'; return 3;
+            }
+            candidate.Sync(GSSyncReason::Finish); candidate.Sync(GSSyncReason::DebugReadback); candidate.SnapshotVram(actualB);
+            const auto m=differences(actualA,actualB,first);
+            std::cout<<"CPU vs "<<options.mode<<(captured?" final: bytes=":" prefijo: bytes=")<<m<<" first="<<first<<'\n';
+            if(m && firstMismatch==SIZE_MAX) firstMismatch=index;
+            auto *access=dynamic_cast<GSBackendStateAccess*>(&candidate);
+            if(!access || !access->ExportState(result.state)) return 3;
+            if(const char *field=stateDifference(state,result.state,options.gpuMode())) {
+                stateMismatch=true; std::cout<<"CPU vs "<<options.mode
+                    <<(captured?" estado final distinto: ":" estado del prefijo distinto: ")<<field<<'\n';
+            }
+            if(captured && options.syncCheckpoints && !checkpoint(result,index,draws,op,actualB)) return 2;
+            result.vram=std::move(actualB); ended=true;
+            return 0;
+        };
         while(reader.next(record)) {
             ++index;
             if(record.op==replay::Op::End) {
                 replay::Snapshot final; if(!replay::decodeSnapshot(record,final)) return 2;
-                reference.Sync(GSSyncReason::DebugReadback); reference.SnapshotVram(actualA);
-                size_t first=0; const auto n=differences(final.vram,actualA,first);
-                std::cout<<"CPU vs captura final: bytes="<<n<<" first="<<first<<'\n';
-                if(n) return 3;
-                GSBackendState state;
-                if(!reference.ExportState(state)) return 3;
-                if(const char *field=stateDifference(final.state,state)) {
-                    std::cerr<<"El estado CPU final no reproduce la captura: "<<field<<'\n'; return 3;
-                }
-                candidate.Sync(GSSyncReason::Finish); candidate.Sync(GSSyncReason::DebugReadback); candidate.SnapshotVram(actualB);
-                const auto m=differences(actualA,actualB,first);
-                std::cout<<"CPU vs "<<options.mode<<" final: bytes="<<m<<" first="<<first<<'\n';
-                if(m && firstMismatch==SIZE_MAX) firstMismatch=index;
-                auto *access=dynamic_cast<GSBackendStateAccess*>(&candidate);
-                if(!access || !access->ExportState(result.state)) return 3;
-                if(const char *field=stateDifference(state,result.state,options.gpuMode())) {
-                    stateMismatch=true; std::cout<<"CPU vs "<<options.mode<<" estado final distinto: "<<field<<'\n';
-                }
-                if(options.syncCheckpoints && !checkpoint(result,index,draws,record.op,actualB)) return 2;
-                result.vram=std::move(actualB); ended=true; break;
+                const int code=finish(&final,record.op); if(code) return code;
+                break;
             }
             if(record.op==replay::Op::Initial || !apply(reference,record,a) || !apply(candidate,record,b)) {
                 std::cerr<<"Fallo en registro "<<index<<" op="<<unsigned(record.op)<<'\n'; return 3;
@@ -289,6 +326,10 @@ namespace {
                 candidate.Sync(GSSyncReason::DebugReadback); candidate.SnapshotVram(actualB);
                 size_t first=0; const auto n=differences(actualA,actualB,first);
                 if(n) { firstMismatch=index; reportFirst(record,index,draws,n,first); }
+            }
+            if(options.lastRecord && index==options.lastRecord) {
+                const int code=finish(nullptr,record.op); if(code) return code;
+                break;
             }
         }
         if(!reader.error.empty() || !ended) { std::cerr<<"Captura incompleta: "<<reader.error<<'\n'; return 2; }
@@ -355,7 +396,8 @@ namespace {
         if(!reader.next(record) || record.op!=replay::Op::Initial) { std::cerr<<reader.error<<"; falta estado inicial\n"; return 2; }
         if(!replay::decodeSnapshot(record,initial)) { std::cerr<<"Estado inicial inválido\n"; return 2; }
         // Rechazar exceso de readbacks antes de crear el backend o repetir dibujos.
-        if(options.syncCheckpoints && !validateCheckpoints(options.capture)) return 2;
+        if(options.lastRecord && !validatePrefix(options.capture,options.lastRecord)) return 2;
+        if(options.syncCheckpoints && !validateCheckpoints(options.capture,options.lastRecord)) return 2;
         if(initial.state.cachePageBase!=UINT32_MAX) {
             const auto base=initial.state.cachePageBase; const auto size=initial.state.cacheBytes.size();
             if(base%size || uint64_t(base)+size>initial.vram.size()) return 2;
@@ -378,6 +420,8 @@ namespace {
             std::cout<<"Pausa de diagnostico entre pasadas: "<<options.pauseMs<<" ms\n";
         if(options.syncCheckpoints)
             std::cout<<"Controles de variación en Flush/Sync/Present/End: añaden readback, no miden FPS\n";
+        if(options.lastRecord)
+            std::cout<<"Tramo limitado a registro "<<options.lastRecord<<" (Initial=0); no valida el resto de la captura\n";
         struct Restore { unsigned csr=_mm_getcsr(); ~Restore(){_mm_setcsr(csr);} } restore;
         PassResult previous; bool differencesSeen=false;
         for(uint32_t iteration=0;iteration<options.repetitions;++iteration) {
@@ -408,8 +452,8 @@ int main(int argc,char **argv) {
 #endif
     Options options;
     if(!parse(argc,argv,options)) {
-        std::cerr<<"Uso: repetir_gs captura.bin cpu|compute|hardware [--lockstep] [--snapshot-feedback] [--repeticiones N] [--pausa-ms M] [--checkpoints-sync] [directorio]\n"
-                 <<"N positivo; M=1..1000 requiere varias pasadas; no se admiten opciones desconocidas ni duplicadas\n"; return 2;
+        std::cerr<<"Uso: repetir_gs captura.bin cpu|compute|hardware [--lockstep] [--snapshot-feedback] [--repeticiones N] [--pausa-ms M] [--checkpoints-sync] [--hasta-registro R] [directorio]\n"
+                 <<"N/R positivos; R en Flush/Sync/Present/End (Initial=0); M=1..1000 requiere varias pasadas; no se admiten opciones desconocidas ni duplicadas\n"; return 2;
     }
     return run(options);
 }

@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-_Última actualización: 7 de octubre de 2026_
+_Última actualización: 8 de octubre de 2026_
 
 ## Qué funciona
 
@@ -2200,3 +2200,158 @@ sus ventanas correspondían a estado 3 con carga pendiente. El nuevo selector
 cargada a ambos lados de las ventanas sin igualar los relojes del perfil y del
 mando. Estos controles verifican integración y la escena observada; todavía
 no certifican rendimiento sostenido, combate completo ni feedback GS fiel.
+
+### Validación de 61 parches y reducción del feedback (8 de octubre)
+
+La compilación oficial de `main` en `63c8a02` termina con código 0, con
+**61 parches**, 501 micromemorias locales y un ejecutable de 67.710.976 bytes.
+Las **87 fuentes** auditadas coinciden con la cadena publicada. FINISH sigue
+síncrono por defecto; el test con backend retenido pasa en modo default y en
+modo opcional asíncrono. Pasan también PAD2 y los **60 casos VU1 exactos**,
+con 139 pares compilados y 22 interpretados.
+
+El primer control local OpenGL pasa 584/587: tres casos coinciden en píxeles
+pero no alcanzan su requisito de hardware efectivo. Se conserva ese registro.
+Una repetición posterior pasa **587/587**, incluidas las **22 pruebas OpenGL**;
+sus variantes se compilan en menos de dos segundos. No se amplían los plazos
+ni se cambia el renderer para aceptar el primer fallo. La causa del fallo
+intermitente de hardware todavía no se ha demostrado.
+
+`repetir_gs --hasta-registro R` permite detener una traza en un Flush, Sync,
+Present o End ya registrado. Compara exactamente los 4 MiB y el estado portable
+CPU/candidato al terminar el prefijo, sin validar el End original cuando no se
+ejecuta. Rechaza otros comandos e índices fuera del archivo antes de crear el
+backend. El límite de 4096 controles se aplica al prefijo. Los controles CLI
+cubren once argumentos inválidos, fronteras, un End alterado y límites.
+
+El prefijo hasta el Flush **36**, después de **33 envíos**, reproduce la
+referencia CPU y queda idéntico en CPU ×2. Se hacen 64 pasadas por política,
+con restauración inicial exacta, los mismos 33 lotes y readback sincronizado:
+
+| Ruta | Comparaciones consecutivas de la misma ruta | Comparaciones con VRAM distinta |
+|---|---:|---:|
+| Compute habitual | 63 | 4 (59 o 890 bytes) |
+| Compute con snapshot | 63 | 0 |
+| Hardware habitual, shaders listos | 61 | 61 |
+| Hardware con snapshot, shaders listos | 48 | 0 |
+
+Las pasadas compute tienen 544 primitivas/1760 tiles; las de hardware caliente,
+544 primitivas/cero tiles. Las primeras 2 pasadas hardware habituales y las
+primeras 15 con snapshot usan compute durante la compilación de shaders; se
+excluyen de esas dos filas, junto con la transición a hardware. Las políticas
+con snapshot conservan **515.877 bytes distintos
+de CPU**, por lo que siguen devolviendo 1: estabilidad no implica paridad ni
+fidelidad a la caché PS2. En este prefijo no se presenta ningún cuadro y los
+readbacks/pausas no miden FPS. El corte reduce la investigación del feedback
+de 146.015 registros a 36, sin publicar la traza ni alterar el modo habitual.
+
+### VIF1/temporizadores y VU1 SIMD integrados (8 de octubre)
+
+Se integran los dos commits terminados de la PR #21 (`8841ef0`, `b280247`) y
+el primer commit SIMD de la PR #23 (`5e09b12`), conservando sus autores e
+historia. Los conflictos de documentación y orden de parches se resuelven
+incluyendo los tres cambios. La revisión detecta y corrige en `247a9b3` un
+flag de underflow perdido por ADD/SUB SIMD cuando el PC usa FTZ/DAZ: cero
+redondeado no implica cancelación exacta. La regresión dirigida falla antes
+del arreglo con `status=1c0/c0` y pasa después; los valores de los registros
+ya coincidían, por lo que comprobar solo la imagen no detectaba este fallo.
+
+La compilación oficial de `247a9b3` termina con código 0: **64 parches**,
+501 micromemorias locales y ejecutable de **70.182.400 bytes**, SHA256
+`82ECCA22A4F4600FA60DB255D45176178971D60FF94382CC12D2E08BFC807074`.
+Las **87 fuentes** auditadas coinciden con la cadena. Pasan **587/587 pruebas
+nativas**, las **22 OpenGL efectivas**, los **60 casos VU1**, **100.800 casos
+FMAC aleatorios y 2.016 FTZ/DAZ dirigidos**, PAD2 y ambos controles FINISH.
+La prueba FMAC utiliza 359.856 pares compilados sin fallback al intérprete.
+Configuración y sintaxis PowerShell también quedan correctas.
+
+Un perfil limpio de 180,55 s, con FINISH síncrono, renderer OpenGL y copia
+privada de la tarjeta, no observa compiladores ni otra partida en su vigilancia
+cada segundo. Doce ventanas completas de partida cargada (60,04 s entre
+103,06 y 163,12 del reloj del perfil) miden **7,58 vid::Flip/s**, con **57,71
+presentaciones/s**. Los tiempos exclusivos del hilo del juego son VU **43,24 %**,
+GS **38,20 %** (incluidas esperas), EE **12,20 %** e IOP **6,36 %**. La tarjeta
+original conserva su SHA256. No se atribuye una ganancia a SSE por comparar
+esta única pasada con otra escena; falta una comparación controlada y separar
+el trabajo del GS de sus esperas. El treemap refleja SIMD y la reducción del
+feedback, manteniendo GS y VIF1/VU1 parciales en los tres idiomas.
+
+Durante estas pruebas Opus añade `754c970` (DIV compilada) a la PR #23 y abre
+la rama de flags perezosos. **Esos cambios posteriores todavía no están en
+este ejecutable**: requieren una revisión e integración propias. No se altera
+el árbol de trabajo de Opus ni se anuncia que toda la PR #23 esté aplicada.
+
+El control limpio del mismo ejecutable de 64 parches dura 430 s y conserva
+**15 capturas distintas de 512×448**. La última, a **360,14 s** del reloj del
+mando, muestra a Kratos, varios enemigos, barco, lluvia, fondo y HUD, sin
+polígonos estirados visibles. Sigue en estado 11, `pending=0`, `levelReady=1`,
+con hardware activo y sin instrucciones VU reservadas en el registro.
+La tarjeta original conserva su SHA256; se utiliza una copia privada.
+Es una comprobación de esa escena, con FMV omitido, y queda pendiente
+verificar combate completo, otros escenarios y rendimiento sostenido.
+
+### Atribución del profiler OpenGL (8 de octubre)
+
+El diagnóstico GPU de 180 s sobre el ejecutable de 64 parches descubre que
+los lotes hardware imprimen FBP, flags y primitivas como cero. Una consulta
+engloba varias variantes de shader sin adjuntar su estado; esas líneas no
+permiten identificar el destino que consume tiempo. En compute, el último
+lote del umbral de 4096 consultas también pierde datos al resolverse la cola.
+Esta ejecución sincroniza timestamps y añade registros: no mide FPS limpios.
+
+`ps2recomp-gs-hardware-profile.patch` atribuye una consulta a cada variante
+hardware y adjunta los datos compute antes de resolver las consultas.
+El trabajo CPU de preparar esos datos queda fuera del intervalo GPU. Sin
+`PS2X_GS_GPU_PROF=1`, las consultas siguen desactivadas. Dos regresiones
+OpenGL reales fallan con el backend anterior y pasan con el borrador corregido:
+dos variantes dentro del mismo lote y la frontera de 4096 lotes compute.
+En ambos casos conservan exactamente los 4 MiB frente al CPU y exigen la ruta
+GPU efectiva. La compilación oficial integrada se valida por separado.
+
+La compilación oficial de `23fbce4` termina con código 0: **65 parches**,
+501 micromemorias locales y ejecutable de **70.182.912 bytes**, SHA256
+`6D7BA3034436D28141D4F429BD3D42ABD7BBA5F79166808CBD8410902F5736A1`.
+Las **87 fuentes** auditadas coinciden con la cadena. Pasan **589/589 pruebas
+nativas**, incluidas **24 OpenGL efectivas**, los 60 casos VU1, 100.800 FMAC
+aleatorios y 2.016 dirigidos FTZ/DAZ, PAD2 y los dos modos FINISH.
+El renderer CPU y la política habitual de feedback se conservan.
+
+El diagnóstico corregido de **240,21 s**, con copia privada de la tarjeta y
+sin compiladores ni otras partidas observados, alcanza estado 11 con el nivel
+listo. La tarjeta original conserva su SHA256. Se seleccionan **280 informes
+GPU completos**, encerrados por muestras de ese estado. El promedio de
+timestamps raster es **39,26 ms/frame del profiler**; el grupo FBP=0,
+flags=`4b` (textura, IIP, mezcla alfa y bilineal) acumula **30,13 ms/frame**.
+Los siguientes grupos son `5a` (2,15 ms), `12` (2,08 ms) y `c8` (1,81 ms),
+todos en FBP=0. La selección contiene también algunos lotes compute mientras
+se preparan variantes. Es una pista para investigar shaders; no equivale a
+FPS limpios, tiempo exclusivo de CPU ni atribución por primitiva. No se
+compara esta cifra con el profiler anterior, que agrupaba datos vacíos.
+
+Un ensayo privado elimina la llamada previa a `coversPixel` del fragment
+hardware, porque las funciones de sombreado ya comprueban cobertura y bordes.
+El control procedural alterna original/candidato/original: **8,80 / 9,01 /
+8,75 ms** de mediana, 20 lotes por ejecución, 2000 triángulos IIP/STQ/
+bilineal/ABE por lote, hardware efectivo y 4 MiB exactos frente al CPU.
+Incluye envío y readback sincronizado; no mide FPS de partida. No demuestra
+una ganancia, por lo que no se incorpora ni se añade a la cadena de parches.
+Las fuentes y registros del ensayo quedan en `logs/` y el ejecutable publicado
+conserva los 65 parches verificados.
+
+La herramienta pública de rendimiento amplía el control previo a una
+vigilancia cada segundo durante toda la pasada. Ante otra compilación o
+partida, cierra solo su instancia, marca el registro como inválido y restaura
+el entorno; el selector impide usarlo para calcular FPS o exportar JSON.
+Pasan cuatro controles de scripts con procesos simulados y nueve del selector,
+sin lanzar ni detener juegos o compiladores ajenos.
+
+El siguiente diagnóstico de CPU utiliza una copia privada enlazada con
+símbolos públicos a partir de los objetos optimizados. No sustituye el EXE
+normal ni sirve para comparar FPS. El muestreo de 30 s en estado 11 muestra
+esperas en el hilo principal y el del GS, pero descubre dos problemas de la
+herramienta: inicialización duplicada de DbgHelp (error 87) y marcos de
+llamadores recogidos sin imprimirlos. Se corrige el perfilador para mostrar
+esa segunda vista y cerrar sus handles de hilos. La espera procedural de
+`scripts\probar_perfil.cmd` falla antes de los cambios y pasa después, sin
+usar el juego. Falta repetir el muestreo con esa atribución para distinguir
+esperas de cola, driver y sincronización; no se asigna todavía una causa.

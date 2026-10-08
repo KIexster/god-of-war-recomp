@@ -29,6 +29,12 @@ def main():
             ["--checkpoints-sync", "--checkpoints-sync", "--repeticiones", "2"],
             ["--checkpoints-sync", "--repeticiones", "0"],
             ["--checkpoints-sync", "--repeticiones", "-2"],
+            ["--hasta-registro"],
+            ["--hasta-registro", "0"],
+            ["--hasta-registro", "-1"],
+            ["--hasta-registro", "abc"],
+            ["--hasta-registro", "4294967296"],
+            ["--hasta-registro", "1", "--hasta-registro", "2"],
         ]
         for arguments in invalid:
             assert "Uso:" in run(arguments, 2)
@@ -47,11 +53,13 @@ def main():
         assert data[:8] == b"GOWGSR1\0"
         position = 24
         end_offset = None
+        operations = []
         while position < len(data):
             start = position
             operation, size = struct.unpack_from("<BI", data, position)
             position += 5 + size
             assert position <= len(data)
+            operations.append(operation)
             if operation == 16:
                 end_offset = start
         assert position == len(data) and end_offset is not None
@@ -63,12 +71,41 @@ def main():
         text = run(["--checkpoints-sync", "--repeticiones", "2"], 0, synchronized)
         assert "Controles sincronizados: previos=3 actuales=3 distintos=0" in text
         assert "CPU vs captura final: bytes=0" in text
+        # Initial=0; los dos comandos añadidos delimitan un prefijo que se
+        # compara con CPU, sin presentarlo como validación del End original.
+        before_end = len(operations) - 2
+        for stop in [before_end + 1, before_end + 2]:
+            text = run(["--hasta-registro", str(stop), "--checkpoints-sync", "--repeticiones", "2"],
+                       0, synchronized)
+            assert f"Prefijo hasta registro={stop}" in text
+            assert "CPU vs cpu prefijo: bytes=0" in text
+            assert "CPU vs captura final:" not in text
+            assert "Controles sincronizados: previos=" in text and "distintos=0" in text
+        text = run(["--hasta-registro", str(before_end + 3)], 0, synchronized)
+        assert "CPU vs captura final: bytes=0" in text
+        text = run(["--hasta-registro", str(before_end + 4)], 2, synchronized)
+        assert "excede la captura" in text
+        for operation in [2, 6]:  # Submit y TEXFLUSH no son fronteras admitidas.
+            assert operation in operations
+            stop = operations.index(operation)
+            text = run(["--hasta-registro", str(stop)], 2)
+            assert "requiere Flush, Sync, Present o End" in text
+
+        bad_end = output / "end_distinto.bin"
+        cut_data = synchronized.read_bytes()
+        bad_end.write_bytes(cut_data[:-1] + bytes([cut_data[-1] ^ 1]))
+        assert "CPU vs captura final: bytes=1" in run([], 3, bad_end)
+        text = run(["--hasta-registro", str(before_end + 1)], 0, bad_end)
+        assert "CPU vs captura final:" not in text
         oversized = output / "demasiados_controles.bin"
         oversized.write_bytes(data[:end_offset] + struct.pack("<BI", 13, 0) * 4096 + data[end_offset:])
         text = run(["--checkpoints-sync", "--repeticiones", "2"], 2, oversized)
         assert "4096" in text
         assert "CPU vs captura final:" not in text
-    print("CLI GS: 5 argumentos inválidos, 3 controles CPU exactos y límite previo al replay: OK")
+        text = run(["--hasta-registro", str(before_end + 1), "--checkpoints-sync", "--repeticiones", "2"],
+                   0, oversized)
+        assert "CPU vs cpu prefijo: bytes=0" in text and "distintos=0" in text
+    print("CLI GS: 11 argumentos inválidos, controles CPU completos/prefijos y límites previos al replay: OK")
 
 
 if __name__ == "__main__":

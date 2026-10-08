@@ -15,8 +15,9 @@ python tools/rendimiento/resumir.py logs/perf_partida.log --partida --desde 100 
 
 Este filtro comprueba estados muestreados; todavía hay que comprobar la escena, usar el mismo
 ejecutable y evitar compilaciones u otras partidas durante la comparación. Sin `--partida` se
-conserva la selección anterior por tiempo, útil también para estudiar la carga. Siete controles
-procedurales verifican carga, transiciones, ambos límites, relojes distintos, redondeo y la CLI.
+conserva la selección anterior por tiempo, útil también para estudiar la carga. Nueve controles
+procedurales verifican carga, transiciones, ambos límites, relojes distintos, redondeo, la CLI
+y el rechazo de pasadas invalidadas.
 El script retira también `PS2X_GS_DISCARD_DRAWS` y los diagnósticos de GS/VU1 durante el perfil,
 y restaura sus valores al terminar.
 
@@ -39,6 +40,15 @@ logs\muestrear.exe <pid de ps2EntryRunner> 30
 Las unidades de C++ generado deben recompilarse para incluir la información de depuración (tocar los
 archivos `Unity\*.cxx` de `ps2EntryRunner`, como hace `2_recompilar_rapido.cmd`). Las muestras en
 DLLs del sistema se atribuyen, cuando la pila se puede recorrer, al primer marco del ejecutable.
+
+El perfilador imprime esa atribución en `marcos del ejecutable desde DLL`:
+es una segunda vista de las muestras, con el porcentaje respecto al total
+del mismo hilo, y no tiempo adicional ni CPU exclusiva. Conserva también
+la vista del contador de programa. La revisión corrige la inicialización
+duplicada de DbgHelp (error 87) y la omisión de esos marcos en la salida.
+`scripts\probar_perfil.cmd` ejecuta una regresión Windows sin el juego: una
+espera en una DLL recupera el llamador procedural propio. Falla con el
+perfilador anterior y pasa con ambos arreglos.
 
 ## getenv en bucles calientes (2026-10-07)
 
@@ -353,6 +363,18 @@ La escena cambia durante el tramo; esta pasada no demuestra una ganancia frente 
 ni FPS sostenidos del juego completo. El siguiente perfil debe separar el trabajo del GS de su
 espera y repetir el mismo tramo después de cada mejora.
 
+## Desempaquetado de VIF1 (8 de octubre)
+
+`ps2recomp-vif1-unpack-fast.patch`: en UNPACK sin máscara, con datos y sin STMOD que sume la fila, cada
+componente es el valor descomprimido; se escribe el qword de una vez en lugar del bucle por componente.
+Mismo resultado: huellas de VU1 e imágenes de `vif_pcsx2_inicio2` y `vif_port_480s` idénticas, suite
+565/565. Reproducción alternando ejecutables: 136 → 133 ms por cuadro.
+
+**Temporizadores del EE.** `advanceEeTimers` se llama en cada punto de control del código recompilado
+(~1,5 millones de veces por segundo) y buscaba GIF_STAT en el `unordered_map` de registros cada vez.
+`ps2recomp-ee-timers-fast.patch` guarda la dirección del elemento (los elementos de un `unordered_map` no se
+mueven; solo `clear()` en la inicialización la invalida). Mismo comportamiento; suite 565/565.
+
 ## FMAC de VU1 con SSE (8 de octubre)
 
 `ps2recomp-vu1-simd.patch`: los pares compilados calculan las cuatro componentes de una FMAC (ADD, SUB, MUL,
@@ -370,9 +392,92 @@ subnormales, FLT_MIN/FLT_MAX, Inf/NaN y patrones de bits cualesquiera): 504.000 
 ensayos. Un fallo inyectado a propósito (el flag Z del producto) lo detecta en el primer ensayo. La CI la
 ejecuta con 200 ensayos.
 
-Reproducción alternando ejecutables: 131 → ~100 ms por cuadro.
-En el juego (OpenGL, alternando ejecutables): 11,5–12,0 → 13,2–14,4 cuadros/s.
+Mediciones de Opus en sus tramos, alternando ejecutables: 131 → ~100 ms por cuadro
+en la reproducción; en el juego con OpenGL, 11,5–12,0 → 13,2–14,4 cuadros/s.
+Son segmentos distintos del perfil de partida cargada documentado arriba.
 
-**DIV compilado.** DIV era la única instrucción inferior frecuente que seguía yendo a `execLower`
-(~130.000 por cuadro). Ahora se genera con los campos resueltos, como copia del caso del intérprete. Huellas
-idénticas; reproducción alternando ejecutables 98 → 96 ms.
+La revisión de integración encuentra un caso adicional: con FTZ/DAZ del PC
+activado, ADD/SUB pueden redondear una cancelación subnormal a cero sin que
+la operación exacta sea cero. El atajo SIMD omitía entonces el flag U
+persistente de VU1. Un ensayo aleatorio lo detecta en el ensayo 15; la
+regresión dirigida falla antes del arreglo con `status=1c0/c0`, aunque los
+valores de los registros coincidan.
+
+El parche exige operandos opuestos/iguales para reconocer un cero exacto
+de ADD/SUB y conserva la ruta escalar para esos underflows. La prueba añade
+2016 casos dirigidos con FTZ/DAZ, ambos signos y escrituras directas/con colas,
+y restaura el MXCSR del proceso. Pasan esos casos y 100.800 casos aleatorios
+con el código corregido, enlazados contra el runtime local. No se cambia la
+FPU del EE ni se activa FINISH asíncrono por defecto.
+
+En Windows, después de compilar el runtime parcheado, se reproduce con
+`scripts\probar_vu1_fmac.cmd`; la salida queda en `logs/vu1_fmac_test.log`.
+
+`scripts\probar_rendimiento.ps1` rechaza el inicio del perfil si observa una
+compilación u otra instancia del juego y vigila esos procesos cada segundo
+durante la ejecución. Si aparece carga externa, cierra únicamente su PID,
+conserva el perfil con la marca `[gow-perf:invalid]`, restaura el entorno y
+termina con error. El selector rechaza toda la pasada marcada, incluso si se
+solicitan ventanas anteriores a la interferencia, y no exporta un resumen.
+Los controles privados que sustentan las cifras anteriores de este documento
+también vigilan procesos cada segundo. Es una vigilancia por muestreo; una
+carga externa más corta que el intervalo puede pasar inadvertida.
+
+Cuatro controles de PowerShell, sin ejecutar el juego, comprueban compilación
+previa, compilación iniciada durante el perfil, otra partida y el PID propio
+sin interferencia. Verifican el registro marcado, la restauración del entorno
+y que solo se detiene el proceso propio. Dos controles adicionales del selector
+verifican el rechazo del perfil y de la exportación JSON: nueve en total.
+
+Con la integración comprobada de 64 parches (`247a9b3`, incluido el arreglo
+FTZ), una pasada privada de 180,55 s con OpenGL y FINISH síncrono conserva
+doce ventanas completas en estado 11, sin carga pendiente y con el nivel
+listo: **7,58 vid::Flip/s** y **57,71 presentaciones/s**, durante 60,04 s
+(103,06–163,12 del reloj del perfil). La vigilancia cada segundo no observa
+compilaciones ni otra partida. Distribución exclusiva del hilo del juego:
+
+| Área | Tiempo transcurrido |
+|---|---:|
+| VU | 43,24 % |
+| GS, incluidas esperas | 38,20 % |
+| EE | 12,20 % |
+| IOP | 6,36 % |
+
+Es una sola pasada con escena cambiante. No demuestra una ganancia atribuible
+a SIMD frente al perfil anterior ni sustituye las mediciones de Opus. El
+siguiente diagnóstico debe separar coste de envío, esperas del GS y GPU.
+
+El primer diagnóstico de timestamps (180 s con el mismo ejecutable) confirma
+una limitación de atribución: los lotes hardware se agrupaban bajo FBP=0,
+flags=0 y cero primitivas aunque se estuviera dibujando la partida. El parche
+de [atribución GPU](RENDERIZADO.md#atribución-de-tiempos-gpu) conserva el estado
+por variante y corrige también la frontera de 4096 consultas compute.
+Las cifras de ese diagnóstico se conservan localmente; no se interpretan
+como FPS ni se utilizan sus grupos vacíos para elegir una optimización.
+
+Con el profiler corregido del ejecutable de 65 parches, un diagnóstico de
+240,21 s conserva 280 informes GPU completos encerrados por estados de
+partida cargada. Las consultas raster promedian 39,26 ms/frame del profiler.
+Los principales grupos observados son:
+
+| FBP (hex) | Flags (hex) | Timestamp GPU medio por frame |
+|---|---|---:|
+| 0 | 4b | 30,13 ms |
+| 0 | 5a | 2,15 ms |
+| 0 | 12 | 2,08 ms |
+| 0 | c8 | 1,81 ms |
+
+`4b` combina IIP, textura, mezcla alfa y filtrado bilineal. El diagnóstico
+incluye algunos lotes compute durante la preparación de shaders. La vigilancia
+no observa compiladores ni otra partida y la tarjeta original queda intacta.
+Estas cifras proceden de consultas sincronizadas, con registros adicionales
+y escena cambiante. Sirven para elegir dónde investigar; no acreditan FPS ni
+una mejora de rendimiento y no se comparan con el profiler anterior.
+
+### Integracion de DIV compilado (PR #23)
+
+La especializacion de `DIV` del commit `754c970` conserva los selectores de componentes,
+la normalizacion del interprete, la saturacion con signo, los flags D/I y `queueQ(..., 7, ...)`.
+Opus informa de huellas identicas y 98 -> 96 ms en su reproduccion alternando ejecutables.
+Esta cifra pertenece a su captura y no se extrapola al perfil de partida cargada.
+La integracion conserva el arreglo FTZ/DAZ de `247a9b3` y sus 2016 casos dirigidos.

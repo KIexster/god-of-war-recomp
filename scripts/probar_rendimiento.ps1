@@ -27,13 +27,30 @@ $set = @{
 $previous = @{}
 foreach ($name in @($clear) + @($set.Keys)) { $previous[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
 try {
+    # GOW-Port: otra compilacion o partida invalida la comparacion de FPS desde el inicio.
+    $busy = @(Get-Process -Name cl,link,clang,clang-cl,cc1plus,ninja,cmake,ps2EntryRunner -ErrorAction SilentlyContinue)
+    if ($busy.Count -gt 0) {
+        throw ('Perfil cancelado: hay una compilacion u otra partida activa (' +
+               (($busy.ProcessName | Sort-Object -Unique) -join ', ') + '). Repetir cuando termine.')
+    }
     # En PowerShell 7.5/.NET 9, pasar $null a SetEnvironmentVariable deja un valor vacío.
     # getenv() aún lo detecta: eliminar la entrada evita activar diagnósticos por presencia.
     foreach ($name in $clear) { Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue }
     foreach ($name in $set.Keys) { [Environment]::SetEnvironmentVariable($name, $set[$name], 'Process') }
     Write-Host "Renderer: $Renderer"
-    & (Join-Path $PSScriptRoot 'ejecutar.ps1') -Segundos $Segundos
     $destination = Join-Path $LogsDir "perf_$Etiqueta.log"
+    try {
+        & (Join-Path $PSScriptRoot 'ejecutar.ps1') -Segundos $Segundos -VigilarRendimiento
+    }
+    catch {
+        # GOW-Port: conservar el registro marcado, sin anunciarlo como perfil valido.
+        $failedLog = Join-Path $LogsDir 'ejecutar_err.log'
+        if ((Test-Path -LiteralPath $failedLog) -and
+            (Select-String -LiteralPath $failedLog -SimpleMatch '[gow-perf:invalid]' -Quiet)) {
+            Copy-Item -LiteralPath $failedLog -Destination $destination -Force
+        }
+        throw
+    }
     Copy-Item -LiteralPath (Join-Path $LogsDir 'ejecutar_err.log') -Destination $destination -Force
     Write-Host "Perfil guardado en $destination"
 }

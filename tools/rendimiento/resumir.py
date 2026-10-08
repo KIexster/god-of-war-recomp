@@ -14,6 +14,8 @@ def select_windows(text: str, desde: float, hasta: float, partida: bool = False)
     El reloj del mando comienza en su primera lectura y el del perfil en la
     presentación. Se usa el orden de las líneas, nunca se igualan esos relojes.
     """
+    if '[gow-perf:invalid]' in text:
+        raise ValueError('perfil invalidado durante la ejecución; repetir sin carga externa')
     rows = []
     positions = []
     runs = []
@@ -68,8 +70,11 @@ def main() -> int:
                         help='exigir state=11, pending=0 y levelReady=1 antes y después de las ventanas')
     parser.add_argument('--json', type=Path, dest='output')
     args = parser.parse_args()
-    rows = select_windows(args.log.read_text(encoding='utf-8', errors='replace'),
-                          args.desde, args.hasta, args.partida)
+    try:
+        rows = select_windows(args.log.read_text(encoding='utf-8', errors='replace'),
+                              args.desde, args.hasta, args.partida)
+    except ValueError as error:
+        parser.error(str(error))
     if not rows:
         qualifier = ' de partida cargada' if args.partida else ''
         parser.error(f'no hay ventanas completas{qualifier} en el intervalo elegido')

@@ -630,6 +630,26 @@ imágenes. Una huella igual no certifica identidad byte a byte intermedia.
 Los comandos elegidos ya drenan lotes; TEXFLUSH queda fuera porque en la GPU
 actual no lo hace. Los readbacks añaden espera y la prueba no mide FPS.
 
+Para repetir solo un prefijo, `--hasta-registro R` admite una frontera natural
+Flush, Sync, Present o End. `Initial` es el registro 0; los siguientes empiezan
+en 1. Por ejemplo, si el primer control variable está en el Flush 36:
+
+```powershell
+.\logs\repetir_gs.exe .\logs\tramo_gs.bin compute --hasta-registro 36 --repeticiones 64 --checkpoints-sync logs\prefijo_gs
+```
+
+La herramienta valida el índice y su operación antes de crear el backend.
+Rechaza Submit y TEXFLUSH para evitar nuevos cortes entre dibujos. Al llegar
+al registro seleccionado, compara exactamente los 4 MiB y el estado portable
+de CPU/candidato, además de las presentaciones ya ejecutadas. Un prefijo
+anterior al End imprime que **no valida el End original ni el resto de la
+captura**. Seleccionar el End conserva el oráculo de la captura completa.
+El límite de controles sincronizados se comprueba solo para ese prefijo.
+Un resultado distinto mantiene salida 1; errores de argumentos/captura,
+salida 2; una referencia CPU que no reproduce el End, salida 3.
+`tests/gs_replay_cli_test.py` comprueba fronteras, límites, opciones inválidas
+y que un End alterado se detecta al repetir el tramo completo.
+
 En el tramo tardío de 146.015 registros, CPU ×3 mantiene iguales los trece
 controles, el End, el estado y ambas imágenes. Compute ×3 con snapshot cambia
 por primera vez en el Flush del registro 73.288, después de 73.003 dibujos:
@@ -1120,3 +1140,19 @@ distintas. La última muestra a Kratos y enemigos sobre el barco con lluvia y
 HUD, en estado 11, sin carga pendiente y con hardware activo. No se observa
 geometría estirada en esa imagen; sigue pendiente comprobar el combate completo
 y resolver el feedback. Las capturas y los datos del juego permanecen locales.
+
+## Atribución de tiempos GPU
+
+`PS2X_GS_GPU_PROF=1` activa timestamps y un informe cada cuatro presentaciones.
+`ps2recomp-gs-hardware-profile.patch` separa cada variante hardware de un lote
+y registra sus primitivas, FBP, formatos y flags. Compute adjunta los datos
+antes de resolver la cola de 4096 consultas; antes se perdían los del último
+lote. Las dos regresiones opcionales de `GOW_GS_GPU_TEST=1` comprueban esos
+casos con OpenGL efectivo y conservan los 4 MiB exactos frente al CPU.
+
+Los grupos son por destino/flags y los tiempos GPU se expresan por frame;
+los contadores de la línea `target` suman el intervalo del informe. Hardware
+usa el estado de la primera primitiva de cada variante; compute, el del primer
+estado del lote. No constituyen atribución por primitiva. El profiler espera
+los resultados de las consultas y altera el ritmo del juego: debe desactivarse
+al medir FPS. El arreglo mejora el diagnóstico, sin acreditar más rendimiento.
