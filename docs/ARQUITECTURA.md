@@ -99,3 +99,9 @@ Se registran con `PS2_REGISTER_GAME_OVERRIDE` para el ELF `SCUS_973.99` (entry `
   y límite previo de controles sincronizados. No requieren contexto OpenGL.
 
 `.github/workflows/estado.yml` regenera el mapa de estado (`docs/estado/`) cuando cambian sus datos.
+
+Las PR #17/#18 añaden escrituras directas opcionales y un despachador VU1
+compilado, en parches separados después de los de GS. La #12 se integra
+conservando los arreglos equivalentes actuales y adaptando únicamente el
+diagnóstico de presupuesto al nuevo `StepContext`. El microcódigo y el C++
+VU1 generado siguen siendo datos privados, fuera del repositorio.

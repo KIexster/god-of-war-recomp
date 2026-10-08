@@ -2035,3 +2035,19 @@ OpenGL; los controles nuevos cubren CT24/Z24 y CT32/Z32 compartidos, Z de
 solo lectura, Z inactivo y buffers disjuntos, en compute y hardware efectivo.
 También pasan las herramientas GS y las pruebas de argumentos/controles de la CLI.
 El modo por defecto conserva trece controles estables igual que el snapshot.
+
+### Integración de las PR #12, #17 y #18 (8 de octubre)
+
+La #18 (`bfee1bb`) contiene todos los commits de la #17 (`b3d8cd6`). Se
+conservan sus dos parches VU1 después de los 51 actuales, incluido el arreglo
+GS de alias color/Z. La fusión de la #12 (`927c7b93`) conserva las versiones
+actuales de DMA, VIF DIRECT, ramas EE, VU0, FPU y salto de cola: ya estaban
+incorporadas en `ps2recomp-vu0-macro.patch`, `ps2recomp-vif-direct.patch` y
+`ps2recomp-ee-fixes.patch`; no se añaden copias antiguas.
+
+La pieza nueva de #12 es `ps2recomp-vu1-budget-diag.patch`, adaptada a
+`StepContext` de #18. `GOW_VU1_BUDGET_DIAG=1` informa de cortes por presupuesto
+con mensajes limitados; no aumenta los 65536 ciclos ni modifica el programa.
+La regresión cubre presupuesto corto/cero, reanudación hasta E y reset, con
+escrituras directas y con colas. Validación conjunta en curso; el generador
+requiere datos locales del usuario y el C++ derivado nunca se publica.

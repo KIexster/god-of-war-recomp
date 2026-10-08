@@ -95,6 +95,11 @@ los contextos y las primitivas recientes del GS, y al entrar en el estado de par
 `gow_vu1_code.bin`, `gow_vu1_data.bin` y `gow_render_ram.bin` junto al ejecutable. Esos volcados
 contienen datos del juego y no deben publicarse.
 
+`GOW_VU1_BUDGET_DIAG=1` (`ps2recomp-vu1-budget-diag.patch`) registra `[gow-vu1-budget]` cuando un programa
+VU1 lanzado por MSCAL/MSCNT agota el tope fijo de 65536 ciclos sin llegar a su bit E: muestra la dirección
+de entrada, el PC donde se cortó y el contador. Escribe las 32 primeras apariciones y después una de cada 1024.
+Si no aparece ninguna línea en la partida, el tope no está cortando programas.
+
 ## Prueba aislada de XGKICK
 
 `patches/ps2recomp-xgkick.patch` añade `GOW_XGKICK_IMMEDIATE=1`: copia y envía el paquete GIF
