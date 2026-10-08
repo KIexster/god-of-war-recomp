@@ -427,3 +427,11 @@ compilaciones ni otra partida. Distribución exclusiva del hilo del juego:
 Es una sola pasada con escena cambiante. No demuestra una ganancia atribuible
 a SIMD frente al perfil anterior ni sustituye las mediciones de Opus. El
 siguiente diagnóstico debe separar coste de envío, esperas del GS y GPU.
+
+El primer diagnóstico de timestamps (180 s con el mismo ejecutable) confirma
+una limitación de atribución: los lotes hardware se agrupaban bajo FBP=0,
+flags=0 y cero primitivas aunque se estuviera dibujando la partida. El parche
+de [atribución GPU](RENDERIZADO.md#atribución-de-tiempos-gpu) conserva el estado
+por variante y corrige también la frontera de 4096 consultas compute.
+Las cifras de ese diagnóstico se conservan localmente; no se interpretan
+como FPS ni se utilizan sus grupos vacíos para elegir una optimización.

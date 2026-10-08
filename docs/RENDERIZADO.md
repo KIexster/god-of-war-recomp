@@ -1140,3 +1140,19 @@ distintas. La última muestra a Kratos y enemigos sobre el barco con lluvia y
 HUD, en estado 11, sin carga pendiente y con hardware activo. No se observa
 geometría estirada en esa imagen; sigue pendiente comprobar el combate completo
 y resolver el feedback. Las capturas y los datos del juego permanecen locales.
+
+## Atribución de tiempos GPU
+
+`PS2X_GS_GPU_PROF=1` activa timestamps y un informe cada cuatro presentaciones.
+`ps2recomp-gs-hardware-profile.patch` separa cada variante hardware de un lote
+y registra sus primitivas, FBP, formatos y flags. Compute adjunta los datos
+antes de resolver la cola de 4096 consultas; antes se perdían los del último
+lote. Las dos regresiones opcionales de `GOW_GS_GPU_TEST=1` comprueban esos
+casos con OpenGL efectivo y conservan los 4 MiB exactos frente al CPU.
+
+Los grupos son por destino/flags y los tiempos GPU se expresan por frame;
+los contadores de la línea `target` suman el intervalo del informe. Hardware
+usa el estado de la primera primitiva de cada variante; compute, el del primer
+estado del lote. No constituyen atribución por primitiva. El profiler espera
+los resultados de las consultas y altera el ritmo del juego: debe desactivarse
+al medir FPS. El arreglo mejora el diagnóstico, sin acreditar más rendimiento.

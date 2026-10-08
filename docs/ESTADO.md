@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-_Última actualización: 7 de octubre de 2026_
+_Última actualización: 8 de octubre de 2026_
 
 ## Qué funciona
 
@@ -2280,3 +2280,30 @@ Durante estas pruebas Opus añade `754c970` (DIV compilada) a la PR #23 y abre
 la rama de flags perezosos. **Esos cambios posteriores todavía no están en
 este ejecutable**: requieren una revisión e integración propias. No se altera
 el árbol de trabajo de Opus ni se anuncia que toda la PR #23 esté aplicada.
+
+El control limpio del mismo ejecutable de 64 parches dura 430 s y conserva
+**15 capturas distintas de 512×448**. La última, a **360,14 s** del reloj del
+mando, muestra a Kratos, varios enemigos, barco, lluvia, fondo y HUD, sin
+polígonos estirados visibles. Sigue en estado 11, `pending=0`, `levelReady=1`,
+con hardware activo y sin instrucciones VU reservadas en el registro.
+La tarjeta original conserva su SHA256; se utiliza una copia privada.
+Es una comprobación de esa escena, con FMV omitido, y queda pendiente
+verificar combate completo, otros escenarios y rendimiento sostenido.
+
+### Atribución del profiler OpenGL (8 de octubre)
+
+El diagnóstico GPU de 180 s sobre el ejecutable de 64 parches descubre que
+los lotes hardware imprimen FBP, flags y primitivas como cero. Una consulta
+engloba varias variantes de shader sin adjuntar su estado; esas líneas no
+permiten identificar el destino que consume tiempo. En compute, el último
+lote del umbral de 4096 consultas también pierde datos al resolverse la cola.
+Esta ejecución sincroniza timestamps y añade registros: no mide FPS limpios.
+
+`ps2recomp-gs-hardware-profile.patch` atribuye una consulta a cada variante
+hardware y adjunta los datos compute antes de resolver las consultas.
+El trabajo CPU de preparar esos datos queda fuera del intervalo GPU. Sin
+`PS2X_GS_GPU_PROF=1`, las consultas siguen desactivadas. Dos regresiones
+OpenGL reales fallan con el backend anterior y pasan con el borrador corregido:
+dos variantes dentro del mismo lote y la frontera de 4096 lotes compute.
+En ambos casos conservan exactamente los 4 MiB frente al CPU y exigen la ruta
+GPU efectiva. La compilación oficial integrada se valida por separado.
