@@ -57,15 +57,23 @@ de Opus.
 
 Los doce controles específicos pasan localmente. Restaurar LINEAR en las
 texturas publicadas hace fallar tres de ellos por diferencias de imagen.
-La validación conjunta y del juego sigue en curso; todavía no se atribuye
-a esta ruta una mejora de FPS.
+La suite nativa reconstruida pasa **623/623**, con 33 controles OpenGL
+reales, y la CI inicial pasa en Linux. Forzar Flush en el latch compartido
+hace fallar dos de los cinco controles de cola; su espera acotada permite
+terminar también con esa regresión. La comprobación del juego sigue en
+curso; todavía no se atribuye a esta ruta una mejora de FPS.
 
 En compilaciones incrementales con MSVC en español, comprobar que Ninja
 registre dependencias de headers. En este equipo registraba cero: al
 cambiar el tamaño de `PS2Runtime`, objetos de tests antiguos causaban una
-violación de acceso. Se reconstruyeron todos los objetos de pruebas antes
-de repetir la suite; una ejecución con objetos antiguos no se cuenta como
-validación de la integración.
+violación de acceso. Se reconstruyeron los objetos del runtime y de pruebas
+antes de repetir la suite. El PCH antiguo del runner también provocó C3668
+al ver la interfaz GS anterior. `compilar.ps1` descarta los objetos del
+runtime/tests y tanto el `.pch` como su objeto de creación antes de compilar
+el runner; borrar solo el `.pch` no fuerza su generación en este Ninja.
+`2_compilar.cmd` devuelve ahora el código real de compilación tras el pause.
+Las ejecuciones con objetos antiguos no se cuentan como validación de la
+integración.
 
 El backend OpenGL conserva el crédito y la licencia GPL-3.0 del código de
 Taylor N. Albarnaz / LightVelox, `sotc-port` en

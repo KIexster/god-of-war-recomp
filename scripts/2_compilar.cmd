@@ -23,3 +23,4 @@ echo [codigo final %RC%] >> logs\2_compilar.log
 echo.
 echo Termino (codigo %RC%). Revisa logs\2_compilar.log
 pause
+exit /b %RC%

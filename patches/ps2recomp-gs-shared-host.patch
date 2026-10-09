@@ -1913,10 +1913,10 @@ index 0000000..0ade394
 +}
 diff --git a/ps2xTest/src/ps2_gs_shared_queue_tests.cpp b/ps2xTest/src/ps2_gs_shared_queue_tests.cpp
 new file mode 100644
-index 0000000..1eabf09
+index 0000000..5ddaa4d
 --- /dev/null
 +++ b/ps2xTest/src/ps2_gs_shared_queue_tests.cpp
-@@ -0,0 +1,332 @@
+@@ -0,0 +1,348 @@
 +// GOW-Port: frontend y cola reales; backend procedural detenido sin sleeps ni assets.
 +#include "MiniTest.h"
 +#include "runtime/gs/gs_frontend.h"
@@ -2162,7 +2162,23 @@ index 0000000..1eabf09
 +            Fixture f;
 +            f.recording.holdDraw = true;
 +            f.point();
-+            f.gs.latchHostPresentationFrame();
++            // GOW-Port: también el control negativo de Flush debe cerrar sin deadlock.
++            std::thread presenter([&]
++            {
++                f.gs.latchHostPresentationFrame();
++                { std::lock_guard<std::mutex> lock(f.recording.mutex); f.recording.hostReturned = true; }
++                f.recording.cv.notify_all();
++            });
++            const bool latched = f.recording.wait([&] { return f.recording.hostReturned; });
++            if (!latched)
++            {
++                f.recording.release();
++                presenter.join();
++                t.Fail("El latch bloqueó antes del control de FINISH");
++                return;
++            }
++            presenter.join();
++            { std::lock_guard<std::mutex> lock(f.recording.mutex); f.recording.hostReturned = false; }
 +            const bool entered = f.recording.wait([&] { return f.recording.drawEntered; });
 +            uint32_t result = 0u;
 +            uint32_t observedAfterFinish = 0u;
