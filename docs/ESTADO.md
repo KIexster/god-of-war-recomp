@@ -2603,3 +2603,19 @@ el primer sprite explica GPU. Queda aislada una diferencia de persistencia de
 caché entre primitivas, separada de la variación del caso grande. No se cambia
 la política del renderer del juego. Comandos, tabla y límites:
 `docs/FEEDBACK_BILINEAL_MINIMO.md`.
+
+### 2026-10-09 — Separar persistencia y reemplazo de caché GS
+
+Sobre main con PR38 integrada, se convierte la intervención privada de caché
+en una sonda reproducible del replay, exclusivamente para candidato CPU.
+Invalidar su etiqueta antes de cada Submit reproduce el RGB GPU del caso de
+una fila, conservando el End y estado de la referencia. Los 54 patrones
+procedurales confirman persistencia hasta 32 filas y reemplazo natural desde
+33; TEXFLUSH elimina la diferencia pequeña, scissor la conserva. Se verifican
+bases/bytes de caché, VRAM, RGB y dos restauraciones iniciales completas.
+
+No se implementa todavía la caché GPU: el caso grande necesita además el
+orden de lecturas y reemplazos dentro del sprite. Congelar por Submit o hasta
+TEXFLUSH no reproduce ambos contratos. La prueba queda en CI para validar
+esa futura corrección sin cambiar EE/FPU/IOP/VU1 ni el ejecutable del juego.
+Detalle y límites: `docs/FEEDBACK_BILINEAL_MINIMO.md`.

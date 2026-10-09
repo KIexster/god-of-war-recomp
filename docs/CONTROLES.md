@@ -320,3 +320,16 @@ incorrecta falla; límites y opciones duplicadas fallan antes de crear archivos.
 El caso de una fila fija independientemente el RGBA CPU `(141,90,98,128)` del
 píxel `(32,0)`. El generador anterior falla al solicitar altura reducida.
 Controles locales Windows y reproducción GPU: `docs/FEEDBACK_BILINEAL_MINIMO.md`.
+
+## Persistencia de caché de textura entre Submit (2026-10-09)
+
+`tests/gs_texture_cache_causality_test.py generador replay` comprueba 54 patrones
+procedurales CPU, con dos pasadas de la sonda `--invalidar-cache-submit` por
+patrón. Referencia y End son estrictos: un End adulterado devuelve 3. Se fijan
+los bytes distintos (3/93/96 hasta 32 filas; cero desde 33), las bases y bytes
+de caché, el RGB del único píxel, estabilidad entre pasadas y controles de
+TEXFLUSH, scissor, textura disjunta y nearest. GPU, opciones incompatibles y
+duplicadas se rechazan antes de crear salida. La CLI anterior falla este control.
+
+La sonda solo interviene en el candidato CPU; no altera el renderer del juego.
+Comandos, resultados y límites: `docs/FEEDBACK_BILINEAL_MINIMO.md`.

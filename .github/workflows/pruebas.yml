@@ -125,6 +125,9 @@ jobs:
       - name: Probar alturas y fronteras de los patrones GS procedurales
         run: python3 gow/tests/gs_feedback_height_cli_test.py PS2Recomp/build/gow_gs_feedback_generator PS2Recomp/build/gow_gs_feedback_dump_test
 
+      - name: Probar persistencia y reemplazo de la cache de textura GS
+        run: python3 gow/tests/gs_texture_cache_causality_test.py PS2Recomp/build/gow_gs_feedback_generator PS2Recomp/build/gow_gs_replay
+
       - name: Probar el generador VU1 y los pares compilados con microcodigo procedural
         run: python3 gow/tests/vu1_compiled_cli_test.py PS2Recomp/build/gow_vu1_compiled_test
 
