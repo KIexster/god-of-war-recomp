@@ -554,3 +554,29 @@ Huellas de VU1 (compilado e intérprete) idénticas en `vif_pcsx2_inicio2` y `vi
 `probar_vu1_compilada.cmd` (60 casos, 17 saltos encadenados en su despacho, y 38.144 de DIV) en verde.
 Reproducción de `vif_port_480s` sin rasterizar, alternando ejecutables con la máquina ruidosa: mediana
 107,7 → 105,9 ms y mínimo 103,0 → 99,7 ms por cuadro (10 rondas); en otra tanda de 8, mínimo 101,7 → 98,4 ms.
+
+## FMAC con un factor cero sin la ruta exacta (9 de octubre)
+
+Un perfil de la reproducción de `vif_port_480s` (sin rasterizar) mostraba ~3 % en la ruta exacta de las FMAC
+(`productStickyFlagsExact`, `normalizeFmacExactResult` y `signbit`, con `double` y `long double`). Su caso
+más común es un factor cero: las matrices y vectores del juego tienen muchas componentes a 0.
+
+`ps2recomp-vu1-zero-factor.patch`:
+
+- `productStickyFlags` (intérprete y código compilado): con un operando ±0 el producto exacto es cero con el
+  signo de a XOR b, así que los flags son Z y S sin calcular en `double`. Los operandos llegan normalizados
+  (finitos y sin subnormales), así que no hay 0 × ∞.
+- Ruta escalar de las FMAC compiladas (`fmacLaneT`): en MUL/OPMULA y en MADD/MSUB/OPMSUB con un factor cero,
+  el resultado en `float` ya es el exacto (sumar ±0 es exacto con las mismas reglas de signo, y ACC es cero o
+  normal), así que `normalizeFmacExactResult` no cambiaría el valor: los flags son Z si es cero y S.
+- `commitReadyPipelines` marca como libres las entradas de Q y P sin poner a cero todos sus campos
+  (`queueQ`/`queueP` los escriben todos).
+
+Probado y descartado por empeorar el tiempo: escribir los stores de VU1 componente a componente (en el
+intérprete un XGKICK lee después el qword entero) o con un atajo para xyzw, y llamar a `progressXgkick` solo
+en los ciclos con crédito (más código en línea en cada par compilado).
+
+Huellas de VU1 (compilado e intérprete) idénticas en `vif_pcsx2_inicio2` y `vif_port_480s`;
+`probar_vu1_fmac.cmd` (100.800 casos con valores límite + 2.016 FTZ/DAZ), `probar_vu1_compilada.cmd` y suite
+573/573. Reproducción alternando ejecutables: compilado 103,2 → 99,0 ms por cuadro (6 rondas de 150 pasadas),
+intérprete 313,9 → 307,0 ms (5 rondas de 40).
