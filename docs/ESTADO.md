@@ -2507,3 +2507,19 @@ muestra 50–56 ms por cuadro presentado y un grupo dominante FBP 0/flags
 para repetir cadenas GS y preservar su igualdad con CPU; todavía no se
 ha añadido una optimización del shader. EE, FPU, IOP y FMV permanecen fuera
 de este cambio.
+
+
+### 2026-10-09 — El grabador GS conserva presentación compartida
+
+El decorador de captura heredaba la capacidad RAM por defecto aunque su
+backend presentase texturas compartidas. El host podía elegir un modo distinto
+al backend al activar `GOW_GS_REPLAY_TRACE`. Ahora reenvía la capacidad efectiva
+bajo el mutex existente; conserva RAM cuando corresponde y no fuerza OpenGL.
+
+La regresión consulta el decorador y el frontend con RAM/compartida y backend
+directo/en otro hilo. Falla antes y pasa después; consultar no sincroniza,
+presenta ni graba comandos. Suite de herramientas GS completa y recompilación
+rápida: código 0. El ensayo de 140 s conserva el host compartido, llega a nivel
+listo y cierra una captura privada breve durante la partida. La repetición CPU
+no reproduce su VRAM final (343.007 bytes distintos), por lo que no se afirma
+paridad de la cadena ni mejora de FPS. Condiciones en `docs/CONTROLES.md`.
