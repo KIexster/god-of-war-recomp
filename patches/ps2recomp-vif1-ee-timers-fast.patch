@@ -1,0 +1,125 @@
+diff --git a/ps2xRuntime/src/lib/ps2_memory.cpp b/ps2xRuntime/src/lib/ps2_memory.cpp
+index 213a440..0d4ace8 100644
+--- a/ps2xRuntime/src/lib/ps2_memory.cpp
++++ b/ps2xRuntime/src/lib/ps2_memory.cpp
+@@ -460,12 +460,39 @@ uint32_t PS2Memory::advanceEeTimers(uint64_t eeCycles) noexcept
+             continue;
+         }
+ 
+-        const uint64_t clockHz = kEeTimerClockHz[timer.mode & kEeTimerModeClksMask];
+-        const uint64_t wholeSeconds = eeCycles / kEeClockHz;
+-        const uint64_t remainingCycles = eeCycles % kEeClockHz;
+-        const uint64_t scaled = remainingCycles * clockHz + timer.clockRemainder;
+-        const uint64_t ticks = wholeSeconds * clockHz + scaled / kEeClockHz;
+-        timer.clockRemainder = scaled % kEeClockHz;
++        const uint32_t clockSource = timer.mode & kEeTimerModeClksMask;
++        uint64_t ticks = 0u;
++        if (clockSource < 3u && eeCycles < kEeClockHz)
++        {
++            // GOW-Port: BUSCLK/2, /32 y /512 dividen exactamente el reloj del EE (clock = Hz / d). Con
++            // R = q * clock + r (r < clock), floor((ciclos * clock + R) / Hz) = (ciclos + q) / d y el resto nuevo es
++            // ((ciclos + q) % d) * clock + r: lo mismo que la cuenta de abajo, sin divisiones de 64 bits.
++            const auto step = [&](auto shiftTag)
++            {
++                constexpr uint32_t shift = decltype(shiftTag)::value;
++                constexpr uint64_t clockHz = kEeClockHz >> shift; // constante: la división es una multiplicación
++                const uint64_t q = timer.clockRemainder / clockHz;
++                const uint64_t r = timer.clockRemainder - q * clockHz;
++                const uint64_t units = eeCycles + q;
++                ticks = units >> shift;
++                timer.clockRemainder = (units & ((1ull << shift) - 1u)) * clockHz + r;
++            };
++            if (clockSource == 0u)
++                step(std::integral_constant<uint32_t, 1u>{});
++            else if (clockSource == 1u)
++                step(std::integral_constant<uint32_t, 5u>{});
++            else
++                step(std::integral_constant<uint32_t, 9u>{});
++        }
++        else
++        {
++            const uint64_t clockHz = kEeTimerClockHz[clockSource];
++            const uint64_t wholeSeconds = eeCycles / kEeClockHz;
++            const uint64_t remainingCycles = eeCycles % kEeClockHz;
++            const uint64_t scaled = remainingCycles * clockHz + timer.clockRemainder;
++            ticks = wholeSeconds * clockHz + scaled / kEeClockHz;
++            timer.clockRemainder = scaled % kEeClockHz;
++        }
+         if (ticks == 0u)
+         {
+             continue;
+diff --git a/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp b/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
+index 5436880..f04efb1 100644
+--- a/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
++++ b/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
+@@ -552,7 +552,69 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
+ 
+             const bool zeroExtend = (imm & 0x4000u) != 0u;
+ 
+-            if (m_vu1Data && totalBytes > 0 && pos + totalBytes <= sizeBytes)
++            // GOW-Port: UNPACK sin máscara, sin sumar la fila (STMOD 0/3) y con CL >= WL (cada escritura tiene su
++            // vector de origen): el bucle general de abajo lee el qword de destino, sustituye las componentes
++            // descomprimidas y lo escribe entero. Aquí se hace lo mismo por formato, sin las comprobaciones por
++            // componente. V3 conserva W de la memoria, V2 escribe XYXY y V1 repite X, como abajo.
++            const uint32_t fastMode = vif1_regs.mode & 3u;
++            const bool fastFormat = vl != 3u || vn == 3u;
++            const bool fastUnpack = !maskEnable && cl >= wl && fastFormat &&
++                                    ((vl == 3u && vn == 3u) || (fastMode != 1u && fastMode != 2u));
++            if (fastUnpack && m_vu1Data && totalBytes > 0 && pos + totalBytes <= sizeBytes)
++            {
++                const uint8_t *srcBase = data + pos;
++                const uint32_t limit = static_cast<uint32_t>(components);
++                for (uint32_t writeIndex = 0; writeIndex < writeVectorCount; ++writeIndex)
++                {
++                    const uint32_t destVec = (cl == wl) ? ((vuAddr + writeIndex) & 0x3FFu)
++                                                        : ((vuAddr + (writeIndex / wl) * cl + writeIndex % wl) & 0x3FFu);
++                    uint8_t *dst = m_vu1Data + destVec * 16u;
++                    const uint8_t *srcVec = srcBase + writeIndex * bytesPerVector;
++                    if (vl == 0u && limit == 4u)
++                    {
++                        std::memcpy(dst, srcVec, 16u);
++                        continue;
++                    }
++                    uint32_t out[4];
++                    std::memcpy(out, dst, sizeof(out));
++                    if (vl == 3u) // V4-5
++                    {
++                        uint16_t packed = 0;
++                        std::memcpy(&packed, srcVec, sizeof(packed));
++                        out[0] = (packed & 0x001Fu) << 3u;
++                        out[1] = (packed & 0x03E0u) >> 2u;
++                        out[2] = (packed & 0x7C00u) >> 7u;
++                        out[3] = (packed & 0x8000u) >> 8u;
++                    }
++                    else
++                    {
++                        for (uint32_t c = 0; c < limit; ++c)
++                        {
++                            if (vl == 0u)
++                                std::memcpy(&out[c], srcVec + c * 4u, 4u);
++                            else if (vl == 1u)
++                            {
++                                uint16_t raw = 0;
++                                std::memcpy(&raw, srcVec + c * 2u, sizeof(raw));
++                                out[c] = zeroExtend ? static_cast<uint32_t>(raw)
++                                                    : static_cast<uint32_t>(static_cast<int32_t>(static_cast<int16_t>(raw)));
++                            }
++                            else
++                                out[c] = zeroExtend ? static_cast<uint32_t>(srcVec[c])
++                                                    : static_cast<uint32_t>(static_cast<int32_t>(static_cast<int8_t>(srcVec[c])));
++                        }
++                        if (limit == 1u)
++                            out[1] = out[2] = out[3] = out[0];
++                        else if (limit == 2u)
++                        {
++                            out[2] = out[0];
++                            out[3] = out[1];
++                        }
++                    }
++                    std::memcpy(dst, out, sizeof(out));
++                }
++            }
++            else if (m_vu1Data && totalBytes > 0 && pos + totalBytes <= sizeBytes)
+             {
+                 const uint8_t *srcBase = data + pos;
+                 uint32_t srcIndex = 0u;
