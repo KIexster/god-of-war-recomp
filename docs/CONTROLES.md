@@ -257,3 +257,18 @@ En un prefijo compara exactamente los 4 MiB y el estado CPU/candidato y las
 presentaciones que ya ocurrieron. El End original y el resto de la captura
 quedan sin validar; seleccionar su registro End conserva la comprobación
 completa. El límite de 4096 controles se aplica solo al tramo seleccionado.
+
+## Presentación explícita durante el perfil (2026-10-09)
+
+`tests/perf_guard_test.ps1` ejecuta los scripts reales con procesos simulados.
+Comprueba que el modo RAM reemplace un `PS2X_GS_DIRECT_PRESENT=1` heredado,
+que el modo compartido reemplace un valor 0, que ambos restauren el entorno
+y que compartida/CPU falle sin iniciar procesos. Conserva los controles de
+carga externa inicial y sobrevenida, marca del registro y cierre exclusivo
+del PID propio. La versión anterior del script falla por heredar el modo
+compartido en RAM; la versión corregida pasa. No se ejecuta el juego en estos
+controles.
+
+La comparación real de cuatro pasadas está documentada en
+`docs/RENDIMIENTO_PRESENTACION.md`; sus archivos derivados del juego son
+privados y no se utilizan como fixtures de CI.

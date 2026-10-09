@@ -44,6 +44,11 @@ rechaza compilaciones o partidas simultáneas y conserva una marca de invalidez.
 Los controles del script comprueban ambos modos frente a valores heredados,
 su restauración y el rechazo de la combinación compartida/CPU.
 
+La [comparación del 9 de octubre](RENDIMIENTO_PRESENTACION.md) repite cuatro
+pasadas con el mismo ejecutable: 6,848 FPS con RAM y 6,908 compartidos. La
+diferencia observada de +0,88 % no demuestra una mejora estable frente a la
+variación entre repeticiones. El informe conserva condiciones, intervalos y límites.
+
 ## Perfil por muestreo (`tools/perfil/muestrear.cpp`)
 
 `GOW_PERF_DIAG` reparte el tiempo por subsistema, pero no dice qué función lo consume. Este

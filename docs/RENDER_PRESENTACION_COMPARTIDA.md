@@ -105,3 +105,25 @@ por separado la ruta de presentación y su escalado. No aparecen errores,
 degradación del ring ni informes parciales del profiler en esta pasada.
 Al terminar el plazo se fuerza el cierre de esa instancia. La prueba no
 certifica completar el juego, la reproducción FMV ni una mejora de FPS.
+
+## Siguiente investigación: rasterizado
+
+El registro de esa prueba funcional, con diagnósticos, muestra en sus últimos
+informes unos 50–56 ms de rasterizado por cuadro presentado y 0,02–0,03 ms de
+composición. El grupo dominante tiene destino FBP 0 y flags `0x4b`: interpolación
+de color, textura, mezcla y filtrado lineal, según los bits `FIip`, `FTme`,
+`FAbe` y `FLinear` del backend. Son tiempos GPU del perfil anterior, no una
+medición limpia de FPS ni una comparación RAM/compartida.
+
+La ruta activa informa `hardware rasterization active, expanded triangles`.
+El shader comprueba la cobertura real antes de sombrear, pero conserva la
+sección ordenada del interlock incluso para fragmentos sin cobertura. Antes
+de experimentar con descartes o cachés de textura, repetir la cadena GS y
+comparar píxeles/VRAM contra CPU: se deben conservar cobertura subpíxel,
+filtrado, alias de textura/destino y orden de mezcla.
+
+No mover `beginInvocationInterlockARB`/`endInvocationInterlockARB` dentro de
+un `if` ni colocar un `return` anterior. La
+[especificación ARB_fragment_shader_interlock](https://registry.khronos.org/OpenGL/extensions/ARB/ARB_fragment_shader_interlock.txt)
+prohíbe ese control de flujo; permite un `discard` anterior. Esto delimita
+un experimento futuro, no acredita todavía una optimización ni su rendimiento.

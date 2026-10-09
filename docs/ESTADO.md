@@ -2485,3 +2485,25 @@ enemigos, barco, lluvia y HUD sin polígonos estirados visibles en esa
 escena. No hay errores, degradación del ring ni informes parciales del
 profiler. Se usan tarjeta/caché privadas y se omite FMV; el cierre al acabar
 el plazo es forzado. No se certifica completar el juego ni mejorar FPS.
+
+### 2026-10-09 — Comparación limpia de presentación
+
+Tras integrar `main` con las PR #33 y #34, el perfil fija explícitamente
+presentación RAM o compartida y restaura el entorno. Sus controles pasan;
+el script anterior falla al heredar el modo compartido en una pasada RAM.
+El analizador PowerShell y los nueve controles de selección de ventanas pasan.
+
+Se completan cuatro pasadas alternadas de 180 s con el mismo ejecutable
+de `343404f`, 501 micromemorias, tarjeta inicialmente ausente, caché privada
+y perfil solo de cuadros, sin capturas ni diagnósticos GPU. Se confirma
+estado 11/nivel listo y el modo efectivo en cada una. El promedio ponderado
+es 6,848 FPS RAM y 6,908 compartido (+0,88 %), inferior a la variación entre
+las dos pasadas RAM: no se acredita una mejora estable de FPS. Condiciones,
+intervalos efectivos y límites en `docs/RENDIMIENTO_PRESENTACION.md`.
+
+La siguiente investigación GS apunta al rasterizado: el diagnóstico previo
+muestra 50–56 ms por cuadro presentado y un grupo dominante FBP 0/flags
+`0x4b`, con textura, filtrado lineal, interpolación y mezcla. Es una pista
+para repetir cadenas GS y preservar su igualdad con CPU; todavía no se
+ha añadido una optimización del shader. EE, FPU, IOP y FMV permanecen fuera
+de este cambio.
