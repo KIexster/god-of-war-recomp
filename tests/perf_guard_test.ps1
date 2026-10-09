@@ -4,7 +4,7 @@ $testRepo = Split-Path -Parent $PSScriptRoot
 $testTempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
 $testRoot = Join-Path $testTempRoot ('gow-perf-guard-' + [Guid]::NewGuid().ToString('N'))
 $testPrevious = @{}
-foreach ($name in @('GOW_WORK','GOW_ELF','GOW_PERF_DIAG','PS2X_GS_GPU_PROF','PS2X_GS_DIRECT_PRESENT')) {
+foreach ($name in @('GOW_WORK','GOW_ELF','GOW_PERF_DIAG','PS2X_GS_GPU_PROF','PS2X_GS_DIRECT_PRESENT','GOW_GS_REPLAY_STATE')) {
     $testPrevious[$name] = [Environment]::GetEnvironmentVariable($name,'Process')
 }
 function Assert-Guard([bool]$condition,[string]$message) {
@@ -29,6 +29,7 @@ function global:Start-Process {
           [switch]$PassThru,$WindowStyle)
     $global:GowPerfGuardFixture.starts++
     $global:GowPerfGuardFixture.actualPresentation = $env:PS2X_GS_DIRECT_PRESENT
+    $global:GowPerfGuardFixture.actualCaptureState = $env:GOW_GS_REPLAY_STATE
     Set-Content -LiteralPath $RedirectStandardOutput -Value 'proceso simulado'
     Set-Content -LiteralPath $RedirectStandardError -Value '[gow-perf] t=20.00 window=5.00 guest_flip_hz=10.00'
     $global:GowPerfGuardFixture.process
@@ -49,6 +50,7 @@ try {
     $env:GOW_PERF_DIAG = 'valor_previo'
     $env:PS2X_GS_GPU_PROF = 'diagnostico_previo'
     $env:PS2X_GS_DIRECT_PRESENT = '1'
+    $env:GOW_GS_REPLAY_STATE = '4'
     New-Item -ItemType Directory -Path (Join-Path $env:GOW_WORK 'PS2Recomp/out/build') -Force | Out-Null
     New-Item -ItemType File -Path $env:GOW_ELF | Out-Null
     New-Item -ItemType File -Path (Join-Path $env:GOW_WORK 'PS2Recomp/out/build/ps2EntryRunner.exe') | Out-Null
@@ -70,8 +72,10 @@ try {
         catch { $caught = $_ }
         Assert-Guard ($env:GOW_PERF_DIAG -eq 'valor_previo' -and $env:PS2X_GS_GPU_PROF -eq 'diagnostico_previo') 'No se restauro el entorno'
         Assert-Guard ($env:PS2X_GS_DIRECT_PRESENT -eq '1') 'No se restauro la presentacion previa'
+        Assert-Guard ($env:GOW_GS_REPLAY_STATE -eq '4') 'No se restauro el estado de captura previo'
         if ($global:GowPerfGuardFixture.starts -gt 0) {
             Assert-Guard ($global:GowPerfGuardFixture.actualPresentation -eq '0') 'La presentacion RAM heredo el entorno anterior'
+            Assert-Guard ([string]::IsNullOrEmpty($global:GowPerfGuardFixture.actualCaptureState)) 'El perfil heredo el estado de captura'
         }
         $destination = Join-Path $testRoot "logs/perf_$scenario.log"
         if ($scenario -eq 'startup') {

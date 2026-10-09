@@ -207,13 +207,16 @@ Para elegir un tramo de comandos del GS, `GOW_GS_REPLAY_TRACE` indica el archivo
 local de salida. `GOW_GS_REPLAY_AFTER` fija la espera desde la instalación del
 backend (0..3600 segundos, 150 por defecto); `GOW_GS_REPLAY_SECONDS` fija la
 duración (0,1..60 segundos, 3 por defecto). Los valores usan punto decimal.
-`GOW_GS_REPLAY_TEXFLUSH=1` exige además un TEXFLUSH del juego en estado 11 y guarda
+`GOW_GS_REPLAY_STATE` selecciona el estado del juego que permite iniciar la captura
+(entero decimal de 32 bits; `11` por defecto, partida; `4` para la intro).
+No cambia el estado del juego ni detiene la captura si después cambia de estado.
+`GOW_GS_REPLAY_TEXFLUSH=1` exige además un TEXFLUSH del juego en el estado seleccionado y guarda
 el estado inicial después de esa invalidación. Por defecto vale `0`. No fuerza
 una invalidación ni una transición del juego. Los comandos de presentación no
 inician la captura. El límite sigue siendo 64 MiB y puede cerrar el tramo antes
 del plazo. Las opciones mal formadas desactivan la captura con un mensaje antes
 de abrir el archivo; sin `GOW_GS_REPLAY_TRACE` no se instala el diagnóstico.
-El perfil limpia las cuatro variables. Esta captura serializa el GS y no sirve
+El perfil limpia las cinco variables. Esta captura serializa el GS y no sirve
 para medir FPS; los volcados permanecen en `logs/`, excluidos de Git.
 Ejemplo y repetición: [RENDERIZADO.md](RENDERIZADO.md#repetición-local-de-comandos-gs).
 
