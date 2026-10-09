@@ -37,6 +37,9 @@ namespace gow_model_probe {
         uint16_t joint=0,rootId=0;
         uint64_t objectTick=0,skeletonTick=0;
         std::array<uint32_t,16> local{},world{},rootWorld{};
+        struct Joint { bool valid=false; uint32_t address=0; std::array<uint32_t,16> world{}; };
+        // Primeras ocho articulaciones: lectura acotada, sin copiar toda la paleta.
+        std::array<Joint,8> firstJoints{};
     };
     inline Pose capture(const uint8_t *ram,size_t size,uint32_t object) {
         using namespace gow_camera_probe;
@@ -58,6 +61,14 @@ namespace gow_model_probe {
         // CalcSkinHierarchy 0x137558 toma el número de articulaciones de +0x10;
         // CalcWorldMatrix 0x1306E4 indexa matrices de 64 bytes desde skeleton+0x8C.
         p.jointCount=read<uint32_t>(definition+0x10);
+        if(p.joints) for(size_t i=0;i<p.firstJoints.size() && i<p.jointCount;++i) {
+            const uint64_t at=(p.joints & 0x1FFFFFFFu)+uint64_t(i)*64u;
+            if(at>=0x20000000ull) break;
+            const auto *matrix=span(ram,size,uint32_t(at),64);
+            if(!matrix) break;
+            auto &joint=p.firstJoints[i]; joint.valid=true; joint.address=uint32_t(at);
+            std::memcpy(joint.world.data(),matrix,64);
+        }
         if(!p.joints || p.rootId>=p.jointCount) return p;
         const uint64_t address=(p.joints & 0x1FFFFFFFu)+uint64_t(p.rootId)*64u;
         if(address>=0x20000000ull) return p;

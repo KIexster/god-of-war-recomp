@@ -397,3 +397,25 @@ desconexión, pausa, edición, cadenas con longitud/terminador, estabilidad de
 captura y protección de directorios rastreados. La CI los ejecuta. El control
 real de 32 MiB en la intro pasó y coincidió con una lectura independiente;
 identidad, hash, configuración y límites están registrados en ESTADO.
+
+## Articulaciones del modelo y padre de cámara (2026-10-09)
+
+`GOW_MODEL_DIAG=1` añade `[gow-model:joint]` para las primeras ocho matrices
+de la paleta, hasta el count de skin y con límites de RAM por matriz. Conserva
+fase, modelo, vista, ordinal, índice, dirección y los 16 componentes por bits.
+No reemplaza las muestras de raíz ni cambia su cupo/intervalo.
+
+`GOW_CAMERA_DIAG=1` añade `[gow-camera:parent]` y `parentJointWorld` después
+de SetupPipeline: padre del cliente, esqueleto, sellos, array y articulación
+seleccionada. `validJoint` significa que se pudo leer esa matriz dentro de RAM;
+no verifica por sí solo la identidad de la jerarquía. No se aplica el count de
+skin a la cámara: el padre de la referencia PCSX2 tiene ese campo en cero y
+su articulación 1 es válida. Una articulación `0xFFFF` usa local y no solicita
+una matriz de la paleta del padre.
+
+Los controles sintéticos cubren bits NaN sin operar floats, memoria intacta,
+alias, count 0/3/20, límite de ocho matrices, punteros nulos, lectura exacta
+de 64 bytes y cruce de segmento. El lector C++ sobre la RAM privada de PCSX2
+obtiene las ocho matrices de los modelos 125/103 y la misma matriz por bits
+en viewWorld, clientWorld y parentJointWorld. La compilación completa y la
+ejecución nativa de este cambio se registrarán en ESTADO al finalizar.

@@ -38,6 +38,16 @@ static bool test() {
        p.objectTick!=0xfedcba9876543210ull || p.skeletonTick!=0x123456789abcdef0ull) return false;
     for(size_t i=0;i<16;++i) if(p.local[i]!=0x7fc00000u+i || p.world[i]!=0xabc00000u+i || p.rootWorld[i]!=0xfab00000u+i) return false;
     if(ram!=before || capture(ram.data(),ram.size(),object|0x80000000u).rootWorld!=p.rootWorld) return false;
+    if(!p.firstJoints[0].valid || !p.firstJoints[1].valid || !p.firstJoints[2].valid ||
+       p.firstJoints[3].valid || p.firstJoints[2].address!=joints+128 ||
+       p.firstJoints[2].world!=p.rootWorld) return false;
+    if(capture(ram.data(),joints+128+63,object).firstJoints[2].valid) return false;
+    put<uint32_t>(ram,definition+0x10,20);
+    const auto many=capture(ram.data(),ram.size(),object);
+    if(many.firstJoints.size()!=8 || !many.firstJoints[7].valid || many.firstJoints[7].address!=joints+7*64) return false;
+    put<uint32_t>(ram,definition+0x10,0);
+    if(capture(ram.data(),ram.size(),object).firstJoints[0].valid) return false;
+    put<uint32_t>(ram,definition+0x10,3);
     if(capture(nullptr,ram.size(),object).validObject || capture(ram.data(),ram.size(),0).validObject ||
        capture(ram.data(),object+0x107,object).validObject) return false;
     if(!capture(ram.data(),joints+128+64,object).validRoot || capture(ram.data(),joints+128+63,object).validRoot) return false;
