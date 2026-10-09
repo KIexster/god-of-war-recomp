@@ -1,0 +1,68 @@
+diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime/ps2_vu1.h
+index 8974410..567538b 100644
+--- a/ps2xRuntime/include/runtime/ps2_vu1.h
++++ b/ps2xRuntime/include/runtime/ps2_vu1.h
+@@ -380,6 +380,8 @@ private:
+     template <uint32_t Upper, uint32_t C>
+     void fmacLaneT(float &result, uint8_t &laneFlags, uint8_t &productFlags);
+     template <uint32_t Upper, bool DeadFlags>
++    void fmacScalarT();
++    template <uint32_t Upper, bool DeadFlags>
+     void upperT();
+     template <uint32_t Lower>
+     void lowerT(StepContext &context, uint32_t upperInstr);
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+index 2941996..1931a65 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+@@ -26,6 +26,12 @@
+ #pragma fp_contract(off)
+ #endif
+ 
++#if defined(_MSC_VER)
++#define VU1C_NOINLINE __declspec(noinline)
++#else
++#define VU1C_NOINLINE __attribute__((noinline))
++#endif
++
+ namespace vu1c
+ {
+     enum class Kind : int
+@@ -201,7 +207,8 @@ namespace vu1c
+     }
+ #endif
+     // Bits de MAC de una máscara de carriles en orden de componente (bit 0 = x), como laneForComponent: x = 8.
+-    constexpr uint32_t reverse4(uint32_t m)
++    // VU1_STEP_INLINE: MSVC la dejaba como llamada en los bloques compilados.
++    VU1_STEP_INLINE constexpr uint32_t reverse4(uint32_t m)
+     {
+         return ((m & 1u) << 3) | ((m & 2u) << 1) | ((m & 4u) >> 1) | ((m & 8u) >> 3);
+     }
+@@ -507,6 +514,19 @@ VU1_STEP_INLINE void VU1Interpreter::upperT()
+             }
+         }
+ #endif
++        // GOW-Port: la ruta escalar (carriles fuera del camino rápido) va aparte y sin expandir en línea: así
++        // cada par compilado lleva solo la ruta SSE y los bloques caben mejor en la caché de instrucciones.
++        fmacScalarT<Upper, DeadFlags>();
++    }
++}
++
++// Ruta escalar de upperT para las FMAC (cuatro fmacLaneT, flags y destino), fuera de línea.
++template <uint32_t Upper, bool DeadFlags>
++VU1C_NOINLINE void VU1Interpreter::fmacScalarT()
++{
++    constexpr vu1c::UpperInfo info = vu1c::classify(Upper);
++    constexpr uint32_t dest = (Upper >> 21) & 0xFu;
++    constexpr uint32_t fd = (Upper >> 6) & 0x1Fu;
+         float result[4]{};
+         uint8_t laneFlags[4]{};
+         uint8_t productFlags[4]{};
+@@ -546,7 +566,6 @@ VU1_STEP_INLINE void VU1Interpreter::upperT()
+         if constexpr ((dest & 4u) != 0u) target[1] = result[1];
+         if constexpr ((dest & 2u) != 0u) target[2] = result[2];
+         if constexpr ((dest & 1u) != 0u) target[3] = result[3];
+-    }
+ }
+ 
+ // Instrucciones inferiores frecuentes especializadas. Cada caso es copia exacta del de execLower

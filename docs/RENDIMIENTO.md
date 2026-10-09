@@ -594,3 +594,45 @@ garantizado en el mismo paso.
 Huellas de VU1 (compilado e intérprete, que incluyen la memoria de datos) idénticas en `vif_pcsx2_inicio2` y
 `vif_port_480s`; `probar_vu1_compilada.cmd` (colas, presupuesto y reanudación) y `probar_vu1_fmac.cmd` en
 verde. Reproducción alternando ejecutables (6 rondas de 150 pasadas): mediana 99,9 → 93,0 ms por cuadro.
+
+### Ruta escalar de las FMAC compiladas fuera de línea (9 de octubre)
+
+El desensamblado del bloque más caliente de la reproducción (`b3C20_1`, 31 pares) ocupaba ~74 KB: cada FMAC
+llevaba en línea, además de la ruta SSE, los cuatro carriles escalares con sus rutas exactas, que solo se usan
+cuando algún carril sale del camino rápido. Esto pasaba de largo la caché de instrucciones de 32 KB.
+`ps2recomp-vu1-cold-scalar.patch` mueve esa parte a `fmacScalarT<Upper, DeadFlags>`, que no se expande en
+línea (`VU1C_NOINLINE`), y fuerza en línea `vu1c::reverse4` (MSVC la dejaba como llamada en cada FMAC). El
+bloque baja a ~6.600 instrucciones y `repetir_c.exe` de 55 a 36 MB.
+
+Huellas de VU1 (compilado e intérprete) idénticas en `vif_pcsx2_inicio2` y `vif_port_480s`;
+`probar_vu1_fmac.cmd`, `probar_vu1_compilada.cmd` y suite 573/573. Reproducción alternando ejecutables
+(6 rondas de 150 pasadas): mediana 92,7 → 90,8 ms por cuadro.
+
+### MADD/MSUB con un factor cero en la ruta SSE (9 de octubre)
+
+Con la ruta escalar fuera de línea, el perfil mostraba qué FMAC la usaban a menudo: MADDA.y y MADD.w (por
+ejemplo `ACC + VF29 × VF0.w`) con carriles donde un factor es cero, sobre todo cuando además el resultado es
+cero. La comprobación SSE de MADD/MSUB/OPMSUB exigía un resultado con exponente 2..0xFD, así que esos carriles
+rehacían toda la instrucción por la ruta escalar. `ps2recomp-vu1-simd-zero.patch` acepta en la ruta SSE los
+carriles con un factor cero (el mismo razonamiento que en la escalar: ACC ∓ 0 es exacto en float y ACC es cero
+o normal) y les da Z si el resultado es cero, además de S. También acepta los carriles con un factor ±1, donde
+el producto es exacto: con exponente del resultado 2..0xFD el valor no cambia y los flags son el signo, y si ACC
+cancela exactamente el producto el resultado es un cero exacto (+0, Z). Esto último añade ~1 % (82,8 → 82,1 ms).
+
+Huellas de VU1 (compilado e intérprete) idénticas en `vif_pcsx2_inicio2` y `vif_port_480s`;
+`probar_vu1_fmac.cmd` (valores límite con ±0) y `probar_vu1_compilada.cmd` en verde. Reproducción alternando
+ejecutables (6 rondas de 150 pasadas): mediana 90,3 → 82,7 ms por cuadro.
+
+### PATH1 pendiente al terminar un programa, de una vez (9 de octubre)
+
+Al terminar un programa de VU1, `flushPipelines` avanza ciclo a ciclo hasta vaciar las colas, y casi siempre
+solo queda el XGKICK en curso: un `advanceOneCycle` y un `progressXgkick` por ciclo, un qword cada dos. El
+perfil de la reproducción lo daba como el 95 % de `VU1Interpreter::run` y buena parte de `progressXgkick`.
+`ps2recomp-vu1-xgkick-flush.patch`: si solo queda PATH1 (sin Q, P, flags, stores ni escrituras pendientes, que
+ya no se pueden llenar), se transfiere el resto del paquete de una vez y se suman los ciclos que habría
+tardado: n iteraciones con crédito inicial c0 terminan en el ciclo 2n − c0. Los errores del paquete cortan la
+transferencia en la misma iteración que antes. Vale para el intérprete y el código compilado.
+
+Huellas de VU1 (compilado e intérprete, que incluyen los ciclos) idénticas en `vif_pcsx2_inicio2` y
+`vif_port_480s`; `probar_vu1_compilada.cmd`, `probar_vu1_fmac.cmd` y suite 573/573. Reproducción alternando
+ejecutables (6 rondas de 150 pasadas): mediana 82,2 → 78,2 ms por cuadro.

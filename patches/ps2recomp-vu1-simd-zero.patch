@@ -1,0 +1,49 @@
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+index 1931a65..d8a43c9 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+@@ -432,6 +432,7 @@ VU1_STEP_INLINE void VU1Interpreter::upperT()
+             }
+             __m128 r;
+             __m128 product = _mm_setzero_ps();
++            __m128 accValue = _mm_setzero_ps();
+             bool fast = true;
+             int zeroLanes = 0;   // carriles con flag Z (resultado exactamente cero)
+             int zeroProduct = 0; // carriles con producto exactamente cero (un operando es cero)
+@@ -447,9 +448,9 @@ VU1_STEP_INLINE void VU1Interpreter::upperT()
+                     r = _mm_sub_ps(vs, right);
+                 else if constexpr (productSum)
+                 {
+-                    const __m128 acc = vu1c::normalize4(_mm_loadu_ps(m_state.acc));
++                    accValue = vu1c::normalize4(_mm_loadu_ps(m_state.acc));
+                     product = _mm_mul_ps(vs, right);
+-                    r = info.kind == vu1c::Kind::Madd ? _mm_add_ps(acc, product) : _mm_sub_ps(acc, product);
++                    r = info.kind == vu1c::Kind::Madd ? _mm_add_ps(accValue, product) : _mm_sub_ps(accValue, product);
+                 }
+                 else
+                     r = _mm_mul_ps(vs, right); // Mul, Opmula
+@@ -469,6 +470,24 @@ VU1_STEP_INLINE void VU1Interpreter::upperT()
+                     ok = _mm_and_si128(ok, _mm_cmpgt_epi32(er, _mm_sub_epi32(ep, _mm_set1_epi32(21))));
+                     const __m128i epOk = _mm_and_si128(_mm_cmpgt_epi32(ep, _mm_set1_epi32(1)), _mm_cmplt_epi32(ep, _mm_set1_epi32(0xFE)));
+                     ok = _mm_and_si128(ok, _mm_or_si128(epOk, opZero));
++                    // GOW-Port: con un factor cero, ACC ∓ 0 es exacto en float (ACC es cero o normal), así que el
++                    // carril vale también con resultado cero o en los extremos; sus flags son Z (si es cero) y S.
++                    ok = _mm_or_si128(ok, opZero);
++                    const __m128i rZero = _mm_cmpeq_epi32(_mm_and_si128(_mm_castps_si128(r), absMask), _mm_setzero_si128());
++                    // GOW-Port: con un factor ±1 el producto es exacto (el otro factor normalizado), así que el
++                    // resultado en float es la suma exacta redondeada una vez: con exponente 2..0xFD no cambia y
++                    // sus flags son el signo, y si ACC cancela exactamente el producto es un cero exacto (+0, Z).
++                    const __m128i one = _mm_set1_epi32(0x3F800000);
++                    const __m128i exactProduct = _mm_or_si128(
++                        _mm_cmpeq_epi32(_mm_and_si128(_mm_castps_si128(vs), absMask), one),
++                        _mm_cmpeq_epi32(_mm_and_si128(_mm_castps_si128(right), absMask), one));
++                    const __m128 cancelled = info.kind == vu1c::Kind::Madd
++                        ? _mm_cmpeq_ps(accValue, _mm_xor_ps(product, _mm_castsi128_ps(_mm_set1_epi32(static_cast<int>(0x80000000u)))))
++                        : _mm_cmpeq_ps(accValue, product);
++                    const __m128i exactZero = _mm_and_si128(exactProduct, _mm_and_si128(rZero, _mm_castps_si128(cancelled)));
++                    const __m128i erNormal = _mm_and_si128(_mm_cmpgt_epi32(er, _mm_set1_epi32(1)), _mm_cmplt_epi32(er, _mm_set1_epi32(0xFE)));
++                    ok = _mm_or_si128(ok, _mm_and_si128(exactProduct, _mm_or_si128(erNormal, exactZero)));
++                    zeroLanes = _mm_movemask_ps(_mm_castsi128_ps(_mm_and_si128(_mm_or_si128(opZero, exactZero), rZero))) & lanes;
+                     zeroProduct = _mm_movemask_ps(_mm_castsi128_ps(opZero)) & lanes;
+                 }
+                 else
