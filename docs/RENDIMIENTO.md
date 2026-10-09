@@ -594,3 +594,16 @@ garantizado en el mismo paso.
 Huellas de VU1 (compilado e intérprete, que incluyen la memoria de datos) idénticas en `vif_pcsx2_inicio2` y
 `vif_port_480s`; `probar_vu1_compilada.cmd` (colas, presupuesto y reanudación) y `probar_vu1_fmac.cmd` en
 verde. Reproducción alternando ejecutables (6 rondas de 150 pasadas): mediana 99,9 → 93,0 ms por cuadro.
+
+### Ruta escalar de las FMAC compiladas fuera de línea (9 de octubre)
+
+El desensamblado del bloque más caliente de la reproducción (`b3C20_1`, 31 pares) ocupaba ~74 KB: cada FMAC
+llevaba en línea, además de la ruta SSE, los cuatro carriles escalares con sus rutas exactas, que solo se usan
+cuando algún carril sale del camino rápido. Esto pasaba de largo la caché de instrucciones de 32 KB.
+`ps2recomp-vu1-cold-scalar.patch` mueve esa parte a `fmacScalarT<Upper, DeadFlags>`, que no se expande en
+línea (`VU1C_NOINLINE`), y fuerza en línea `vu1c::reverse4` (MSVC la dejaba como llamada en cada FMAC). El
+bloque baja a ~6.600 instrucciones y `repetir_c.exe` de 55 a 36 MB.
+
+Huellas de VU1 (compilado e intérprete) idénticas en `vif_pcsx2_inicio2` y `vif_port_480s`;
+`probar_vu1_fmac.cmd`, `probar_vu1_compilada.cmd` y suite 573/573. Reproducción alternando ejecutables
+(6 rondas de 150 pasadas): mediana 92,7 → 90,8 ms por cuadro.
