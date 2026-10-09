@@ -2448,8 +2448,9 @@ la fuga del ring con host vivo y la capacidad obsoleta del fallback.
 
 La prueba funcional previa de 240,25 s llega a estado 11 con nivel listo;
 sus capturas muestran a Kratos, enemigos, barco, lluvia y HUD sin polígonos
-estirados visibles. La versión conjunta también llega a ese estado y muestra
-a Kratos sobre el barco. Se omite FMV y se usan tarjetas privadas. No hay
-avisos de degradación del ring ni informes GPU parciales. No se certifican
+estirados visibles. La versión conjunta dura 241,34 s, llega a ese estado y
+muestra también a Kratos, enemigos y HUD sobre el barco. Se omite FMV y se
+usan tarjetas privadas. No hay avisos de degradación del ring; un informe
+GPU parcial omite 2587 muestras y sus tiempos no se usan. No se certifican
 FPS ni una partida completa; la presentación compartida del juego sigue
 preparándose en un checkout separado y no forma parte de esta PR.

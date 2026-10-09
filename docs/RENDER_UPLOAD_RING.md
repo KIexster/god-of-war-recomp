@@ -90,9 +90,12 @@ Un primer intento funcional terminó a los 40,24 s, todavía en las pantallas
 iniciales; no se cuenta como prueba de partida. La repetición de `e1a9270`
 duró **240,25 s** y llegó a estado 11, `pending=0`, `levelReady=1`.
 Las capturas muestran a Kratos, enemigos, barco, lluvia y HUD, sin polígonos
-estirados visibles en esa escena. El control de la versión conjunta también
-alcanza ese estado y sus capturas revisadas muestran a Kratos sobre el barco.
-No aparecen avisos de degradación del ring ni informes parciales del profiler.
+estirados visibles en esa escena. El control de la versión conjunta dura
+**241,34 s**, alcanza ese estado y sus capturas revisadas muestran también
+a Kratos, enemigos y HUD sobre el barco. No aparecen avisos de degradación
+del ring. El profiler emite un informe parcial con 2587 muestras omitidas,
+según su límite de capacidad: esos tiempos GPU son incompletos y no sirven
+para comparar rendimiento.
 Se usan tarjetas privadas y FMV omitido; el cierre al terminar el plazo es
 forzado y no certifica completar el juego. No se atribuye a este parche una
 mejora de FPS.
