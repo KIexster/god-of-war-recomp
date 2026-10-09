@@ -88,6 +88,7 @@ $vu1ColdScalarPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-cold-scalar.pat
 $vu1SimdZeroPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-simd-zero.patch'
 $vu1XgkickFlushPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-xgkick-flush.patch'
 $gsSharedHostPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-shared-host.patch'
+$vu1GeneratorDirPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-generator-dir.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -200,6 +201,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1ColdScalarPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1SimdZeroPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1XgkickFlushPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsSharedHostPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1GeneratorDirPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
