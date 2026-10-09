@@ -1,0 +1,2251 @@
+diff --git a/ps2xRuntime/CMakeLists.txt b/ps2xRuntime/CMakeLists.txt
+index fb45923..b6ea325 100644
+--- a/ps2xRuntime/CMakeLists.txt
++++ b/ps2xRuntime/CMakeLists.txt
+@@ -382,6 +382,7 @@ add_library(ps2_runtime STATIC
+     src/lib/ps2_audio_vag.cpp
+     src/lib/gs/ps2_gs_memory.cpp
+     src/lib/gs/gs_frontend.cpp
++    src/lib/gs/gs_host_present.cpp # GOW-Port: mismo consumidor de textura en juego y controles.
+     src/lib/gs/gs_cpu_backend.cpp
+     # GOW-Port: backend OpenGL y cola del fork SotC ac9efa0 (GPL-3.0).
+     src/lib/gs/gs_threaded_backend.cpp
+diff --git a/ps2xRuntime/include/ps2_runtime.h b/ps2xRuntime/include/ps2_runtime.h
+index 18c22d9..58e57de 100644
+--- a/ps2xRuntime/include/ps2_runtime.h
++++ b/ps2xRuntime/include/ps2_runtime.h
+@@ -28,6 +28,7 @@
+ #include "runtime/gs/ps2_gif_arbiter.h"
+ #include "runtime/ps2_memory.h"
+ #include "runtime/gs/gs_frontend.h"
++class GSHostPresentation; // GOW-Port: el header público no depende de raylib.
+ #include "runtime/ps2_vu1.h"
+ #include "runtime/ps2_audio.h"
+ #include "runtime/ps2_pad.h"
+@@ -489,6 +490,7 @@ private:
+     void notifyIopSifTransfer(uint8_t *rdram, const ps2x::iop::SifTransfer &transfer);
+     void advanceIopEeCycles(uint64_t eeCycles) noexcept;
+     void resetIop();
++    void shutdownHostGraphics(); // GOW-Port: destruir GS antes de cerrar el contexto raylib.
+ 
+     friend class PS2IopTransport;
+     friend class EeScheduler;
+@@ -497,6 +499,8 @@ private:
+     PS2Memory m_memory;
+     GifArbiter m_gifArbiter;
+     GS m_gs;
++    std::unique_ptr<GSHostPresentation> m_hostPresentation;
++    bool m_hostWindowOwned = false;
+     std::unique_ptr<PS2IopHostAdapter> m_iopHost;
+     std::unique_ptr<ps2x::iop::IopSubsystem> m_iopSubsystem;
+     PS2AudioBackend m_audioBackend;
+diff --git a/ps2xRuntime/include/runtime/gs/gs_backend.h b/ps2xRuntime/include/runtime/gs/gs_backend.h
+index 3f00d01..dcb4a07 100644
+--- a/ps2xRuntime/include/runtime/gs/gs_backend.h
++++ b/ps2xRuntime/include/runtime/gs/gs_backend.h
+@@ -24,6 +24,9 @@ public:
+     virtual void Sync(GSSyncReason reason) = 0;
+     virtual PresentationFrame Present(const GSPresentationRequest &request) = 0;
+ 
++    // GOW-Port: capacidad efectiva por instancia; consultar no necesita un contexto GL.
++    virtual bool UsesSharedPresentation() const { return false; }
++
+     virtual bool ClearFramebuffer(const GSContext &context, uint32_t rgba) = 0;
+     virtual uint32_t ConsumeLocalToHostBytes(uint8_t *dst, uint32_t maxBytes) = 0;
+ 
+diff --git a/ps2xRuntime/include/runtime/gs/gs_frontend.h b/ps2xRuntime/include/runtime/gs/gs_frontend.h
+index aa175d8..65b02fa 100644
+--- a/ps2xRuntime/include/runtime/gs/gs_frontend.h
++++ b/ps2xRuntime/include/runtime/gs/gs_frontend.h
+@@ -11,6 +11,8 @@
+ #include "runtime/gs/gs_backend.h"
+ #include "runtime/gs/ps2_gif_arbiter.h" // GOW-Port: conservar el origen de cada flujo GIF.
+ 
++namespace GSSharedPresent { struct Frame; }
++
+ struct GSDebugSnapshot
+ {
+     GSContext ctx[2]{};
+@@ -133,6 +135,9 @@ public:
+     void setDebugHistoryPaused(bool paused);
+     bool getPreferredDisplaySource(GSFrameReg &outSource, uint32_t &outDestFbp) const;
+     void latchHostPresentationFrame();
++    // GOW-Port: el host registra la textura adquirida, nunca el request posterior.
++    bool usesSharedPresentation() const;
++    void recordAcquiredSharedFrame(const GSSharedPresent::Frame &frame);
+     bool copyLatchedHostPresentationFrame(std::vector<uint8_t> &outPixels,
+                                           uint32_t &outWidth,
+                                           uint32_t &outHeight,
+@@ -163,13 +168,13 @@ private:
+                                    uint32_t sizeBytes);
+     void vertexKick(bool drawing);
+ 
+-    void recordDebugEventUnlocked(GSDebugHistoryEntry entry);
++    void recordDebugEventUnlocked(GSDebugHistoryEntry entry, uint64_t tickOverride = UINT64_MAX);
+     GSDebugHistoryEntry makeDebugEventUnlocked(GSDebugEventKind kind) const;
+     void recordGifTagDebugEventUnlocked(uint32_t sizeBytes, uint32_t nloop, uint8_t flg, uint32_t nreg);
+     void recordRegisterDebugEventUnlocked(uint8_t regAddr, uint64_t value);
+     void recordDrawDebugEventUnlocked(int vertexCount);
+     void recordTransferDebugEventUnlocked();
+-    void recordPresentDebugEventUnlocked(uint32_t displayFbp, uint32_t sourceFbp, uint32_t width, uint32_t height, bool usedPreferred);
++    void recordPresentDebugEventUnlocked(uint32_t displayFbp, uint32_t sourceFbp, uint32_t width, uint32_t height, bool usedPreferred, uint64_t tickOverride = UINT64_MAX);
+ 
+     void processImageData(const uint8_t *data, uint32_t sizeBytes);
+     bool tryProcessNativeImageUploadPacket(const uint8_t *data, uint32_t sizeBytes);
+@@ -244,6 +249,14 @@ private:
+     uint32_t m_hostPresentationSourceFbp = 0;
+     bool m_hostPresentationUsedPreferred = false;
+     bool m_hasHostPresentationFrame = false;
++    // GOW-Port: la captura explicita conserva el CRTC del ultimo latch; GL sigue en el worker.
++    GSPresentationRequest m_hostPresentationRequest{};
++    bool m_hasHostPresentationRequest = false;
++    bool m_hostPresentationRequestIsShared = false;
++    uint64_t m_hostPresentationGeneration = 0u;
++    uint64_t m_hostSharedSequence = 0u;
++    mutable PresentationFrame m_hostDiagnosticFrame;
++    mutable uint64_t m_hostDiagnosticGeneration = UINT64_MAX;
+     uint64_t m_nativeImageUploadCount = 0;
+     uint64_t m_nativePackedGIFPacketCount = 0;
+ 
+diff --git a/ps2xRuntime/include/runtime/gs/gs_gpu_backend.h b/ps2xRuntime/include/runtime/gs/gs_gpu_backend.h
+index 849e528..08820be 100644
+--- a/ps2xRuntime/include/runtime/gs/gs_gpu_backend.h
++++ b/ps2xRuntime/include/runtime/gs/gs_gpu_backend.h
+@@ -22,6 +22,8 @@ public:
+     void Reset() override;
+     // GOW-Port: comprobar la inicialización antes de elegir el backend.
+     bool IsReady() const;
++    // GOW-Port: capacidad real de esta instancia, también si el driver rechaza sharing.
++    bool UsesSharedPresentation() const override;
+ 
+     void Submit(const GSPrimitiveBatch &batch) override;
+     void LoadClut(const GSTex0Reg &tex0, const GSTexClutReg &texclut) override;
+diff --git a/ps2xRuntime/include/runtime/gs/gs_host_present.h b/ps2xRuntime/include/runtime/gs/gs_host_present.h
+new file mode 100644
+index 0000000..b3da8fe
+--- /dev/null
++++ b/ps2xRuntime/include/runtime/gs/gs_host_present.h
+@@ -0,0 +1,57 @@
++// GOW-Port: el mismo consumidor raylib para el juego y los controles sin ELF.
++#pragma once
++
++#include "raylib.h"
++#include "runtime/gs/gs_shared_present.h"
++
++#include <cstdint>
++#include <functional>
++#include <vector>
++
++class GS;
++
++class GSHostPresentation
++{
++public:
++    struct View
++    {
++        Texture2D texture{};
++        uint32_t width = 640u;
++        uint32_t height = 448u;
++        bool shared = false;
++        bool borrowed = false;
++        bool blank = true;
++        GSSharedPresent::Frame frame{};
++    };
++
++    // GOW-Port: InitWindow precede a capture; Initialize del GS precede a restore.
++    void captureHostContext();
++    void restoreHostContext();
++    View renderFrame(GS &gs, uint64_t vsyncTick, const std::function<void()> &overlay = {});
++    // GOW-Port: unir primero el hilo del juego; mantiene el host vivo al destruir GS.
++    void shutdown(GS &gs);
++
++private:
++    void createFallback();
++    void blankFallback();
++    View prepare(GS &gs, uint64_t vsyncTick);
++    Texture2D fallback{}; // Propia; las texturas de View compartidas son prestadas.
++    std::vector<uint8_t> scratch;
++    std::vector<uint8_t> upload;
++    View current;
++    uint64_t lastTick = 0u;
++    uint64_t lastSharedSequence = 0u;
++    uint32_t lastDisplayFbp = UINT32_MAX;
++    uint32_t lastSourceFbp = UINT32_MAX;
++    uint32_t lastWidth = 0u;
++    uint32_t lastHeight = 0u;
++    uint32_t uploadDebugCount = 0u;
++    bool lastPreferred = false;
++    bool started = false;
++    bool captureRequested = false;
++    bool hasLatched = false;
++    bool uploaded = false;
++    bool uploadedBlank = false;
++    bool modeKnown = false;
++    bool sharedMode = false;
++};
+diff --git a/ps2xRuntime/include/runtime/gs/gs_shared_present.h b/ps2xRuntime/include/runtime/gs/gs_shared_present.h
+index 6c7ebfc..12aba1d 100644
+--- a/ps2xRuntime/include/runtime/gs/gs_shared_present.h
++++ b/ps2xRuntime/include/runtime/gs/gs_shared_present.h
+@@ -15,6 +15,14 @@ namespace GSSharedPresent
+         uint64_t renderSequence = 0;
+         uint64_t contentHash = 0;
+         bool hashValid = false;
++        // GOW-Port: conservar la selección CRTC sin descargar la imagen al host.
++        uint32_t displayFbp = 0;
++        uint32_t sourceFbp = 0;
++        bool usedPreferred = false;
++        // GOW-Port: los diagnósticos usan el tick de esta imagen, no otro request posterior.
++        uint64_t vsyncTick = 0;
++        // GOW-Port: PMODE apagado equivale a PresentationFrame vacío para el host.
++        bool blank = false;
+     };
+ 
+     void CaptureHostContext();
+diff --git a/ps2xRuntime/include/runtime/gs/gs_threaded_backend.h b/ps2xRuntime/include/runtime/gs/gs_threaded_backend.h
+index e04c6fa..41cd2f7 100644
+--- a/ps2xRuntime/include/runtime/gs/gs_threaded_backend.h
++++ b/ps2xRuntime/include/runtime/gs/gs_threaded_backend.h
+@@ -6,6 +6,7 @@
+ #include "runtime/gs/gs_backend_state.h"
+ 
+ #include <condition_variable>
++#include <atomic>
+ #include <cstdint>
+ #include <deque>
+ #include <functional>
+@@ -37,6 +38,7 @@ public:
+     void TextureFlush() override;
+     void Sync(GSSyncReason reason) override;
+     PresentationFrame Present(const GSPresentationRequest &request) override;
++    bool UsesSharedPresentation() const override { return m_sharedPresentation.load(std::memory_order_acquire); }
+ 
+     bool ClearFramebuffer(const GSContext &context, uint32_t rgba) override;
+     uint32_t ConsumeLocalToHostBytes(uint8_t *dst, uint32_t maxBytes) override;
+@@ -76,6 +78,8 @@ private:
+     void Execute(const std::vector<uint8_t> &chunk, GSPrimitiveBatch &draw);
+ 
+     std::unique_ptr<GSRasterBackend> m_inner;
++    // GOW-Port: publicado por el worker tras Initialize, sin consultar GL desde el host.
++    std::atomic<bool> m_sharedPresentation{false};
+ 
+     mutable std::mutex m_producerMutex;
+     std::vector<uint8_t> m_open;
+diff --git a/ps2xRuntime/include/runtime/gs/gs_types.h b/ps2xRuntime/include/runtime/gs/gs_types.h
+index 21f72d4..02e17d6 100644
+--- a/ps2xRuntime/include/runtime/gs/gs_types.h
++++ b/ps2xRuntime/include/runtime/gs/gs_types.h
+@@ -290,6 +290,8 @@ struct GSPresentationRequest
+     GSFrameReg preferredSource{};
+     uint32_t preferredDestFbp = 0;
+     bool hasPreferredSource = false;
++    // GOW-Port: solo las capturas explicitas descargan pixeles en modo compartido.
++    bool forceReadback = false;
+ };
+ 
+ struct PresentationFrame
+diff --git a/ps2xRuntime/src/lib/gs/gpu/gs_gl.cpp b/ps2xRuntime/src/lib/gs/gpu/gs_gl.cpp
+index 7295856..e56d903 100644
+--- a/ps2xRuntime/src/lib/gs/gpu/gs_gl.cpp
++++ b/ps2xRuntime/src/lib/gs/gpu/gs_gl.cpp
+@@ -201,7 +201,8 @@ namespace GSGL
+     }
+ 
+     bool PublishShared(const Api &gl, GLuint buffer, uint32_t width, uint32_t height, uint64_t renderSequence,
+-                       GLuint hashProgram, GLint hashLocation)
++                       uint32_t displayFbp, uint32_t sourceFbp, bool usedPreferred, bool blank,
++                       uint64_t vsyncTick, GLuint hashProgram, GLint hashLocation)
+     {
+         std::lock_guard<std::mutex> lock(s_sharedMutex);
+         if (!s_sharedActive.load(std::memory_order_relaxed))
+@@ -273,8 +274,9 @@ namespace GSGL
+         if (slot.frame.width != width || slot.frame.height != height)
+         {
+             gl.TexImage2D(kTexture2D, 0, kRgba8, width, height, 0, kRgba, kUnsignedByte, nullptr);
+-            gl.TexParameteri(kTexture2D, kTextureMinFilter, kLinear);
+-            gl.TexParameteri(kTexture2D, kTextureMagFilter, kLinear);
++            // GOW-Port: igualar el filtrado por defecto de la textura CPU de raylib.
++            gl.TexParameteri(kTexture2D, kTextureMinFilter, kNearest);
++            gl.TexParameteri(kTexture2D, kTextureMagFilter, kNearest);
+             gl.TexParameteri(kTexture2D, kTextureWrapS, kClampToEdge);
+             gl.TexParameteri(kTexture2D, kTextureWrapT, kClampToEdge);
+         }
+@@ -288,6 +290,11 @@ namespace GSGL
+         slot.frame.height = height;
+         slot.frame.sequence = ++s_sharedSequence;
+         slot.frame.renderSequence = renderSequence;
++        slot.frame.displayFbp = displayFbp;
++        slot.frame.sourceFbp = sourceFbp;
++        slot.frame.usedPreferred = usedPreferred;
++        slot.frame.blank = blank;
++        slot.frame.vsyncTick = vsyncTick;
+         slot.produced = gl.FenceSync(kSyncGpuCommandsComplete, 0u);
+         gl.Flush();
+         return true;
+@@ -525,7 +532,8 @@ namespace GSGL
+ #else
+ namespace GSGL
+ {
+-    bool PublishShared(const Api &, GLuint, uint32_t, uint32_t, uint64_t, GLuint, GLint) { return false; }
++    bool PublishShared(const Api &, GLuint, uint32_t, uint32_t, uint64_t,
++                       uint32_t, uint32_t, bool, bool, uint64_t, GLuint, GLint) { return false; }
+     bool SharedAvailable(const Api &) { return false; }
+     void DestroyShared(const Api &) {}
+     Context::~Context() = default;
+diff --git a/ps2xRuntime/src/lib/gs/gpu/gs_gl.h b/ps2xRuntime/src/lib/gs/gpu/gs_gl.h
+index ff681a1..43e36c6 100644
+--- a/ps2xRuntime/src/lib/gs/gpu/gs_gl.h
++++ b/ps2xRuntime/src/lib/gs/gpu/gs_gl.h
+@@ -75,6 +75,7 @@ namespace GSGL
+     constexpr GLenum kTextureWrapS = 0x2802;
+     constexpr GLenum kTextureWrapT = 0x2803;
+     constexpr GLint kLinear = 0x2601;
++    constexpr GLint kNearest = 0x2600;
+     constexpr GLint kClampToEdge = 0x812F;
+ 
+     struct Api
+@@ -174,7 +175,8 @@ namespace GSGL
+     };
+ 
+     bool PublishShared(const Api &gl, GLuint buffer, uint32_t width, uint32_t height, uint64_t renderSequence,
+-                       GLuint hashProgram, GLint hashLocation);
++                       uint32_t displayFbp, uint32_t sourceFbp, bool usedPreferred, bool blank,
++                       uint64_t vsyncTick, GLuint hashProgram, GLint hashLocation);
+     bool SharedAvailable(const Api &gl);
+     void DestroyShared(const Api &gl);
+ }
+diff --git a/ps2xRuntime/src/lib/gs/gpu/gs_gpu_backend.cpp b/ps2xRuntime/src/lib/gs/gpu/gs_gpu_backend.cpp
+index b95d107..e1781a2 100644
+--- a/ps2xRuntime/src/lib/gs/gpu/gs_gpu_backend.cpp
++++ b/ps2xRuntime/src/lib/gs/gpu/gs_gpu_backend.cpp
+@@ -2588,6 +2588,11 @@ bool GSGpuBackend::IsReady() const
+     return m_impl->initialized && !m_impl->failed;
+ }
+ 
++bool GSGpuBackend::UsesSharedPresentation() const
++{
++    return m_impl->context.Shared() && GSSharedPresent::Active();
++}
++
+ void GSGpuBackend::Reset()
+ {
+     Impl &d = *m_impl;
+@@ -2740,7 +2745,8 @@ PresentationFrame GSGpuBackend::Present(const GSPresentationRequest &request)
+     if (!d.ensure())
+         return result;
+     d.flushBatch();
+-    const bool shared = d.context.Shared() && GSSharedPresent::Active();
++    // GOW-Port: las capturas solicitadas conservan la lectura síncrona del CPU.
++    const bool shared = !request.forceReadback && UsesSharedPresentation();
+     // GOW-Port: paridad real del GS en modo de campos; el modo progresivo no alterna.
+     const uint32_t fieldFlags = (request.smode2 & 3u) == 1u
+         ? 1u | (static_cast<uint32_t>(request.vsyncTick & 1u) << 1u) : 0u;
+@@ -2806,6 +2812,8 @@ PresentationFrame GSGpuBackend::Present(const GSPresentationRequest &request)
+     pack(circuits[0], c1);
+     pack(circuits[1], c2);
+     result.displayFbp = circuits[0].enabled ? circuits[0].fbp : circuits[1].fbp;
++    if (blank)
++        result.displayFbp = 0u;
+     result.sourceFbp = result.displayFbp;
+     // GOW-Port: igualar la selección del CPU sin cambiar el renderer de referencia.
+     // TEX0/preferredSource usa bloques de 256 B; DISPFB usa páginas de 8 KB.
+@@ -2839,7 +2847,9 @@ PresentationFrame GSGpuBackend::Present(const GSPresentationRequest &request)
+     d.profFrame();
+     if (shared)
+     {
+-        if (PublishShared(gl, d.dataBuffer, width, height, d.renderedSequence + 1u, d.presentHash.id, d.presentHash.loc[0]))
++        if (PublishShared(gl, d.dataBuffer, width, height, d.renderedSequence + 1u,
++                          result.displayFbp, result.sourceFbp, result.usedPreferred, blank,
++                          request.vsyncTick, d.presentHash.id, d.presentHash.loc[0]))
+         {
+             ++d.renderedSequence;
+             d.presentedRevision = d.contentRevision;
+@@ -2851,7 +2861,7 @@ PresentationFrame GSGpuBackend::Present(const GSPresentationRequest &request)
+             d.reportPresentStats();
+         return {};
+     }
+-    if (s_asyncPresent.load(std::memory_order_relaxed))
++    if (!request.forceReadback && s_asyncPresent.load(std::memory_order_relaxed))
+         return gowPresentationRows(d.presentAsync(width, height, result.displayFbp, result.sourceFbp, result.usedPreferred));
+     result.pixels.resize(static_cast<size_t>(width) * height * 4u);
+     d.readData(result.pixels.data(), result.pixels.size());
+diff --git a/ps2xRuntime/src/lib/gs/gs_frontend.cpp b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+index b53c402..2e34354 100644
+--- a/ps2xRuntime/src/lib/gs/gs_frontend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+@@ -2,6 +2,7 @@
+ #include "runtime/gs/gs_cpu_backend.h"
+ // GOW-Port: CPU de referencia por defecto; OpenGL/cola seleccionables.
+ #include "runtime/gs/gs_threaded_backend.h"
++#include "runtime/gs/gs_shared_present.h"
+ #include "ps2_log.h"
+ #include "runtime/ps2_perf.h"
+ #include "runtime/ps2_memory.h"
+@@ -19,6 +20,35 @@ namespace
+ {
+     static constexpr uint32_t kHostFrameWidth = 640u;
+ 
++    // GOW-Port: ambas rutas CPU/GPU devuelven filas de 640; las capturas son compactas.
++    bool copyPresentationPixels(const std::vector<uint8_t> &pixels,
++                                uint32_t width, uint32_t height,
++                                uint32_t displayFbp, uint32_t sourceFbp, bool usedPreferred,
++                                std::vector<uint8_t> &outPixels, uint32_t &outWidth, uint32_t &outHeight,
++                                uint32_t *outDisplayFbp, uint32_t *outSourceFbp, bool *outUsedPreferred)
++    {
++        outPixels.clear();
++        outWidth = outHeight = 0u;
++        if (outDisplayFbp) *outDisplayFbp = 0u;
++        if (outSourceFbp) *outSourceFbp = 0u;
++        if (outUsedPreferred) *outUsedPreferred = false;
++        const size_t sourceRowBytes = static_cast<size_t>(kHostFrameWidth) * 4u;
++        const size_t packedRowBytes = static_cast<size_t>(width) * 4u;
++        if (width == 0u || height == 0u || width > kHostFrameWidth ||
++            static_cast<size_t>(height) > pixels.size() / sourceRowBytes)
++            return false;
++        outPixels.resize(packedRowBytes * static_cast<size_t>(height));
++        for (uint32_t y = 0u; y < height; ++y)
++            std::memcpy(outPixels.data() + static_cast<size_t>(y) * packedRowBytes,
++                        pixels.data() + static_cast<size_t>(y) * sourceRowBytes, packedRowBytes);
++        outWidth = width;
++        outHeight = height;
++        if (outDisplayFbp) *outDisplayFbp = displayFbp;
++        if (outSourceFbp) *outSourceFbp = sourceFbp;
++        if (outUsedPreferred) *outUsedPreferred = usedPreferred;
++        return true;
++    }
++
+     GSPrimReg decodePrimRegister(uint64_t value)
+     {
+         GSPrimReg prim{};
+@@ -180,6 +210,12 @@ void GS::reset()
+         m_hostPresentationSourceFbp = 0u;
+         m_hostPresentationUsedPreferred = false;
+         m_hasHostPresentationFrame = false;
++        m_hasHostPresentationRequest = false;
++        m_hostPresentationRequestIsShared = false;
++        ++m_hostPresentationGeneration;
++        m_hostSharedSequence = 0u;
++        m_hostDiagnosticFrame = {};
++        m_hostDiagnosticGeneration = UINT64_MAX;
+     }
+ 
+     m_debugHistoryWrite = 0;
+@@ -326,14 +362,16 @@ GSDebugHistoryEntry GS::makeDebugEventUnlocked(GSDebugEventKind kind) const
+     return entry;
+ }
+ 
+-void GS::recordDebugEventUnlocked(GSDebugHistoryEntry entry)
++void GS::recordDebugEventUnlocked(GSDebugHistoryEntry entry, uint64_t tickOverride)
+ {
+     if (m_debugHistoryPaused)
+     {
+         return;
+     }
+ 
+-    const uint64_t tick = m_privRegs ? m_privRegs->vsyncTick.load(std::memory_order_acquire) : 0u;
++    // GOW-Port: Present puede mostrar un frame previo al CRTC actual del host.
++    const uint64_t tick = tickOverride != UINT64_MAX ? tickOverride :
++        (m_privRegs ? m_privRegs->vsyncTick.load(std::memory_order_acquire) : 0u);
+     if (m_debugLastVsyncTick == UINT64_MAX)
+     {
+         m_debugLastVsyncTick = tick;
+@@ -463,7 +501,7 @@ void GS::recordTransferDebugEventUnlocked()
+     recordDebugEventUnlocked(entry);
+ }
+ 
+-void GS::recordPresentDebugEventUnlocked(uint32_t displayFbp, uint32_t sourceFbp, uint32_t width, uint32_t height, bool usedPreferred)
++void GS::recordPresentDebugEventUnlocked(uint32_t displayFbp, uint32_t sourceFbp, uint32_t width, uint32_t height, bool usedPreferred, uint64_t tickOverride)
+ {
+     if (m_debugHistoryPaused)
+     {
+@@ -476,7 +514,7 @@ void GS::recordPresentDebugEventUnlocked(uint32_t displayFbp, uint32_t sourceFbp
+     entry.width = width;
+     entry.height = height;
+     entry.usedPreferred = usedPreferred;
+-    recordDebugEventUnlocked(entry);
++    recordDebugEventUnlocked(entry, tickOverride);
+ }
+ 
+ bool GS::getPreferredDisplaySource(GSFrameReg &outSource, uint32_t &outDestFbp) const
+@@ -541,18 +579,29 @@ void GS::latchHostPresentationFrame()
+             m_hostPresentationFrame.clear();
+             m_hasHostPresentationFrame = false;
+             m_hostPresentationWidth = m_hostPresentationHeight = 0u;
++            m_hasHostPresentationRequest = false;
++            m_hostPresentationRequestIsShared = false;
++            ++m_hostPresentationGeneration;
++            m_hostDiagnosticFrame = {};
+             return;
+         }
+         request = buildPresentationRequestUnlocked();
+     }
+ 
+     PresentationFrame frame{};
++    bool shared = false;
+     {
+         std::lock_guard<std::mutex> backendLock(m_backendLifetimeMutex);
+         if (m_backend)
+         {
+-            m_backend->Flush();
+-            m_backend->Sync(GSSyncReason::Presentation);
++            // GOW-Port: Present compartido encola y procesa los draws previos en FIFO.
++            // Flush aqui anularia la asincronia; las lecturas y FINISH conservan su barrera.
++            shared = m_backend->UsesSharedPresentation();
++            if (!shared)
++            {
++                m_backend->Flush();
++                m_backend->Sync(GSSyncReason::Presentation);
++            }
+             frame = m_backend->Present(request);
+         }
+     }
+@@ -565,19 +614,57 @@ void GS::latchHostPresentationFrame()
+     const bool usedPreferred = frame.usedPreferred;
+     {
+         std::lock_guard<std::mutex> presentationLock(m_presentationMutex);
++        const bool wasShared = m_hostPresentationRequestIsShared;
++        m_hostPresentationRequest = request;
++        m_hasHostPresentationRequest = true;
++        m_hostPresentationRequestIsShared = shared;
++        ++m_hostPresentationGeneration;
++        m_hostDiagnosticFrame = {};
++        m_hostDiagnosticGeneration = UINT64_MAX;
+         m_hostPresentationFrame = std::move(frame.pixels);
+-        m_hostPresentationWidth = width;
+-        m_hostPresentationHeight = height;
+-        m_hostPresentationDisplayFbp = displayFbp;
+-        m_hostPresentationSourceFbp = sourceFbp;
+-        m_hostPresentationUsedPreferred = usedPreferred;
+-        m_hasHostPresentationFrame = hasFrame;
++        if (!shared || !wasShared)
++        {
++            m_hostPresentationWidth = width;
++            m_hostPresentationHeight = height;
++            m_hostPresentationDisplayFbp = displayFbp;
++            m_hostPresentationSourceFbp = sourceFbp;
++            m_hostPresentationUsedPreferred = usedPreferred;
++            m_hasHostPresentationFrame = hasFrame;
++        }
+     }
+ 
+     if (hasFrame)
+     {
+         std::lock_guard<std::recursive_mutex> lock(m_stateMutex);
+-        recordPresentDebugEventUnlocked(displayFbp, sourceFbp, width, height, usedPreferred);
++        recordPresentDebugEventUnlocked(displayFbp, sourceFbp, width, height, usedPreferred, request.vsyncTick);
++    }
++}
++
++bool GS::usesSharedPresentation() const
++{
++    std::lock_guard<std::mutex> backendLock(m_backendLifetimeMutex);
++    return m_backend && m_backend->UsesSharedPresentation();
++}
++
++void GS::recordAcquiredSharedFrame(const GSSharedPresent::Frame &frame)
++{
++    bool changed = false;
++    {
++        std::lock_guard<std::mutex> lock(m_presentationMutex);
++        changed = frame.sequence != m_hostSharedSequence;
++        m_hostSharedSequence = frame.sequence;
++        m_hostPresentationWidth = frame.blank ? 0u : frame.width;
++        m_hostPresentationHeight = frame.blank ? 0u : frame.height;
++        m_hostPresentationDisplayFbp = frame.blank ? 0u : frame.displayFbp;
++        m_hostPresentationSourceFbp = frame.blank ? 0u : frame.sourceFbp;
++        m_hostPresentationUsedPreferred = !frame.blank && frame.usedPreferred;
++        m_hasHostPresentationFrame = !frame.blank && frame.width != 0u && frame.height != 0u;
++    }
++    if (changed && !frame.blank)
++    {
++        std::lock_guard<std::recursive_mutex> lock(m_stateMutex);
++        recordPresentDebugEventUnlocked(frame.displayFbp, frame.sourceFbp,
++                                        frame.width, frame.height, frame.usedPreferred, frame.vsyncTick);
+     }
+ }
+ 
+@@ -588,60 +675,50 @@ bool GS::copyLatchedHostPresentationFrame(std::vector<uint8_t> &outPixels,
+                                           uint32_t *outSourceFbp,
+                                           bool *outUsedPreferred) const
+ {
+-    std::lock_guard<std::mutex> lock(m_presentationMutex);
+-    if (!m_hasHostPresentationFrame || m_hostPresentationFrame.empty())
++    const auto copy = [&](const PresentationFrame &frame)
+     {
+-        outPixels.clear();
+-        outWidth = 0u;
+-        outHeight = 0u;
+-        if (outDisplayFbp)
+-            *outDisplayFbp = 0u;
+-        if (outSourceFbp)
+-            *outSourceFbp = 0u;
+-        if (outUsedPreferred)
+-            *outUsedPreferred = false;
+-        return false;
++        return copyPresentationPixels(frame.pixels, frame.width, frame.height,
++                                      frame.displayFbp, frame.sourceFbp, frame.usedPreferred,
++                                      outPixels, outWidth, outHeight,
++                                      outDisplayFbp, outSourceFbp, outUsedPreferred);
++    };
++    GSPresentationRequest request{};
++    uint64_t generation = 0u;
++    {
++        std::lock_guard<std::mutex> lock(m_presentationMutex);
++        if (!m_hostPresentationRequestIsShared)
++            return copyPresentationPixels(m_hostPresentationFrame,
++                                          m_hostPresentationWidth, m_hostPresentationHeight,
++                                          m_hostPresentationDisplayFbp, m_hostPresentationSourceFbp,
++                                          m_hostPresentationUsedPreferred,
++                                          outPixels, outWidth, outHeight,
++                                          outDisplayFbp, outSourceFbp, outUsedPreferred);
++        if (!m_hasHostPresentationRequest)
++            return copy({});
++        generation = m_hostPresentationGeneration;
++        if (m_hostDiagnosticGeneration == generation)
++            return copy(m_hostDiagnosticFrame);
++        request = m_hostPresentationRequest;
++    }
++
++    // GOW-Port: descarga bajo demanda sobre VRAM actual con el CRTC latched.
++    // La barrera y todo GL se ejecutan en el hilo propietario del backend.
++    request.forceReadback = true;
++    PresentationFrame frame{};
++    {
++        std::lock_guard<std::mutex> backendLock(m_backendLifetimeMutex);
++        if (m_backend && m_backend->UsesSharedPresentation())
++            frame = m_backend->Present(request);
+     }
+-
+-    outWidth = m_hostPresentationWidth;
+-    outHeight = m_hostPresentationHeight;
+-    if (outDisplayFbp)
+-        *outDisplayFbp = m_hostPresentationDisplayFbp;
+-    if (outSourceFbp)
+-        *outSourceFbp = m_hostPresentationSourceFbp;
+-    if (outUsedPreferred)
+-        *outUsedPreferred = m_hostPresentationUsedPreferred;
+-
+-    const size_t packedRowBytes = static_cast<size_t>(outWidth) * 4u;
+-    outPixels.resize(packedRowBytes * static_cast<size_t>(outHeight));
+-    if (outWidth != 0u && outHeight != 0u)
++    std::lock_guard<std::mutex> lock(m_presentationMutex);
++    if (generation == m_hostPresentationGeneration)
+     {
+-        const size_t sourceRowBytes = static_cast<size_t>(kHostFrameWidth) * 4u;
+-        for (uint32_t y = 0; y < outHeight; ++y)
+-        {
+-            const size_t srcOffset = static_cast<size_t>(y) * sourceRowBytes;
+-            const size_t dstOffset = static_cast<size_t>(y) * packedRowBytes;
+-            if (srcOffset + packedRowBytes > m_hostPresentationFrame.size() ||
+-                dstOffset + packedRowBytes > outPixels.size())
+-            {
+-                outPixels.clear();
+-                outWidth = 0u;
+-                outHeight = 0u;
+-                if (outDisplayFbp)
+-                    *outDisplayFbp = 0u;
+-                if (outSourceFbp)
+-                    *outSourceFbp = 0u;
+-                if (outUsedPreferred)
+-                    *outUsedPreferred = false;
+-                return false;
+-            }
+-
+-            std::memcpy(outPixels.data() + dstOffset,
+-                        m_hostPresentationFrame.data() + srcOffset,
+-                        packedRowBytes);
+-        }
++        m_hostDiagnosticFrame = std::move(frame);
++        m_hostDiagnosticGeneration = generation;
++        return copy(m_hostDiagnosticFrame);
+     }
+-    return true;
++    // Otro latch puede avanzar mientras la captura espera: no contaminar su cache.
++    return copy(frame);
+ }
+ 
+ // GOW-Port: los atajos nativos solo son validos al comienzo de una etiqueta de este PATH.
+@@ -1737,6 +1814,21 @@ void GS::setRasterBackend(std::unique_ptr<GSRasterBackend> backend)
+ 
+     m_backend = std::move(backend);
+     m_backend->Initialize(m_localMemoryStorage, m_localMemorySize);
++    // GOW-Port: una nueva instancia inicia su propia secuencia y cache de diagnostico.
++    std::lock_guard<std::mutex> presentationLock(m_presentationMutex);
++    if (m_hostPresentationRequestIsShared)
++    {
++        m_hostPresentationWidth = m_hostPresentationHeight = 0u;
++        m_hostPresentationDisplayFbp = m_hostPresentationSourceFbp = 0u;
++        m_hostPresentationUsedPreferred = false;
++        m_hasHostPresentationFrame = false;
++    }
++    m_hasHostPresentationRequest = false;
++    m_hostPresentationRequestIsShared = false;
++    ++m_hostPresentationGeneration;
++    m_hostSharedSequence = 0u;
++    m_hostDiagnosticFrame = {};
++    m_hostDiagnosticGeneration = UINT64_MAX;
+ }
+ 
+ uint32_t GS::ReadVram(uint32_t psm, uint32_t base, uint32_t bw, uint32_t x, uint32_t y) const
+diff --git a/ps2xRuntime/src/lib/gs/gs_host_present.cpp b/ps2xRuntime/src/lib/gs/gs_host_present.cpp
+new file mode 100644
+index 0000000..8fe48b3
+--- /dev/null
++++ b/ps2xRuntime/src/lib/gs/gs_host_present.cpp
+@@ -0,0 +1,219 @@
++// GOW-Port: contexto host, selección de frames y dibujo raylib usados por el port.
++#include "runtime/gs/gs_host_present.h"
++#include "runtime/gs/gs_frontend.h"
++#include "runtime/ps2_perf.h"
++#include "ps2_log.h"
++
++#include <algorithm>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <iostream>
++
++namespace
++{
++    constexpr uint32_t kWidth = 640u;
++    constexpr uint32_t kHeight = 512u;
++    constexpr uint32_t kDisplayHeight = 448u;
++}
++
++void GSHostPresentation::captureHostContext()
++{
++    if (started)
++        return;
++    started = true;
++    const char *setting = std::getenv("PS2X_GS_DIRECT_PRESENT");
++    captureRequested = setting && *setting == '1';
++    if (captureRequested)
++        GSSharedPresent::CaptureHostContext();
++}
++
++void GSHostPresentation::restoreHostContext()
++{
++    if (captureRequested)
++        GSSharedPresent::RestoreHostContext();
++}
++
++void GSHostPresentation::createFallback()
++{
++    if (fallback.id != 0u)
++        return;
++    Image blank = GenImageColor(kWidth, kHeight, BLANK);
++    fallback = LoadTextureFromImage(blank);
++    UnloadImage(blank);
++    SetTextureFilter(fallback, TEXTURE_FILTER_POINT); // Coincide con la ruta RAM original.
++    upload.resize(static_cast<size_t>(kWidth) * kHeight * 4u, 0u);
++}
++
++void GSHostPresentation::blankFallback()
++{
++    if (!uploadedBlank)
++    {
++        for (size_t offset = 0u; offset < upload.size(); offset += 4u)
++        {
++            upload[offset] = MAGENTA.r;
++            upload[offset + 1u] = MAGENTA.g;
++            upload[offset + 2u] = MAGENTA.b;
++            upload[offset + 3u] = MAGENTA.a;
++        }
++        UpdateTexture(fallback, upload.data());
++        uploadedBlank = true;
++    }
++    current.texture = fallback;
++    current.width = kWidth;
++    current.height = kDisplayHeight;
++    current.borrowed = false;
++    current.blank = true;
++    uploaded = true;
++}
++
++GSHostPresentation::View GSHostPresentation::prepare(GS &gs, uint64_t vsyncTick)
++{
++    createFallback();
++    const bool shared = gs.usesSharedPresentation() && GSSharedPresent::Active();
++    if (!modeKnown || shared != sharedMode)
++    {
++        std::fprintf(stderr, "[gs-present] host mode: %s\n", shared ? "shared texture (opt-in)" : "RAM frames");
++        std::fflush(stderr);
++        modeKnown = true;
++        sharedMode = shared;
++        hasLatched = uploaded = uploadedBlank = false;
++        lastSharedSequence = 0u;
++        current = {};
++    }
++    const bool needsLatch = !hasLatched || vsyncTick != lastTick;
++    if (needsLatch)
++    {
++        gs.latchHostPresentationFrame();
++        lastTick = vsyncTick;
++        hasLatched = true;
++    }
++    current.shared = shared;
++    if (shared)
++    {
++        // GOW-Port: la llamada anterior ya terminó EndDrawing, incluido el batch.
++        // Acquire puede conservar el slot previo; nunca descargar píxeles aquí.
++        GSSharedPresent::Frame frame;
++        if (GSSharedPresent::Acquire(frame))
++        {
++            current.frame = frame;
++            if (frame.sequence != lastSharedSequence)
++            {
++                gs.recordAcquiredSharedFrame(frame);
++                lastSharedSequence = frame.sequence;
++            }
++            if (!frame.blank && frame.texture != 0u && frame.width != 0u && frame.height != 0u)
++            {
++                current.texture = Texture2D{frame.texture, static_cast<int>(frame.width), static_cast<int>(frame.height),
++                                            1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8};
++                current.width = frame.width;
++                current.height = frame.height;
++                current.borrowed = true;
++                current.blank = false;
++                return current;
++            }
++        }
++        blankFallback(); // PMODE apagado conserva el placeholder magenta de RAM.
++        return current;
++    }
++    if (!needsLatch && uploaded)
++        return current;
++
++    scratch.clear();
++    uint32_t width = 0u, height = 0u, displayFbp = 0u, sourceFbp = 0u;
++    bool preferred = false;
++    if (!gs.copyLatchedHostPresentationFrame(scratch, width, height, &displayFbp, &sourceFbp, &preferred))
++    {
++        blankFallback();
++        lastWidth = current.width;
++        lastHeight = current.height;
++        return current;
++    }
++    PS2_IF_AGRESSIVE_LOGS({
++        if (uploadDebugCount < 128u || displayFbp != lastDisplayFbp || sourceFbp != lastSourceFbp ||
++            preferred != lastPreferred || width != lastWidth || height != lastHeight)
++            std::cout << "[frame:upload] idx=" << uploadDebugCount << " tick=" << vsyncTick
++                      << " displayFbp=" << displayFbp << " sourceFbp=" << sourceFbp
++                      << " size=" << width << "x" << height
++                      << " preferred=" << static_cast<uint32_t>(preferred ? 1u : 0u) << std::endl;
++        ++uploadDebugCount;
++    });
++    lastDisplayFbp = displayFbp;
++    lastSourceFbp = sourceFbp;
++    lastPreferred = preferred;
++    lastWidth = width;
++    lastHeight = height;
++    std::fill(upload.begin(), upload.end(), 0u);
++    const uint32_t copyWidth = std::min(width, kWidth);
++    const uint32_t copyHeight = std::min(height, kHeight);
++    const size_t sourceRow = static_cast<size_t>(width) * 4u;
++    const size_t destinationRow = static_cast<size_t>(kWidth) * 4u;
++    const size_t copyRow = static_cast<size_t>(copyWidth) * 4u;
++    for (uint32_t y = 0u; y < copyHeight; ++y)
++    {
++        const size_t sourceOffset = static_cast<size_t>(y) * sourceRow;
++        const size_t destinationOffset = static_cast<size_t>(y) * destinationRow;
++        if (sourceOffset + copyRow > scratch.size() || destinationOffset + copyRow > upload.size())
++            break;
++        std::memcpy(upload.data() + destinationOffset, scratch.data() + sourceOffset, copyRow);
++    }
++    UpdateTexture(fallback, upload.data());
++    uploaded = true;
++    uploadedBlank = false;
++    current.texture = fallback;
++    current.width = width;
++    current.height = height;
++    current.borrowed = current.blank = false;
++    current.frame = {};
++    return current;
++}
++
++GSHostPresentation::View GSHostPresentation::renderFrame(GS &gs, uint64_t vsyncTick, const std::function<void()> &overlay)
++{
++    View selected;
++    {
++        ps2_perf::Scope perf(ps2_perf::Bucket::Upload);
++        selected = prepare(gs, vsyncTick);
++    }
++    BeginDrawing();
++    ClearBackground(BLACK);
++    const float sourceWidth = static_cast<float>(std::max<uint32_t>(1u, selected.width));
++    const float sourceHeight = static_cast<float>(std::max<uint32_t>(1u, selected.height));
++    const float screenWidth = static_cast<float>(GetScreenWidth());
++    const float screenHeight = static_cast<float>(GetScreenHeight());
++    const float scale = std::min(screenWidth / sourceWidth, screenHeight / sourceHeight);
++    const float destinationWidth = sourceWidth * scale;
++    const float destinationHeight = sourceHeight * scale;
++    const Rectangle source{0.0f, 0.0f, sourceWidth, sourceHeight};
++    const Rectangle destination{(screenWidth - destinationWidth) * 0.5f,
++                                (screenHeight - destinationHeight) * 0.5f,
++                                destinationWidth, destinationHeight};
++    // GOW-Port: textura del PBO con filas en orden; no invertir source.height.
++    DrawTexturePro(selected.texture, source, destination, Vector2{0.0f, 0.0f}, 0.0f, WHITE);
++    if (overlay)
++        overlay();
++    {
++        ps2_perf::Scope perf(ps2_perf::Bucket::HostWait);
++        EndDrawing();
++    }
++    return selected;
++}
++
++void GSHostPresentation::shutdown(GS &gs)
++{
++    if (!started && fallback.id == 0u)
++        return;
++    // GOW-Port: nullptr crea CPU; drena y destruye el worker/contexto compartido.
++    gs.setRasterBackend(nullptr);
++    restoreHostContext();
++    if (fallback.id != 0u)
++        UnloadTexture(fallback); // Nunca descargar la Texture2D prestada del productor.
++    fallback = {};
++    if (captureRequested)
++        GSSharedPresent::ShutdownHost();
++    started = captureRequested = hasLatched = uploaded = uploadedBlank = modeKnown = sharedMode = false;
++    lastTick = lastSharedSequence = 0u;
++    current = {};
++    scratch.clear();
++    upload.clear();
++}
+diff --git a/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp b/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp
+index af6bd99..6181965 100644
+--- a/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp
+@@ -298,6 +298,7 @@ void GSThreadedBackend::Initialize(uint8_t *vram, uint32_t vramSize)
+             m_inner = std::make_unique<GSCpuBackend>();
+             m_inner->Initialize(vram, vramSize);
+         }
++        m_sharedPresentation.store(m_inner->UsesSharedPresentation(), std::memory_order_release);
+     });
+ }
+ 
+@@ -354,7 +355,7 @@ void GSThreadedBackend::Sync(GSSyncReason reason)
+         Enqueue(Op::Sync, &reason, sizeof(reason));
+         return;
+     }
+-    if (reason == GSSyncReason::Presentation && GSSharedPresent::Active())
++    if (reason == GSSyncReason::Presentation && UsesSharedPresentation())
+         return;
+     // GOW-Port: FINISH solo se publica cuando terminaron los comandos anteriores.
+     RunOnWorker([&] { m_inner->Sync(reason); });
+@@ -362,7 +363,7 @@ void GSThreadedBackend::Sync(GSSyncReason reason)
+ 
+ PresentationFrame GSThreadedBackend::Present(const GSPresentationRequest &request)
+ {
+-    if (GSSharedPresent::Active())
++    if (UsesSharedPresentation() && !request.forceReadback)
+     {
+         Enqueue(Op::Present, &request, sizeof(request));
+         std::lock_guard<std::mutex> lock(m_producerMutex);
+diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
+index 8a86e8b..3534268 100644
+--- a/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -1,4 +1,5 @@
+ #include "ps2_runtime.h"
++#include "runtime/gs/gs_host_present.h" // GOW-Port: consumidor privado del host.
+ #include "ps2_log.h"
+ #include "runtime/ps2_perf.h"
+ #include "ps2_stubs.h"
+@@ -439,111 +440,8 @@ namespace
+     }
+ }
+ 
+-static void UploadFrame(Texture2D &tex, PS2Runtime *rt, uint32_t &outWidth, uint32_t &outHeight)
+-{
+-    static uint64_t s_lastPresentationTick = std::numeric_limits<uint64_t>::max();
+-    static bool s_hasLatchedInitialFrame = false;
+-    static uint32_t s_lastDisplayFbp = std::numeric_limits<uint32_t>::max();
+-    static uint32_t s_lastSourceFbp = std::numeric_limits<uint32_t>::max();
+-    static bool s_lastPreferred = false;
+-    static uint32_t s_lastWidth = 0u;
+-    static uint32_t s_lastHeight = 0u;
+-    static bool s_hasUploadedFrame = false;
+-    static std::vector<uint8_t> s_scratch;
+-    static std::vector<uint8_t> s_uploadBuffer(DEFAULT_FB_SIZE, 0u);
+-
+-    const uint64_t currentTick = rt->eeScheduler().currentVSyncTick();
+-    const bool needsLatch = !s_hasLatchedInitialFrame || currentTick != s_lastPresentationTick;
+-    if (needsLatch)
+-    {
+-        rt->gs().latchHostPresentationFrame();
+-        s_lastPresentationTick = currentTick;
+-        s_hasLatchedInitialFrame = true;
+-    }
+-    else if (s_hasUploadedFrame)
+-    {
+-        outWidth = (s_lastWidth != 0u) ? s_lastWidth : FB_WIDTH;
+-        outHeight = (s_lastHeight != 0u) ? s_lastHeight : DEFAULT_DISPLAY_HEIGHT;
+-        return;
+-    }
+-
+-    s_scratch.clear();
+-    uint32_t width = 0u;
+-    uint32_t height = 0u;
+-    uint32_t displayFbp = 0u;
+-    uint32_t sourceFbp = 0u;
+-    bool usedPreferredDisplaySource = false;
+-    if (!rt->gs().copyLatchedHostPresentationFrame(s_scratch,
+-                                                   width,
+-                                                   height,
+-                                                   &displayFbp,
+-                                                   &sourceFbp,
+-                                                   &usedPreferredDisplaySource))
+-    {
+-        Image blank = GenImageColor(FB_WIDTH, FB_HEIGHT, MAGENTA);
+-        UpdateTexture(tex, blank.data);
+-        UnloadImage(blank);
+-        outWidth = FB_WIDTH;
+-        outHeight = DEFAULT_DISPLAY_HEIGHT;
+-        s_lastWidth = outWidth;
+-        s_lastHeight = outHeight;
+-        s_hasUploadedFrame = true;
+-        return;
+-    }
+-
+-    PS2_IF_AGRESSIVE_LOGS({
+-        static uint32_t s_uploadDebugCount = 0u;
+-        if (s_uploadDebugCount < 128u ||
+-            displayFbp != s_lastDisplayFbp ||
+-            sourceFbp != s_lastSourceFbp ||
+-            usedPreferredDisplaySource != s_lastPreferred ||
+-            width != s_lastWidth ||
+-            height != s_lastHeight)
+-        {
+-            std::cout << "[frame:upload] idx=" << s_uploadDebugCount
+-                      << " tick=" << currentTick
+-                      << " displayFbp=" << displayFbp
+-                      << " sourceFbp=" << sourceFbp
+-                      << " size=" << width << "x" << height
+-                      << " preferred=" << static_cast<uint32_t>(usedPreferredDisplaySource ? 1u : 0u)
+-                      << std::endl;
+-        }
+-        ++s_uploadDebugCount;
+-    });
+-    s_lastDisplayFbp = displayFbp;
+-    s_lastSourceFbp = sourceFbp;
+-    s_lastPreferred = usedPreferredDisplaySource;
+-    s_lastWidth = width;
+-    s_lastHeight = height;
+-
+-    std::fill(s_uploadBuffer.begin(), s_uploadBuffer.end(), 0u);
+-    if (!s_scratch.empty() && width != 0u && height != 0u)
+-    {
+-        const uint32_t copyWidth = std::min<uint32_t>(width, FB_WIDTH);
+-        const uint32_t copyHeight = std::min<uint32_t>(height, FB_HEIGHT);
+-        const size_t srcRowBytes = static_cast<size_t>(width) * 4u;
+-        const size_t dstRowBytes = static_cast<size_t>(FB_WIDTH) * 4u;
+-        const size_t copyRowBytes = static_cast<size_t>(copyWidth) * 4u;
+-        for (uint32_t y = 0; y < copyHeight; ++y)
+-        {
+-            const size_t srcOffset = static_cast<size_t>(y) * srcRowBytes;
+-            const size_t dstOffset = static_cast<size_t>(y) * dstRowBytes;
+-            if (srcOffset + copyRowBytes > s_scratch.size() ||
+-                dstOffset + copyRowBytes > s_uploadBuffer.size())
+-            {
+-                break;
+-            }
+-            std::memcpy(s_uploadBuffer.data() + dstOffset, s_scratch.data() + srcOffset, copyRowBytes);
+-        }
+-    }
+-
+-    UpdateTexture(tex, s_uploadBuffer.data());
+-    outWidth = width;
+-    outHeight = height;
+-    s_hasUploadedFrame = true;
+-}
+-
+ PS2Runtime::PS2Runtime()
++    : m_hostPresentation(std::make_unique<GSHostPresentation>())
+ {
+     m_iopHost = std::make_unique<PS2IopHostAdapter>(*this);
+     m_iopSubsystem = std::make_unique<ps2x::iop::IopSubsystem>(*m_iopHost);
+@@ -627,10 +525,7 @@ PS2Runtime::~PS2Runtime()
+             m_debugUiInitialized = false;
+         }
+ 
+-        if (IsWindowReady())
+-        {
+-            CloseWindow();
+-        }
++        shutdownHostGraphics(); // GOW-Port: el host vive hasta destruir el backend GS.
+ 
+         m_loadedModules.clear();
+     }
+@@ -827,16 +722,28 @@ bool PS2Runtime::initialize(const char *title)
+             return false;
+         }
+ 
+-        if (!syncCoreSubsystems())
+-        {
+-            std::cerr << "Failed to bind runtime core subsystems" << std::endl;
+-            return false;
+-        }
+ #if defined(PLATFORM_VITA)
+         InitWindow(HOST_WINDOW_WIDTH, HOST_WINDOW_HEIGHT, title); // raylib vita does not support audio
+ #else
+         SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+         InitWindow(HOST_WINDOW_WIDTH, HOST_WINDOW_HEIGHT, title);
++#endif
++        m_hostWindowOwned = IsWindowReady();
++        if (!m_hostWindowOwned)
++        {
++            std::cerr << "Failed to create the runtime host window" << std::endl;
++            return false;
++        }
++        // GOW-Port: el backend GPU solo puede compartir si el host ya existe.
++        m_hostPresentation->captureHostContext();
++        if (!syncCoreSubsystems())
++        {
++            std::cerr << "Failed to bind runtime core subsystems" << std::endl;
++            shutdownHostGraphics();
++            return false;
++        }
++        m_hostPresentation->restoreHostContext();
++#if !defined(PLATFORM_VITA)
+         InitAudioDevice();
+         m_audioBackend.setAudioReady(IsAudioDeviceReady());
+         startSpu2Audio(m_iopSubsystem.get()); // GOW-Port
+@@ -859,9 +766,20 @@ bool PS2Runtime::initialize(const char *title)
+         std::cerr << "Failed to initialize PS2 runtime: unknown exception" << std::endl;
+     }
+ 
++    shutdownHostGraphics(); // GOW-Port: cubrir también errores después de capturar WGL.
+     return false;
+ }
+ 
++void PS2Runtime::shutdownHostGraphics()
++{
++    if (!m_hostWindowOwned)
++        return;
++    m_hostPresentation->shutdown(m_gs);
++    if (IsWindowReady())
++        CloseWindow();
++    m_hostWindowOwned = false;
++}
++
+ bool PS2Runtime::loadELF(const std::string &elfPath)
+ {
+     configureIoPathsFromElf(elfPath);
+@@ -2516,11 +2434,6 @@ void PS2Runtime::run()
+ 
+     RUNTIME_LOG("Starting execution at address 0x" << std::hex << m_cpuContext.pc << std::dec);
+ 
+-    // A blank image to use as a framebuffer
+-    Image blank = GenImageColor(FB_WIDTH, FB_HEIGHT, BLANK);
+-    Texture2D frameTex = LoadTextureFromImage(blank);
+-    UnloadImage(blank);
+-
+     std::atomic<bool> gameThreadFinished{false};
+ 
+     std::thread gameThread([&]()
+@@ -2597,37 +2510,12 @@ void PS2Runtime::run()
+                 }
+             }
+         });
+-        uint32_t presentWidth = FB_WIDTH;
+-        uint32_t presentHeight = DEFAULT_DISPLAY_HEIGHT;
+-        {
+-            ps2_perf::Scope perf(ps2_perf::Bucket::Upload);
+-            UploadFrame(frameTex, this, presentWidth, presentHeight);
+-        }
+-
+-        BeginDrawing();
+-        ClearBackground(BLACK);
+-        const float srcWidth = static_cast<float>(std::max<uint32_t>(1u, presentWidth));
+-        const float srcHeight = static_cast<float>(std::max<uint32_t>(1u, presentHeight));
+-        const float screenWidth = static_cast<float>(GetScreenWidth());
+-        const float screenHeight = static_cast<float>(GetScreenHeight());
+-        const float scale = std::min(screenWidth / srcWidth, screenHeight / srcHeight);
+-        const float dstWidth = srcWidth * scale;
+-        const float dstHeight = srcHeight * scale;
+-        const Rectangle srcRect{0.0f, 0.0f, srcWidth, srcHeight};
+-        const Rectangle dstRect{
+-            (screenWidth - dstWidth) * 0.5f,
+-            (screenHeight - dstHeight) * 0.5f,
+-            dstWidth,
+-            dstHeight};
+-        DrawTexturePro(frameTex, srcRect, dstRect, Vector2{0.0f, 0.0f}, 0.0f, WHITE);
+-        if (m_debugUiInitialized && m_debugUiDrawCallback)
+-        {
+-            m_debugUiDrawCallback(*this, m_debugUiUserData);
+-        }
++        // GOW-Port: el helper real termina el batch antes del próximo Acquire.
++        m_hostPresentation->renderFrame(m_gs, m_eeScheduler->currentVSyncTick(), [this]
+         {
+-            ps2_perf::Scope perf(ps2_perf::Bucket::HostWait);
+-            EndDrawing();
+-        }
++            if (m_debugUiInitialized && m_debugUiDrawCallback)
++                m_debugUiDrawCallback(*this, m_debugUiUserData);
++        });
+         if (ps2_perf::countFrames()) ps2_perf::hostFrames.fetch_add(1, std::memory_order_relaxed);
+         ps2_perf::report();
+ 
+@@ -2650,8 +2538,7 @@ void PS2Runtime::run()
+         m_debugUiShutdownCallback(*this, m_debugUiUserData);
+         m_debugUiInitialized = false;
+     }
+-    UnloadTexture(frameTex);
+-    CloseWindow();
++    shutdownHostGraphics();
+ 
+     RUNTIME_LOG("[run] exiting loop");
+ }
+diff --git a/ps2xTest/CMakeLists.txt b/ps2xTest/CMakeLists.txt
+index 7c0cde4..31e2458 100644
+--- a/ps2xTest/CMakeLists.txt
++++ b/ps2xTest/CMakeLists.txt
+@@ -37,6 +37,9 @@ add_library(ps2_test_lib STATIC
+     src/ps2_gpu_upload_ring_tests.cpp # GOW-Port: datos pendientes y fallback de uploads.
+     src/ps2_gpu_ring_gl_tests.cpp # GOW-Port: liberar objetos con host compartido vivo.
+     src/ps2_gpu_streaming_gl_tests.cpp # GOW-Port: capacidad real tras fallback streaming.
++    src/ps2_gpu_shared_present_gl_tests.cpp # GOW-Port: compositor compartido en host raylib.
++    src/ps2_gs_shared_queue_tests.cpp # GOW-Port: FIFO y capturas bajo demanda.
++    src/ps2_gs_host_present_tests.cpp # GOW-Port: consumidor real, escala y cierre.
+     src/ps2_iop_tests.cpp
+     src/ps2_sif_rpc_tests.cpp
+     src/ps2_sif_dma_tests.cpp
+diff --git a/ps2xTest/src/main.cpp b/ps2xTest/src/main.cpp
+index 24edf44..239042e 100644
+--- a/ps2xTest/src/main.cpp
++++ b/ps2xTest/src/main.cpp
+@@ -18,6 +18,9 @@ void register_ps2_gpu_profile_tests(); // GOW-Port
+ void runGpuUploadRingTests(); // GOW-Port
+ void runGpuRingGlTests(); // GOW-Port
+ void runGpuStreamingGlTests(); // GOW-Port
++void runGpuSharedPresentGlTests(); // GOW-Port
++void runGsSharedQueueTests(); // GOW-Port
++void runGsHostPresentTests(); // GOW-Port
+ void register_ps2_iop_tests();
+ void register_ps2_sif_rpc_tests();
+ void register_ps2_sif_dma_tests();
+@@ -48,6 +51,9 @@ int main()
+     runGpuUploadRingTests();
+     runGpuRingGlTests();
+     runGpuStreamingGlTests();
++    runGpuSharedPresentGlTests();
++    runGsSharedQueueTests();
++    runGsHostPresentTests();
+     register_ps2_iop_tests();
+     register_ps2_sif_rpc_tests();
+     register_ps2_sif_dma_tests();
+diff --git a/ps2xTest/src/ps2_gpu_shared_present_gl_tests.cpp b/ps2xTest/src/ps2_gpu_shared_present_gl_tests.cpp
+new file mode 100644
+index 0000000..3ebabad
+--- /dev/null
++++ b/ps2xTest/src/ps2_gpu_shared_present_gl_tests.cpp
+@@ -0,0 +1,387 @@
++// GOW-Port: comprobar la composición compartida con un host raylib OpenGL 3.3.
++// Patrones sintéticos: sin assets, sin fallback y con el renderer CPU de referencia.
++#include "MiniTest.h"
++
++#include <cstdlib>
++
++#ifdef _WIN32
++#include "runtime/gs/gs_cpu_backend.h"
++#include "runtime/gs/gs_gpu_backend.h"
++#include "runtime/gs/gs_shared_present.h"
++#include "runtime/gs/gs_swizzle.h"
++#include "runtime/gs/gs_threaded_backend.h"
++#include "raylib.h"
++#include "rlgl.h"
++
++#include <algorithm>
++#include <chrono>
++#include <memory>
++#include <stdexcept>
++#include <string>
++#include <thread>
++#include <vector>
++
++namespace
++{
++    std::string sharedSetting(const char *name, bool &present)
++    {
++        char *value = nullptr;
++        size_t size = 0;
++        if (_dupenv_s(&value, &size, name) != 0)
++            throw std::runtime_error(std::string("No se pudo leer ") + name);
++        const std::unique_ptr<char, decltype(&std::free)> owned(value, &std::free);
++        present = value != nullptr;
++        return present ? std::string(value) : std::string();
++    }
++
++    class RaylibSharedHost
++    {
++        bool hadSetting = false;
++        bool changedSetting = false;
++        bool ownsWindow = false;
++        bool captured = false;
++        std::string oldSetting;
++
++    public:
++        RaylibSharedHost()
++        {
++            oldSetting = sharedSetting("PS2X_GS_DIRECT_PRESENT", hadSetting);
++        }
++
++        ~RaylibSharedHost()
++        {
++            if (captured)
++            {
++                GSSharedPresent::RestoreHostContext();
++                GSSharedPresent::ShutdownHost();
++            }
++            if (ownsWindow)
++                CloseWindow();
++            if (changedSetting)
++                _putenv_s("PS2X_GS_DIRECT_PRESENT", hadSetting ? oldSetting.c_str() : "");
++        }
++
++        bool initialize(TestCase &t)
++        {
++            if (IsWindowReady() || GSSharedPresent::Active())
++            {
++                t.Fail("La prueba requiere un host raylib propio, sin ventana ni GPU compartida anterior");
++                return false;
++            }
++            if (_putenv_s("PS2X_GS_DIRECT_PRESENT", "1") != 0)
++            {
++                t.Fail("No se pudo activar sharing para la prueba");
++                return false;
++            }
++            changedSetting = true;
++            SetConfigFlags(FLAG_WINDOW_HIDDEN | FLAG_WINDOW_UNFOCUSED);
++            InitWindow(160, 120, "GOW prueba compositor compartido");
++            ownsWindow = IsWindowReady();
++            if (!ownsWindow)
++            {
++                t.Fail("Host raylib oculto requerido; no se admite fallback");
++                return false;
++            }
++            if (rlGetVersion() != RL_OPENGL_33)
++            {
++                t.Fail("La prueba requiere el camino host OpenGL 3.3 del juego");
++                return false;
++            }
++            GSSharedPresent::CaptureHostContext();
++            captured = true;
++            GSSharedPresent::RestoreHostContext();
++            return true;
++        }
++    };
++
++    struct OwnedImage
++    {
++        Image image{};
++        explicit OwnedImage(Texture2D texture) : image(LoadImageFromTexture(texture)) {}
++        ~OwnedImage() { if (image.data) UnloadImage(image); }
++        OwnedImage(const OwnedImage &) = delete;
++        OwnedImage &operator=(const OwnedImage &) = delete;
++    };
++
++    struct SharedFixture
++    {
++        std::vector<uint8_t> cpuRam = std::vector<uint8_t>(GSSwizzle::kMemorySize);
++        std::vector<uint8_t> gpuRam = std::vector<uint8_t>(GSSwizzle::kMemorySize);
++        GSCpuBackend cpu;
++        std::unique_ptr<GSThreadedBackend> gpu;
++        GSSharedPresent::Frame current{};
++
++        bool initialize(TestCase &t)
++        {
++            cpu.Initialize(cpuRam.data(), static_cast<uint32_t>(cpuRam.size()));
++            auto inner = std::make_unique<GSGpuBackend>();
++            auto *raw = inner.get();
++            inner->SetHardwareRasterAllowed(false);
++            gpu = std::make_unique<GSThreadedBackend>(std::move(inner));
++            gpu->Initialize(gpuRam.data(), static_cast<uint32_t>(gpuRam.size()));
++            GSSharedPresent::RestoreHostContext();
++            if (&gpu->Inner() != raw || !raw->IsReady() || !gpu->UsesSharedPresentation())
++            {
++                t.Fail("GPU compartida real requerida; el CPU de fallback no valida esta prueba");
++                return false;
++            }
++            GSSharedPresent::Frame startup{};
++            t.IsFalse(GSSharedPresent::Acquire(startup), "Un backend nuevo no hereda una textura del share group anterior");
++            return true;
++        }
++
++        void upload(uint32_t base, uint32_t bw, uint32_t psm, uint32_t width, uint32_t height,
++                    uint32_t variant = 0)
++        {
++            std::vector<uint8_t> pixels;
++            for (uint32_t y = 0; y < height; ++y)
++                for (uint32_t x = 0; x < width; ++x)
++                {
++                    const bool half = psm == GS_PSM_CT16 || psm == GS_PSM_CT16S;
++                    const uint32_t color = half
++                        ? 0x8000u | ((x + variant) & 31u) | ((y & 31u) << 5u) | (((x + y) & 31u) << 10u)
++                        : 0x80000000u | ((x * 3u + variant) & 255u) | (((y * 3u) & 255u) << 8u) |
++                          (((x + y * 7u) & 255u) << 16u);
++                    const unsigned bytes = half ? 2u : (psm == GS_PSM_CT24 ? 3u : 4u);
++                    for (unsigned byte = 0; byte < bytes; ++byte)
++                        pixels.push_back(static_cast<uint8_t>(color >> (byte * 8u)));
++                }
++            GSTransferCommand command{};
++            command.direction = 0;
++            command.bitbltbuf.dbp = base;
++            command.bitbltbuf.dbw = bw;
++            command.bitbltbuf.dpsm = static_cast<uint8_t>(psm);
++            command.trxreg = {static_cast<uint16_t>(width), static_cast<uint16_t>(height)};
++            for (GSRasterBackend *backend : {static_cast<GSRasterBackend *>(&cpu),
++                                            static_cast<GSRasterBackend *>(gpu.get())})
++            {
++                backend->BeginTransfer(command);
++                backend->UploadImage(pixels.data(), static_cast<uint32_t>(pixels.size()));
++            }
++        }
++
++        bool acquireNext(TestCase &t)
++        {
++            // GOW-Port: Acquire comprueba fences del driver; esperar solo en esta prueba.
++            const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(5);
++            GSSharedPresent::Frame next{};
++            while (std::chrono::steady_clock::now() < until)
++            {
++                if (GSSharedPresent::Acquire(next) && next.sequence > current.sequence)
++                {
++                    t.IsTrue(next.renderSequence > current.renderSequence, "Avanza la secuencia de composición");
++                    current = next;
++                    return true;
++                }
++                std::this_thread::sleep_for(std::chrono::milliseconds(1));
++            }
++            t.Fail("No se recibió una composición compartida nueva dentro del plazo");
++            return false;
++        }
++
++        std::vector<uint8_t> compareCurrent(TestCase &t, const PresentationFrame &reference,
++                                            const std::string &label)
++        {
++            t.IsTrue(static_cast<bool>(reference), label + ": referencia CPU no vacía");
++            t.IsFalse(current.blank, label + ": circuitos activos");
++            t.Equals(current.width, reference.width, label + ": ancho lógico");
++            t.Equals(current.height, reference.height, label + ": alto lógico");
++            t.Equals(current.displayFbp, reference.displayFbp, label + ": destino en páginas");
++            t.Equals(current.sourceFbp, reference.sourceFbp, label + ": fuente en sus unidades originales");
++            t.Equals(current.usedPreferred, reference.usedPreferred, label + ": selección preferida");
++            if (!reference || current.width != reference.width || current.height != reference.height)
++                return {};
++            const Texture2D borrowed{current.texture, static_cast<int>(current.width),
++                                     static_cast<int>(current.height), 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8};
++            OwnedImage image(borrowed);
++            if (!image.image.data || image.image.format != PIXELFORMAT_UNCOMPRESSED_R8G8B8A8 ||
++                image.image.width != static_cast<int>(current.width) ||
++                image.image.height != static_cast<int>(current.height))
++            {
++                t.Fail(label + ": lectura real de la textura compartida requerida");
++                return {};
++            }
++            // GOW-Port: CPU tiene stride 640; la textura compartida tiene stride width.
++            const size_t rowBytes = static_cast<size_t>(reference.width) * 4u;
++            if (reference.pixels.size() < static_cast<size_t>(640u) * reference.height * 4u)
++            {
++                t.Fail(label + ": framebuffer CPU incompleto");
++                return {};
++            }
++            const auto *bytes = static_cast<const uint8_t *>(image.image.data);
++            for (uint32_t y = 0; y < reference.height; ++y)
++                if (!std::equal(bytes + y * rowBytes, bytes + (y + 1u) * rowBytes,
++                                reference.pixels.begin() + static_cast<size_t>(y) * 640u * 4u))
++                {
++                    t.Fail(label + ": píxeles diferentes en fila " + std::to_string(y));
++                    return {};
++                }
++            return {bytes, bytes + rowBytes * reference.height};
++        }
++
++        std::vector<uint8_t> present(TestCase &t, const GSPresentationRequest &request,
++                                   const std::string &label)
++        {
++            const auto reference = cpu.Present(request);
++            const auto returned = gpu->Present(request);
++            t.IsFalse(static_cast<bool>(returned), label + ": publicación compartida sin descarga CPU");
++            if (!acquireNext(t))
++                return {};
++            t.Equals(current.vsyncTick, request.vsyncTick, label + ": tick realmente compuesto");
++            return compareCurrent(t, reference, label);
++        }
++    };
++
++    void sharedSourcesAndBlank(TestCase &t)
++    {
++        RaylibSharedHost host;
++        if (!host.initialize(t)) return;
++        SharedFixture fixture;
++        if (!fixture.initialize(t)) return;
++        fixture.upload(32u * 32u, 1, GS_PSM_CT32, 64, 112);
++        GSPresentationRequest request{};
++        request.pmode = 1;
++        request.dispfb1 = 32ull | (1ull << 9u) | (7ull << 32u) | (9ull << 43u);
++        request.display1 = (63ull << 32u) | (95ull << 44u);
++        request.hasPreferredSource = true;
++        request.preferredDestFbp = 32;
++        request.preferredSource = {1057, 2, GS_PSM_CT32, 0};
++        for (const uint32_t format : {GS_PSM_CT32, GS_PSM_CT24, GS_PSM_CT16, GS_PSM_CT16S})
++        {
++            request.preferredSource.psm = static_cast<uint8_t>(format);
++            fixture.upload(1057, 2, format, 64, 96);
++            fixture.present(t, request, "Fuente preferida formato " + std::to_string(format));
++            t.IsTrue(fixture.current.usedPreferred, "El patrón sintético activa la fuente preferida");
++            t.Equals(fixture.current.sourceFbp, 1057u, "La fuente conserva el bloque no alineado a página");
++        }
++        request.hasPreferredSource = false;
++        fixture.present(t, request, "Origen CRTC distinto de cero sin preferredSource");
++        const auto enabledRequest = request;
++        request.pmode = 0;
++        t.IsFalse(static_cast<bool>(fixture.cpu.Present(request)), "PMODE apagado devuelve CPU vacío");
++        fixture.gpu->Present(request);
++        if (!fixture.acquireNext(t)) return;
++        t.IsTrue(fixture.current.blank, "PMODE apagado publica la transición vacía para el host");
++        t.Equals(fixture.current.width, 1u, "Textura interna vacía de un píxel");
++        t.Equals(fixture.current.height, 1u, "Textura interna vacía de una fila");
++        t.Equals(fixture.current.displayFbp, 0u, "Estado vacío sin destino CRTC");
++        t.Equals(fixture.current.sourceFbp, 0u, "Estado vacío sin fuente");
++        t.IsFalse(fixture.current.usedPreferred, "Estado vacío sin selección preferida");
++        const Texture2D blank{fixture.current.texture, 1, 1, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8};
++        OwnedImage blankImage(blank);
++        if (!blankImage.image.data) t.Fail("Lectura real del marcador vacío requerida");
++        else
++        {
++            const auto *pixel = static_cast<const uint8_t *>(blankImage.image.data);
++            t.IsTrue(pixel[0] == 0 && pixel[1] == 0 && pixel[2] == 0 && pixel[3] == 255,
++                     "Marcador interno negro opaco; el host usa su placeholder CPU al ver blank");
++        }
++        fixture.present(t, enabledRequest, "Restaurar PMODE recupera imagen y metadatos");
++    }
++
++    void sharedCrtcFields(TestCase &t)
++    {
++        RaylibSharedHost host;
++        if (!host.initialize(t)) return;
++        SharedFixture fixture;
++        if (!fixture.initialize(t)) return;
++        fixture.upload(1024, 1, GS_PSM_CT24, 64, 66);
++        GSPresentationRequest request{};
++        request.pmode = 0x8023;
++        request.smode2 = 0x401;
++        request.dispfb2 = 32ull | (1ull << 9u) | (1ull << 15u);
++        request.dispfb1 = request.dispfb2 | (1ull << 43u);
++        request.display1 = (63ull << 32u) | (64ull << 44u);
++        request.display2 = (63ull << 32u) | (65ull << 44u);
++        const auto even = fixture.present(t, request, "Dos circuitos: campo par");
++        request.vsyncTick = 1;
++        const auto odd = fixture.present(t, request, "Dos circuitos: campo impar");
++        t.IsTrue(!even.empty() && !odd.empty() && even != odd, "Campos distintos con la misma VRAM");
++        request.smode2 = 0;
++        request.vsyncTick = 2;
++        const auto progressive = fixture.present(t, request, "Dos circuitos: progresivo");
++        const auto previous = fixture.current;
++        request.vsyncTick = 3;
++        fixture.gpu->Present(request);
++        fixture.gpu->Flush();
++        GSSharedPresent::Frame retained{};
++        t.IsTrue(GSSharedPresent::Acquire(retained), "Se conserva la última imagen completa");
++        t.Equals(retained.sequence, previous.sequence, "Progresivo sin cambios no recompone por paridad");
++        t.IsTrue(fixture.compareCurrent(t, fixture.cpu.Present(request), "Progresivo retenido") == progressive,
++                 "La imagen retenida conserva todas las filas");
++        for (const uint32_t alpha : {0u, 64u, 128u, 255u})
++        {
++            request.pmode = 3u | (1u << 5u) | (static_cast<uint64_t>(alpha) << 8u);
++            fixture.present(t, request, "Dos circuitos ALP " + std::to_string(alpha));
++        }
++        request.pmode = 0x8023;
++        request.smode2 = 0x401;
++        request.dispfb1 = 0x800000090d0ull;
++        request.dispfb2 = 0x90d0ull;
++        request.display1 = 0x1be9ff0203227cull;
++        request.display2 = 0x1bf9ff0203227cull;
++        fixture.upload(0xd0u * 32u, 8, GS_PSM_CT24, 512, 448);
++        request.vsyncTick = 0;
++        const auto gowEven = fixture.present(t, request, "Temporización GoW: campo par");
++        request.vsyncTick = 1;
++        const auto gowOdd = fixture.present(t, request, "Temporización GoW: campo impar");
++        t.IsTrue(!gowEven.empty() && !gowOdd.empty() && gowEven != gowOdd,
++                 "Temporización GoW alterna los campos con salida CPU exacta");
++    }
++
++    void sharedForcedReadback(TestCase &t)
++    {
++        RaylibSharedHost host;
++        if (!host.initialize(t)) return;
++        SharedFixture fixture;
++        if (!fixture.initialize(t)) return;
++        fixture.upload(32u * 32u, 1, GS_PSM_CT32, 64, 96);
++        GSPresentationRequest request{};
++        request.pmode = 1;
++        request.dispfb1 = 32ull | (1ull << 9u);
++        request.display1 = (63ull << 32u) | (95ull << 44u);
++        fixture.present(t, request, "Imagen inicial compartida");
++        const auto previous = fixture.current;
++        fixture.upload(32u * 32u, 1, GS_PSM_CT32, 64, 96, 83);
++        request.forceReadback = true;
++        // GOW-Port: la suite nativa arranca con async=false; reponer incluso si falla.
++        struct AsyncScope
++        {
++            AsyncScope() { GSGpuBackend::SetAsyncPresentDefault(true); }
++            ~AsyncScope() { GSGpuBackend::SetAsyncPresentDefault(false); }
++        } asynchronousDefault;
++        const auto expected = fixture.cpu.Present(request);
++        const auto returned = fixture.gpu->Present(request);
++        t.IsTrue(static_cast<bool>(returned), "forceReadback devuelve imagen aunque shared y async estén activos");
++        t.Equals(returned.width, expected.width, "Captura síncrona: ancho");
++        t.Equals(returned.height, expected.height, "Captura síncrona: alto");
++        t.Equals(returned.displayFbp, expected.displayFbp, "Captura síncrona: destino");
++        t.Equals(returned.sourceFbp, expected.sourceFbp, "Captura síncrona: fuente");
++        t.Equals(returned.usedPreferred, expected.usedPreferred, "Captura síncrona: selección");
++        const size_t bytes = static_cast<size_t>(640u) * expected.height * 4u;
++        t.IsTrue(returned.pixels.size() >= bytes && expected.pixels.size() >= bytes &&
++                 std::equal(expected.pixels.begin(), expected.pixels.begin() + bytes, returned.pixels.begin()),
++                 "Captura solicitada lee el request actual y no un PBO anterior");
++        GSSharedPresent::Frame retained{};
++        t.IsTrue(GSSharedPresent::Acquire(retained), "La captura no retira la imagen ya presentada");
++        t.Equals(retained.sequence, previous.sequence, "La lectura diagnóstica no publica otra textura");
++        request.forceReadback = false;
++        fixture.present(t, request, "El camino compartido continúa después de una captura");
++    }
++}
++#endif
++
++void runGpuSharedPresentGlTests()
++{
++#ifdef _WIN32
++    bool present = false;
++    const auto setting = sharedSetting("GOW_GS_GPU_TEST", present);
++    if (!present || setting != "1") return;
++    MiniTest::Case("GS GPU compositor compartido", [](TestCase &suite)
++    {
++        suite.Run("Fuente, dimensiones, unidades y transición PMODE", sharedSourcesAndBlank);
++        suite.Run("Dos circuitos, ALP, filas y campos GoW", sharedCrtcFields);
++        suite.Run("Captura diagnóstica síncrona mientras shared y async están activos", sharedForcedReadback);
++    });
++#endif
++}
+diff --git a/ps2xTest/src/ps2_gs_host_present_tests.cpp b/ps2xTest/src/ps2_gs_host_present_tests.cpp
+new file mode 100644
+index 0000000..0ade394
+--- /dev/null
++++ b/ps2xTest/src/ps2_gs_host_present_tests.cpp
+@@ -0,0 +1,277 @@
++// GOW-Port: el consumidor raylib de producción, con GS procedural y ventana oculta.
++#include "MiniTest.h"
++#include <cstdlib>
++
++#ifdef _WIN32
++#include "runtime/gs/gs_host_present.h"
++#include "runtime/gs/gs_frontend.h"
++#include "runtime/gs/gs_cpu_backend.h"
++#include "runtime/gs/gs_gpu_backend.h"
++#include "runtime/gs/gs_threaded_backend.h"
++#include "runtime/gs/gs_swizzle.h"
++#include "runtime/gs/ps2_gs_memory.h"
++#include "runtime/ps2_memory.h"
++#include "rlgl.h"
++
++#include <algorithm>
++#include <chrono>
++#include <cstring>
++#include <memory>
++#include <stdexcept>
++#include <string>
++#include <vector>
++
++namespace
++{
++    constexpr uint32_t kSourceWidth = 64u;
++    constexpr uint32_t kSourceHeight = 96u;
++
++    class Setting
++    {
++        bool present = false;
++        std::string previous;
++    public:
++        explicit Setting(bool shared)
++        {
++            char *value = nullptr;
++            size_t size = 0u;
++            if (_dupenv_s(&value, &size, "PS2X_GS_DIRECT_PRESENT") != 0)
++                throw std::runtime_error("No se pudo leer el modo de presentación");
++            const std::unique_ptr<char, decltype(&std::free)> owned(value, &std::free);
++            present = value != nullptr;
++            if (present)
++                previous = value;
++            if (_putenv_s("PS2X_GS_DIRECT_PRESENT", shared ? "1" : "0") != 0)
++                throw std::runtime_error("No se pudo seleccionar el modo de presentación");
++        }
++        ~Setting() { _putenv_s("PS2X_GS_DIRECT_PRESENT", present ? previous.c_str() : ""); }
++    };
++
++    class HiddenWindow
++    {
++        bool owned = false;
++    public:
++        bool open(TestCase &t, int width, int height)
++        {
++            if (IsWindowReady())
++            {
++                t.Fail("El control necesita su propia ventana raylib, no una ventana ajena");
++                return false;
++            }
++            SetConfigFlags(FLAG_WINDOW_HIDDEN);
++            InitWindow(width, height, "GS host procedural");
++            owned = IsWindowReady();
++            if (!owned)
++            {
++                t.Fail("Ventana raylib oculta requerida");
++                return false;
++            }
++            SetTargetFPS(60);
++            t.Equals(rlGetVersion(), static_cast<int>(RL_OPENGL_33), "Host raylib con la API OpenGL 3.3 del juego");
++            return true;
++        }
++        ~HiddenWindow()
++        {
++            if (owned)
++                CloseWindow();
++        }
++    };
++
++    struct Capture
++    {
++        std::vector<uint8_t> pixels;
++        uint32_t width = 0u, height = 0u;
++        bool operator==(const Capture &other) const
++        {
++            return width == other.width && height == other.height && pixels == other.pixels;
++        }
++    };
++
++    class Source
++    {
++        bool started = false;
++    public:
++        GS gs;
++        GSHostPresentation host;
++        GSRegisters registers{};
++        std::vector<uint8_t> memory = std::vector<uint8_t>(GSSwizzle::kMemorySize);
++        uint64_t tick = 0u;
++
++        void initialize(bool shared)
++        {
++            GSMem::InitLookupTables();
++            for (uint32_t y = 0u; y < kSourceHeight; ++y)
++                for (uint32_t x = 0u; x < kSourceWidth; ++x)
++                {
++                    uint32_t color = 0xff000000u | ((x * 13u + 17u) & 255u) |
++                                     (((y * 7u + 29u) & 255u) << 8u) |
++                                     ((((x + y) * 11u + 41u) & 255u) << 16u);
++                    if ((y & 1u) == 0u)
++                        color ^= 0x00804020u; // Líneas alternas que hacen visible LINEAR.
++                    if (x < 4u && y < 4u) color = 0xff0037d0u;
++                    if (x >= kSourceWidth - 4u && y < 4u) color = 0xffe03020u;
++                    if (x < 4u && y >= kSourceHeight - 4u) color = 0xff60f030u;
++                    if (x >= kSourceWidth - 4u && y >= kSourceHeight - 4u) color = 0xff3020e0u;
++                    GSMem::WriteCT32(memory.data(), 0u, 1u, x, y, color);
++                }
++            host.captureHostContext();
++            started = true;
++            if (shared)
++            {
++                auto gpu = std::make_unique<GSGpuBackend>();
++                gpu->SetHardwareRasterAllowed(false);
++                gs.setRasterBackend(std::make_unique<GSThreadedBackend>(std::move(gpu)));
++            }
++            else
++                gs.setRasterBackend(std::make_unique<GSCpuBackend>());
++            gs.init(memory.data(), static_cast<uint32_t>(memory.size()), &registers);
++            registers.pmode = 1u;
++            registers.dispfb1 = 1ull << 9u;
++            registers.display1 = (uint64_t{kSourceWidth - 1u} << 32u) | (uint64_t{kSourceHeight - 1u} << 44u);
++            host.restoreHostContext();
++        }
++
++        GSHostPresentation::View render(TestCase &t, Capture &capture)
++        {
++            registers.vsyncTick.store(++tick, std::memory_order_release);
++            return host.renderFrame(gs, tick, [&]
++            {
++                // GOW-Port: observar el backbuffer después del mismo DrawTexturePro.
++                // EndDrawing de producción sigue cerrando el batch y el cuadro.
++                rlDrawRenderBatchActive();
++                Image image = LoadImageFromScreen();
++                if (!image.data || image.width <= 0 || image.height <= 0)
++                {
++                    t.Fail("No se pudo leer el framebuffer real del host");
++                    return;
++                }
++                ImageFormat(&image, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
++                capture.width = static_cast<uint32_t>(image.width);
++                capture.height = static_cast<uint32_t>(image.height);
++                const auto *bytes = static_cast<const uint8_t *>(image.data);
++                capture.pixels.assign(bytes, bytes + static_cast<size_t>(capture.width) * capture.height * 4u);
++                UnloadImage(image);
++            });
++        }
++
++        GSHostPresentation::View await(TestCase &t, Capture &capture, bool blank, uint64_t after = 0u)
++        {
++            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
++            GSHostPresentation::View view;
++            do
++            {
++                view = render(t, capture);
++                if (view.shared && view.frame.sequence > after && view.blank == blank)
++                    return view;
++            } while (std::chrono::steady_clock::now() < deadline);
++            t.Fail("No se adquirió un frame compartido efectivo con el estado solicitado");
++            return view;
++        }
++
++        void close()
++        {
++            if (!started)
++                return;
++            host.shutdown(gs); // Destruye y une el worker antes de cerrar raylib.
++            started = false;
++        }
++        ~Source() { close(); }
++    };
++
++    Capture cpuReference(TestCase &t, int width, int height, bool blank)
++    {
++        Setting setting(false);
++        HiddenWindow window;
++        Capture capture;
++        if (!window.open(t, width, height))
++            return capture;
++        Source source;
++        source.initialize(false);
++        t.IsFalse(source.gs.usesSharedPresentation(), "El control usa el compositor CPU/RAM");
++        if (blank)
++            source.registers.pmode = 0u;
++        const auto view = source.render(t, capture);
++        t.IsFalse(view.shared, "La UI de referencia no consume una textura compartida");
++        t.Equals(view.blank, blank, "El placeholder CPU corresponde al display apagado");
++        return capture;
++    }
++
++    void scaledHost(TestCase &t, int width, int height)
++    {
++        const Capture reference = cpuReference(t, width, height, false);
++        if (reference.pixels.empty())
++            return;
++        Setting setting(true);
++        HiddenWindow window;
++        if (!window.open(t, width, height))
++            return;
++        Source source;
++        source.initialize(true);
++        t.IsTrue(source.gs.usesSharedPresentation(), "Backend GPU/worker efectivamente compartido");
++        Capture actual;
++        const auto view = source.await(t, actual, false);
++        t.IsTrue(view.borrowed && view.texture.id == view.frame.texture && view.frame.texture != 0u,
++                 "El helper dibuja la textura prestada del productor");
++        t.Equals(view.width, kSourceWidth, "Usa el ancho efectivo publicado");
++        t.Equals(view.height, kSourceHeight, "Usa el alto efectivo publicado");
++        t.IsTrue(actual == reference, "Framebuffer escalado, filas, filtro y franjas coinciden exactamente con CPU");
++        Capture retained;
++        const auto again = source.render(t, retained);
++        t.Equals(again.frame.sequence, view.frame.sequence, "Sin cambios conserva el mismo frame");
++        t.IsTrue(again.borrowed && retained == reference, "Repetir el cuadro no hace readback ni pierde el slot");
++        const uint32_t borrowedId = view.texture.id;
++        source.close(); source.close(); // El segundo cierre no vuelve a descargar la textura.
++        t.IsFalse(GSSharedPresent::Active(), "El cierre limpia el share group con el host vivo");
++        t.IsFalse(source.gs.usesSharedPresentation(), "El backend de cierre es CPU y no conserva un contexto muerto");
++        Image probe = GenImageColor(2, 2, RED);
++        Texture2D owned = LoadTextureFromImage(probe);
++        UnloadImage(probe);
++        t.IsTrue(owned.id != 0u, "El contexto host sigue operativo después de destruir el worker");
++        UnloadTexture(owned);
++        t.IsTrue(borrowedId != 0u, "El control había utilizado una textura compartida real");
++    }
++
++    void blankTransition(TestCase &t)
++    {
++        constexpr int width = 160, height = 192;
++        const Capture displayed = cpuReference(t, width, height, false);
++        const Capture placeholder = cpuReference(t, width, height, true);
++        t.IsFalse(displayed == placeholder, "El control distingue escena y placeholder magenta");
++        Setting setting(true);
++        HiddenWindow window;
++        if (!window.open(t, width, height))
++            return;
++        Source source;
++        source.initialize(true);
++        Capture capture;
++        const auto first = source.await(t, capture, false);
++        t.IsTrue(capture == displayed, "Comienza con la imagen procedural");
++        source.registers.pmode = 0u;
++        const auto blank = source.await(t, capture, true, first.frame.sequence);
++        t.IsTrue(blank.frame.blank && !blank.borrowed && blank.texture.id != blank.frame.texture,
++                 "Display apagado usa placeholder propio, no la textura negra ni la escena anterior");
++        t.Equals(blank.width, 640u, "Mantiene el ancho del placeholder RAM");
++        t.Equals(blank.height, 448u, "Mantiene el alto del placeholder RAM");
++        t.IsTrue(capture == placeholder, "La transición a magenta y las franjas coinciden con CPU");
++        source.registers.pmode = 1u;
++        const auto recovered = source.await(t, capture, false, blank.frame.sequence);
++        t.IsTrue(recovered.borrowed && capture == displayed, "Reactivar PMODE recupera el frame correcto");
++    }
++}
++#endif
++
++void runGsHostPresentTests()
++{
++#ifdef _WIN32
++    const char *setting = std::getenv("GOW_GS_GPU_TEST");
++    if (!setting || *setting != '1')
++        return;
++    MiniTest::Case("GS consumidor host raylib real", [](TestCase &suite)
++    {
++        suite.Run("Escala 1 conserva filas y franjas", [](TestCase &t) { scaledHost(t, 96, 96); });
++        suite.Run("Escala 2 conserva NEAREST y franjas", [](TestCase &t) { scaledHost(t, 160, 192); });
++        suite.Run("Escala no entera conserva NEAREST y filas", [](TestCase &t) { scaledHost(t, 123, 157); });
++        suite.Run("PMODE apagado muestra placeholder magenta y vuelve a la escena", blankTransition);
++    });
++#endif
++}
+diff --git a/ps2xTest/src/ps2_gs_shared_queue_tests.cpp b/ps2xTest/src/ps2_gs_shared_queue_tests.cpp
+new file mode 100644
+index 0000000..1eabf09
+--- /dev/null
++++ b/ps2xTest/src/ps2_gs_shared_queue_tests.cpp
+@@ -0,0 +1,332 @@
++// GOW-Port: frontend y cola reales; backend procedural detenido sin sleeps ni assets.
++#include "MiniTest.h"
++#include "runtime/gs/gs_frontend.h"
++#include "runtime/gs/gs_threaded_backend.h"
++#include "runtime/gs/gs_shared_present.h"
++#include "runtime/gs/gs_swizzle.h"
++#include "runtime/ps2_memory.h"
++
++#include <chrono>
++#include <condition_variable>
++#include <cstring>
++#include <memory>
++#include <mutex>
++#include <thread>
++#include <vector>
++
++namespace
++{
++    enum Event { Draw = 1, Present = 2, Read = 3, Finish = 4, Capture = 5, Flush = 6 };
++    struct Recording
++    {
++        std::mutex mutex;
++        std::condition_variable cv;
++        bool holdDraw = false;
++        bool drawEntered = false;
++        bool drawReleased = false;
++        bool hostReturned = false;
++        std::vector<int> events;
++        std::vector<GSPresentationRequest> requests;
++        uint32_t drawCount = 0u;
++        uint32_t finishCount = 0u;
++        uint32_t captures = 0u;
++        std::thread::id owner;
++        std::thread::id captureOwner;
++
++        template<class Predicate>
++        bool wait(Predicate predicate)
++        {
++            std::unique_lock<std::mutex> lock(mutex);
++            // GOW-Port: limite anti-deadlock del control negativo, no una espera para medir asincronia.
++            return cv.wait_for(lock, std::chrono::seconds(5), predicate);
++        }
++        void release()
++        {
++            { std::lock_guard<std::mutex> lock(mutex); drawReleased = true; }
++            cv.notify_all();
++        }
++    };
++
++    class ProceduralBackend final : public GSRasterBackend
++    {
++        Recording &r;
++        bool shared;
++    public:
++        ProceduralBackend(Recording &recording, bool isShared) : r(recording), shared(isShared) {}
++        bool UsesSharedPresentation() const override { return shared; }
++        void Initialize(uint8_t *, uint32_t) override { r.owner = std::this_thread::get_id(); }
++        void Reset() override {}
++        void Submit(const GSPrimitiveBatch &) override
++        {
++            std::unique_lock<std::mutex> lock(r.mutex);
++            if (r.holdDraw)
++            {
++                r.drawEntered = true;
++                r.cv.notify_all();
++                r.cv.wait(lock, [&] { return r.drawReleased; });
++            }
++            ++r.drawCount;
++            r.events.push_back(Draw);
++        }
++        void LoadClut(const GSTex0Reg &, const GSTexClutReg &) override {}
++        void BeginTransfer(const GSTransferCommand &) override {}
++        void UploadImage(const uint8_t *, uint32_t) override {}
++        void Flush() override { std::lock_guard<std::mutex> lock(r.mutex); r.events.push_back(::Flush); }
++        void TextureFlush() override {}
++        void Sync(GSSyncReason reason) override
++        {
++            if (reason == GSSyncReason::Finish)
++            {
++                std::lock_guard<std::mutex> lock(r.mutex);
++                ++r.finishCount;
++                r.events.push_back(Finish);
++            }
++        }
++        PresentationFrame Present(const GSPresentationRequest &request) override
++        {
++            std::lock_guard<std::mutex> lock(r.mutex);
++            r.requests.push_back(request);
++            if (request.forceReadback)
++            {
++                r.events.push_back(Capture);
++                ++r.captures;
++                r.captureOwner = std::this_thread::get_id();
++            }
++            else r.events.push_back(::Present);
++            if ((shared && !request.forceReadback) || (request.pmode & 3u) == 0u)
++                return {};
++            PresentationFrame frame;
++            frame.width = 64u;
++            frame.height = 2u;
++            frame.displayFbp = static_cast<uint32_t>(request.dispfb1 & 0x1ffu);
++            frame.usedPreferred = request.hasPreferredSource;
++            frame.sourceFbp = request.hasPreferredSource ? request.preferredSource.fbp : frame.displayFbp;
++            frame.pixels.resize(640u * frame.height * 4u, 0xeeu);
++            const uint32_t color = 0x80302000u | (frame.displayFbp & 0xffu);
++            for (uint32_t y = 0u; y < frame.height; ++y)
++                for (uint32_t x = 0u; x < frame.width; ++x)
++                {
++                    const uint32_t value = color + (y << 8u) + x;
++                    std::memcpy(frame.pixels.data() + (y * 640u + x) * 4u, &value, 4u);
++                }
++            return frame;
++        }
++        bool ClearFramebuffer(const GSContext &, uint32_t) override { return false; }
++        uint32_t ConsumeLocalToHostBytes(uint8_t *, uint32_t) override { return 0u; }
++        uint32_t ReadVram(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t) const override
++        {
++            std::lock_guard<std::mutex> lock(r.mutex);
++            r.events.push_back(Read);
++            return (r.finishCount << 16u) | r.drawCount;
++        }
++        void WriteVram(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t) override {}
++        void SnapshotVram(std::vector<uint8_t> &out) const override { out.clear(); }
++        GSTransferSnapshot GetTransferSnapshot() const override { return {}; }
++    };
++
++    struct Fixture
++    {
++        Recording recording;
++        std::vector<uint8_t> vram = std::vector<uint8_t>(GSSwizzle::kMemorySize);
++        GSRegisters registers{};
++        GS gs;
++        GSThreadedBackend *threaded = nullptr;
++        explicit Fixture(bool shared = true)
++        {
++            registers.pmode = 1u;
++            registers.dispfb1 = 12u;
++            registers.vsyncTick.store(31u);
++            gs.init(vram.data(), static_cast<uint32_t>(vram.size()), &registers);
++            auto backend = std::make_unique<GSThreadedBackend>(std::make_unique<ProceduralBackend>(recording, shared));
++            threaded = backend.get();
++            gs.setRasterBackend(std::move(backend));
++            recording.events.clear();
++        }
++        ~Fixture() { recording.release(); }
++        void point()
++        {
++            gs.writeRegister(GS_REG_PRIM, GS_PRIM_POINT);
++            gs.writeRegister(GS_REG_RGBAQ, 0x3f80000080403020ull);
++            gs.writeRegister(GS_REG_XYZ2, 0x00100010u);
++        }
++    };
++}
++
++void runGsSharedQueueTests()
++{
++    MiniTest::Case("GS shared presentation queue", [](TestCase &t)
++    {
++        t.Run("shared frontend returns before held draw and preserves FIFO requests", [](TestCase &t)
++        {
++            Fixture f;
++            f.recording.holdDraw = true;
++            f.point();
++            std::thread host([&]
++            {
++                f.gs.latchHostPresentationFrame();
++                { std::lock_guard<std::mutex> lock(f.recording.mutex); f.recording.hostReturned = true; }
++                f.recording.cv.notify_all();
++            });
++            const bool entered = f.recording.wait([&] { return f.recording.drawEntered; });
++            const bool returnedWhileHeld = f.recording.wait([&] { return f.recording.hostReturned; });
++            if (returnedWhileHeld)
++            {
++                f.registers.dispfb1 = 19u;
++                f.registers.vsyncTick.store(32u);
++                f.gs.latchHostPresentationFrame();
++            }
++            f.recording.release();
++            host.join();
++            f.threaded->ReadVram(0u, 0u, 1u, 0u, 0u);
++            t.IsTrue(entered, "El worker se detuvo dentro del dibujo real encolado por GS");
++            t.IsTrue(returnedWhileHeld, "El latch retorna sin liberar al worker");
++            t.IsTrue(f.recording.events == std::vector<int>({Draw, Present, Present, Read}),
++                     "Draw y requests anteriores conservan FIFO sin Flush del host");
++            t.Equals(f.recording.captures, 0u, "Presentacion normal no descarga pixeles");
++            t.Equals(f.recording.requests.size(), size_t(2u), "Ambas presentaciones llegaron al worker");
++            if (f.recording.requests.size() == 2u)
++            {
++                t.Equals(f.recording.requests[0].dispfb1, 12ull, "Primer request copiado al encolar");
++                t.Equals(f.recording.requests[0].vsyncTick, 31ull, "Primer tick no recibe el posterior");
++                t.Equals(f.recording.requests[1].dispfb1, 19ull, "Segundo CRTC mantiene su orden");
++                t.Equals(f.recording.requests[1].vsyncTick, 32ull, "Segundo tick pertenece a su request");
++            }
++        });
++
++        t.Run("shared diagnostics read on worker with latched CRTC and cache generation", [](TestCase &t)
++        {
++            Fixture f;
++            std::vector<uint8_t> pixels;
++            uint32_t width = 0u, height = 0u, display = 0u, source = 0u;
++            bool preferred = true;
++            t.IsFalse(f.gs.copyLatchedHostPresentationFrame(pixels, width, height),
++                      "Sin latch anterior no se inventa un request para capturar");
++            t.Equals(f.recording.captures, 0u, "Sin latch no se consulta al worker");
++            f.gs.latchHostPresentationFrame();
++            f.registers.dispfb1 = 25u;
++            f.registers.vsyncTick.store(41u);
++            t.IsTrue(f.gs.copyLatchedHostPresentationFrame(pixels, width, height, &display, &source, &preferred),
++                     "La captura explicita conserva la API de copia en modo shared");
++            t.Equals(width, 64u, "Ancho del compositor capturado");
++            t.Equals(height, 2u, "Alto del compositor capturado");
++            t.Equals(display, 12u, "La captura usa el CRTC latched, no los registros posteriores");
++            t.Equals(source, 12u, "Fuente devuelta por el compositor");
++            t.IsFalse(preferred, "No se inventa preferredSource");
++            t.Equals(pixels.size(), size_t(64u * 2u * 4u), "Filas de 640 compactadas sin padding");
++            if (pixels.size() == 64u * 2u * 4u)
++            {
++                uint32_t first = 0u, secondRow = 0u;
++                std::memcpy(&first, pixels.data(), 4u);
++                std::memcpy(&secondRow, pixels.data() + 64u * 4u, 4u);
++                t.Equals(first, 0x8030200cu, "Contenido real de la captura");
++                t.Equals(secondRow, 0x8030210cu, "La segunda fila no toma el padding");
++            }
++            t.IsTrue(f.recording.captureOwner == f.recording.owner, "Lectura en el mismo hilo propietario");
++            t.IsFalse(f.recording.captureOwner == std::this_thread::get_id(), "Nunca descarga desde EE/host");
++            t.Equals(f.recording.captures, 1u, "Una descarga explicita");
++            f.gs.copyLatchedHostPresentationFrame(pixels, width, height);
++            t.Equals(f.recording.captures, 1u, "Repetir la copia no repite el readback del mismo latch");
++            f.gs.latchHostPresentationFrame();
++            f.gs.copyLatchedHostPresentationFrame(pixels, width, height, &display);
++            t.Equals(f.recording.captures, 2u, "Un nuevo latch invalida la captura anterior");
++            t.Equals(display, 25u, "La nueva captura incorpora el CRTC del nuevo latch");
++            f.registers.pmode = 0u;
++            f.gs.latchHostPresentationFrame();
++            t.IsFalse(f.gs.copyLatchedHostPresentationFrame(pixels, width, height, &display, &source, &preferred),
++                      "PMODE deshabilitado no conserva una captura vieja");
++            t.IsTrue(pixels.empty() && width == 0u && height == 0u && display == 0u && source == 0u && !preferred,
++                     "La captura vacia limpia todos sus outputs");
++        });
++
++        t.Run("shared FINISH and reads retain barriers after held draws", [](TestCase &t)
++        {
++            Fixture f;
++            f.recording.holdDraw = true;
++            f.point();
++            f.gs.latchHostPresentationFrame();
++            const bool entered = f.recording.wait([&] { return f.recording.drawEntered; });
++            uint32_t result = 0u;
++            uint32_t observedAfterFinish = 0u;
++            std::thread reader([&]
++            {
++                f.threaded->Sync(GSSyncReason::Finish);
++                {
++                    std::lock_guard<std::mutex> lock(f.recording.mutex);
++                    observedAfterFinish = (f.recording.finishCount << 16u) | f.recording.drawCount;
++                    f.recording.hostReturned = true;
++                }
++                f.recording.cv.notify_all();
++                result = f.gs.ReadVram(0u, 0u, 1u, 0u, 0u);
++            });
++            // GOW-Port: si FINISH retorna antes de soltar el draw, el estado observado sera cero.
++            // En la ruta correcta el limite del control libera el worker para que la prueba cierre.
++            const bool returnedWhileHeld = f.recording.wait([&] { return f.recording.hostReturned; });
++            f.recording.release();
++            reader.join();
++            t.IsTrue(entered, "El dibujo anterior estaba detenido");
++            t.IsFalse(returnedWhileHeld, "FINISH no retorna con el dibujo anterior detenido");
++            t.Equals(observedAfterFinish, 0x00010001u, "Al retornar FINISH sus efectos ya son visibles");
++            t.Equals(result, 0x00010001u, "Lectura solo retorna despues del dibujo y FINISH");
++            t.IsTrue(f.recording.events == std::vector<int>({Draw, Present, Finish, Read}),
++                     "FINISH conserva la barrera y orden en la misma cola compartida");
++        });
++
++        t.Run("nonshared frontend retains synchronous pixel path", [](TestCase &t)
++        {
++            Fixture f(false);
++            f.point();
++            f.gs.latchHostPresentationFrame();
++            std::vector<uint8_t> pixels;
++            uint32_t width = 0u, height = 0u, display = 0u;
++            t.IsFalse(f.gs.usesSharedPresentation(), "La instancia CPU no toma sharing de otro backend");
++            t.IsTrue(f.gs.copyLatchedHostPresentationFrame(pixels, width, height, &display),
++                     "El latch sin sharing conserva pixeles disponibles al retornar");
++            t.Equals(display, 12u, "Metadata normal del backend");
++            t.Equals(f.recording.captures, 0u, "No fuerza otra presentacion para copiar pixeles CPU");
++            t.IsTrue(f.recording.events == std::vector<int>({Draw, Flush, Present}),
++                     "CPU conserva Flush y composicion sincrona");
++        });
++
++        t.Run("shared acquired metadata belongs to displayed frame not next request", [](TestCase &t)
++        {
++            Fixture f;
++            f.gs.setDebugHistoryPaused(false);
++            f.gs.latchHostPresentationFrame();
++            GSSharedPresent::Frame shared;
++            shared.sequence = 8u;
++            shared.vsyncTick = 28u;
++            shared.width = 64u;
++            shared.height = 96u;
++            shared.displayFbp = 17u;
++            shared.sourceFbp = 29u;
++            shared.usedPreferred = true;
++            f.gs.recordAcquiredSharedFrame(shared);
++            f.registers.dispfb1 = 31u;
++            f.gs.latchHostPresentationFrame();
++            f.gs.recordAcquiredSharedFrame(shared);
++            const auto snapshot = f.gs.getDebugSnapshot();
++            t.Equals(snapshot.hostPresentationDisplayFbp, 17u, "Se muestran metadatos del frame retenido");
++            t.Equals(snapshot.hostPresentationSourceFbp, 29u, "Fuente correcta del compositor adquirido");
++            t.IsTrue(snapshot.hostPresentationUsedPreferred, "Preferred del frame adquirido");
++            t.IsTrue(snapshot.hasHostPresentationFrame, "Shared tiene frame aunque no haya pixeles RAM");
++            const auto history = f.gs.getDebugHistory();
++            uint32_t presents = 0u;
++            for (const auto &event : history)
++                if (event.kind == GSDebugEventKind::Present)
++                {
++                    ++presents;
++                    t.Equals(event.displayFbp, 17u, "Evento del frame adquirido");
++                    t.Equals(event.sourceFbp, 29u, "Evento conserva fuente adquirida");
++                    t.Equals(event.vsyncTick, 28ull, "Tick del frame adquirido, no del request posterior");
++                }
++            t.Equals(presents, 1u, "Repetir slot no duplica eventos de presentacion");
++            shared.sequence = 9u;
++            shared.blank = true;
++            f.gs.recordAcquiredSharedFrame(shared);
++            const auto blank = f.gs.getDebugSnapshot();
++            t.IsFalse(blank.hasHostPresentationFrame, "Blank invalida estado de display previo");
++            t.Equals(blank.hostPresentationWidth, 0u, "Blank equivale a frame RAM vacio");
++            t.Equals(blank.hostPresentationDisplayFbp, 0u, "Blank limpia metadata previa");
++        });
++    });
++}
