@@ -540,3 +540,17 @@ Huellas de VU1 (intérprete y compilado) idénticas a las de la PR #24 en `vif_p
 `vif_port_480s`; `probar_vu1_compilada.cmd`, `probar_vu1_fmac.cmd` y suite 565/565. Reproducción de
 `vif_port_480s` sin rasterizar (`PS2X_GS_THREAD=1`, `PS2X_GS_DISCARD_DRAWS=1`, 200 pasadas, 8 rondas
 alternando ejecutables): mediana 104,4 → 100,1 ms por cuadro.
+
+### Bloques compilados encadenados (8 de octubre)
+
+`tools/vu1/generar_vu1.cpp`: cada `case` del despacho de `vu1c_gen::run` lleva una etiqueta. Cuando un
+bloque termina (`r == 1`) en uno de sus sucesores conocidos al generar (el par siguiente al último y, si
+acaba en un salto con su hueco de retardo, el destino del salto), se cargan las palabras de ese par y se
+salta a su etiqueta en lugar de volver al principio del bucle y pasar otra vez por el `switch`. El trabajo
+es el mismo que con `continue`: el salto solo ocurre si el PC coincide y la etiqueta repite las mismas
+comprobaciones de bloques y pares. JR/JALR siguen volviendo al `switch`.
+
+Huellas de VU1 (compilado e intérprete) idénticas en `vif_pcsx2_inicio2` y `vif_port_480s`;
+`probar_vu1_compilada.cmd` (60 casos, 17 saltos encadenados en su despacho, y 38.144 de DIV) en verde.
+Reproducción de `vif_port_480s` sin rasterizar, alternando ejecutables con la máquina ruidosa: mediana
+107,7 → 105,9 ms y mínimo 103,0 → 99,7 ms por cuadro (10 rondas); en otra tanda de 8, mínimo 101,7 → 98,4 ms.

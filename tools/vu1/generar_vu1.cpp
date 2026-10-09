@@ -231,7 +231,13 @@ int main(int argc, char **argv)
         }
 
     // Bloques.
-    std::map<uint32_t, std::vector<std::string>> blockCases;
+    // Prueba de cada bloque en el despacho y sus sucesores conocidos al generar (para encadenar sin el switch).
+    struct BlockCase
+    {
+        std::string test;
+        std::vector<uint32_t> successors;
+    };
+    std::map<uint32_t, std::vector<BlockCase>> blockCases;
     std::set<std::pair<uint32_t, std::vector<uint32_t>>> seenBlocks;
     size_t blockCount = 0, deadCount = 0, fmacCount = 0;
     for (const Code &code : codes)
@@ -344,8 +350,23 @@ int main(int argc, char **argv)
             declarations << "    int " << name << "(VU1Interpreter &vu, C &c);\n";
             std::ostringstream test;
             test << "                if (inRange(pc))\n                {\n                    const int r = " << name << "(vu, c);\n"
-                 << "                    if (r == 2)\n                        return;\n                    if (r == 1)\n                        continue;\n                }\n";
-            blockCases[head].push_back(test.str());
+                 << "                    if (r == 2)\n                        return;\n                    if (r == 1)\n";
+            // Sucesores: tras el último par sigue el siguiente; si el bloque acaba en un salto con su hueco de
+            // retardo, también el destino (JR/JALR lo toman de un registro: solo el siguiente).
+            std::vector<uint32_t> successors{(pcs.back() + 8u) & 0x3FFFu};
+            if (pcs.size() >= 2u)
+            {
+                const Pair &b = code.pairs[pcs[pcs.size() - 2u] / 8u];
+                const uint32_t op = b.lower >> 25;
+                if (VU1CompiledGenerator::isBranch(b) && op != 0x24u && op != 0x25u)
+                {
+                    const int32_t imm = static_cast<int32_t>(b.lower << 21) >> 21;
+                    const uint32_t target = static_cast<uint32_t>(static_cast<int32_t>(pcs[pcs.size() - 2u]) + 8 + imm * 8) & 0x3FFFu;
+                    if (target != successors[0])
+                        successors.push_back(target);
+                }
+            }
+            blockCases[head].push_back({test.str(), successors});
             ++blockCount;
         }
     }
@@ -393,7 +414,7 @@ int main(int argc, char **argv)
         << "    inline bool inRange(uint32_t pc) { return pc >= g_range.lo && pc <= g_range.hi; }\n}\n\n"
         << "namespace vu1c_gen\n{\n" << declarations.str()
         << "    void run(VU1Interpreter &vu, C &c)\n    {\n        for (;;)\n        {\n"
-        << "            const uint32_t pc = VU1CompiledAccess::pc(vu);\n"
+        << "            uint32_t pc = VU1CompiledAccess::pc(vu);\n"
         << "            if (pc + 8u <= c.codeSize)\n            {\n"
         << "                uint32_t lower, upper;\n"
         << "                std::memcpy(&lower, c.vuCode + pc, 4);\n                std::memcpy(&upper, c.vuCode + pc + 4, 4);\n"
@@ -405,12 +426,25 @@ int main(int argc, char **argv)
         allPcs.insert(pc);
     for (const uint32_t pc : allPcs)
     {
-        out << "                case 0x" << hex4(pc) << ":\n";
+        out << "                case 0x" << hex4(pc) << ":\n                L" << hex4(pc) << ":\n";
         if (const auto it = blockCases.find(pc); it != blockCases.end())
         {
             out << "                if (g_range.blocks)\n                {\n";
-            for (const auto &t : it->second)
-                out << t;
+            for (const BlockCase &t : it->second)
+            {
+                // GOW-Port: si el bloque termina en un sucesor conocido con su propio case, se salta a él
+                // directamente (mismo trabajo que volver al principio del bucle, sin el switch).
+                out << t.test << "                    {\n                        pc = VU1CompiledAccess::pc(vu);\n";
+                for (const uint32_t next : t.successors)
+                    if (allPcs.count(next) != 0u && next + 8u <= PS2_VU1_CODE_SIZE)
+                        out << "                        if (pc == 0x" << hex4(next) << "u && pc + 8u <= c.codeSize)\n"
+                            << "                        {\n"
+                            << "                            std::memcpy(&lower, c.vuCode + pc, 4);\n"
+                            << "                            std::memcpy(&upper, c.vuCode + pc + 4, 4);\n"
+                            << "                            goto L" << hex4(next) << ";\n"
+                            << "                        }\n";
+                out << "                        continue;\n                    }\n                }\n";
+            }
             out << "                }\n";
         }
         if (const auto it = pairCases.find(pc); it != pairCases.end())
