@@ -94,7 +94,7 @@ jobs:
           CMAKE
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPS2X_BUILD_STUDIO=OFF \
             -DCMAKE_C_FLAGS=-march=x86-64-v2 -DCMAKE_CXX_FLAGS=-march=x86-64-v2
-          ninja -C build ps2x_tests gow_gs_replay_test gow_gs_replay gow_gs_replay_checkpoints_test gow_gs_finish_async_test gow_vu1_compiled_test gow_vu1_fmac_test
+          ninja -C build ps2x_tests gow_gs_replay_test gow_gs_replay gow_gs_replay_checkpoints_test gow_gs_finish_async_test gow_gs_feedback_generator gow_gs_feedback_dump_test gow_vu1_compiled_test gow_vu1_fmac_test
 
       # src/gow_overrides.cpp solo se compila de verdad junto al codigo generado del juego (Windows). Aqui se
       # comprueba contra las cabeceras del runtime ya parcheado, declarando las sub_* que usa.
@@ -121,6 +121,9 @@ jobs:
         run: |
           PS2Recomp/build/gow_gs_replay_checkpoints_test
           python3 gow/tests/gs_replay_cli_test.py PS2Recomp/build/gow_gs_replay PS2Recomp/build/gow_gs_replay_synthetic.bin
+
+      - name: Probar alturas y fronteras de los patrones GS procedurales
+        run: python3 gow/tests/gs_feedback_height_cli_test.py PS2Recomp/build/gow_gs_feedback_generator PS2Recomp/build/gow_gs_feedback_dump_test
 
       - name: Probar el generador VU1 y los pares compilados con microcodigo procedural
         run: python3 gow/tests/vu1_compiled_cli_test.py PS2Recomp/build/gow_vu1_compiled_test

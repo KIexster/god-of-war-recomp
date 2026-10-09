@@ -4,6 +4,7 @@
 #include "runtime/gs/gs_swizzle.h"
 #include "gs_pcsx2_dump.h"
 #include <algorithm>
+#include <charconv>
 #include <cstring>
 #include <iostream>
 
@@ -13,23 +14,34 @@ int wmain(int argc,wchar_t **argv)
 int main(int argc,char **argv)
 #endif
 {
-    bool pcsx2=false,separations=false,hasOutput=false;
+    bool pcsx2=false,separations=false,hasOutput=false,hasHeight=false;
+    unsigned height=416;
     auto output=std::filesystem::path("logs");
     for(int i=1;i<argc;++i) {
         const auto argument=std::filesystem::path(argv[i]);
-        if(argument=="--pcsx2" && !pcsx2) pcsx2=true;
+        // GOW-Port: reducir el patrón en torno a fronteras de página sin alterar el caso original.
+        if(argument=="--altura") {
+            if(hasHeight || ++i==argc) return 2;
+            const auto encoded=std::filesystem::path(argv[i]).u8string();
+            const std::string number(encoded.begin(),encoded.end());
+            const auto parsed=std::from_chars(number.data(),number.data()+number.size(),height);
+            if(parsed.ec!=std::errc{} || parsed.ptr!=number.data()+number.size() || height<1 || height>416) return 2;
+            hasHeight=true;
+        }
+        else if(argument=="--pcsx2" && !pcsx2) pcsx2=true;
         else if(argument=="--separaciones" && !separations) separations=true;
         else if(!hasOutput && !argument.native().empty() && argument.native()[0]!='-') {output=argument;hasOutput=true;}
-        else {std::cerr<<"Uso: generar_feedback_gs [directorio=logs] [--pcsx2] [--separaciones]\n";return 2;}
+        else {std::cerr<<"Uso: generar_feedback_gs [directorio=logs] [--pcsx2] [--separaciones] [--altura 1..416]\n";return 2;}
     }
     std::error_code error;
     std::filesystem::create_directories(output,error);
     if(error || !std::filesystem::is_directory(output,error)) return 2;
     constexpr unsigned sourceBytes=1u<<20,disjointBytes=2u<<20;
-    constexpr unsigned width=64,height=416,pitch=8;
+    constexpr unsigned width=64,pitch=8,seedHeight=416;
     const auto &format=GSSwizzle::GetFormat(GS_PSM_CT32);
     std::vector<uint8_t> seed(PS2_GS_VRAM_SIZE);
-    for(unsigned y=0;y<height;++y) for(unsigned x=0;x<width;++x) {
+    // GOW-Port: conservar los texels al reducir solo la geometría.
+    for(unsigned y=0;y<seedHeight;++y) for(unsigned x=0;x<width;++x) {
         const uint32_t color=0x80000000u | ((x*37u+y*13u+x*y*3u)&255u) |
             (((x*11u+y*29u)&255u)<<8u) | (((x*x*5u+y*47u)&255u)<<16u);
         const auto location=GSSwizzle::Locate(format,0,pitch,x,y);
@@ -59,7 +71,7 @@ int main(int argc,char **argv)
         }
         const auto base=std::string("feedback_gs_")+name+suffix;
         const auto path=output/(base+".bin");
-        if(pcsx2 && !gow_gs_reference::feedbackDump(output/(base+".gs"),vram,disjoint,linear,boundary)) return 2;
+        if(pcsx2 && !gow_gs_reference::feedbackDump(output/(base+".gs"),vram,disjoint,linear,boundary,height)) return 2;
         gow_gs_replay::Backend capture(std::make_unique<GSCpuBackend>(),nullptr,path,0,3600);
         capture.Initialize(vram.data(),uint32_t(vram.size()));
         for(unsigned slice=0;slice<2;++slice) {

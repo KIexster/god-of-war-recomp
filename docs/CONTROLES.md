@@ -309,3 +309,14 @@ La captura a 90 s del mando muestra Kratos, cubierta, lluvia y HUD. La repetici�
 CPU del End difiere en 343.007 bytes: el ensayo no certifica paridad del juego.
 Esa divergencia queda como investigación separada de render; el archivo no se
 publica. El cierre por límite no prueba el cierre normal ni mide FPS.
+
+
+## Altura de patrones de feedback (2026-10-09)
+
+`tests/gs_feedback_height_cli_test.py` verifica alturas 1/31/32/33/64/416,
+freeze y texels invariantes, dumps por defecto exactos, separaciones TEXFLUSH/
+scissor y la equivalencia de los 4 MiB entre GIF y End CPU. Una altura esperada
+incorrecta falla; límites y opciones duplicadas fallan antes de crear archivos.
+El caso de una fila fija independientemente el RGBA CPU `(141,90,98,128)` del
+píxel `(32,0)`. El generador anterior falla al solicitar altura reducida.
+Controles locales Windows y reproducción GPU: `docs/FEEDBACK_BILINEAL_MINIMO.md`.

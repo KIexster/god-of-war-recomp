@@ -2586,3 +2586,20 @@ esta política en el juego ni se atribuye una mejora de FPS a este diagnóstico.
 Siguiente tarea: aislar un primitivo procedural con feedback y estudiar la
 visibilidad/caché de sus lecturas, conservando el control CPU estricto. No se
 publican cadenas, VRAM, capturas ni herramientas derivadas del juego.
+
+
+### 2026-10-09 — Feedback reducido a un píxel estable
+
+El generador de patrones GS acepta `--altura 1..416`, conservando textura,
+freeze y registros iniciales al reducir los dos sprites. Captura y dump PCSX2
+coinciden exactamente a través de GIF/End CPU para seis alturas; el default
+permanece byte a byte. Se añaden controles de altura esperada, entradas inválidas
+y el RGBA CPU independiente del caso mínimo; se integran ambos ejecutables en CI.
+
+Con una fila, el único píxel distinto es `(32,0)`: CPU RGB `(141,90,98)` frente
+a hardware `(132,87,86)`, estable entre repeticiones y también con snapshot por
+Submit. La media de texels iniciales explica CPU; releer el píxel cambiado por
+el primer sprite explica GPU. Queda aislada una diferencia de persistencia de
+caché entre primitivas, separada de la variación del caso grande. No se cambia
+la política del renderer del juego. Comandos, tabla y límites:
+`docs/FEEDBACK_BILINEAL_MINIMO.md`.
