@@ -1,0 +1,57 @@
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+index 170e236..2941996 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+@@ -140,6 +140,25 @@ namespace vu1c
+         if constexpr ((Dest & 2u) != 0u) dst[2] = src[2];
+         if constexpr ((Dest & 1u) != 0u) dst[3] = src[3];
+     }
++    // GOW-Port: store de VU1 con DEST constante, escrito en el acto. queueStore lo encolaba con un ciclo de
++    // latencia, pero el mismo paso avanza ese ciclo y commitReadyPipelines lo escribe antes de que nada más
++    // lea la memoria (el siguiente par, PATH1 o el VIF): el resultado es el mismo.
++    template <uint32_t Dest>
++    VU1_STEP_INLINE void storeT(uint8_t *target, const uint32_t words[4])
++    {
++        if constexpr (Dest == 0xFu)
++            std::memcpy(target, words, 16u);
++        else if constexpr (Dest != 0u)
++        {
++            uint32_t merged[4];
++            std::memcpy(merged, target, 16u);
++            if constexpr ((Dest & 8u) != 0u) merged[0] = words[0];
++            if constexpr ((Dest & 4u) != 0u) merged[1] = words[1];
++            if constexpr ((Dest & 2u) != 0u) merged[2] = words[2];
++            if constexpr ((Dest & 1u) != 0u) merged[3] = words[3];
++            std::memcpy(target, merged, 16u);
++        }
++    }
+     // Especiales de la unidad superior sin flags MAC: ITOF0..15 (0x10-0x13), FTOI0..15 (0x14-0x17), ABS
+     // (0x1D) y CLIP (0x1F). Devuelve la especial o 0 si es otra instrucción.
+     constexpr uint32_t simpleSpecial(uint32_t upper)
+@@ -573,7 +592,7 @@ VU1_STEP_INLINE void VU1Interpreter::lowerT(StepContext &context, uint32_t upper
+         {
+             uint32_t words[4]{};
+             std::memcpy(words, m_state.vf[fs], sizeof(words));
+-            queueStore(addr, words, dest);
++            vu1c::storeT<dest>(vuData + addr, words);
+         }
+     }
+     else if constexpr (opHi == 0x04u) // ILW
+@@ -597,7 +616,7 @@ VU1_STEP_INLINE void VU1Interpreter::lowerT(StepContext &context, uint32_t upper
+         {
+             const uint32_t val = static_cast<uint32_t>(static_cast<uint16_t>(m_state.vi[viT] & 0xFFFF));
+             const uint32_t words[4] = {val, val, val, val};
+-            queueStore(addr, words, dest);
++            vu1c::storeT<dest>(vuData + addr, words);
+         }
+     }
+     else if constexpr (opHi == 0x08u || opHi == 0x09u) // IADDIU / ISUBIU
+@@ -699,7 +718,7 @@ VU1_STEP_INLINE void VU1Interpreter::lowerT(StepContext &context, uint32_t upper
+         {
+             uint32_t words[4]{};
+             std::memcpy(words, m_state.vf[fs], sizeof(words));
+-            queueStore(addr, words, dest);
++            vu1c::storeT<dest>(vuData + addr, words);
+         }
+         if constexpr (viT != 0)
+             m_state.vi[viT] = static_cast<int16_t>(m_state.vi[viT] + 1);

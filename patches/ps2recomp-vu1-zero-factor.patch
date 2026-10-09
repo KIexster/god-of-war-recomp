@@ -1,0 +1,69 @@
+diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime/ps2_vu1.h
+index 095c041..8974410 100644
+--- a/ps2xRuntime/include/runtime/ps2_vu1.h
++++ b/ps2xRuntime/include/runtime/ps2_vu1.h
+@@ -433,6 +433,13 @@ private:
+         const uint32_t exponent = (bits >> 23) & 0xFFu;
+         if (exponent >= 2u && exponent <= 0xFDu)
+             return (bits & 0x80000000u) != 0u ? 0x2u : 0u;
++        // GOW-Port: con un factor cero (los operandos llegan normalizados: finitos, sin subnormales) el
++        // producto exacto es cero con el signo de a XOR b, igual que productStickyFlagsExact.
++        uint32_t aBits = 0u, bBits = 0u;
++        std::memcpy(&aBits, &a, sizeof(aBits));
++        std::memcpy(&bBits, &b, sizeof(bBits));
++        if ((aBits & 0x7FFFFFFFu) == 0u || (bBits & 0x7FFFFFFFu) == 0u)
++            return ((aBits ^ bBits) & 0x80000000u) != 0u ? 0x3u : 0x1u;
+         return productStickyFlagsExact(a, b);
+     }
+     static uint8_t productStickyFlagsExact(float a, float b)
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+index 3b514fb..170e236 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+@@ -249,6 +249,24 @@ VU1_STEP_INLINE void VU1Interpreter::fmacLaneT(float &result, uint8_t &laneFlags
+             if (productSumFlagsFast(result, vs * right, laneFlags))
+                 return;
+         }
++        // GOW-Port: con un factor cero el producto exacto es ±0 (operandos normalizados) y el resultado en
++        // float ya es el exacto: en MUL/OPMULA un cero con el signo de vs XOR right; en MADD/MSUB/OPMSUB
++        // ACC ∓ 0, exacto también en float con las mismas reglas de signo, y ACC es cero o normal. Así
++        // normalizeFmacExactResult no cambiaría el valor y los flags son Z (si es cero) y S.
++        if constexpr (info.kind == vu1c::Kind::Mul || info.kind == vu1c::Kind::Opmula || info.kind == vu1c::Kind::Madd ||
++                      info.kind == vu1c::Kind::Msub || (info.kind == vu1c::Kind::Opmsub && C != 3u))
++        {
++            uint32_t sBits = 0u, rBits = 0u;
++            std::memcpy(&sBits, &vs, sizeof(sBits));
++            std::memcpy(&rBits, &right, sizeof(rBits));
++            if ((sBits & 0x7FFFFFFFu) == 0u || (rBits & 0x7FFFFFFFu) == 0u)
++            {
++                uint32_t bits = 0u;
++                std::memcpy(&bits, &result, sizeof(bits));
++                laneFlags = static_cast<uint8_t>(((bits & 0x80000000u) != 0u ? 0x2u : 0u) | ((bits & 0x7FFFFFFFu) == 0u ? 0x1u : 0u));
++                return;
++            }
++        }
+ 
+         if constexpr (info.kind == vu1c::Kind::Add || info.kind == vu1c::Kind::Sub || info.kind == vu1c::Kind::Mul)
+         {
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+index 63085f2..b8b14aa 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+@@ -920,7 +920,7 @@ void VU1Interpreter::commitReadyPipelines()
+         m_state.q = m_fdiv.value;
+         const uint32_t currentDi = m_fdiv.statusDi & 0x30u;
+         m_state.status = (m_state.status & 0xFCFu) | currentDi | (currentDi << 6);
+-        m_fdiv = {};
++        m_fdiv.valid = false; // GOW-Port: queueQ escribe todos los campos
+     }
+ 
+     for (ScalarPipelineEntry &entry : m_efu)
+@@ -928,7 +928,7 @@ void VU1Interpreter::commitReadyPipelines()
+         if (entry.valid && entry.readyCycle <= m_cycle)
+         {
+             m_state.p = entry.value;
+-            entry = {};
++            entry.valid = false; // GOW-Port: queueP escribe todos los campos
+         }
+     }
+ 
