@@ -2507,3 +2507,18 @@ muestra 50–56 ms por cuadro presentado y un grupo dominante FBP 0/flags
 para repetir cadenas GS y preservar su igualdad con CPU; todavía no se
 ha añadido una optimización del shader. EE, FPU, IOP y FMV permanecen fuera
 de este cambio.
+
+### 2026-10-09 — Ensayo de descarte fuera de cobertura
+
+Se prepara `ps2recomp-gs-discard-uncovered.patch` después de los 76 parches
+anteriores. Añade un descarte previo al interlock cuando el fragmento no
+cubre el primitivo, con `PS2X_GS_HW_DISCARD_UNCOVERED=0` para conservar el
+shader anterior. El control nuevo compara los 4 MiB de VRAM contra CPU con
+triángulos finos/subpíxel, mezcla y recorte, y exige observar hardware después
+de la compilación asíncrona. El control aislado pasa en ambos modos.
+
+Cinco muestras procedurales con shaders preparados dan 25,04–25,94 ms sin
+descarte frente a 16,63–18,35 ms con él para un lote de 4096 triángulos. No
+son FPS de partida. Se inicia la suite completa y la compilación oficial;
+el detalle y las restricciones del interlock están en
+`docs/RENDER_DESCARTE_FRAGMENTOS.md`.
