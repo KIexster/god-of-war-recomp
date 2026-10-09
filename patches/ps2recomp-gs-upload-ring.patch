@@ -1,0 +1,1030 @@
+diff --git a/ps2xRuntime/src/lib/gs/gpu/gs_gpu_backend.cpp b/ps2xRuntime/src/lib/gs/gpu/gs_gpu_backend.cpp
+--- a/ps2xRuntime/src/lib/gs/gpu/gs_gpu_backend.cpp
++++ b/ps2xRuntime/src/lib/gs/gpu/gs_gpu_backend.cpp
+@@ -6,6 +6,7 @@
+ #include "runtime/gs/ps2_gs_memory.h"
+ #include "../gs_gpu_helpers.h"
+ #include "../gs_gpu_profile.h" // GOW-Port: ventanas de perfil sin esperas durante el render.
++#include "../gs_gpu_upload_ring.h" // GOW-Port: no reutilizar uploads de una GPU pendiente.
+ #include "../gs_sprite_rules.h"
+ #include "../gs_triangle_rules.h"
+ #include "gs_gl.h"
+@@ -277,10 +278,7 @@
+     std::array<uint16_t, 32> clutWriters{};
+     size_t dataCapacity = 0;
+     GLuint ringBuffer = 0;
+-    uint8_t *ring = nullptr;
+-    uint32_t ringChunk = 0u;
+-    size_t ringOffset = 0u;
+-    std::array<GLsync, kRingChunks> ringFences{};
++    GSGpuUpload::Ring<GLsync, kRingChunk, kRingChunks, kRingAlign> ring;
+
+     Program raster;
+     Program clutLoad;
+@@ -571,6 +569,14 @@
+     ~Impl()
+     {
+         stopCompileWorker();
++        // GOW-Port: el host puede conservar el share group; liberar también si
++        // la compilación de shaders falló después de crear y mapear el ring.
++        if (context.Valid() && ringBuffer != 0u)
++        {
++            ring.releaseFences([this](GLsync fence) { gl().DeleteSync(fence); });
++            gl().DeleteBuffers(1, &ringBuffer);
++            ringBuffer = 0u;
++        }
+         if (initialized && prof.enabled)
+         {
+             prof.finish();
+@@ -627,33 +633,26 @@
+
+     size_t ringPut(const void *data, size_t size)
+     {
+-        const size_t payloadSize = size;
+-        size = std::max<size_t>(size, 16u);
+-        if (!ring || size > kRingChunk)
+-            return SIZE_MAX;
+-        ringOffset = (ringOffset + kRingAlign - 1u) & ~(kRingAlign - 1u);
+-        if (ringOffset + size > kRingChunk)
+-        {
+-            ringFences[ringChunk] = gl().FenceSync(kSyncGpuCommandsComplete, 0u);
+-            ringChunk = (ringChunk + 1u) % kRingChunks;
+-            if (GLsync fence = ringFences[ringChunk])
++        const bool wasDisabled = ring.disabled();
++        const size_t offset = ring.put(data, size,
++            [this] { return gl().FenceSync(kSyncGpuCommandsComplete, 0u); },
++            [this](GLsync fence)
+             {
+                 const auto waitStart = std::chrono::steady_clock::now();
+-                gl().ClientWaitSync(fence, kSyncFlushCommandsBit, 5000000000ull);
++                const GLenum status = gl().ClientWaitSync(fence, kSyncFlushCommandsBit, 5000000000ull);
+                 hwRingWaitMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - waitStart).count();
+-                gl().DeleteSync(fence);
+-                ringFences[ringChunk] = nullptr;
+-            }
+-            ringOffset = 0u;
+-        }
+-        const size_t offset = static_cast<size_t>(ringChunk) * kRingChunk + ringOffset;
+-        if (data)
+-        {
+-            std::memcpy(ring + offset, data, payloadSize);
+-            if (payloadSize < size)
+-                std::memset(ring + offset + payloadSize, 0, size - payloadSize);
+-        }
+-        ringOffset += size;
++                if (status == kAlreadySignaled || status == kConditionSatisfied)
++                    return GSGpuUpload::WaitResult::Signaled;
++                return status == kTimeoutExpired ? GSGpuUpload::WaitResult::Timeout : GSGpuUpload::WaitResult::Failed;
++            },
++            [this](GLsync fence) { gl().DeleteSync(fence); });
++        if (!wasDisabled && ring.disabled())
++        {
++            const char *reason = ring.failure() == GSGpuUpload::Failure::Timeout ? "wait timeout" :
++                                 ring.failure() == GSGpuUpload::Failure::NullFence ? "fence creation failed" : "wait failed";
++            // GOW-Port: fallback de uploads, no certifica recuperación de un contexto perdido.
++            std::fprintf(stderr, "[gs-gpu] persistent uploads disabled (%s); using streaming buffers\n", reason);
++        }
+         return offset;
+     }
+
+@@ -672,8 +671,13 @@
+
+     void setBuffer(GLuint buffer, size_t size, const void *data)
+     {
++        const size_t allocated = std::max<size_t>(size, 16u);
+         gl().BindBuffer(kShaderStorageBuffer, buffer);
+-        gl().BufferData(kShaderStorageBuffer, static_cast<GLsizeiptr>(std::max<size_t>(size, 16u)), nullptr, kStreamDraw);
++        gl().BufferData(kShaderStorageBuffer, static_cast<GLsizeiptr>(allocated), nullptr, kStreamDraw);
++        // GOW-Port: un upload streaming puede encoger el buffer de salida;
++        // reserveData debe conocer su tamaño real al volver a presentar o copiar.
++        if (buffer == dataBuffer)
++            dataCapacity = allocated;
+         if (size != 0u && data)
+             gl().BufferSubData(kShaderStorageBuffer, 0, static_cast<GLsizeiptr>(size), data);
+     }
+@@ -1331,8 +1335,8 @@
+         gl().BindBuffer(kShaderStorageBuffer, ringBuffer);
+         gl().BufferStorage(kShaderStorageBuffer, static_cast<GLsizeiptr>(kRingChunk * kRingChunks), nullptr,
+                            kMapWriteBit | kMapPersistentBit | kMapCoherentBit);
+-        ring = static_cast<uint8_t *>(gl().MapBufferRange(kShaderStorageBuffer, 0, static_cast<GLsizeiptr>(kRingChunk * kRingChunks),
+-                                                          kMapWriteBit | kMapPersistentBit | kMapCoherentBit));
++        ring.setStorage(static_cast<uint8_t *>(gl().MapBufferRange(kShaderStorageBuffer, 0, static_cast<GLsizeiptr>(kRingChunk * kRingChunks),
++                                                                 kMapWriteBit | kMapPersistentBit | kMapCoherentBit)));
+
+         const bool ok = compile(raster, prefix, GSGpuShaders::kRaster, {"uRaster"}) &&
+                         compile(pageCopy, prefix, GSGpuShaders::kPageCopy, {}) &&
+diff --git a/ps2xTest/CMakeLists.txt b/ps2xTest/CMakeLists.txt
+--- a/ps2xTest/CMakeLists.txt
++++ b/ps2xTest/CMakeLists.txt
+@@ -34,6 +34,9 @@
+     src/ps2_gs_tests.cpp
+     src/ps2_gs_backend_tests.cpp # GOW-Port: cola, VRAM y comparación CPU/OpenGL.
+     src/ps2_gpu_profile_tests.cpp # GOW-Port: ventanas y lecturas de timestamps sin espera.
++    src/ps2_gpu_upload_ring_tests.cpp # GOW-Port: datos pendientes y fallback de uploads.
++    src/ps2_gpu_ring_gl_tests.cpp # GOW-Port: liberar objetos con host compartido vivo.
++    src/ps2_gpu_streaming_gl_tests.cpp # GOW-Port: capacidad real tras fallback streaming.
+     src/ps2_iop_tests.cpp
+     src/ps2_sif_rpc_tests.cpp
+     src/ps2_sif_dma_tests.cpp
+diff --git a/ps2xTest/src/main.cpp b/ps2xTest/src/main.cpp
+--- a/ps2xTest/src/main.cpp
++++ b/ps2xTest/src/main.cpp
+@@ -15,6 +15,9 @@
+ void register_ps2_gs_tests();
+ void register_ps2_gs_backend_tests(); // GOW-Port
+ void register_ps2_gpu_profile_tests(); // GOW-Port
++void runGpuUploadRingTests(); // GOW-Port
++void runGpuRingGlTests(); // GOW-Port
++void runGpuStreamingGlTests(); // GOW-Port
+ void register_ps2_iop_tests();
+ void register_ps2_sif_rpc_tests();
+ void register_ps2_sif_dma_tests();
+@@ -42,6 +45,9 @@
+     register_ps2_gs_tests();
+     register_ps2_gs_backend_tests();
+     register_ps2_gpu_profile_tests();
++    runGpuUploadRingTests();
++    runGpuRingGlTests();
++    runGpuStreamingGlTests();
+     register_ps2_iop_tests();
+     register_ps2_sif_rpc_tests();
+     register_ps2_sif_dma_tests();
+diff --git a/ps2xRuntime/src/lib/gs/gs_gpu_upload_ring.h b/ps2xRuntime/src/lib/gs/gs_gpu_upload_ring.h
+new file mode 100644
+--- /dev/null
++++ b/ps2xRuntime/src/lib/gs/gs_gpu_upload_ring.h
+@@ -0,0 +1,97 @@
++// GOW-Port: uploads persistentes protegidos por fences, sin dependencia de OpenGL.
++#pragma once
++
++#include <array>
++#include <cstddef>
++#include <cstdint>
++#include <cstring>
++#include <limits>
++
++namespace GSGpuUpload
++{
++    enum WaitResult { Signaled, Timeout, Failed };
++    enum class Failure { None, NullFence, Timeout, WaitFailed };
++
++    template <class Fence, size_t ChunkBytes, size_t ChunkCount, size_t Alignment>
++    class Ring
++    {
++        static_assert(ChunkBytes >= 16u && ChunkCount != 0u);
++        static_assert(Alignment != 0u && (Alignment & (Alignment - 1u)) == 0u);
++        static_assert(ChunkBytes % Alignment == 0u);
++        static_assert(ChunkBytes <= (std::numeric_limits<size_t>::max)() / ChunkCount);
++
++    public:
++        void setStorage(uint8_t *mapped) { storage = mapped; }
++        bool available() const { return storage != nullptr && !disabled(); }
++        bool disabled() const { return failed != Failure::None; }
++        Failure failure() const { return failed; }
++
++        // GOW-Port: el callback de espera debe representar la espera acotada completa.
++        // Timeout/Failed impiden todos los uploads posteriores, incluso en otro chunk.
++        template <class CreateFence, class WaitFence, class DeleteFence>
++        size_t put(const void *data, size_t payloadBytes, CreateFence createFence,
++                   WaitFence waitFence, DeleteFence deleteFence)
++        {
++            if (!available() || payloadBytes > ChunkBytes)
++                return SIZE_MAX;
++            const size_t bytes = payloadBytes < 16u ? 16u : payloadBytes;
++            const size_t padding = (Alignment - offset % Alignment) % Alignment;
++            size_t aligned = offset + padding; // ChunkBytes también está alineado.
++            if (bytes > ChunkBytes - aligned)
++            {
++                const Fence submitted = createFence();
++                if (submitted == Fence{})
++                {
++                    failed = Failure::NullFence;
++                    return SIZE_MAX;
++                }
++                fences[chunk] = submitted;
++                const size_t next = (chunk + 1u) % ChunkCount;
++                if (fences[next] != Fence{})
++                {
++                    const WaitResult result = waitFence(fences[next]);
++                    if (result != WaitResult::Signaled)
++                    {
++                        failed = result == WaitResult::Timeout ? Failure::Timeout : Failure::WaitFailed;
++                        // GOW-Port: conservar ambos fences para el cierre; no copiar ni avanzar.
++                        return SIZE_MAX;
++                    }
++                    const Fence complete = fences[next];
++                    fences[next] = Fence{};
++                    deleteFence(complete);
++                }
++                chunk = next;
++                aligned = 0u;
++            }
++            const size_t result = chunk * ChunkBytes + aligned;
++            if (data != nullptr)
++            {
++                std::memcpy(storage + result, data, payloadBytes);
++                if (payloadBytes < bytes)
++                    std::memset(storage + result + payloadBytes, 0, bytes - payloadBytes);
++            }
++            offset = aligned + bytes;
++            return result;
++        }
++
++        // GOW-Port: el propietario llama durante el cierre, antes de desmontar el contexto.
++        template <class DeleteFence>
++        void releaseFences(DeleteFence deleteFence)
++        {
++            for (Fence &fence : fences)
++                if (fence != Fence{})
++                {
++                    const Fence owned = fence;
++                    fence = Fence{};
++                    deleteFence(owned);
++                }
++        }
++
++    private:
++        uint8_t *storage = nullptr;
++        std::array<Fence, ChunkCount> fences{};
++        size_t chunk = 0u;
++        size_t offset = 0u;
++        Failure failed = Failure::None;
++    };
++}
+diff --git a/ps2xTest/src/ps2_gpu_upload_ring_tests.cpp b/ps2xTest/src/ps2_gpu_upload_ring_tests.cpp
+new file mode 100644
+--- /dev/null
++++ b/ps2xTest/src/ps2_gpu_upload_ring_tests.cpp
+@@ -0,0 +1,290 @@
++// GOW-Port: memoria real y fences simulados, sin driver ni assets del juego.
++#include "MiniTest.h"
++#include "gs/gs_gpu_upload_ring.h"
++
++#include <algorithm>
++#include <array>
++#include <limits>
++#include <set>
++#include <vector>
++
++namespace
++{
++    using GSGpuUpload::Failure;
++    using GSGpuUpload::WaitResult;
++    using TestRing = GSGpuUpload::Ring<uint32_t, 64u, 4u, 16u>;
++
++    struct Fixture
++    {
++        std::array<uint8_t, 256u> bytes{};
++        TestRing ring;
++        uint32_t nextFence = 1u;
++        bool nullFence = false;
++        WaitResult outcome = WaitResult::Signaled;
++        std::vector<uint32_t> waited, deleted;
++
++        Fixture() { bytes.fill(0xa5u); ring.setStorage(bytes.data()); }
++        size_t put(const void *data, size_t size)
++        {
++            return ring.put(data, size,
++                            [&] { return nullFence ? 0u : nextFence++; },
++                            [&](uint32_t fence) { waited.push_back(fence); return outcome; },
++                            [&](uint32_t fence) { deleted.push_back(fence); });
++        }
++        void fill(TestCase &t)
++        {
++            for (uint8_t chunk = 0u; chunk < 4u; ++chunk)
++            {
++                std::array<uint8_t, 64u> data{};
++                data.fill(static_cast<uint8_t>(0x10u + chunk));
++                t.Equals(put(data.data(), data.size()), size_t{chunk} * 64u, "Llena cuatro chunks distintos");
++            }
++        }
++        void release()
++        {
++            ring.releaseFences([&](uint32_t fence) { deleted.push_back(fence); });
++        }
++    };
++
++    void failedReuse(TestCase &t, WaitResult outcome, Failure expected)
++    {
++        Fixture f;
++        f.fill(t);
++        const auto protectedBytes = f.bytes;
++        f.outcome = outcome;
++        const std::array<uint8_t, 7u> data = {1u, 2u, 3u, 4u, 5u, 6u, 7u};
++        std::vector<uint8_t> fallback;
++        unsigned fallbacks = 0u;
++        auto upload = [&]
++        {
++            const size_t offset = f.put(data.data(), data.size());
++            if (offset == SIZE_MAX)
++            {
++                ++fallbacks;
++                fallback.assign(data.begin(), data.end());
++            }
++            return offset;
++        };
++        t.Equals(upload(), SIZE_MAX, "No reutiliza un chunk cuya fence no se señaló");
++        t.Equals(f.bytes, protectedBytes, "El primer fallo no altera uploads pendientes");
++        t.IsTrue(f.ring.disabled(), "La ruta persistente queda deshabilitada");
++        t.IsFalse(f.ring.available(), "available también impide reusar el ring");
++        t.Equals(f.ring.failure(), expected, "Conserva el motivo de sincronización");
++        t.Equals(upload(), SIZE_MAX, "El segundo upload también usa fallback");
++        t.Equals(f.bytes, protectedBytes, "No escribe en el cursor del fallo anterior");
++        t.Equals(fallbacks, 2u, "Ambos uploads llegan al fallback");
++        t.Equals(fallback, std::vector<uint8_t>(data.begin(), data.end()), "El fallback conserva el payload");
++        t.Equals(f.waited, std::vector<uint32_t>({1u}), "No vuelve a esperar tras deshabilitarse");
++        t.IsTrue(f.deleted.empty(), "Retiene la fence pendiente y la recién creada");
++        t.Equals(f.nextFence, 5u, "No crea una nueva fence en el segundo intento");
++        f.release();
++        t.Equals(f.deleted, std::vector<uint32_t>({1u, 2u, 3u, 4u}), "El cierre libera todos los handles retenidos");
++        f.release();
++        t.Equals(f.deleted.size(), size_t{4}, "El segundo cierre no duplica eliminaciones");
++    }
++}
++
++void runGpuUploadRingTests()
++{
++    MiniTest::Case("GS uploads persistentes protegidos", [](TestCase &tc)
++    {
++        tc.Run("Timeout conserva memoria pendiente y usa fallback para uploads posteriores", [](TestCase &t)
++        {
++            failedReuse(t, WaitResult::Timeout, Failure::Timeout);
++        });
++        tc.Run("WaitFailed conserva memoria pendiente y usa fallback para uploads posteriores", [](TestCase &t)
++        {
++            failedReuse(t, WaitResult::Failed, Failure::WaitFailed);
++        });
++        tc.Run("Fence señalada permite reciclar solo el chunk confirmado", [](TestCase &t)
++        {
++            Fixture f;
++            f.fill(t);
++            const auto before = f.bytes;
++            std::array<uint8_t, 64u> data{};
++            data.fill(0x7bu);
++            t.Equals(f.put(data.data(), data.size()), size_t{0}, "Vuelve al primer chunk");
++            t.IsTrue(std::equal(data.begin(), data.end(), f.bytes.begin()), "Copia el payload tras la confirmación");
++            t.IsTrue(std::equal(before.begin() + 64u, before.end(), f.bytes.begin() + 64u), "Los otros tres chunks no cambian");
++            t.Equals(f.waited, std::vector<uint32_t>({1u}), "Espera la fence del destino");
++            t.Equals(f.deleted, std::vector<uint32_t>({1u}), "Libera solo la fence señalada");
++            t.IsTrue(f.ring.available(), "El éxito conserva el ring disponible");
++            t.Equals(f.ring.failure(), Failure::None, "No registra un fallo");
++        });
++        tc.Run("Fence señalada después de esperar protege memoria hasta el callback", [](TestCase &t)
++        {
++            Fixture f;
++            f.fill(t);
++            const auto before = f.bytes;
++            std::array<uint8_t, 64u> data{};
++            data.fill(0xebu);
++            unsigned simulatedPolls = 0u;
++            bool completed = false;
++            const size_t offset = f.ring.put(data.data(), data.size(),
++                [&] { return f.nextFence++; },
++                [&](uint32_t fence)
++                {
++                    t.Equals(fence, 1u, "Espera el chunk correcto");
++                    // GOW-Port: modelar la espera acotada del driver sin dormir la suite.
++                    for (; simulatedPolls < 3u; ++simulatedPolls)
++                        t.Equals(f.bytes, before, "No copia mientras la fence sigue pendiente");
++                    completed = true;
++                    return WaitResult::Signaled;
++                },
++                [&](uint32_t fence)
++                {
++                    t.IsTrue(completed, "Solo elimina la fence después de la señal");
++                    t.Equals(f.bytes, before, "La copia tampoco precede a la eliminación");
++                    f.deleted.push_back(fence);
++                });
++            t.Equals(simulatedPolls, 3u, "Se modeló la señal tardía");
++            t.Equals(offset, size_t{0}, "Acepta la confirmación después de esperar");
++            t.IsTrue(std::equal(data.begin(), data.end(), f.bytes.begin()), "Finalmente escribe el payload");
++            t.IsTrue(f.ring.available(), "La espera correcta no deshabilita el ring");
++        });
++        tc.Run("Fence nula deshabilita sin copiar ni tocar uploads previos", [](TestCase &t)
++        {
++            Fixture f;
++            std::array<uint8_t, 64u> data{};
++            data.fill(0x27u);
++            t.Equals(f.put(data.data(), data.size()), size_t{0}, "Primer chunk sin fence");
++            const auto before = f.bytes;
++            f.nullFence = true;
++            t.Equals(f.put(data.data(), 1u), SIZE_MAX, "No avanza sin fence de protección");
++            t.Equals(f.ring.failure(), Failure::NullFence, "Registra la creación fallida");
++            t.IsTrue(f.ring.disabled(), "Queda deshabilitado");
++            t.Equals(f.bytes, before, "No copia tras la creación fallida");
++            t.Equals(f.put(data.data(), 1u), SIZE_MAX, "El siguiente upload también falla");
++            t.Equals(f.bytes, before, "El segundo intento conserva todos los bytes");
++            t.IsTrue(f.waited.empty(), "No espera una fence inexistente");
++            f.release(); f.release();
++            t.IsTrue(f.deleted.empty(), "No intenta eliminar handles nulos");
++        });
++        tc.Run("Cierre elimina una sola vez los handles que quedan", [](TestCase &t)
++        {
++            Fixture f;
++            f.fill(t);
++            std::array<uint8_t, 64u> data{};
++            t.Equals(f.put(data.data(), data.size()), size_t{0}, "Recicla un chunk antes del cierre");
++            f.release(); f.release();
++            t.Equals(f.deleted, std::vector<uint32_t>({1u, 2u, 3u, 4u}), "Una eliminación por fence creada");
++            t.Equals(std::set<uint32_t>(f.deleted.begin(), f.deleted.end()).size(), size_t{4}, "No elimina dos veces un handle reciclado");
++        });
++        tc.Run("Padding mínimo y alineación no escriben en huecos ni fuera del ring", [](TestCase &t)
++        {
++            std::array<uint8_t, 272u> guarded{};
++            guarded.fill(0xa5u);
++            GSGpuUpload::Ring<uint32_t, 64u, 4u, 32u> ring;
++            ring.setStorage(guarded.data() + 8u);
++            const std::array<uint8_t, 17u> first = {1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 9u, 10u, 11u, 12u, 13u, 14u, 15u, 16u, 17u};
++            const uint8_t one = 0x7du;
++            uint32_t nextFence = 0u;
++            auto put = [&](const void *data, size_t size)
++            {
++                return ring.put(data, size, [&] { return ++nextFence; },
++                                [](uint32_t) { return WaitResult::Signaled; }, [](uint32_t) {});
++            };
++            t.Equals(put(first.data(), first.size()), size_t{0}, "Primer payload en offset cero");
++            t.Equals(put(&one, 1u), size_t{32}, "Alinea la siguiente reserva a 32 bytes");
++            t.Equals(put(first.data(), first.size()), size_t{64}, "Mueve el payload que no cabe al chunk siguiente");
++            t.IsTrue(std::equal(first.begin(), first.end(), guarded.begin() + 8u), "Payload inicial intacto");
++            for (size_t i = 17u; i < 32u; ++i)
++                t.Equals(guarded[8u + i], uint8_t{0xa5u}, "No rellena el hueco de alineación");
++            t.Equals(guarded[8u + 32u], one, "Copia el byte útil");
++            for (size_t i = 33u; i < 48u; ++i)
++                t.Equals(guarded[8u + i], uint8_t{0u}, "Completa la reserva mínima de 16 bytes con ceros");
++            for (size_t i = 48u; i < 64u; ++i)
++                t.Equals(guarded[8u + i], uint8_t{0xa5u}, "No sobrescribe el final del chunk previo");
++            for (size_t i = 0u; i < 8u; ++i)
++            {
++                t.Equals(guarded[i], uint8_t{0xa5u}, "Guardia inicial intacta");
++                t.Equals(guarded[264u + i], uint8_t{0xa5u}, "Guardia final intacta");
++            }
++        });
++        tc.Run("Sin storage y payload sobredimensionado no copian ni crean fences", [](TestCase &t)
++        {
++            TestRing ring;
++            std::array<uint8_t, 256u> storage{};
++            storage.fill(0xa5u);
++            const auto before = storage;
++            const uint8_t data = 1u;
++            unsigned callbacks = 0u;
++            auto put = [&](size_t size)
++            {
++                return ring.put(&data, size, [&] { ++callbacks; return 1u; },
++                                [&](uint32_t) { ++callbacks; return WaitResult::Signaled; },
++                                [&](uint32_t) { ++callbacks; });
++            };
++            t.IsFalse(ring.available(), "Sin mapping no hay ring disponible");
++            t.Equals(put(1u), SIZE_MAX, "Usa fallback antes de mapear");
++            ring.setStorage(storage.data());
++            t.Equals(put(65u), SIZE_MAX, "No acepta un upload mayor que un chunk");
++            t.Equals(put((std::numeric_limits<size_t>::max)()), SIZE_MAX, "No desborda al calcular el tamaño");
++            t.Equals(storage, before, "Los rechazos conservan toda la memoria");
++            t.Equals(callbacks, 0u, "Los rechazos no consultan sincronización");
++            t.IsTrue(ring.available(), "Un payload grande no deshabilita el ring");
++            t.Equals(put(1u), size_t{0}, "Los rechazos no avanzaron el cursor");
++        });
++        tc.Run("Fuente nula reserva sin escribir y tamaño cero usa el mínimo", [](TestCase &t)
++        {
++            Fixture f;
++            const auto before = f.bytes;
++            t.Equals(f.put(nullptr, 0u), size_t{0}, "Reserva vacía de 16 bytes");
++            t.Equals(f.bytes, before, "La fuente nula conserva los bytes reservados");
++            const uint8_t data = 0x55u;
++            t.Equals(f.put(&data, 0u), size_t{16}, "La siguiente reserva empieza tras el mínimo");
++            for (size_t i = 16u; i < 32u; ++i)
++                t.Equals(f.bytes[i], uint8_t{0u}, "Fuente válida y payload cero inicializan el padding");
++        });
++        tc.Run("Un payload que termina justo en el chunk no crea fence antes de tiempo", [](TestCase &t)
++        {
++            Fixture f;
++            std::array<uint8_t, 48u> data{};
++            t.Equals(f.put(data.data(), 15u), size_t{0}, "Mínimo de 16 bytes");
++            t.Equals(f.put(data.data(), data.size()), size_t{16}, "Termina exactamente en el límite");
++            t.Equals(f.nextFence, 1u, "No crea fence mientras el upload cabe");
++            t.Equals(f.put(data.data(), 1u), size_t{64}, "El siguiente upload abre otro chunk");
++            t.Equals(f.nextFence, 2u, "Protege el chunk cerrado con una fence");
++            t.IsTrue(f.waited.empty(), "No espera un chunk todavía no usado");
++        });
++        tc.Run("Cambiar storage no rearma el ring tras un fallo", [](TestCase &t)
++        {
++            Fixture f;
++            f.fill(t);
++            f.outcome = WaitResult::Timeout;
++            const uint8_t data = 0x66u;
++            t.Equals(f.put(&data, 1u), SIZE_MAX, "Provoca el fallo de sincronización");
++            std::array<uint8_t, 256u> replacement{};
++            replacement.fill(0x37u);
++            const auto before = replacement;
++            f.ring.setStorage(nullptr); f.ring.setStorage(replacement.data());
++            t.Equals(f.put(&data, 1u), SIZE_MAX, "El fallo permanece al reasignar storage");
++            t.Equals(replacement, before, "No escribe en un mapping reasignado");
++            t.Equals(f.ring.failure(), Failure::Timeout, "Mantiene el motivo original");
++        });
++        tc.Run("Handles de tipo puntero siguen el mismo ciclo de propiedad", [](TestCase &t)
++        {
++            std::array<uint8_t, 128u> storage{};
++            std::array<uint8_t, 64u> data{};
++            std::array<uint8_t, 2u> handles{};
++            GSGpuUpload::Ring<const uint8_t *, 64u, 2u, 16u> ring;
++            ring.setStorage(storage.data());
++            size_t created = 0u;
++            std::vector<const uint8_t *> waited, deleted;
++            auto put = [&]
++            {
++                return ring.put(data.data(), data.size(),
++                                [&]() -> const uint8_t * { return &handles[created++]; },
++                                [&](const uint8_t *fence) { waited.push_back(fence); return WaitResult::Signaled; },
++                                [&](const uint8_t *fence) { deleted.push_back(fence); });
++            };
++            t.Equals(put(), size_t{0}, "Primer upload con handles puntero");
++            t.Equals(put(), size_t{64}, "Segundo chunk con fence puntero");
++            t.Equals(put(), size_t{0}, "Espera antes de volver al primer chunk");
++            t.Equals(waited, std::vector<const uint8_t *>({&handles[0]}), "Consulta la fence correcta");
++            ring.releaseFences([&](const uint8_t *fence) { deleted.push_back(fence); });
++            ring.releaseFences([&](const uint8_t *fence) { deleted.push_back(fence); });
++            t.Equals(deleted, std::vector<const uint8_t *>({&handles[0], &handles[1]}), "Libera cada puntero una vez");
++        });
++    });
++}
+diff --git a/ps2xTest/src/ps2_gpu_ring_gl_tests.cpp b/ps2xTest/src/ps2_gpu_ring_gl_tests.cpp
+new file mode 100644
+--- /dev/null
++++ b/ps2xTest/src/ps2_gpu_ring_gl_tests.cpp
+@@ -0,0 +1,230 @@
++// GOW-Port: comprobar la liberacion del ring en un share group que sigue vivo.
++// Sin assets ni getters de produccion: se observan objetos del driver OpenGL.
++#include "MiniTest.h"
++
++#include <cstdlib>
++
++#ifdef _WIN32
++#define WIN32_LEAN_AND_MEAN
++#define NOMINMAX
++#include <windows.h>
++
++#include "runtime/gs/gs_cpu_backend.h"
++#include "runtime/gs/gs_gpu_backend.h"
++#include "runtime/gs/gs_shared_present.h"
++#include "runtime/gs/gs_swizzle.h"
++#include "gs/gpu/gs_gl.h"
++
++#include <memory>
++#include <stdexcept>
++#include <string>
++#include <vector>
++
++namespace
++{
++    constexpr GSGL::GLenum kShaderStorageBufferBinding = 0x90D3;
++    constexpr GSGL::GLenum kBufferSize = 0x8764;
++    constexpr GSGL::GLenum kBufferMapped = 0x88BC;
++    using GetIntegerIndexed = void (APIENTRY *)(GSGL::GLenum, GSGL::GLuint, GSGL::GLint *);
++    using GetBufferParameter = void (APIENTRY *)(GSGL::GLenum, GSGL::GLenum, GSGL::GLint *);
++    using IsBuffer = GSGL::GLboolean (APIENTRY *)(GSGL::GLuint);
++
++    std::string readSetting(const char *name, bool &present)
++    {
++        char *value = nullptr;
++        size_t size = 0u;
++        if (_dupenv_s(&value, &size, name) != 0)
++            throw std::runtime_error(std::string("No se pudo leer ") + name);
++        const std::unique_ptr<char, decltype(&std::free)> owned(value, &std::free);
++        present = value != nullptr;
++        return present ? std::string(value) : std::string();
++    }
++
++    class SharedHost
++    {
++        GSGL::Context context;
++        HDC previousDc = wglGetCurrentDC();
++        HGLRC previousContext = wglGetCurrentContext();
++        bool hadSetting = false;
++        bool captured = false;
++        std::string oldSetting;
++
++    public:
++        SharedHost()
++        {
++            oldSetting = readSetting("PS2X_GS_DIRECT_PRESENT", hadSetting);
++        }
++
++        ~SharedHost()
++        {
++            if (captured)
++            {
++                GSSharedPresent::RestoreHostContext();
++                GSSharedPresent::ShutdownHost();
++            }
++            context.Destroy();
++            wglMakeCurrent(previousDc, previousContext);
++            _putenv_s("PS2X_GS_DIRECT_PRESENT", hadSetting ? oldSetting.c_str() : "");
++            // GOW-Port: reponer tambien la captura del host anterior si la tenia.
++            if (captured && previousContext && hadSetting && oldSetting == "1")
++            {
++                GSSharedPresent::CaptureHostContext();
++                GSSharedPresent::RestoreHostContext();
++            }
++        }
++
++        bool initialize(TestCase &t)
++        {
++            if (GSSharedPresent::Active())
++            {
++                t.Fail("El control requiere un host compartido propio, sin otro backend activo");
++                return false;
++            }
++            if (_putenv_s("PS2X_GS_DIRECT_PRESENT", "1") != 0)
++            {
++                t.Fail("No se pudo configurar la presentacion compartida del control");
++                return false;
++            }
++            std::string error;
++            if (!context.Create(error))
++            {
++                t.Fail("Contexto host OpenGL requerido: " + error);
++                return false;
++            }
++            GSSharedPresent::CaptureHostContext();
++            captured = true;
++            GSSharedPresent::RestoreHostContext();
++            if (wglGetCurrentContext() == nullptr)
++            {
++                t.Fail("No se pudo restaurar el host oculto despues de capturarlo");
++                return false;
++            }
++            return true;
++        }
++    };
++
++    GSPrimitiveBatch ringSprite()
++    {
++        GSPrimitiveBatch draw{};
++        draw.vertexCount = 2u;
++        draw.state.prim.type = GS_PRIM_SPRITE;
++        draw.state.colclamp = 1u;
++        draw.state.context.frame.fbp = 2u;
++        draw.state.context.frame.fbw = 1u;
++        draw.state.context.frame.psm = GS_PSM_CT32;
++        draw.state.context.zbuf.zbp = 68u;
++        draw.state.context.zbuf.zmask = true;
++        draw.state.context.scissor = {0u, 63u, 0u, 31u};
++        draw.state.context.test = 1ull << 17u; // ZTST=ALWAYS, como los controles GS.
++        for (GSVertex &vertex : draw.vertices)
++        {
++            vertex.r = 32u;
++            vertex.g = 64u;
++            vertex.b = 96u;
++            vertex.a = 128u;
++            vertex.q = 1.0f;
++        }
++        draw.vertices[0].x = 1.0f;
++        draw.vertices[0].y = 1.0f;
++        draw.vertices[1].x = 17.0f;
++        draw.vertices[1].y = 17.0f;
++        return draw;
++    }
++
++    void sharedRingDeleted(TestCase &t)
++    {
++        SharedHost host;
++        if (!host.initialize(t))
++            return;
++
++        std::vector<uint8_t> cpuRam(GSSwizzle::kMemorySize);
++        std::vector<uint8_t> gpuRam(GSSwizzle::kMemorySize);
++        GSCpuBackend cpu;
++        cpu.Initialize(cpuRam.data(), static_cast<uint32_t>(cpuRam.size()));
++        const GSPrimitiveBatch draw = ringSprite();
++        cpu.Submit(draw);
++        std::vector<uint8_t> expected;
++        cpu.SnapshotVram(expected);
++        t.Equals(cpu.ReadVram(GS_PSM_CT32, 2u << 5u, 1u, 5u, 7u),
++                 0x80604020u, "El control CPU dibuja color no nulo");
++
++        auto gpu = std::make_unique<GSGpuBackend>();
++        gpu->SetHardwareRasterAllowed(false);
++        gpu->Initialize(gpuRam.data(), static_cast<uint32_t>(gpuRam.size()));
++        if (!gpu->IsReady())
++        {
++            t.Fail("Backend OpenGL requerido; no se admite fallback CPU");
++            return;
++        }
++        if (!GSSharedPresent::Active())
++        {
++            t.Fail("El contexto del backend debe compartir objetos con el host vivo");
++            return;
++        }
++        const auto getIntegerIndexed = reinterpret_cast<GetIntegerIndexed>(wglGetProcAddress("glGetIntegeri_v"));
++        const auto getBufferParameter = reinterpret_cast<GetBufferParameter>(wglGetProcAddress("glGetBufferParameteriv"));
++        const auto isBuffer = reinterpret_cast<IsBuffer>(wglGetProcAddress("glIsBuffer"));
++        if (!getIntegerIndexed || !getBufferParameter || !isBuffer)
++        {
++            t.Fail("glGetIntegeri_v y glIsBuffer requeridos para observar objetos reales");
++            return;
++        }
++
++        gpu->Submit(draw);
++        gpu->Flush();
++        t.Equals(gpu->GetStats().prims, uint64_t{1}, "OpenGL procesa el sprite real");
++        GSGL::GLint ringId = 0;
++        getIntegerIndexed(kShaderStorageBufferBinding, 3u, &ringId);
++        if (ringId <= 0 || !isBuffer(static_cast<GSGL::GLuint>(ringId)))
++        {
++            t.Fail("El upload de primitivas debe enlazar un buffer OpenGL valido");
++            return;
++        }
++        // GOW-Port: binding 3 tambien tiene fallback; exigir el ring persistente real.
++        auto bindBuffer = reinterpret_cast<void (APIENTRY *)(GSGL::GLenum, GSGL::GLuint)>(wglGetProcAddress("glBindBuffer"));
++        if (!bindBuffer)
++        {
++            t.Fail("glBindBuffer requerido para comprobar el ring persistente");
++            return;
++        }
++        bindBuffer(GSGL::kShaderStorageBuffer, static_cast<GSGL::GLuint>(ringId));
++        GSGL::GLint size = 0, mapped = 0;
++        getBufferParameter(GSGL::kShaderStorageBuffer, kBufferSize, &size);
++        getBufferParameter(GSGL::kShaderStorageBuffer, kBufferMapped, &mapped);
++        if (size != 64 * 1024 * 1024 || !mapped)
++        {
++            t.Fail("El control requiere el ring mapeado de 64 MiB, no el buffer fallback");
++            return;
++        }
++        // GOW-Port: descartar una sonda vacia: el upload debe producir VRAM exacta.
++        std::vector<uint8_t> actual;
++        gpu->SnapshotVram(actual);
++        t.IsTrue(actual == expected, "Los 4 MiB de VRAM coinciden exactamente con CPU");
++
++        // El host queda vivo: borrar solo el contexto del backend no libera el ring.
++        gpu.reset();
++        GSSharedPresent::RestoreHostContext();
++        if (!wglGetCurrentContext())
++        {
++            t.Fail("Host requerido despues de destruir el backend");
++            return;
++        }
++        t.IsFalse(isBuffer(static_cast<GSGL::GLuint>(ringId)) != 0u,
++                  "El destructor elimina el ring de uploads aunque siga vivo el share group");
++    }
++}
++#endif
++
++void runGpuRingGlTests()
++{
++#ifdef _WIN32
++    bool present = false;
++    const std::string setting = readSetting("GOW_GS_GPU_TEST", present);
++    if (!present || setting != "1")
++        return;
++    MiniTest::Case("GS GPU ring compartido", [](TestCase &suite)
++    {
++        suite.Run("Destruir backend elimina el ring sin cerrar el host", sharedRingDeleted);
++    });
++#endif
++}
+diff --git a/ps2xTest/src/ps2_gpu_streaming_gl_tests.cpp b/ps2xTest/src/ps2_gpu_streaming_gl_tests.cpp
+new file mode 100644
+--- /dev/null
++++ b/ps2xTest/src/ps2_gpu_streaming_gl_tests.cpp
+@@ -0,0 +1,242 @@
++// GOW-Port: fallback real por tamaño y capacidad del buffer de entrada/salida.
++// API pública y píxeles procedurales; sin hooks del driver ni getters del backend.
++#include "MiniTest.h"
++
++#include <cstdlib>
++
++#ifdef _WIN32
++#ifndef WIN32_LEAN_AND_MEAN
++#define WIN32_LEAN_AND_MEAN
++#endif
++#ifndef NOMINMAX
++#define NOMINMAX
++#endif
++#include <windows.h>
++
++#include "runtime/gs/gs_cpu_backend.h"
++#include "runtime/gs/gs_gpu_backend.h"
++#include "runtime/gs/gs_shared_present.h"
++#include "runtime/gs/gs_swizzle.h"
++#include "gs/gpu/gs_gl.h"
++
++#include <algorithm>
++#include <array>
++#include <cstring>
++#include <memory>
++#include <stdexcept>
++#include <string>
++#include <vector>
++
++namespace
++{
++    constexpr GSGL::GLenum kStorageBinding = 0x90D3;
++    constexpr GSGL::GLenum kBufferSize = 0x8764;
++    constexpr uint32_t kWidth = 2048u;
++    constexpr uint32_t kReadHeight = 4095u;
++    constexpr uint32_t kUploadHeight = 2049u;
++    constexpr uint32_t kReadBytes = kWidth * kReadHeight * 4u;
++    constexpr uint32_t kUploadBytes = kWidth * kUploadHeight * 4u;
++    constexpr uint32_t kBeforeColor = 0x40201080u;
++    constexpr uint32_t kAfterColor = 0x90d06030u;
++
++    using GetIntegerIndexed = void (APIENTRY *)(GSGL::GLenum, GSGL::GLuint, GSGL::GLint *);
++    using GetBufferParameter = void (APIENTRY *)(GSGL::GLenum, GSGL::GLenum, GSGL::GLint *);
++    using BindBuffer = void (APIENTRY *)(GSGL::GLenum, GSGL::GLuint);
++
++    class DirectPresentSetting
++    {
++        bool present = false;
++        std::string previous;
++    public:
++        DirectPresentSetting()
++        {
++            char *value = nullptr;
++            size_t size = 0u;
++            if (_dupenv_s(&value, &size, "PS2X_GS_DIRECT_PRESENT") != 0)
++                throw std::runtime_error("No se pudo leer PS2X_GS_DIRECT_PRESENT");
++            const std::unique_ptr<char, decltype(&std::free)> owned(value, &std::free);
++            present = value != nullptr;
++            if (present)
++                previous = value;
++            if (_putenv_s("PS2X_GS_DIRECT_PRESENT", "0") != 0)
++                throw std::runtime_error("No se pudo seleccionar presentación por RAM");
++        }
++        ~DirectPresentSetting()
++        {
++            _putenv_s("PS2X_GS_DIRECT_PRESENT", present ? previous.c_str() : "");
++        }
++    };
++
++    struct BufferObservation
++    {
++        GetIntegerIndexed indexed = reinterpret_cast<GetIntegerIndexed>(wglGetProcAddress("glGetIntegeri_v"));
++        GetBufferParameter parameter = reinterpret_cast<GetBufferParameter>(wglGetProcAddress("glGetBufferParameteriv"));
++        BindBuffer bind = reinterpret_cast<BindBuffer>(wglGetProcAddress("glBindBuffer"));
++
++        bool ready() const { return indexed && parameter && bind; }
++        GSGL::GLint size(GSGL::GLint &id) const
++        {
++            indexed(kStorageBinding, 7u, &id);
++            if (id <= 0)
++                return -1;
++            bind(GSGL::kShaderStorageBuffer, static_cast<GSGL::GLuint>(id));
++            GSGL::GLint bytes = 0;
++            parameter(GSGL::kShaderStorageBuffer, kBufferSize, &bytes);
++            return bytes;
++        }
++    };
++
++    GSTransferCommand readCommand()
++    {
++        GSTransferCommand cmd{};
++        cmd.direction = 1u;
++        cmd.bitbltbuf.spsm = GS_PSM_CT32;
++        cmd.bitbltbuf.sbw = 32u;
++        cmd.trxreg.rrw = static_cast<uint16_t>(kWidth);
++        cmd.trxreg.rrh = static_cast<uint16_t>(kReadHeight);
++        return cmd;
++    }
++
++    GSTransferCommand uploadCommand()
++    {
++        GSTransferCommand cmd{};
++        cmd.direction = 0u;
++        cmd.bitbltbuf.dpsm = GS_PSM_CT32;
++        cmd.bitbltbuf.dbw = 32u;
++        cmd.trxreg.rrw = static_cast<uint16_t>(kWidth);
++        cmd.trxreg.rrh = static_cast<uint16_t>(kUploadHeight);
++        return cmd;
++    }
++
++    void compareReadback(TestCase &t, GSCpuBackend &cpu, GSGpuBackend &gpu, bool changed)
++    {
++        t.Equals(cpu.GetTransferSnapshot().localToHostPendingBytes, uint64_t{kReadBytes}, "CPU prepara toda la lectura grande");
++        t.Equals(gpu.GetTransferSnapshot().localToHostPendingBytes, uint64_t{kReadBytes}, "OpenGL prepara toda la lectura grande");
++        std::array<uint8_t, 65536u> expected{}, actual{};
++        std::array<uint8_t, 4u> beforePixel{}, expectedPixel{};
++        const uint32_t color = changed ? kAfterColor : kBeforeColor;
++        std::memcpy(beforePixel.data(), &kBeforeColor, sizeof(kBeforeColor));
++        std::memcpy(expectedPixel.data(), &color, sizeof(color));
++        uint32_t consumed = 0u;
++        uint64_t differentBytes = 0u;
++        bool reportedMismatch = false;
++        while (consumed < kReadBytes)
++        {
++            const uint32_t request = std::min<uint32_t>(static_cast<uint32_t>(expected.size()), kReadBytes - consumed);
++            const uint32_t expectedCount = cpu.ConsumeLocalToHostBytes(expected.data(), request);
++            const uint32_t actualCount = gpu.ConsumeLocalToHostBytes(actual.data(), request);
++            if (expectedCount != request || actualCount != request)
++            {
++                t.Fail("La lectura grande terminó antes de recuperar todos los bytes");
++                break;
++            }
++            if (!reportedMismatch && !std::equal(expected.begin(), expected.begin() + request, actual.begin()))
++            {
++                t.Fail("OpenGL difiere del CPU en la lectura grande, desde byte " + std::to_string(consumed));
++                reportedMismatch = true;
++            }
++            for (uint32_t i = 0u; i < request; ++i)
++            {
++                if (actual[i] != beforePixel[(consumed + i) & 3u])
++                    ++differentBytes;
++                if (!reportedMismatch && expected[i] != expectedPixel[(consumed + i) & 3u])
++                {
++                    t.Fail("El control CPU no contiene el color procedural esperado");
++                    reportedMismatch = true;
++                }
++            }
++            consumed += request;
++        }
++        t.Equals(consumed, kReadBytes, "Se comparan todos los bytes, no una muestra de la lectura");
++        t.Equals(differentBytes, changed ? uint64_t{kReadBytes} : uint64_t{0},
++                 "La segunda lectura debe cambiar cada byte respecto al color anterior");
++        t.Equals(cpu.GetTransferSnapshot().localToHostPendingBytes, uint64_t{0}, "Se vacía la lectura CPU");
++        t.Equals(gpu.GetTransferSnapshot().localToHostPendingBytes, uint64_t{0}, "Se vacía la lectura OpenGL");
++    }
++
++    void streamingCapacity(TestCase &t)
++    {
++        DirectPresentSetting setting;
++        if (GSSharedPresent::Active())
++        {
++            t.Fail("El control requiere un contexto propio sin otro host compartido activo");
++            return;
++        }
++        std::vector<uint8_t> cpuRam(GSSwizzle::kMemorySize), gpuRam(GSSwizzle::kMemorySize);
++        for (size_t offset = 0u; offset < cpuRam.size(); offset += sizeof(kBeforeColor))
++            std::memcpy(cpuRam.data() + offset, &kBeforeColor, sizeof(kBeforeColor));
++        gpuRam = cpuRam;
++        GSCpuBackend cpu;
++        cpu.Initialize(cpuRam.data(), static_cast<uint32_t>(cpuRam.size()));
++        GSGpuBackend gpu;
++        gpu.SetHardwareRasterAllowed(false);
++        gpu.Initialize(gpuRam.data(), static_cast<uint32_t>(gpuRam.size()));
++        if (!gpu.IsReady())
++        {
++            t.Fail("OpenGL efectivo requerido; no se permite fallback CPU");
++            return;
++        }
++        BufferObservation observed;
++        if (!observed.ready())
++        {
++            t.Fail("Funciones OpenGL requeridas para acreditar la capacidad real del buffer");
++            return;
++        }
++
++        const GSTransferCommand read = readCommand();
++        cpu.BeginTransfer(read); gpu.BeginTransfer(read);
++        GSGL::GLint dataId = 0;
++        const GSGL::GLint initialSize = observed.size(dataId);
++        t.IsTrue(initialSize >= static_cast<GSGL::GLint>(kReadBytes), "La primera lectura reserva casi 32 MiB efectivos");
++        compareReadback(t, cpu, gpu, false);
++
++        // GOW-Port: una entrada mayor que el chunk de 16 MiB obliga al fallback real.
++        // Los píxeles repetidos hacen idempotentes los aliases de la VRAM de 4 MiB.
++        std::vector<uint32_t> payload(kUploadBytes / 4u, kAfterColor);
++        const GSTransferCommand upload = uploadCommand();
++        cpu.BeginTransfer(upload); gpu.BeginTransfer(upload);
++        cpu.UploadImage(reinterpret_cast<const uint8_t *>(payload.data()), kUploadBytes);
++        gpu.UploadImage(reinterpret_cast<const uint8_t *>(payload.data()), kUploadBytes);
++        gpu.Flush();
++        GSGL::GLint uploadId = 0;
++        const GSGL::GLint uploadSize = observed.size(uploadId);
++        t.Equals(uploadId, dataId, "La entrada oversized usa el mismo buffer de entrada/salida");
++        t.IsTrue(uploadSize > 16 * 1024 * 1024 && uploadSize < initialSize,
++                 "Streaming reduce de verdad el buffer; no pasó por el ring ni conservó el tamaño anterior");
++        std::vector<uint8_t> expectedVram, actualVram;
++        cpu.SnapshotVram(expectedVram); gpu.SnapshotVram(actualVram);
++        t.IsTrue(expectedVram == actualVram, "Upload oversized produce 4 MiB exactamente iguales al CPU");
++        t.IsTrue(expectedVram != gpuRam, "El upload cambia la VRAM inicial");
++
++        cpu.BeginTransfer(read); gpu.BeginTransfer(read);
++        GSGL::GLint finalId = 0;
++        const GSGL::GLint finalSize = observed.size(finalId);
++        t.Equals(finalId, dataId, "La segunda lectura usa el mismo objeto OpenGL");
++        t.IsTrue(finalSize >= static_cast<GSGL::GLint>(kReadBytes) && finalSize > uploadSize,
++                 "La lectura posterior realoca después de achicar el buffer en streaming");
++        compareReadback(t, cpu, gpu, true);
++    }
++}
++#endif
++
++void runGpuStreamingGlTests()
++{
++#ifdef _WIN32
++    const char *setting = std::getenv("GOW_GS_GPU_TEST");
++    if (!setting || *setting != '1')
++        return;
++    MiniTest::Case("GS GPU streaming capacidad real", [](TestCase &suite)
++    {
++        suite.Run("Entrada oversized no deja obsoleta la capacidad de la siguiente lectura", streamingCapacity);
++    });
++#endif
++}
++
++// GOW-Port: sonda aislada de regresión; la suite normal registra la función anterior.
++#ifdef GOW_STREAMING_PROBE_MAIN
++int main()
++{
++    runGpuStreamingGlTests();
++    return MiniTest::Run();
++}
++#endif
