@@ -78,9 +78,12 @@ class ReferenceTests(unittest.TestCase):
     def test_identity_must_match_edition(self):
         class OtherGame(reference.Pine):
             def status(self): return 1
-            def string(self, command): return "SCES-12345" if command == 12 else "d6385328"
-        with self.assertRaisesRegex(ValueError, "Edición"):
-            OtherGame(None).identity()
+            def string(self, command): return self.serial if command == 12 else self.crc
+        for serial, crc in [("SCES-12345", "d6385328"), ("SCUS-97399", "00000000")]:
+            pine = OtherGame(None)
+            pine.serial, pine.crc = serial, crc
+            with self.assertRaisesRegex(ValueError, "Edición"):
+                pine.identity()
 
     def test_string_length_and_terminator(self):
         for payload in [b"", struct.pack("<I", 3) + b"ab",

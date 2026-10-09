@@ -2818,6 +2818,14 @@ del port: `(1048.109985, 727.026001, 1007.25)`. Frente a una de esas muestras,
 Esto acota la hipótesis de un giro de 180 grados de esa raíz, pero no verifica
 la paleta completa, el modelo visible seleccionado ni el cálculo VU1/GS.
 
+Al separar la vista principal de las vistas vacías, las 32 muestras nativas
+en estado 4 contienen ocho matrices mundo distintas: la posición pasa de
+`(1047.542725, 761.248352, 1017.296326)` a
+`(1047.589844, 754.348328, 1031.195313)`. La cámara no está totalmente congelada
+en ese control. PCSX2 se pausó más adelante en el recorrido, en
+`(1047.635132, 749.300110, 1041.421509)`; restar esas posiciones como si fueran
+del mismo instante produciría una falsa discrepancia.
+
 Siguiente paso: comparar las articulaciones no raíz y el padre de cámara
 con una secuencia alineada. La referencia y su captura permanecen fuera de
 Git. No se cambia el renderer ni se afirma una mejora de FPS con este control.
