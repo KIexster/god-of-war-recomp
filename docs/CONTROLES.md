@@ -417,5 +417,14 @@ Los controles sintéticos cubren bits NaN sin operar floats, memoria intacta,
 alias, count 0/3/20, límite de ocho matrices, punteros nulos, lectura exacta
 de 64 bytes y cruce de segmento. El lector C++ sobre la RAM privada de PCSX2
 obtiene las ocho matrices de los modelos 125/103 y la misma matriz por bits
-en viewWorld, clientWorld y parentJointWorld. La compilación completa y la
-ejecución nativa de este cambio se registrarán en ESTADO al finalizar.
+en viewWorld, clientWorld y parentJointWorld. Una mutación del paso de la
+paleta de 64 a 32 bytes hace fallar el control de modelos.
+
+Compilación completa Windows con 79 parches correcta. El control nativo de
+95,612 segundos registra 656 matrices articuladas finitas y no totalmente
+nulas. Las 32 muestras válidas de cámara coinciden por bits en viewWorld,
+clientWorld y parentJointWorld. En intro hay 32 muestras por cada índice
+0..7 de ambos modelos articulados; las articulaciones 3..7 del modelo de 125
+cambian mientras su raíz permanece constante. El control acaba por límite
+deliberado, sin registros de estado 11; no mide FPS ni valida la paleta completa.
+Identidad del binario, comparación y límites: ESTADO.

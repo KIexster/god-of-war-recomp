@@ -35,6 +35,7 @@ static bool test() {
     constexpr uint32_t parent=0x900,skeleton=0xb00,palette=0xd00;
     put(ram,client+0x18,parent); put(ram,parent+0x104,skeleton);
     put(ram,skeleton+0x8c,palette);
+    put(ram,skeleton+0x60,uint32_t(0xf00)); // definición legible, count de skin=0
     put<uint64_t>(ram,parent+0x68,0x987654321abcdef0ull);
     put<uint64_t>(ram,skeleton+0x40,0xf0123456789abcdeull);
     for(size_t i=0;i<16;++i) put<uint32_t>(ram,palette+128+i*4,uint32_t(0x7fc00100u+i));
