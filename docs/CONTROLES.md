@@ -203,6 +203,19 @@ Tras integrar también `ps2recomp-heap.patch`, el conjunto pasa 443/443 pruebas.
 
 ### Captura de comandos GS
 
+`GOW_CAMERA_DIAG=1` registra las matrices de la vista después del retorno completo
+de `renView::SetupPipeline` (`0x23B5E0`, SCUS-97399). No sustituye sus cálculos.
+En estados 4 (intro) y 11 (partida), observa hasta 16 pares vista/estado, con 32
+muestras por par separadas por al menos dos segundos del host. `elapsed` cuenta
+desde la primera observación de intro/partida. Registra vista activa, cámara,
+articulación, marcas de actualización y los bits de mundo, inversa, proyección
+y producto combinado; compara también los buffers del cliente.
+`stamp` corresponde a `0x29BDF8`; no es un contador de cuadros ni tiempo simulado.
+Las direcciones se validan contra la RAM y los floats se copian como bits, sin normalizarlos.
+La ausencia o invalidez de una cámara aparece explícitamente en `[gow-camera]`.
+Este diagnóstico no acredita equivalencia con PCSX2 y se limpia/restaura al
+ejecutar el perfil de rendimiento. Sus registros quedan en archivos locales.
+
 Para elegir un tramo de comandos del GS, `GOW_GS_REPLAY_TRACE` indica el archivo
 local de salida. `GOW_GS_REPLAY_AFTER` fija la espera desde la instalación del
 backend (0..3600 segundos, 150 por defecto); `GOW_GS_REPLAY_SECONDS` fija la

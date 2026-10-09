@@ -38,6 +38,10 @@ jobs:
         run: |
           g++ -std=c++20 -Wall -Wextra -Werror tests/pad2_packet_test.cpp -o pad2_packet_test
           ./pad2_packet_test
+      - name: Probar la lectura de matrices de camara sin el juego
+        run: |
+          g++ -std=c++20 -Wall -Wextra -Werror tests/camera_probe_test.cpp -o camera_probe_test
+          ./camera_probe_test
 
   runtime:
     name: Parches y suite del runtime (PS2Recomp)

@@ -2661,3 +2661,57 @@ vigilancia del perfil correctos. Configuración: cero errores y cuatro avisos
 preexistentes; sintaxis PowerShell: cero errores. Volcados e imágenes quedan en
 carpetas privadas excluidas de Git. Siguiente paso: aislar los dibujos de Kratos
 antes de buscar una corrección del framebuffer o de la cámara.
+### 2026-10-09 — Observación de las cámaras antes de dibujar la escena
+
+La lectura privada del framebuffer 0 del tramo de fuego, antes del primer sprite
+que lo copia al 208 (registro 10720 de la captura 24 s), ya muestra el brazo/espalda
+con el encuadre incorrecto. Los 16 sprites siguientes copian 512 columnas en franjas
+de 32, sin mezcla alpha. En las 21 presentaciones analizadas, los registros completos
+DISPFB/DISPLAY permanecen constantes. La imagen equivocada precede a esa copia final.
+
+Se añade `GOW_CAMERA_DIAG=1`, desactivado por defecto, en el retorno completo de
+`renView::SetupPipeline` (`0x23B5E0`). El original siempre se ejecuta y las
+reanudaciones de checkpoints no se interpretan como retornos. La sonda observa
+matrices mundo/inversa/proyección/combinada del `renView` y las del cliente de
+cámara, copiando sus bits sin operar floats en el juego. Los offsets proceden del
+MIPS retail de `0x1697F0`: vista+0/0x40/0x100/0x240 y cliente+0x20 o +0x70 / +0xB0.
+La lista se toma de vista+0x360, cliente en nodo+8; el sentinel se compara como
+la instrucción `beq`, con la dirección completa. Las lecturas validan rango de RAM.
+
+La marca `0x29BDF8` se incrementa al actualizar jerarquías; **no es un contador de
+cuadros**. Una primera sonda limitada por esa marca consumía sus muestras demasiado
+pronto. La versión final limita cada par vista/estado a 32 observaciones separadas
+por dos segundos del host, con un máximo de 16 pares. Registra también vista activa,
+identificador de vista y marcas de actualización de mundo/inversa. Las vistas sin
+cámara se distinguen de las que contienen nodos o clientes inválidos.
+
+Control funcional final sobre `c035b3b`, runtime 77, SHA-256 del ejecutable
+`01046ba112c887041fef06acea9b5784bed7b3ff4c1ba175729955f3e78f64fd`:
+95 segundos, OpenGL y presentación RAM, FINISH síncrono explícito, sin fast boot,
+FMV omitido y captura GS desactivada. Hay 148 muestras: 86 en intro y 62 en partida,
+nueve pares vista/estado. Las 42 muestras con cliente de cámara contienen matrices
+finitas; sus matrices mundo/inversa coinciden bit a bit con las de la vista.
+La mayor desviación de longitud de sus ejes respecto a uno es `2.22e-7`; el mayor
+residuo absoluto del producto mundo×inversa respecto a identidad es `2.58e-4`.
+Todas las matrices registradas, incluidas las vistas sin cámara, son finitas.
+No se detectan NaN ni la escala estirada anterior en estas observaciones.
+
+Esto no demuestra que se seleccione la cámara correcta ni que las poses, la
+jerarquía de huesos o el rasterizado sean equivalentes a PCSX2. Los tres savestates
+locales de PCSX2 son de la partida; sus capturas no corresponden a la transición.
+La próxima comparación requiere aislar la pose de Kratos y la vista usada en el
+mismo instante de la intro. El fallo visual continúa abierto.
+
+Validación: `camera_probe_test.cpp` con MSVC `/O2 /W4 /WX` pasa copia exacta de bits
+(incluidos NaN sintéticos), selección local/articulada, alias, sentinel, ausencia,
+memoria truncada, límites exactos y memoria intacta. La CI ejecuta el mismo control
+con GCC. Build rápida del juego correcta; vigilancia del perfil correcta, incluyendo
+limpieza/restauración de `GOW_CAMERA_DIAG`; configuración con cero errores y cuatro
+avisos preexistentes; sintaxis PowerShell sin errores. Registros, imágenes y sondas
+privadas permanecen excluidos de Git; no se modifica EE, FPU, IOP ni VU1.
+
+Dato de rendimiento transmitido por el usuario: Claude comunica dos rondas
+alternadas de `GOW_GS_FINISH_ASINCRONO=1` junto con `PS2X_GS_DIRECT_PRESENT=1`, de
+7.3–7.4 a 11.1–11.4 cuadros/s. Esa combinación queda como candidata para una
+comparación propia de los cuatro modos tras resolver la transición. No se valida
+aquí esa cifra ni se cambia ningún valor predeterminado.
