@@ -79,8 +79,20 @@ solo CRLF y el include del runner añadido por el script. Los dos jobs de la
 CI de la PR #30 pasan.
 
 La base incorporó después los cambios publicados por Opus en `ca69e9b`.
-Se repite la compilación oficial con ese generador VU1 para verificar la
-versión conjunta antes de terminar la PR. La prueba funcional del juego
-queda pendiente de revisar; un primer intento terminó a los 40,24 s,
-todavía en las pantallas iniciales. No se cuenta como prueba de partida.
-No se atribuye a este parche una mejora de FPS.
+La nueva compilación oficial de la versión conjunta (`2c8a8c1`) termina con
+código 0, los mismos 69 parches y 501 micromemorias. El ejecutable tiene
+70.457.856 bytes, SHA256
+`6EFA10AF433560B7884AE3363BE856B0BEFA0AFE5F1C16E48C990CE341D0EB59`.
+Vuelven a pasar **611/611 pruebas**, incluidas las **26 OpenGL**, y las
+97 fuentes auditadas coinciden con la cadena.
+
+Un primer intento funcional terminó a los 40,24 s, todavía en las pantallas
+iniciales; no se cuenta como prueba de partida. La repetición de `e1a9270`
+duró **240,25 s** y llegó a estado 11, `pending=0`, `levelReady=1`.
+Las capturas muestran a Kratos, enemigos, barco, lluvia y HUD, sin polígonos
+estirados visibles en esa escena. El control de la versión conjunta también
+alcanza ese estado y sus capturas revisadas muestran a Kratos sobre el barco.
+No aparecen avisos de degradación del ring ni informes parciales del profiler.
+Se usan tarjetas privadas y FMV omitido; el cierre al terminar el plazo es
+forzado y no certifica completar el juego. No se atribuye a este parche una
+mejora de FPS.

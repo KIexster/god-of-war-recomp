@@ -2436,3 +2436,20 @@ La revisión descubre además que el fallback streaming podía encoger
 regresión. La compilación oficial del parche final queda pendiente de
 ese control. No se altera EE/FPU/IOP ni el trabajo de Opus.
 Detalles: [protección del ring de uploads](RENDER_UPLOAD_RING.md).
+
+### Ring OpenGL validado con la versión conjunta (9 de octubre)
+
+La PR #30 incorpora la base `ca69e9b`, con los nuevos saltos entre bloques
+compilados de VU1 de Opus. La compilación oficial de `2c8a8c1` termina con
+código 0, 69 parches y 501 micromemorias locales. Pasan 611/611 controles
+nativos, incluidos 26 OpenGL reales, y las 97 fuentes auditadas coinciden
+con la cadena. Los controles negativos detectan la sobrescritura por timeout,
+la fuga del ring con host vivo y la capacidad obsoleta del fallback.
+
+La prueba funcional previa de 240,25 s llega a estado 11 con nivel listo;
+sus capturas muestran a Kratos, enemigos, barco, lluvia y HUD sin polígonos
+estirados visibles. La versión conjunta también llega a ese estado y muestra
+a Kratos sobre el barco. Se omite FMV y se usan tarjetas privadas. No hay
+avisos de degradación del ring ni informes GPU parciales. No se certifican
+FPS ni una partida completa; la presentación compartida del juego sigue
+preparándose en un checkout separado y no forma parte de esta PR.
