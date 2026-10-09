@@ -1,0 +1,16 @@
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+index 1931a65..66279e0 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+@@ -469,6 +469,11 @@ VU1_STEP_INLINE void VU1Interpreter::upperT()
+                     ok = _mm_and_si128(ok, _mm_cmpgt_epi32(er, _mm_sub_epi32(ep, _mm_set1_epi32(21))));
+                     const __m128i epOk = _mm_and_si128(_mm_cmpgt_epi32(ep, _mm_set1_epi32(1)), _mm_cmplt_epi32(ep, _mm_set1_epi32(0xFE)));
+                     ok = _mm_and_si128(ok, _mm_or_si128(epOk, opZero));
++                    // GOW-Port: con un factor cero, ACC ∓ 0 es exacto en float (ACC es cero o normal), así que el
++                    // carril vale también con resultado cero o en los extremos; sus flags son Z (si es cero) y S.
++                    ok = _mm_or_si128(ok, opZero);
++                    zeroLanes = _mm_movemask_ps(_mm_castsi128_ps(_mm_and_si128(opZero,
++                        _mm_cmpeq_epi32(_mm_and_si128(_mm_castps_si128(r), absMask), _mm_setzero_si128())))) & lanes;
+                     zeroProduct = _mm_movemask_ps(_mm_castsi128_ps(opZero)) & lanes;
+                 }
+                 else

@@ -607,3 +607,16 @@ bloque baja a ~6.600 instrucciones y `repetir_c.exe` de 55 a 36 MB.
 Huellas de VU1 (compilado e intérprete) idénticas en `vif_pcsx2_inicio2` y `vif_port_480s`;
 `probar_vu1_fmac.cmd`, `probar_vu1_compilada.cmd` y suite 573/573. Reproducción alternando ejecutables
 (6 rondas de 150 pasadas): mediana 92,7 → 90,8 ms por cuadro.
+
+### MADD/MSUB con un factor cero en la ruta SSE (9 de octubre)
+
+Con la ruta escalar fuera de línea, el perfil mostraba qué FMAC la usaban a menudo: MADDA.y y MADD.w (por
+ejemplo `ACC + VF29 × VF0.w`) con carriles donde un factor es cero, sobre todo cuando además el resultado es
+cero. La comprobación SSE de MADD/MSUB/OPMSUB exigía un resultado con exponente 2..0xFD, así que esos carriles
+rehacían toda la instrucción por la ruta escalar. `ps2recomp-vu1-simd-zero.patch` acepta en la ruta SSE los
+carriles con un factor cero (el mismo razonamiento que en la escalar: ACC ∓ 0 es exacto en float y ACC es cero
+o normal) y les da Z si el resultado es cero, además de S.
+
+Huellas de VU1 (compilado e intérprete) idénticas en `vif_pcsx2_inicio2` y `vif_port_480s`;
+`probar_vu1_fmac.cmd` (valores límite con ±0) y `probar_vu1_compilada.cmd` en verde. Reproducción alternando
+ejecutables (6 rondas de 150 pasadas): mediana 90,3 → 82,7 ms por cuadro.

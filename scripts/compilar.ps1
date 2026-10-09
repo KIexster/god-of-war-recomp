@@ -85,6 +85,7 @@ $gsUploadRingPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-upload-ring.patch
 $vu1ZeroFactorPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-zero-factor.patch'
 $vu1DirectStorePatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-direct-store.patch'
 $vu1ColdScalarPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-cold-scalar.patch'
+$vu1SimdZeroPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-simd-zero.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -194,6 +195,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $gsUploadRingPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1ZeroFactorPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1DirectStorePatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1ColdScalarPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1SimdZeroPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
