@@ -57,6 +57,13 @@ Este repositório contém tudo o que é específico de God of War:
 
 Detalhamento por biblioteca e por componente: [`docs/estado/detalle.pt-BR.md`](docs/estado/detalle.pt-BR.md). Regenerado a partir de `docs/estado/datos.toml` por `tools/estado/generar.py` (e automaticamente ao enviar para `main`).
 
+Build nativo para Windows (renderizador OpenGL) em uma RX 5700 XT, por enquanto a cerca de 10–13 quadros por segundo:
+
+<p align="center">
+  <img src="docs/capturas/menu.jpg" alt="Menu principal" width="49%">
+  <img src="docs/capturas/partida.jpg" alt="Jogo" width="49%">
+</p>
+
 | Marco | Status |
 |---|:---:|
 | Extração das duas camadas do DVD-9 | ✅ |

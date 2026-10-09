@@ -57,6 +57,13 @@ This repository holds everything that is specific to God of War:
 
 Per-library and per-component breakdown: [`docs/estado/detalle.en.md`](docs/estado/detalle.en.md). Regenerated from `docs/estado/datos.toml` by `tools/estado/generar.py` (and automatically on push to `main`).
 
+Native Windows build (OpenGL renderer) on an RX 5700 XT, currently at about 10–13 frames per second:
+
+<p align="center">
+  <img src="docs/capturas/menu.jpg" alt="Main menu" width="49%">
+  <img src="docs/capturas/partida.jpg" alt="Gameplay" width="49%">
+</p>
+
 | Milestone | Status |
 |---|:---:|
 | Extracting both layers of the DVD-9 | ✅ |
