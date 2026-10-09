@@ -371,3 +371,29 @@ muestras en intro y 1.016 matrices finitas en total; sin modelos se obtienen
 128 muestras de cámara en intro. Ninguno registra estado 11. Terminación por
 límite controlado; no se verifican aquí partida, equivalencia visual ni FPS.
 Una mutación que comparte cupos entre menú e intro hace fallar la prueba.
+
+## Referencia EE local de PCSX2 (2026-10-09)
+
+En un perfil privado de PCSX2, activar PINE en un puerto libre (control local:
+28012), arrancar la edición SCUS-97399 y pausar la escena deseada. La herramienta
+usa únicamente identidad, estado y Read32 del
+[protocolo oficial PINE](https://github.com/PCSX2/pcsx2/blob/master/pcsx2/PINE.cpp).
+
+```powershell
+python tools/render/pcsx2_ee_reference.py --port 28012 --output logs/pcsx2_intro_01
+python -m unittest discover -s tests -p test_pcsx2_ee_reference.py
+```
+
+El directorio de salida debe ser nuevo. Dentro del repositorio solo se acepta
+`logs/`; no subir `eeMemory.bin` ni los savestates. Se rechaza el juego sin
+pausar, una edición distinta y una marca de jerarquía/identidad que cambie
+durante la lectura. La pausa y esa marca estable no equivalen a sincronización
+con un cuadro del port. `active_view=0x0` entre cuadros es una observación
+válida, no autorización para leer una supuesta vista en dirección cero.
+
+Nueve controles sin juego comprueban fragmentación TCP, Read32 y dirección,
+rangos y alineación antes de enviar, respuestas inválidas/truncadas, fallo o
+desconexión, pausa, edición, cadenas con longitud/terminador, estabilidad de
+captura y protección de directorios rastreados. La CI los ejecuta. El control
+real de 32 MiB en la intro pasó y coincidió con una lectura independiente;
+identidad, hash, configuración y límites están registrados en ESTADO.

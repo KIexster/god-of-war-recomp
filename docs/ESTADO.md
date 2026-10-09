@@ -2780,3 +2780,44 @@ Siguiente comparación: identificar el modelo y las articulaciones del personaje
 y relacionarlas con el cliente de cámara durante el mismo instante de PCSX2.
 La sonda no modifica renderizado ni arregla el encuadre; registros y proyecto
 Ghidra permanecen privados.
+
+## Referencia pausada de PCSX2 para la intro (2026-10-09)
+
+Referencia nueva con la ISO local `E:\gowport\God of War.iso`, PCSX2
+`v2.9.114`, serial `SCUS-97399`, CRC `D6385328`. Se arrancó desde menú,
+se seleccionó New Game / Hero y se pausó la intro con Kratos de frente,
+ya separado del primerísimo plano. Vulkan, resolución interna 3x,
+parches incorporados del emulador activos y cheats/widescreen desactivados.
+Este cuadro no está sincronizado con los cuadros anteriores del port:
+no permite una comparación de píxeles ni de toda la animación.
+
+Perfil y dos savestates nuevos privados bajo
+`E:\gowgpuprof\pcsx2_reference\PCSX2`; no se usaron las ranuras del usuario.
+`-datapath` añade `PCSX2` al directorio suministrado en esta instalación.
+La instalación original tiene compatibilidad RUNASADMIN y las dos instancias
+ocultas iniciales no pudieron cerrarse desde el proceso sin privilegios.
+La referencia se obtuvo con una copia local del PCSX2 ya instalado, sin
+modificar esa compatibilidad ni los ajustes originales.
+
+`tools/render/pcsx2_ee_reference.py` lee EE por PINE local, comprueba pausa,
+serial/CRC, longitudes de respuesta y estabilidad de la marca de jerarquía.
+No escribe memoria ni carga estados. Se capturaron 32 MiB en estado 4,
+marca 32537, SHA-256
+`3219f816196c231b37ff6490f9b477fd7c6184b6a43044c499cb074958aa94c8`.
+La lectura repetida coincide byte a byte con el primer volcado privado.
+El puntero `0x33104C` vale cero en esta pausa entre cuadros; no interpretar
+ese cero como matrices nulas ni como corrupción de cámara.
+
+La vista persistente `0x75CD70`, id `0x45`, enlaza al mismo cliente de cámara
+`0x1116990` que el port; su padre es `0x1111F20`. Los objetos articulados
+`0x1112470` y `0x753E20` tienen respectivamente 125 y 103 articulaciones.
+La raíz de 125 articula la misma traslación que las 32 muestras anteriores
+del port: `(1048.109985, 727.026001, 1007.25)`. Frente a una de esas muestras,
+7/16 componentes coinciden por bits y la mayor diferencia absoluta es
+`3.725290298461914e-08`; los signos de orientación X/Z son negativos en ambos.
+Esto acota la hipótesis de un giro de 180 grados de esa raíz, pero no verifica
+la paleta completa, el modelo visible seleccionado ni el cálculo VU1/GS.
+
+Siguiente paso: comparar las articulaciones no raíz y el padre de cámara
+con una secuencia alineada. La referencia y su captura permanecen fuera de
+Git. No se cambia el renderer ni se afirma una mejora de FPS con este control.
