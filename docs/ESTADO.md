@@ -2619,3 +2619,45 @@ orden de lecturas y reemplazos dentro del sprite. Congelar por Submit o hasta
 TEXFLUSH no reproduce ambos contratos. La prueba queda en CI para validar
 esa futura corrección sin cambiar EE/FPU/IOP/VU1 ni el ejecutable del juego.
 Detalle y límites: `docs/FEEDBACK_BILINEAL_MINIMO.md`.
+
+### 2026-10-09 — Captura de la intro y comprobación del framebuffer
+
+Se añade `GOW_GS_REPLAY_STATE` para elegir el estado que permite iniciar una captura
+GS. El valor predeterminado sigue siendo 11 (partida); el estado 4 permite estudiar
+la intro previa. Solo los comandos enviados por el EE pueden abrir el tramo; una
+presentación no consulta sus variables. El estado limita el inicio, no el final.
+El parser rechaza entradas vacías, negativas, fraccionarias, desbordadas o con
+sufijos sin aplicar parcialmente las otras opciones. El perfil limpia/restaura
+esta variable junto con las demás opciones de captura.
+
+Control local sobre `fa07925`, runtime con 77 parches, ejecutable con este cambio
+SHA-256 `750ecf700585103d0c9ecdb3b7388aeb34d2e1d189ba3d8141c61784b4e61c95`:
+`GOW_PAD_TEST=1`, `GOW_FAST_BOOT=0`, `GOW_SKIP_FMV=1`, OpenGL con presentación RAM,
+TEXFLUSH real y estado 4. Dos ejecuciones propias acotadas a 45 y 70 segundos
+capturaron tramos completos desde 24 y 35 segundos del host. El límite de bytes
+cerró los tramos antes de los dos segundos solicitados: 141537/145221 registros,
+12/9 presentaciones y 54535167/54534992 bytes, respectivamente.
+
+En las 21 presentaciones, PMODE es `0x8023`, los dos DISPFB apuntan a la página
+208 y `hasPreferredSource` es falso. Por tanto, la regla que sustituye el destino
+por una textura preferida **no explica esos tramos**. La prueba sintética privada
+que muestra una mezcla del 75 % presentada como fuente pura demuestra un defecto
+separado de esa regla, pero no justifica modificarla como arreglo de esta intro.
+
+Repetir los prefijos hasta la primera/última presentación de cada tramo con CPU
+produce el encuadre desplazado: brazo/espalda frente al fuego y cabeza ampliada
+frente al cielo. Las dos instancias CPU coinciden byte a byte en esos prefijos;
+esto no valida la captura GPU completa. De hecho, repetir el End GPU del tramo
+35 s con CPU difiere en 498626 bytes de VRAM. Se conserva la discrepancia como
+limitación, sin atribuirla automáticamente a la cámara ni certificar fidelidad.
+La grabación PCSX2 aportada muestra otro encuadre; falta comparar los comandos y
+el estado de cámara/animación en el mismo tiempo simulado. No se ha corregido
+ese fallo visual ni medido una mejora de FPS.
+
+Validación: build rápida del juego correcta; suite de herramientas GS de Windows
+(captura, checkpoints, píxeles, feedback y oráculos) correcta; selección de estados
+4/11 con memoria sintética, rechazo de valores inválidos, frontera TEXFLUSH y
+vigilancia del perfil correctos. Configuración: cero errores y cuatro avisos
+preexistentes; sintaxis PowerShell: cero errores. Volcados e imágenes quedan en
+carpetas privadas excluidas de Git. Siguiente paso: aislar los dibujos de Kratos
+antes de buscar una corrección del framebuffer o de la cámara.

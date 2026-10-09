@@ -25,9 +25,9 @@ namespace gow_gs_replay
     constexpr uint64_t kLimit = 64ull << 20;
     constexpr uint32_t kRecordLimit = 16u << 20;
     // GOW-Port: seleccionar un tramo tardío sin cambiar el límite del volcado.
-    struct CaptureOptions { double after=150, seconds=3; bool atTextureFlush=false; };
+    struct CaptureOptions { double after=150, seconds=3; bool atTextureFlush=false; uint32_t state=11; };
     inline bool captureOptions(const char *after,const char *seconds,const char *texflush,
-                               CaptureOptions &out,const char *&error) {
+                               CaptureOptions &out,const char *&error,const char *state=nullptr) {
         CaptureOptions candidate; error=nullptr;
         const auto number=[](const char *text,double minimum,double maximum,double &value) {
             if(!text) return true;
@@ -42,6 +42,13 @@ namespace gow_gs_replay
         else if(!number(seconds,0.1,60,candidate.seconds)) error="GOW_GS_REPLAY_SECONDS: intervalo válido 0.1..60 s";
         else if(texflush && std::strcmp(texflush,"0") && std::strcmp(texflush,"1"))
             error="GOW_GS_REPLAY_TEXFLUSH: valores válidos 0 o 1";
+        // GOW-Port: capturar también menú/intro sin cambiar el estado predeterminado de partida.
+        if(!error && state) {
+            const char *end=state+std::strlen(state);
+            const auto result=std::from_chars(state,end,candidate.state);
+            if(result.ec!=std::errc{} || result.ptr!=end)
+                error="GOW_GS_REPLAY_STATE: entero decimal válido 0..4294967295";
+        }
         if(error) return false;
         candidate.atTextureFlush=texflush && !std::strcmp(texflush,"1");
         out=candidate; return true;
@@ -118,6 +125,7 @@ namespace gow_gs_replay
         std::chrono::steady_clock::time_point created=std::chrono::steady_clock::now(),started;
         double after, duration; uint64_t bytes=sizeof(Header); uint32_t mxcsr=UINT32_MAX;
         bool active=false, finished=false, waitForTextureFlush=false;
+        uint32_t captureState;
         bool write(Op op,const void *p,uint32_t n) {
             const auto tag=uint8_t(op); file.write(reinterpret_cast<const char*>(&tag),1);
             file.write(reinterpret_cast<const char*>(&n),4);
@@ -152,7 +160,7 @@ namespace gow_gs_replay
                 if(memory && !allowStart) return false;
                 uint32_t state=0;
                 if(memory && memory->getRDRAM()) std::memcpy(&state,memory->getRDRAM()+0x29E560u,4);
-                if((memory && state!=11) || std::chrono::duration<double>(now-created).count()<after) return false;
+                if((memory && state!=captureState) || std::chrono::duration<double>(now-created).count()<after) return false;
                 started=now; active=snapshot(Op::Initial);
                 if(!active) { finished=true; file.close(); std::fprintf(stderr,"[gow-gs:replay] error de estado inicial\n"); return false; }
                 std::fprintf(stderr,"[gow-gs:replay] inicio state=%u host=%.3f texflush=%u\n",state,
@@ -171,9 +179,10 @@ namespace gow_gs_replay
         }
     public:
         Backend(std::unique_ptr<GSRasterBackend> backend,PS2Memory *mem,
-                const std::filesystem::path &path,double delay=150,double seconds=3,bool atTextureFlush=false)
+                const std::filesystem::path &path,double delay=150,double seconds=3,bool atTextureFlush=false,
+                uint32_t state=11)
             :inner(std::move(backend)),memory(mem),file(path,std::ios::binary),after(delay),duration(seconds),
-             waitForTextureFlush(atTextureFlush) {
+             waitForTextureFlush(atTextureFlush),captureState(state) {
             Header h{}; file.write(reinterpret_cast<const char*>(&h),sizeof(h)); finished=!file;
             if(finished) std::fprintf(stderr,"[gow-gs:replay] no se pudo abrir el archivo\n");
         }
@@ -233,12 +242,12 @@ namespace gow_gs_replay
         if(path.empty()) return;
         CaptureOptions options; const char *error=nullptr;
         if(!captureOptions(std::getenv("GOW_GS_REPLAY_AFTER"),std::getenv("GOW_GS_REPLAY_SECONDS"),
-                           std::getenv("GOW_GS_REPLAY_TEXFLUSH"),options,error)) {
+                           std::getenv("GOW_GS_REPLAY_TEXFLUSH"),options,error,std::getenv("GOW_GS_REPLAY_STATE"))) {
             std::fprintf(stderr,"[gow-gs:replay] %s; captura desactivada\n",error); return;
         }
-        std::fprintf(stderr,"[gow-gs:replay] espera=%.3f duracion=%.3f texflush=%u\n",
-            options.after,options.seconds,unsigned(options.atTextureFlush));
+        std::fprintf(stderr,"[gow-gs:replay] espera=%.3f duracion=%.3f texflush=%u state=%u\n",
+            options.after,options.seconds,unsigned(options.atTextureFlush),options.state);
         gs.setRasterBackend(std::make_unique<Backend>(GSThreadedBackend::MakeDefault(),&memory,path,
-            options.after,options.seconds,options.atTextureFlush));
+            options.after,options.seconds,options.atTextureFlush,options.state));
     }
 }

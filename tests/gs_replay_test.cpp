@@ -57,7 +57,7 @@ static bool optionsTest()
     using namespace gow_gs_replay;
     CaptureOptions options; const char *error=nullptr;
     if(!captureOptions(nullptr,nullptr,nullptr,options,error) || error ||
-       options.after!=150 || options.seconds!=3 || options.atTextureFlush) return false;
+       options.after!=150 || options.seconds!=3 || options.atTextureFlush || options.state!=11) return false;
     if(!captureOptions("470.5","2.25","1",options,error) || error ||
        options.after!=470.5 || options.seconds!=2.25 || !options.atTextureFlush) return false;
     if(!captureOptions("0","0.1","0",options,error) || options.after!=0 ||
@@ -74,7 +74,49 @@ static bool optionsTest()
         if(captureOptions("1",text,"1",options,error) || !error) return false;
     for(const auto *text:{"","true","2","01"})
         if(captureOptions("1","2",text,options,error) || !error) return false;
+    for(const auto *text:{"0","4","11","4294967295"}) {
+        if(!captureOptions("1","2","1",options,error,text) || error) return false;
+        if(options.state!=std::strtoull(text,nullptr,10)) return false;
+    }
+    for(const auto *text:{"","-1","+4","4.0","4x"," 4","4294967296"}) {
+        options={17,9,true,4};
+        if(captureOptions("1","2","0",options,error,text) || !error ||
+           options.after!=17 || options.seconds!=9 || !options.atTextureFlush || options.state!=4) return false;
+    }
     return true;
+}
+
+// GOW-Port: el estado seleccionado limita el inicio; Present nunca lee memoria del EE.
+static bool captureStateTest(std::filesystem::path path)
+{
+    path += ".state";
+    PS2Memory memory; if(!memory.initialize()) return false;
+    std::vector<uint8_t> vram(PS2_GS_VRAM_SIZE);
+    for(uint32_t selected:{11u,4u}) {
+        {
+            gow_gs_replay::Backend capture(std::make_unique<GSCpuBackend>(),&memory,path,0,3600,false,selected);
+            capture.Initialize(vram.data(),uint32_t(vram.size()));
+            uint32_t state=selected==11 ? 4 : 11;
+            std::memcpy(memory.getRDRAM()+0x29E560u,&state,4);
+            capture.Submit(GSPrimitiveBatch{});
+            if(capture.finish()) return false;
+            state=selected; std::memcpy(memory.getRDRAM()+0x29E560u,&state,4);
+            capture.Present(GSPresentationRequest{});
+            if(capture.finish()) return false;
+            capture.Submit(GSPrimitiveBatch{});
+            if(!capture.finish()) return false;
+        }
+        gow_gs_replay::Reader reader(path); gow_gs_replay::Record record;
+        unsigned initial=0,draws=0,end=0;
+        while(reader.next(record)) {
+            if(record.op==gow_gs_replay::Op::Initial) ++initial;
+            else if(record.op==gow_gs_replay::Op::Submit) ++draws;
+            else if(record.op==gow_gs_replay::Op::End) ++end;
+            else if(record.op!=gow_gs_replay::Op::Mxcsr) return false;
+        }
+        if(!reader.error.empty() || initial!=1 || draws!=1 || end!=1) return false;
+    }
+    std::filesystem::remove(path); return true;
 }
 
 static bool textureFlushBoundaryTest(std::filesystem::path path,const GSPrimitiveBatch &sprite)
@@ -168,6 +210,7 @@ int main(int argc,char **argv)
 {
     if(argc!=2) return 2;
     const std::filesystem::path path=argv[1];
+    if(!captureStateTest(path)) { std::fprintf(stderr,"Selección del estado de captura: fallo\n"); return 1; }
     if(!presentationCapabilityTest(path)) { std::fprintf(stderr,"Capacidad de presentación del host: fallo\n"); return 1; }
     std::vector<uint8_t> vram(PS2_GS_VRAM_SIZE);
     gow_gs_replay::Backend capture(std::make_unique<GSCpuBackend>(),nullptr,path,0,3600);
