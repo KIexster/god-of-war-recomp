@@ -60,8 +60,9 @@ texturas publicadas hace fallar tres de ellos por diferencias de imagen.
 La suite nativa reconstruida pasa **623/623**, con 33 controles OpenGL
 reales, y la CI inicial pasa en Linux. Forzar Flush en el latch compartido
 hace fallar dos de los cinco controles de cola; su espera acotada permite
-terminar también con esa regresión. La comprobación del juego sigue en
-curso; todavía no se atribuye a esta ruta una mejora de FPS.
+terminar también con esa regresión. La repetición enlazada con el runtime
+de la compilación oficial también pasa **623/623**. No se atribuye a esta
+ruta una mejora de FPS.
 
 En compilaciones incrementales con MSVC en español, comprobar que Ninja
 registre dependencias de headers. En este equipo registraba cero: al
@@ -79,3 +80,28 @@ El backend OpenGL conserva el crédito y la licencia GPL-3.0 del código de
 Taylor N. Albarnaz / LightVelox, `sotc-port` en
 `ac9efa070638ad3b3accd284de6f898d5ab271d1`. La conexión del host y sus
 controles específicos llevan comentarios `// GOW-Port:`.
+
+## Comprobación funcional del juego
+
+`scripts\2_compilar.cmd` termina con código 0 sobre la revisión `343404f`,
+los 75 parches y las 501 micromemorias privadas de VU1 utilizadas en la
+compilación anterior. Los 103 archivos parcheados coinciden con la
+referencia probada, normalizando únicamente finales de línea y el include
+del runner que añade el script. El script también desactiva LTCG según su
+configuración habitual.
+
+El ejecutable mide 70.469.120 bytes; su SHA-256 es
+`33C012EF1BB0DC01C325027480893CDB427F406745C686FC4D8296F1BFFFE5A5`.
+La prueba funcional dura **241,18 s**, con tarjeta y caché de shaders
+privadas, FMV omitidos, profiler GS y capturas activos. El registro confirma
+`shared GPU textures active` y `host mode: shared texture (opt-in)`.
+Llega repetidamente a estado 11, `pending=0`, `levelReady=1`.
+
+Se generan trece capturas diagnósticas de 512 × 448. Se revisan las número
+8 y 12: muestran a Kratos, enemigos, barco, acantilados, lluvia y HUD sin
+polígonos estirados visibles en esa escena. Estas capturas usan la lectura
+bajo demanda descrita arriba; los controles de framebuffer raylib verifican
+por separado la ruta de presentación y su escalado. No aparecen errores,
+degradación del ring ni informes parciales del profiler en esta pasada.
+Al terminar el plazo se fuerza el cierre de esa instancia. La prueba no
+certifica completar el juego, la reproducción FMV ni una mejora de FPS.

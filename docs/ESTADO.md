@@ -2454,3 +2454,34 @@ usan tarjetas privadas. No hay avisos de degradación del ring; un informe
 GPU parcial omite 2587 muestras y sus tiempos no se usan. No se certifican
 FPS ni una partida completa; la presentación compartida del juego sigue
 preparándose en un checkout separado y no forma parte de esta PR.
+
+### 2026-10-09: presentación compartida sobre las PR #31 y #32 de Opus
+
+La PR #33 conecta el consumidor raylib del juego con las texturas del
+productor OpenGL, con `PS2X_GS_DIRECT_PRESENT=1` y backend GPU. Conserva CPU
+y RAM como referencia/fallback. El latch compartido deja de forzar la
+espera del host; las lecturas explícitas y FINISH mantienen sus barreras.
+Las capturas de diagnóstico componen VRAM actual con el CRTC del latch,
+con caché por generación: no son snapshots históricos del frame adquirido.
+Detalles: [presentación compartida](RENDER_PRESENTACION_COMPARTIDA.md).
+
+La base incorpora las PR #31/#32 ya fusionadas; no se modifican sus parches
+VU1 ni EE/FPU/IOP/FMV. La suite nativa reconstruida pasa **623/623**, con
+33 controles OpenGL reales. Restaurar LINEAR falla en 3/12 controles
+específicos; forzar Flush en el latch compartido falla en 2/5 controles de
+cola, que terminan con espera acotada también bajo esa regresión. Los
+103 archivos parcheados coinciden entre la referencia probada y el runtime
+de la compilación oficial. La CI del código actualizado pasa.
+
+Se corrigió además la limpieza incremental de MSVC/Ninja en español:
+registraba cero dependencias de headers, por lo que mezclaba objetos de
+distintas interfaces. El script descarta objetos runtime/tests y el PCH y
+su objeto de creación; el wrapper CMD conserva el código real de salida.
+La compilación oficial termina con código 0; la suite enlazada con ese
+runtime repite **623/623**. La prueba de **241,18 s** confirma el modo
+compartido efectivo y llega repetidamente a estado 11 con nivel listo.
+Produce trece capturas diagnósticas; las revisadas muestran a Kratos,
+enemigos, barco, lluvia y HUD sin polígonos estirados visibles en esa
+escena. No hay errores, degradación del ring ni informes parciales del
+profiler. Se usan tarjeta/caché privadas y se omite FMV; el cierre al acabar
+el plazo es forzado. No se certifica completar el juego ni mejorar FPS.
