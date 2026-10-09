@@ -349,3 +349,18 @@ duplicadas se rechazan antes de crear salida. La CLI anterior falla este control
 
 La sonda solo interviene en el candidato CPU; no altera el renderer del juego.
 Comandos, resultados y límites: `docs/FEEDBACK_BILINEAL_MINIMO.md`.
+
+## Muestreo de modelos en intro (2026-10-09)
+
+`tests/model_probe_test.cpp` prueba que agotar el cupo o las 64 plazas del menú
+no consume las de intro. Comprueba alias, vistas independientes, intervalos de
+dos segundos, 32 muestras por par y el límite de plazas. También prueba
+lectura de matrices con NaN sintéticos, índices de articulaciones, memoria
+truncada, punteros nulos, direcciones que cruzan el segmento y RAM intacta.
+La CI lo ejecuta sin juego, con GCC; el control local MSVC pasa con `/W4 /WX`.
+
+`GOW_MODEL_DIAG=1` registra pose y matrices crudas a la entrada de ProcessModel.
+No fuerza su actualización ni cambia la selección de vistas. Las muestras se
+identifican por fase, modelo, vista y ordinal; el tiempo transcurrido es del
+host y las marcas del objeto/esqueleto son de jerarquía, no números de cuadro.
+No usar estas ejecuciones para medir FPS.

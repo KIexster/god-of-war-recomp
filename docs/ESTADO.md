@@ -2715,3 +2715,32 @@ alternadas de `GOW_GS_FINISH_ASINCRONO=1` junto con `PS2X_GS_DIRECT_PRESENT=1`, 
 7.3–7.4 a 11.1–11.4 cuadros/s. Esa combinación queda como candidata para una
 comparación propia de los cuatro modos tras resolver la transición. No se valida
 aquí esa cifra ni se cambia ningún valor predeterminado.
+## Modelos durante la transición menú/intro (2026-10-09)
+
+El control anterior de `GOW_MODEL_DIAG=1` agotaba las 64 muestras «early»
+en el menú (estado 3); no quedaban observaciones de ProcessModel en la intro
+(estado 4). Se separan los cupos de intro, partida (11) y restantes estados
+para servidor, contexto, maestro y Clip. ProcessModel tiene una tabla por fase
+con hasta 64 pares modelo/vista, 32 muestras por par y dos segundos del host
+entre muestras. Los objetos del menú no ocupan la tabla de intro.
+
+La misma variable añade `[gow-model:pose]` y `[gow-model:matrix]`: bits de
+matrices local/mundo del objeto y mundo de su articulación raíz. Los offsets
+proceden del MIPS retail de CalcWorldMatrix (`0x1303D0`) y CalcSkinHierarchy
+(`0x137508`): objeto+0x20/0x70, esqueleto en objeto+0x104, raíz en
+esqueleto+0x86 y matrices articuladas desde esqueleto+0x8C con pasos de 64 bytes.
+El número de articulaciones se lee de definición+0x10, desde esqueleto+0x60.
+Las marcas de actualización se conservan completas (64 bits). Se validan
+rangos e índices sin calcular matrices, escribir RAM ni forzar actualizaciones.
+Estas son fotografías de entrada a ProcessModel: pueden incluir buffers
+anteriores y no demuestran por sí solas qué matriz terminó enviada a VU1.
+
+El control sintético comprueba que un menú agotado deja pasar la intro,
+separación por vista y fase, alias físicos, intervalo, límite de muestras,
+copia exacta de bits, memoria intacta y matrices truncadas o fuera de rango.
+MSVC `/O2 /W4 /WX` pasa; la CI ejecuta el mismo control con GCC.
+
+Se integra `eebf73b` (PR #42 de Opus) antes de la compilación completa del juego.
+REA está conectado, pero `open_binary` rechaza este ELF como arquitectura no
+soportada: no se atribuye a REA una descompilación ni validación del R5900.
+El fallo visual de encuadre continúa abierto.

@@ -6,6 +6,7 @@
 #include "gow_pad2_packet.h"
 #include "gow_gs_replay.h" // GOW-Port: captura opcional y acotada para comparar backends.
 #include "gow_camera_probe.h"
+#include "gow_model_probe.h"
 #include <ps2_recompiled_functions.h>
 #include <cstdio>
 #include <cstdlib>
@@ -510,11 +511,10 @@ namespace
     {
         if (ctx->pc != 0x00159C58u) { sub_00159C58_0x159c58(rdram, ctx, runtime); return; }
         const uint32_t state = readGuest32(rdram, 0x29E560u), server = GPR_U32(ctx, 4);
-        static unsigned early = 0u, scene = 0u;
-        auto &samples = state == 11u ? scene : early;
-        if (samples < 64u)
+        static gow_model_probe::PhaseSamples samples;
+        const unsigned sample = samples.take(state);
+        if (sample)
         {
-            const unsigned sample = ++samples;
             const bool validServer = padBuffer(rdram, server, 0xD8u) != nullptr;
             const uint32_t table = validServer ? readGuest32(rdram, server + 0x24u) : 0u;
             const uint32_t group = validServer ? readGuest32(rdram, server + 0x44u) : 0u;
@@ -540,7 +540,7 @@ namespace
         sub_00159C58_0x159c58(rdram, ctx, runtime);
     }
 
-    struct GowModelContextSamples { uint32_t physical = 0u; unsigned early = 0u, scene = 0u; };
+    struct GowModelContextSamples { uint32_t physical = 0u; gow_model_probe::PhaseSamples samples; };
 
     // GOW-Port: el maestro es compartido por varios servidores; limitar cada contexto
     // evita que los primeros servidores agoten las muestras del servidor de modelos.
@@ -552,8 +552,7 @@ namespace
             if (probe.physical == physical || !probe.physical)
             {
                 probe.physical = physical;
-                auto &samples = state == 11u ? probe.scene : probe.early;
-                return samples < 64u ? ++samples : 0u;
+                return probe.samples.take(state);
             }
         return 0u;
     }
@@ -669,13 +668,15 @@ namespace
     {
         if (ctx->pc != 0x00157A60u) { sub_00157A60_0x157a60(rdram, ctx, runtime); return; }
         const uint32_t state = readGuest32(rdram, 0x29E560u);
-        static unsigned early = 0u, scene = 0u;
-        auto &samples = state == 11u ? scene : early;
-        if (samples < 64u)
+        static gow_model_probe::Timeline samples;
+        const auto now = gow_model_probe::Timeline::Clock::now();
+        static const auto started = now;
+        const uint32_t context = GPR_U32(ctx, 4), model = GPR_U32(ctx, 5);
+        const uint32_t view = readGuest32(rdram, 0x33104Cu);
+        const unsigned sample = samples.take(model, view, state, now);
+        if (sample)
         {
-            const uint32_t context = GPR_U32(ctx, 4), model = GPR_U32(ctx, 5);
             const bool valid = padBuffer(rdram, model, 0xE8u) != nullptr;
-            const uint32_t view = readGuest32(rdram, 0x33104Cu);
             const uint32_t object = valid ? readGuest32(rdram, model + 0x18u) : 0u;
             const bool validObject = padBuffer(rdram, object, 0x108u) != nullptr;
             const uint32_t skeleton = validObject ? readGuest32(rdram, object + 0x104u) : 0u;
@@ -687,11 +688,24 @@ namespace
             const bool validRoot = skeletonData && (!visibility || (rootAddress < 0x02000000u && padBuffer(rdram, uint32_t(rootAddress), 4u)));
             const uint32_t rootVisible = validRoot ? (!visibility || readGuest32(rdram, uint32_t(rootAddress)) ? 1u : 0u) : 0u;
             std::fprintf(stderr, "[gow-model:process] sample=%u state=%u context=%x this=%x valid=%u caller=%x view=%x groups=%u groupArray=%x disableCulling=%u object=%x skeleton=%x visibility=%x rootId=%u validRoot=%u rootVisible=%u groupBits=%x\n",
-                         ++samples, state, context, model, valid ? 1u : 0u, GPR_U32(ctx, 31), view,
+                         sample, state, context, model, valid ? 1u : 0u, GPR_U32(ctx, 31), view,
                          valid ? readGuest32(rdram, model + 0xE0u) : 0u,
                          valid ? readGuest32(rdram, model + 0xE4u) : 0u, GPR_U32(ctx, 6), object, skeleton,
                          visibility, unsigned(rootId), validRoot ? 1u : 0u, rootVisible,
                          validObject ? readGuest32(rdram, object + 0x100u) : 0u);
+            const auto pose = gow_model_probe::capture(rdram, 0x02000000u, object);
+            std::fprintf(stderr, "[gow-model:pose] sample=%u state=%u this=%x view=%x elapsed=%.3f object=%x validObject=%u joint=%u objectTick=%llu skeleton=%x validSkeleton=%u skeletonTick=%llu rootId=%u jointCount=%u joints=%x rootAddress=%x validRoot=%u\n",
+                sample, state, model, view, std::chrono::duration<double>(now-started).count(), object,
+                unsigned(pose.validObject), unsigned(pose.joint), (unsigned long long)pose.objectTick,
+                pose.skeleton, unsigned(pose.validSkeleton), (unsigned long long)pose.skeletonTick,
+                unsigned(pose.rootId), pose.jointCount, pose.joints, pose.rootAddress, unsigned(pose.validRoot));
+            const auto matrix = [&](const char *name, const std::array<uint32_t,16> &bits) {
+                std::fprintf(stderr, "[gow-model:matrix] sample=%u state=%u this=%x view=%x name=%s bits=", sample, state, model, view, name);
+                for(size_t i=0;i<bits.size();++i) std::fprintf(stderr, "%s%08x", i ? "," : "", bits[i]);
+                std::fprintf(stderr, "\n");
+            };
+            if(pose.validObject) { matrix("local",pose.local); matrix("world",pose.world); }
+            if(pose.validRoot) matrix("rootWorld",pose.rootWorld);
         }
         sub_00157A60_0x157a60(rdram, ctx, runtime);
     }
@@ -702,9 +716,8 @@ namespace
     {
         if (ctx->pc != 0x00169120u) { sub_00169120_0x169120(rdram, ctx, runtime); return; }
         const uint32_t caller = GPR_U32(ctx, 31), state = readGuest32(rdram, 0x29E560u);
-        static unsigned early = 0u, scene = 0u;
-        auto &samples = state == 11u ? scene : early;
-        const unsigned sample = caller == 0x00157FB0u && samples < 64u ? ++samples : 0u;
+        static gow_model_probe::PhaseSamples samples;
+        const unsigned sample = caller == 0x00157FB0u ? samples.take(state) : 0u;
         const uint32_t view = GPR_U32(ctx, 4), model = GPR_U32(ctx, 17), group = GPR_U32(ctx, 19);
         std::array<uint32_t, 4> sphere{};
         std::array<uint32_t, 10> planes{};
