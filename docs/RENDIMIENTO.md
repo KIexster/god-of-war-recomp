@@ -622,3 +622,17 @@ cancela exactamente el producto el resultado es un cero exacto (+0, Z). Esto úl
 Huellas de VU1 (compilado e intérprete) idénticas en `vif_pcsx2_inicio2` y `vif_port_480s`;
 `probar_vu1_fmac.cmd` (valores límite con ±0) y `probar_vu1_compilada.cmd` en verde. Reproducción alternando
 ejecutables (6 rondas de 150 pasadas): mediana 90,3 → 82,7 ms por cuadro.
+
+### PATH1 pendiente al terminar un programa, de una vez (9 de octubre)
+
+Al terminar un programa de VU1, `flushPipelines` avanza ciclo a ciclo hasta vaciar las colas, y casi siempre
+solo queda el XGKICK en curso: un `advanceOneCycle` y un `progressXgkick` por ciclo, un qword cada dos. El
+perfil de la reproducción lo daba como el 95 % de `VU1Interpreter::run` y buena parte de `progressXgkick`.
+`ps2recomp-vu1-xgkick-flush.patch`: si solo queda PATH1 (sin Q, P, flags, stores ni escrituras pendientes, que
+ya no se pueden llenar), se transfiere el resto del paquete de una vez y se suman los ciclos que habría
+tardado: n iteraciones con crédito inicial c0 terminan en el ciclo 2n − c0. Los errores del paquete cortan la
+transferencia en la misma iteración que antes. Vale para el intérprete y el código compilado.
+
+Huellas de VU1 (compilado e intérprete, que incluyen los ciclos) idénticas en `vif_pcsx2_inicio2` y
+`vif_port_480s`; `probar_vu1_compilada.cmd`, `probar_vu1_fmac.cmd` y suite 573/573. Reproducción alternando
+ejecutables (6 rondas de 150 pasadas): mediana 82,2 → 78,2 ms por cuadro.
