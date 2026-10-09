@@ -42,6 +42,10 @@ jobs:
         run: |
           g++ -std=c++20 -Wall -Wextra -Werror tests/camera_probe_test.cpp -o camera_probe_test
           ./camera_probe_test
+      - name: Probar muestreo de intro y lectura de modelos sin el juego
+        run: |
+          g++ -std=c++20 -Wall -Wextra -Werror tests/model_probe_test.cpp -o model_probe_test
+          ./model_probe_test
 
   runtime:
     name: Parches y suite del runtime (PS2Recomp)

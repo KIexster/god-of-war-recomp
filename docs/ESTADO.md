@@ -2715,3 +2715,68 @@ alternadas de `GOW_GS_FINISH_ASINCRONO=1` junto con `PS2X_GS_DIRECT_PRESENT=1`, 
 7.3–7.4 a 11.1–11.4 cuadros/s. Esa combinación queda como candidata para una
 comparación propia de los cuatro modos tras resolver la transición. No se valida
 aquí esa cifra ni se cambia ningún valor predeterminado.
+## Modelos durante la transición menú/intro (2026-10-09)
+
+El control anterior de `GOW_MODEL_DIAG=1` agotaba las 64 muestras «early»
+en el menú (estado 3); no quedaban observaciones de ProcessModel en la intro
+(estado 4). Se separan los cupos de intro, partida (11) y restantes estados
+para servidor, contexto, maestro y Clip. ProcessModel tiene una tabla por fase
+con hasta 64 pares modelo/vista, 32 muestras por par y dos segundos del host
+entre muestras. Los objetos del menú no ocupan la tabla de intro.
+
+La misma variable añade `[gow-model:pose]` y `[gow-model:matrix]`: bits de
+matrices local/mundo del objeto y mundo de su articulación raíz. Los offsets
+proceden del MIPS retail de CalcWorldMatrix (`0x1303D0`) y CalcSkinHierarchy
+(`0x137508`): objeto+0x20/0x70, esqueleto en objeto+0x104, raíz en
+esqueleto+0x86 y matrices articuladas desde esqueleto+0x8C con pasos de 64 bytes.
+El número de articulaciones se lee de definición+0x10, desde esqueleto+0x60.
+Las marcas de actualización se conservan completas (64 bits). Se validan
+rangos e índices sin calcular matrices, escribir RAM ni forzar actualizaciones.
+Estas son fotografías de entrada a ProcessModel: pueden incluir buffers
+anteriores y no demuestran por sí solas qué matriz terminó enviada a VU1.
+
+El control sintético comprueba que un menú agotado deja pasar la intro,
+separación por vista y fase, alias físicos, intervalo, límite de muestras,
+copia exacta de bits, memoria intacta y matrices truncadas o fuera de rango.
+MSVC `/O2 /W4 /WX` pasa; la CI ejecuta el mismo control con GCC.
+
+Se integra `eebf73b` (PR #42 de Opus) antes de la compilación completa del juego.
+REA está conectado, pero `open_binary` rechaza este ELF como arquitectura no
+soportada: no se atribuye a REA una descompilación ni validación del R5900.
+El fallo visual de encuadre continúa abierto.
+
+Control nativo final: `scripts/2_compilar.cmd` completo, 78 parches, retorno 0;
+ELF SHA-256 `ec9397d252f14d4412daffaad6be1f1931769e56222b5dbb9b39a947fc8ad71c`.
+Ejecutable de `eebf73b + 54c2dd1`, SHA-256
+`b67f4e7b9b3377ecdc05b5d8a8033c8acf60f665050ec9ebf8174e51e70a4569`.
+En 95 segundos con OpenGL, presentación RAM, FINISH síncrono, fast boot
+apagado, FMV omitido y prueba de pad: 123 muestras de modelos en menú y
+343 en intro, respectivamente 15 y 11 pares modelo/vista. Los 466 objetos
+observados son legibles; 84 lecturas de raíz son válidas. Se registran 1.016
+matrices, ninguna no finita ni totalmente nula. La ausencia de una raíz válida
+en los demás objetos no se interpreta como corrupción: hay objetos sin
+paleta articulada. Los dos modelos articulados observados en intro tienen
+125 y 103 articulaciones; sus matrices de raíz son constantes en las 32
+muestras de cada uno. No se identifica todavía cuál recurso es Kratos ni se
+comprueban aquí las matrices de las otras articulaciones.
+
+El control terminó por su límite temporal deliberado, sin muestras del estado
+11. Una segunda ejecución del mismo binario, otros 95 segundos, con
+`GOW_MODEL_DIAG=0` y cámara activa, tampoco registra ese estado (128 muestras
+de cámara en estado 4, ningún registro de modelos). Esto no establece una
+causa ni equivale a verificar visualmente la partida. No se comparan FPS.
+Ambos procesos propios finalizaron; no se modificó el checkout de Opus.
+
+La prueba local que vuelve a compartir el cupo de menú/intro falla, como se
+espera. Las instrucciones de las dos funciones usadas para recuperar offsets
+coinciden con el ELF local: 254 de `0x1303D0` y 380 de `0x137508`, sin huecos ni
+bytes distintos. Ghidra 12.1.4 y `ghidra-emotionengine-reloaded` importan ese ELF
+con `r5900:LE:32:default` y descompilan ambas funciones en un proyecto privado,
+sin análisis global. REA 6.2.0 no admite MIPS en su lector ELF, proveedor Ghidra
+y enums de evidencia; además su servidor no tiene `GHIDRA_INSTALL_DIR` definido.
+La prueba directa de Ghidra no demuestra soporte del puente REA.
+
+Siguiente comparación: identificar el modelo y las articulaciones del personaje,
+y relacionarlas con el cliente de cámara durante el mismo instante de PCSX2.
+La sonda no modifica renderizado ni arregla el encuadre; registros y proyecto
+Ghidra permanecen privados.
