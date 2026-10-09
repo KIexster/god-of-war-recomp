@@ -5,6 +5,7 @@
 #include "ps2_host_backend.h"
 #include "gow_pad2_packet.h"
 #include "gow_gs_replay.h" // GOW-Port: captura opcional y acotada para comparar backends.
+#include "gow_camera_probe.h"
 #include <ps2_recompiled_functions.h>
 #include <cstdio>
 #include <cstdlib>
@@ -724,6 +725,50 @@ namespace
                          ctx->pc == caller ? GPR_U32(ctx, 2) : 0u);
     }
 
+    // GOW-Port: observar matrices terminadas; respetar checkpoints y llamar siempre al original.
+    void gowDiagCameraPipeline(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+    {
+        if(ctx->pc!=0x0023B5E0u) { sub_0023B5E0_0x23b5e0(rdram,ctx,runtime); return; }
+        const uint32_t view=GPR_U32(ctx,4), caller=GPR_U32(ctx,31);
+        sub_0023B5E0_0x23b5e0(rdram,ctx,runtime);
+        if(ctx->pc!=caller) return;
+        const uint32_t state=readGuest32(rdram,0x29E560u);
+        if(state!=4u && state!=11u) return;
+        uint64_t stamp=0; std::memcpy(&stamp,rdram+0x29BDF8u,sizeof(stamp));
+        // Una escena llama varias veces por cuadro y usa vistas distintas. Muestrear por
+        // tiempo del host y por vista evita consumir el límite al actualizar jerarquías.
+        // 0x29BDF8 es su marca de actualización, no un contador de cuadros.
+        using Clock=std::chrono::steady_clock;
+        const auto now=Clock::now();
+        static const auto started=now;
+        struct ViewSamples { uint32_t view=0,state=0; Clock::time_point next{}; unsigned count=0; };
+        static std::array<ViewSamples,16> views{};
+        static unsigned sequence=0;
+        ViewSamples *selected=nullptr;
+        for(auto &item:views) if(item.view==view && item.state==state) { selected=&item; break; }
+        if(!selected) for(auto &item:views) if(!item.count) { selected=&item; item.view=view; item.state=state; break; }
+        if(!selected || selected->count>=32u || now<selected->next) return;
+        ++selected->count;
+        selected->next=now+std::chrono::seconds(2);
+        const unsigned sample=++sequence;
+        const auto s=gow_camera_probe::capture(rdram,0x02000000u,view);
+        std::fprintf(stderr,"[gow-camera] sample=%u state=%u stamp=%llu elapsed=%.3f view=%x validView=%u node=%x validNode=%u empty=%u camera=%x validCamera=%u joint=%u matrixTick=%llu inverseTick=%llu activeView=%x viewId=%x\n",
+            sample,state,(unsigned long long)stamp,std::chrono::duration<double>(now-started).count(),view,unsigned(s.validView),s.node,unsigned(s.validNode),
+            unsigned(s.empty),s.camera,unsigned(s.validCamera),unsigned(s.joint),
+            (unsigned long long)s.matrixTick,(unsigned long long)s.inverseTick,readGuest32(rdram,0x33104Cu),
+            s.validView ? readGuest32(rdram,view+0x3ACu) : 0u);
+        const auto matrix=[&](const char *name,const std::array<uint32_t,16> &bits) {
+            std::fprintf(stderr,"[gow-camera:matrix] sample=%u state=%u stamp=%llu name=%s bits=",sample,state,(unsigned long long)stamp,name);
+            for(size_t i=0;i<bits.size();++i) std::fprintf(stderr,"%s%08x",i ? "," : "",bits[i]);
+            std::fprintf(stderr,"\n");
+        };
+        if(s.validView) {
+            matrix("world",s.world); matrix("inverse",s.inverse);
+            matrix("projection",s.projection); matrix("combined",s.combined);
+        }
+        if(s.validCamera) { matrix("clientWorld",s.clientWorld); matrix("clientInverse",s.clientInverse); }
+    }
+
     void gowDiagPrimPoll(uint8_t *rdram, double seconds)
     {
         static double next=0;
@@ -924,6 +969,8 @@ namespace
         // que este crea con SetupHeap al final del .bss (patches/ps2recomp-heap.patch).
         runtime.setPrivateGuestHeap(0x000A0000u, 0x000FF000u);
         runtime.replaceFunction(0x00279600u, gowIpuInit);
+        if(const char *v=std::getenv("GOW_CAMERA_DIAG"); v && std::strcmp(v,"1")==0)
+            runtime.replaceFunction(0x0023B5E0u, gowDiagCameraPipeline);
         if (std::getenv("GOW_PATH_DIAG") || std::getenv("GOW_ANM_DIAG") || std::getenv("GOW_FAST_BOOT"))
         {
             runtime.replaceFunction(0x001B2390u, gowDiagFlashReady);
