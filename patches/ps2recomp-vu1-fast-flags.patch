@@ -1,0 +1,147 @@
+diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime/ps2_vu1.h
+index 2b4d023..095c041 100644
+--- a/ps2xRuntime/include/runtime/ps2_vu1.h
++++ b/ps2xRuntime/include/runtime/ps2_vu1.h
+@@ -347,6 +347,8 @@ private:
+     uint8_t normalizeFmacExactResult(float &value, long double exactResult) const;
+     uint32_t calculateFmacProductSticky(uint8_t dest) const;
+     void updateFmacFlags(const uint8_t laneFlags[4], uint8_t dest, uint32_t extraSticky);
++    // GOW-Port: igual que updateFmacFlags con MAC y status ya calculados (código compilado de VU1).
++    void pushFmacFlags(uint32_t mac, uint32_t status, uint32_t extraSticky);
+     FlagPipelineEntry *pushFlagEntry();
+     void queueFsset(uint16_t immediate);
+     void queueClip(uint32_t clip);
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+index 17e7ec7..3b514fb 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+@@ -181,6 +181,11 @@ namespace vu1c
+         return ((dest & 8u) ? 1 : 0) | ((dest & 4u) ? 2 : 0) | ((dest & 2u) ? 4 : 0) | ((dest & 1u) ? 8 : 0);
+     }
+ #endif
++    // Bits de MAC de una máscara de carriles en orden de componente (bit 0 = x), como laneForComponent: x = 8.
++    constexpr uint32_t reverse4(uint32_t m)
++    {
++        return ((m & 1u) << 3) | ((m & 2u) << 1) | ((m & 4u) >> 1) | ((m & 8u) >> 3);
++    }
+     constexpr uint32_t crossLeft(uint32_t c) { return c == 0 ? 1u : c == 1 ? 2u : c == 2 ? 0u : 3u; }
+     constexpr uint32_t crossRight(uint32_t c) { return c == 0 ? 2u : c == 1 ? 0u : c == 2 ? 1u : 3u; }
+ }
+@@ -452,10 +457,11 @@ VU1_STEP_INLINE void VU1Interpreter::upperT()
+                         m_state.status |= ((signs != 0 ? 0x2u : 0u) | (zeroLanes != 0 ? 0x1u : 0u) | productSticky) << 6;
+                     else
+                     {
+-                        const auto laneFlag = [&](int bit) -> uint8_t
+-                        { return static_cast<uint8_t>(((signs & bit) ? 2u : 0u) | ((zeroLanes & bit) ? 1u : 0u)); };
+-                        const uint8_t laneFlags[4] = {laneFlag(1), laneFlag(2), laneFlag(4), laneFlag(8)};
+-                        updateFmacFlags(laneFlags, static_cast<uint8_t>(dest), productSticky);
++                        // Mismo MAC y status que updateFmacFlags con los flags por carril (Z = bit 0, S = bit 1).
++                        const uint32_t z = static_cast<uint32_t>(zeroLanes) & static_cast<uint32_t>(lanes);
++                        const uint32_t sg = static_cast<uint32_t>(signs) & static_cast<uint32_t>(lanes);
++                        pushFmacFlags(vu1c::reverse4(z) | (vu1c::reverse4(sg) << 4),
++                                      (sg != 0u ? 0x2u : 0u) | (z != 0u ? 0x1u : 0u), productSticky);
+                     }
+                 }
+                 float *target = info.toAcc ? m_state.acc : m_state.vf[fd];
+@@ -483,7 +489,19 @@ VU1_STEP_INLINE void VU1Interpreter::upperT()
+                 if (DeadFlags && m_statusQuiet)
+                     m_state.status |= static_cast<uint32_t>((laneFlags[0] | laneFlags[1] | laneFlags[2] | laneFlags[3] | productSticky) & 0xFu) << 6;
+                 else
+-                    updateFmacFlags(laneFlags, static_cast<uint8_t>(dest), productSticky);
++                {
++                    // updateFmacFlags con DEST constante.
++                    uint32_t mac = 0u, status = 0u;
++                    if constexpr ((dest & 8u) != 0u)
++                        mac |= ((laneFlags[0] & 1u) << 3) | ((laneFlags[0] & 2u) << 6) | ((laneFlags[0] & 4u) << 9) | ((laneFlags[0] & 8u) << 12), status |= laneFlags[0];
++                    if constexpr ((dest & 4u) != 0u)
++                        mac |= ((laneFlags[1] & 1u) << 2) | ((laneFlags[1] & 2u) << 5) | ((laneFlags[1] & 4u) << 8) | ((laneFlags[1] & 8u) << 11), status |= laneFlags[1];
++                    if constexpr ((dest & 2u) != 0u)
++                        mac |= ((laneFlags[2] & 1u) << 1) | ((laneFlags[2] & 2u) << 4) | ((laneFlags[2] & 4u) << 7) | ((laneFlags[2] & 8u) << 10), status |= laneFlags[2];
++                    if constexpr ((dest & 1u) != 0u)
++                        mac |= (laneFlags[3] & 1u) | ((laneFlags[3] & 2u) << 3) | ((laneFlags[3] & 4u) << 6) | ((laneFlags[3] & 8u) << 9), status |= laneFlags[3];
++                    pushFmacFlags(mac, status, productSticky);
++                }
+             }
+         }
+         float *target = info.toAcc ? m_state.acc : m_state.vf[fd];
+@@ -721,6 +739,31 @@ VU1_STEP_INLINE void VU1Interpreter::lowerT(StepContext &context, uint32_t upper
+ // Un bloque compilado se ejecuta entero en orden: sus palabras coinciden con las de la micromemoria, no
+ // hay un salto ni un final de programa pendiente y queda presupuesto de ciclos de sobra (el análisis de
+ // vida de flags supone que se llega al final del bloque).
++VU1_STEP_INLINE void VU1Interpreter::pushFmacFlags(uint32_t mac, uint32_t status, uint32_t extraSticky)
++{
++    static_assert((kMaxFlagEntries & (kMaxFlagEntries - 1u)) == 0u);
++    if (m_flagCount >= kMaxFlagEntries)
++    {
++        commitReadyFlags();
++        if (m_flagCount >= kMaxFlagEntries)
++        {
++            reportReservedInstruction(true, 0xFFFFFFFFu);
++            return;
++        }
++    }
++    FlagPipelineEntry &entry = m_flagPipeline[(m_flagHead + m_flagCount) & (kMaxFlagEntries - 1u)];
++    ++m_flagCount;
++    entry.mac = mac;
++    entry.status = status;
++    entry.extraSticky = extraSticky;
++    entry.clip = 0u;
++    entry.writesMac = entry.writesStatus = true;
++    entry.writesSticky = entry.writesClip = false;
++    entry.valid = true;
++    entry.issueCycle = m_cycle;
++    entry.readyCycle = m_cycle + kFmacLatency;
++}
++
+ inline bool VU1Interpreter::blockPreconditions(StepContext &context, uint32_t pc, const uint32_t *words, size_t bytes) const
+ {
+     if (m_state.branchPending || m_state.ebit || m_state.haltAfterDelaySlot || m_stopRequested)
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+index a896402..63085f2 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+@@ -1018,6 +1018,13 @@ void VU1Interpreter::commitReadyPipelines()
+     m_nextCommitCycle = next;
+ }
+ 
++namespace
++{
++    // GOW-Port: progressXgkick corre en cada ciclo de un XGKICK; leer GOW_VIF_DIAG una vez fuera de la
++    // función evita la comprobación de inicialización de un static local en cada llamada.
++    const bool g_xgkickTrace = std::getenv("GOW_VIF_DIAG") != nullptr;
++}
++
+ void VU1Interpreter::progressXgkick()
+ {
+     if (!m_xgkick.active || !m_activeVuData || m_activeVuDataSize == 0u)
+@@ -1025,7 +1032,7 @@ void VU1Interpreter::progressXgkick()
+ 
+     auto traceRejectedTag = [&](const char *reason, uint32_t offset)
+     {
+-        static const bool enabled = std::getenv("GOW_VIF_DIAG") != nullptr;
++        const bool enabled = g_xgkickTrace;
+         static unsigned rejected = 0u;
+         if (!enabled || ++rejected > 32u) return;
+         uint64_t lo = 0u, hi = 0u;
+@@ -1049,7 +1056,10 @@ void VU1Interpreter::progressXgkick()
+         }
+ 
+         const uint32_t qwordOffset = m_xgkick.copiedBytes;
+-        const uint32_t first = (m_xgkick.sourceAddress + m_xgkick.copiedBytes) % m_activeVuDataSize;
++        const uint32_t position = m_xgkick.sourceAddress + m_xgkick.copiedBytes;
++        const uint32_t first = (m_activeVuDataSize & (m_activeVuDataSize - 1u)) == 0u
++                                   ? position & (m_activeVuDataSize - 1u)
++                                   : position % m_activeVuDataSize;
+         if (first + 16u <= m_activeVuDataSize) // GOW-Port: un qword sin dar la vuelta, de una vez
+             std::memcpy(m_xgkick.packet.data() + m_xgkick.copiedBytes, m_activeVuData + first, 16u);
+         else
+@@ -1070,8 +1080,7 @@ void VU1Interpreter::progressXgkick()
+             if (nreg == 0u)
+                 nreg = 16u;
+ 
+-            static const bool traceKick = std::getenv("GOW_VIF_DIAG") != nullptr;
+-            if (traceKick)
++            if (g_xgkickTrace)
+             {
+                 static unsigned tags = 0u;
+                 if (++tags <= 96u || (tags % 4096u) == 0u)

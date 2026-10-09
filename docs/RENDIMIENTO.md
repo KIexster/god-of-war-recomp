@@ -509,3 +509,34 @@ flags muertos solo existe en programas sin FSSET.
 Huellas de VU1 (intérprete y compilado) idénticas a las anteriores, prueba de FMAC (151.200 casos), prueba
 procedural de 60 casos y suite 565/565. Reproducción con el intérprete, que es lo que usa el juego sin
 microcódigo capturado: 333 → 293 ms por cuadro. Con el código compilado la diferencia es pequeña (~1 %).
+
+## Perfil de partida tras la PR #24 y flags de FMAC directos (8 de octubre)
+
+Perfil por muestreo del ejecutable de main tras la PR #24 (VU1 compilada con 501 micromemorias, OpenGL,
+FINISH síncrono), sin `GOW_PERF_DIAG` (su `steady_clock` costaba ~10 % del hilo) y solo entre los 105 y
+los 170 s (partida cargada). Reparto del hilo del juego:
+
+| Parte | Porcentaje |
+|---|---:|
+| Esperas al hilo del GS (`GSThreadedBackend::Sync`), que a su vez espera al driver | ~31 % |
+| Bloques compilados de VU1 (`vu1c_gen::b*`) | ~15 % |
+| Resto de VU1: colas (`commitReadyPipelines` ~6 %), despacho (`vu1c_gen::run` ~5 %), flags (~3 %), XGKICK (~2 %) | ~20 % |
+| VIF1, GS en el hilo del juego, IOP y EE | ~10 % |
+
+En `vu1c_gen::run`, el 55 % de sus muestras está en el `switch` que busca el bloque siguiente. En
+`commitReadyPipelines`, un tercio está en la mezcla por componente de los stores pendientes.
+
+`ps2recomp-vu1-fast-flags.patch`:
+
+- El código compilado ya no llama a `updateFmacFlags`, que recorre los cuatro carriles. En la ruta SSE el
+  MAC sale de las máscaras de signo y cero (`movemask`) invirtiendo sus 4 bits. En la escalar, la DEST
+  es constante y cada carril se coloca con desplazamientos fijos. `pushFmacFlags` llena la entrada de la
+  cola igual que `pushFlagEntry` + `updateFmacFlags`, incluido el caso de cola llena.
+- `progressXgkick` (cada ciclo de un XGKICK) leía `GOW_VIF_DIAG` en dos `static` locales, con su
+  comprobación de inicialización en cada llamada, y calculaba la dirección con un módulo. Ahora es una
+  variable del archivo y una máscara cuando el tamaño es potencia de dos.
+
+Huellas de VU1 (intérprete y compilado) idénticas a las de la PR #24 en `vif_pcsx2_inicio2` y
+`vif_port_480s`; `probar_vu1_compilada.cmd`, `probar_vu1_fmac.cmd` y suite 565/565. Reproducción de
+`vif_port_480s` sin rasterizar (`PS2X_GS_THREAD=1`, `PS2X_GS_DISCARD_DRAWS=1`, 200 pasadas, 8 rondas
+alternando ejecutables): mediana 104,4 → 100,1 ms por cuadro.
