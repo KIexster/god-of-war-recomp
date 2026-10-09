@@ -10,3 +10,11 @@ target_link_libraries(gow_gs_replay_checkpoints_test PRIVATE ps2_runtime)
 target_include_directories(gow_gs_replay_checkpoints_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src")
 add_executable(gow_gs_finish_async_test "${CMAKE_CURRENT_LIST_DIR}/../../tests/gs_finish_async_test.cpp")
 target_link_libraries(gow_gs_finish_async_test PRIVATE ps2_runtime)
+
+# GOW-Port: el patrón reducido también conserva el freeze y el GIF usados por PCSX2.
+add_executable(gow_gs_feedback_generator "${CMAKE_CURRENT_LIST_DIR}/../render/generar_feedback_gs.cpp")
+target_link_libraries(gow_gs_feedback_generator PRIVATE ps2_runtime)
+target_include_directories(gow_gs_feedback_generator PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src")
+add_executable(gow_gs_feedback_dump_test "${CMAKE_CURRENT_LIST_DIR}/../../tests/gs_feedback_dump_test.cpp")
+target_link_libraries(gow_gs_feedback_dump_test PRIVATE ps2_runtime)
+target_include_directories(gow_gs_feedback_dump_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src")

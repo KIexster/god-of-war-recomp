@@ -3,6 +3,7 @@
 #include "runtime/gs/gs_cpu_backend.h"
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <iostream>
 #include <span>
 #include <string_view>
@@ -86,7 +87,7 @@ namespace {
         return registers;
     }
 
-    bool verify(const std::filesystem::path &directory,const char *variant) {
+    bool verify(const std::filesystem::path &directory,const char *variant,unsigned height=416) {
         const auto name=std::string("feedback_gs_")+variant;
         const bool feedback=!std::string(variant).starts_with("oraculo_");
         const bool texflush=std::string(variant).ends_with("_texflush");
@@ -102,7 +103,7 @@ namespace {
                 GSPrimitiveBatch batch{};
                 if(!gow_gs_replay::pod(record,batch) || batch.vertexCount!=2 || submissions>=2 ||
                    batch.state.context.scissor.x1!=(scissor && submissions==1?510:511) ||
-                   batch.vertices[1].x>64 || batch.vertices[1].y!=416) return false;
+                   batch.vertices[1].x>64 || batch.vertices[1].y!=height) return false;
                 ++submissions;
             }
             if(record.op==gow_gs_replay::Op::TextureFlush) {
@@ -182,17 +183,31 @@ int wmain(int argc,wchar_t **argv)
 int main(int argc,char **argv)
 #endif
 {
-    if(argc!=2 && argc!=3) return 2;
-    if(argc==3 && std::filesystem::path(argv[2])=="--oraculos") {
+    // GOW-Port: la altura esperada es independiente del payload generado.
+    unsigned height=416; bool hasHeight=false,oracles=false,separations=false;
+    if(argc<2) return 2;
+    for(int i=2;i<argc;++i) {
+        const auto argument=std::filesystem::path(argv[i]);
+        if(argument=="--altura" && !hasHeight) {
+            if(++i==argc) return 2;
+            const auto encoded=std::filesystem::path(argv[i]).u8string();
+            const std::string number(encoded.begin(),encoded.end());
+            const auto parsed=std::from_chars(number.data(),number.data()+number.size(),height);
+            if(parsed.ec!=std::errc{} || parsed.ptr!=number.data()+number.size() || height<1 || height>416) return 2;
+            hasHeight=true;
+        } else if(argument=="--oraculos" && !oracles && !separations) oracles=true;
+        else if(argument=="--separaciones" && !oracles && !separations) separations=true;
+        else return 2;
+    }
+    if(oracles && hasHeight) return 2;
+    if(oracles) {
         for(const char *variant:{"oraculo_bilinear","oraculo_negativos","oraculo_limites","oraculo_bilinear_stq"})
             if(!verify(std::filesystem::path(argv[1]),variant)) return 1;
-    } else if(argc==3 && std::filesystem::path(argv[2])=="--separaciones") {
+    } else if(separations) {
         for(const char *variant:{"self","disjoint","nearest","self_texflush","disjoint_texflush","nearest_texflush",
                                 "self_scissor","disjoint_scissor","nearest_scissor"})
-            if(!verify(std::filesystem::path(argv[1]),variant)) return 1;
-    } else if(argc==3) {
-        return 2;
+            if(!verify(std::filesystem::path(argv[1]),variant,height)) return 1;
     } else for(const char *variant:{"self","disjoint","nearest"})
-        if(!verify(std::filesystem::path(argv[1]),variant)) return 1;
+        if(!verify(std::filesystem::path(argv[1]),variant,height)) return 1;
     return 0;
 }

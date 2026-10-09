@@ -57,8 +57,10 @@ namespace gow_gs_reference
     // GOW-Port: separar invalidación de caché de un corte de lote por cambio de estado.
     enum class FeedbackBoundary { None, Texflush, Scissor };
     inline bool feedbackDump(const std::filesystem::path &path,std::span<const uint8_t> seed,bool disjoint,bool linear,
-                             FeedbackBoundary boundary=FeedbackBoundary::None)
+                             FeedbackBoundary boundary=FeedbackBoundary::None,unsigned height=416)
     {
+        // GOW-Port: mismos límites que el generador procedural.
+        if(height<1 || height>416) return false;
         constexpr uint64_t frame=(8ull<<16)|(0xff000000ull<<32);
         constexpr uint64_t zbuf=104ull|(1ull<<24)|(1ull<<32);
         constexpr uint64_t scissor=(511ull<<16)|(447ull<<48);
@@ -72,7 +74,7 @@ namespace gow_gs_reference
         for(unsigned slice=0;slice<2;++slice) {
             if(slice==1 && boundary==FeedbackBoundary::Texflush) ad(0x3f,0);
             if(slice==1 && boundary==FeedbackBoundary::Scissor) ad(0x40,scissor-(1ull<<16));
-            const uint64_t x0=slice*32*16,x1=(slice+1)*32*16,y1=416*16;
+            const uint64_t x0=slice*32*16,x1=(slice+1)*32*16,y1=uint64_t(height)*16;
             ad(0x03,x0);ad(0x05,x0|(7ull<<32));
             ad(0x03,x1|(y1<<16));ad(0x05,x1|(y1<<16)|(7ull<<32));
         }
