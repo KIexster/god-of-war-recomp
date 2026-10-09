@@ -287,3 +287,25 @@ es equivalente en ambos modos; la medida de tiempo se realiza aparte.
 Compilación oficial completa y condiciones de las cuatro pasadas del juego:
 `docs/RENDER_DESCARTE_FRAGMENTOS.md`. El ensayo sintético y los registros del
 juego permanecen privados y no forman parte de los fixtures de CI.
+
+## Capacidad de presentación al grabar GS (2026-10-09)
+
+`tests/gs_replay_test.cpp` comprueba el decorador y `GS::usesSharedPresentation()`
+con capacidad RAM/compartida, tanto directamente como dentro de
+`GSThreadedBackend`. Se inicializa antes de consultar la capacidad efectiva.
+Las consultas no hacen Flush/Sync/Present ni empiezan la captura: el archivo
+queda reducido a su cabecera. El control falla con el decorador anterior y
+pasa al reenviar `UsesSharedPresentation()` bajo su mutex. La consulta no
+requiere OpenGL ni cambia el formato de las capturas.
+
+`scripts/compilar_replay_gs.cmd` pasa completo, incluidos parser, truncamiento,
+TEXFLUSH, checkpoints, CLI, feedback y oráculos procedurales. La recompilación
+rápida del ejecutable termina con código 0 sobre el runtime privado de 77
+parches ya validado; este cambio solo afecta al header del port.
+
+El control funcional de 140 s confirma ISO real, host en textura compartida
+con grabador activo, nivel listo y captura privada completa de 27.553.921 bytes.
+La captura a 90 s del mando muestra Kratos, cubierta, lluvia y HUD. La repetición
+CPU del End difiere en 343.007 bytes: el ensayo no certifica paridad del juego.
+Esa divergencia queda como investigación separada de render; el archivo no se
+publica. El cierre por límite no prueba el cierre normal ni mide FPS.

@@ -2,6 +2,56 @@
 #include "../src/gow_gs_replay.h"
 #include "runtime/gs/gs_cpu_backend.h"
 
+// GOW-Port: reproducir la selección del host sin necesitar un contexto OpenGL.
+class PresentationProbe final : public GSRasterBackend {
+public:
+    explicit PresentationProbe(bool enabled):shared(enabled) {}
+    bool shared; unsigned flushes=0,syncs=0,presents=0;
+    void Initialize(uint8_t *,uint32_t) override {}
+    void Reset() override {}
+    void Submit(const GSPrimitiveBatch &) override {}
+    void LoadClut(const GSTex0Reg &,const GSTexClutReg &) override {}
+    void BeginTransfer(const GSTransferCommand &) override {}
+    void UploadImage(const uint8_t *,uint32_t) override {}
+    void Flush() override { ++flushes; }
+    void TextureFlush() override {}
+    void Sync(GSSyncReason) override { ++syncs; }
+    PresentationFrame Present(const GSPresentationRequest &) override { ++presents; return {}; }
+    bool UsesSharedPresentation() const override { return shared; }
+    bool ClearFramebuffer(const GSContext &,uint32_t) override { return false; }
+    uint32_t ConsumeLocalToHostBytes(uint8_t *,uint32_t) override { return 0; }
+    uint32_t ReadVram(uint32_t,uint32_t,uint32_t,uint32_t,uint32_t) const override { return 0; }
+    void WriteVram(uint32_t,uint32_t,uint32_t,uint32_t,uint32_t,uint32_t) override {}
+    void SnapshotVram(std::vector<uint8_t> &out) const override { out.clear(); }
+    GSTransferSnapshot GetTransferSnapshot() const override { return {}; }
+};
+
+static bool presentationCapabilityTest(const std::filesystem::path &path)
+{
+    auto trace=path; trace += ".presentation";
+    for(bool threaded:{false,true}) for(bool shared:{false,true}) {
+        {
+            auto probe=std::make_unique<PresentationProbe>(shared);
+            auto *observed=probe.get();
+            std::unique_ptr<GSRasterBackend> inner=std::move(probe);
+            if(threaded) inner=std::make_unique<GSThreadedBackend>(std::move(inner));
+            auto capture=std::make_unique<gow_gs_replay::Backend>(std::move(inner),nullptr,trace,3600,3);
+            std::vector<uint8_t> vram(PS2_GS_VRAM_SIZE);
+            capture->Initialize(vram.data(),uint32_t(vram.size()));
+            // El decorador y el frontend deben anunciar la capacidad del backend ya inicializado.
+            if(capture->UsesSharedPresentation()!=shared) return false;
+            GS gs;
+            gs.init(vram.data(),uint32_t(vram.size())); gs.setRasterBackend(std::move(capture));
+            const auto flushes=observed->flushes,syncs=observed->syncs,presents=observed->presents;
+            if(gs.usesSharedPresentation()!=shared || gs.usesSharedPresentation()!=shared ||
+               observed->flushes!=flushes || observed->syncs!=syncs || observed->presents!=presents) return false;
+        }
+        // Consultar la capacidad no empieza la captura ni escribe comandos.
+        if(std::filesystem::file_size(trace)!=sizeof(gow_gs_replay::Header)) return false;
+    }
+    std::filesystem::remove(trace); return true;
+}
+
 static bool optionsTest()
 {
     using namespace gow_gs_replay;
@@ -118,6 +168,7 @@ int main(int argc,char **argv)
 {
     if(argc!=2) return 2;
     const std::filesystem::path path=argv[1];
+    if(!presentationCapabilityTest(path)) { std::fprintf(stderr,"Capacidad de presentación del host: fallo\n"); return 1; }
     std::vector<uint8_t> vram(PS2_GS_VRAM_SIZE);
     gow_gs_replay::Backend capture(std::make_unique<GSCpuBackend>(),nullptr,path,0,3600);
     capture.Initialize(vram.data(),uint32_t(vram.size()));

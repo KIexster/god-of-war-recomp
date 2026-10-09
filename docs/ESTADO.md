@@ -2545,3 +2545,44 @@ Se detecta como siguiente tarea que el decorador de captura GS no reenvía
 `UsesSharedPresentation()`: al grabar podría hacer que el host eligiese RAM
 sobre un backend que presenta texturas compartidas. Se corregirá por separado
 con una regresión independiente del juego.
+
+### 2026-10-09 — El grabador GS conserva presentación compartida
+
+El decorador de captura heredaba la capacidad RAM por defecto aunque su
+backend presentase texturas compartidas. El host podía elegir un modo distinto
+al backend al activar `GOW_GS_REPLAY_TRACE`. Ahora reenvía la capacidad efectiva
+bajo el mutex existente; conserva RAM cuando corresponde y no fuerza OpenGL.
+
+La regresión consulta el decorador y el frontend con RAM/compartida y backend
+directo/en otro hilo. Falla antes y pasa después; consultar no sincroniza,
+presenta ni graba comandos. Suite de herramientas GS completa y recompilación
+rápida: código 0. El ensayo de 140 s conserva el host compartido, llega a nivel
+listo y cierra una captura privada breve durante la partida. La repetición CPU
+no reproduce su VRAM final (343.007 bytes distintos), por lo que no se afirma
+paridad de la cadena ni mejora de FPS. Condiciones en `docs/CONTROLES.md`.
+
+
+### 2026-10-09 — Cadena GS de partida y pista de feedback
+
+La captura privada breve contiene 60.389 Submit. CPU reproduce su propia
+salida entre repeticiones, pero difiere en 343.007 bytes del End capturado.
+Una sonda privada continúa tras esa divergencia para comparar variantes;
+no modifica el verificador público ni certifica la captura contra CPU.
+
+Con shaders calientes, restauración inicial completa y 40.855 primitivas,
+289 batches y cero tiles compute por pasada, el shader anterior varía
+897 bytes entre las pasadas 2/3 y el descarte varía 1.072. La comparación
+entre sus últimas pasadas difiere 1.047 bytes: esta ruta no permite certificar
+igualdad entre modos por una sola repetición.
+
+Al repetir con la opción experimental existente `--snapshot-feedback`, las
+pasadas 2/3 de cada modo coinciden en los 4 MiB, y la última pasada sin/con
+descarte también coincide exactamente. La diferencia frente a CPU persiste
+(342.846 bytes en el candidato con descarte); congelar por Submit no emula
+la caché PS2 de 8 KiB. Es evidencia que orienta hacia lecturas de textura y
+feedback dentro del primitivo, no prueba todavía su causa exacta. No se activa
+esta política en el juego ni se atribuye una mejora de FPS a este diagnóstico.
+
+Siguiente tarea: aislar un primitivo procedural con feedback y estudiar la
+visibilidad/caché de sus lecturas, conservando el control CPU estricto. No se
+publican cadenas, VRAM, capturas ni herramientas derivadas del juego.

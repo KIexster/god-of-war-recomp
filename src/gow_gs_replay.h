@@ -200,6 +200,8 @@ namespace gow_gs_replay
         }
         void Flush() override { std::lock_guard lock(mutex); if(recording()) write(Op::Flush,nullptr,0); inner->Flush(); }
         void Sync(GSSyncReason v) override { std::lock_guard lock(mutex); if(recording(sizeof(v))) write(Op::Sync,v); inner->Sync(v); }
+        // GOW-Port: el host conserva el modo efectivo del backend al activar la captura.
+        bool UsesSharedPresentation() const override { std::lock_guard lock(mutex); return inner->UsesSharedPresentation(); }
         PresentationFrame Present(const GSPresentationRequest &v) override { std::lock_guard lock(mutex); if(recording(sizeof(v))) write(Op::Present,v); return inner->Present(v); }
         bool ClearFramebuffer(const GSContext &c,uint32_t rgba) override {
             std::lock_guard lock(mutex); const bool enabled=recording(sizeof(Clear));
