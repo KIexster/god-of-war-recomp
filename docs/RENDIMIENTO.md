@@ -580,3 +580,17 @@ Huellas de VU1 (compilado e intérprete) idénticas en `vif_pcsx2_inicio2` y `vi
 `probar_vu1_fmac.cmd` (100.800 casos con valores límite + 2.016 FTZ/DAZ), `probar_vu1_compilada.cmd` y suite
 573/573. Reproducción alternando ejecutables: compilado 103,2 → 99,0 ms por cuadro (6 rondas de 150 pasadas),
 intérprete 313,9 → 307,0 ms (5 rondas de 40).
+
+### Stores de VU1 compilados escritos en el acto (9 de octubre)
+
+`queueStore` encola cada SQ/SQI/ISW con un ciclo de latencia, pero el mismo paso avanza ese ciclo y
+`commitReadyPipelines` lo escribe enseguida: antes de que lea la memoria el siguiente par, PATH1 (XGKICK lee
+tras confirmar) o el VIF. Además, solo hay una instrucción inferior por par. En el código compilado,
+`ps2recomp-vu1-direct-store.patch` escribe el store en el acto (`vu1c::storeT<DEST>`: xyzw de una vez, o
+lectura-mezcla-escritura del qword con los carriles constantes), con lo que ya no pasa por la cola ni por la
+confirmación de cada ciclo. El intérprete no cambia: `queueStore` también lo usan rutas sin avance de ciclo
+garantizado en el mismo paso.
+
+Huellas de VU1 (compilado e intérprete, que incluyen la memoria de datos) idénticas en `vif_pcsx2_inicio2` y
+`vif_port_480s`; `probar_vu1_compilada.cmd` (colas, presupuesto y reanudación) y `probar_vu1_fmac.cmd` en
+verde. Reproducción alternando ejecutables (6 rondas de 150 pasadas): mediana 99,9 → 93,0 ms por cuadro.
