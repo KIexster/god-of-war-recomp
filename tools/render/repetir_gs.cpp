@@ -76,7 +76,7 @@ namespace {
     struct Options {
         std::filesystem::path capture,output=".";
         std::string mode;
-        bool lockstep=false,snapshotFeedback=false,syncCheckpoints=false;
+        bool lockstep=false,snapshotFeedback=false,syncCheckpoints=false,invalidateSubmitCache=false;
         uint32_t repetitions=1,pauseMs=0,lastRecord=0;
         bool gpuMode() const { return mode!="cpu"; }
         bool multiple() const { return repetitions>1; }
@@ -99,6 +99,10 @@ namespace {
             else if(argument==std::filesystem::path("--snapshot-feedback")) {
                 if(options.snapshotFeedback) return false;
                 options.snapshotFeedback=true;
+            }
+            else if(argument==std::filesystem::path("--invalidar-cache-submit")) {
+                if(options.invalidateSubmitCache) return false;
+                options.invalidateSubmitCache=true;
             }
             else if(argument==std::filesystem::path("--pausa-ms")) {
                 if(options.pauseMs || ++i==argc) return false;
@@ -131,6 +135,7 @@ namespace {
             }
         }
         return (!options.snapshotFeedback || options.gpuMode()) &&
+               (!options.invalidateSubmitCache || !options.gpuMode()) &&
                (!(options.pauseMs || options.syncCheckpoints) || options.multiple());
     }
     bool restoreInitial(GSRasterBackend &backend,std::vector<uint8_t> &vram,
@@ -289,10 +294,30 @@ namespace {
                 const int code=finish(&final,record.op); if(code) return code;
                 break;
             }
+            // GOW-Port: sonda causal solo en el candidato CPU. Mantener intactos
+            // referencia y End; invalidar la etiqueta conserva los bytes, como TEXFLUSH.
+            if(options.invalidateSubmitCache && record.op==replay::Op::Submit) {
+                auto *access=dynamic_cast<GSBackendStateAccess*>(&candidate);
+                GSBackendState state;
+                if(!access || !access->ExportState(state)) return 3;
+                state.cachePageBase=UINT32_MAX;
+                if(!access->ImportState(state)) return 3;
+            }
             if(record.op==replay::Op::Initial || !apply(reference,record,a) || !apply(candidate,record,b)) {
                 std::cerr<<"Fallo en registro "<<index<<" op="<<unsigned(record.op)<<'\n'; return 3;
             }
             if(record.op==replay::Op::Submit) ++draws;
+            if(options.invalidateSubmitCache && record.op==replay::Op::Submit) {
+                GSBackendState referenceState,candidateState;
+                auto *access=dynamic_cast<GSBackendStateAccess*>(&candidate);
+                if(!reference.ExportState(referenceState) || !access || !access->ExportState(candidateState)) return 3;
+                size_t bytes=0;
+                for(size_t i=0;i<referenceState.cacheBytes.size();++i)
+                    bytes+=referenceState.cacheBytes[i]!=candidateState.cacheBytes[i];
+                std::cout<<"Cache tras Submit: registro="<<index<<" draws="<<draws
+                         <<" baseReferencia="<<referenceState.cachePageBase
+                         <<" baseCandidato="<<candidateState.cachePageBase<<" bytesDistintos="<<bytes<<'\n';
+            }
             if(record.op==replay::Op::Present) {
                 std::vector<uint8_t> visibleA,visibleB;
                 if(!GowRenderTool::normalize(a,visibleA,GowRenderTool::PixelLayout::HostRows640) ||
@@ -416,6 +441,8 @@ namespace {
         } else candidate=std::make_unique<GSCpuBackend>();
         if(options.snapshotFeedback)
             std::cout<<"Feedback experimental: fuente congelada por Submit; no emula la cache PS2 de 8 KiB\n";
+        if(options.invalidateSubmitCache)
+            std::cout<<"Sonda causal CPU: invalidar cache solo del candidato antes de cada Submit; no es una corrección del renderer\n";
         if(options.pauseMs)
             std::cout<<"Pausa de diagnostico entre pasadas: "<<options.pauseMs<<" ms\n";
         if(options.syncCheckpoints)
@@ -452,7 +479,7 @@ int main(int argc,char **argv) {
 #endif
     Options options;
     if(!parse(argc,argv,options)) {
-        std::cerr<<"Uso: repetir_gs captura.bin cpu|compute|hardware [--lockstep] [--snapshot-feedback] [--repeticiones N] [--pausa-ms M] [--checkpoints-sync] [--hasta-registro R] [directorio]\n"
+        std::cerr<<"Uso: repetir_gs captura.bin cpu|compute|hardware [--lockstep] [--snapshot-feedback] [--invalidar-cache-submit] [--repeticiones N] [--pausa-ms M] [--checkpoints-sync] [--hasta-registro R] [directorio]\n"
                  <<"N/R positivos; R en Flush/Sync/Present/End (Initial=0); M=1..1000 requiere varias pasadas; no se admiten opciones desconocidas ni duplicadas\n"; return 2;
     }
     return run(options);
