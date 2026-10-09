@@ -47,3 +47,78 @@ La adaptación OpenGL existente conserva su licencia GPL-3.0 y el crédito a
 Taylor N. Albarnaz / LightVelox, `sotc-port` en
 `ac9efa070638ad3b3accd284de6f898d5ab271d1`. El descarte y su control son cambios
 propios marcados con `GOW-Port`.
+
+## Verificación integrada
+
+La suite Windows con OpenGL real pasa **624/624** con descarte desactivado
+y **624/624** activado; incluye 34 controles OpenGL. La CI de `54b7107` pasa
+sus dos trabajos. La compilación oficial con `scripts/2_compilar.cmd` termina
+con código 0 y 77 parches, conservando las 501 micromemorias privadas de VU1.
+Los 103 archivos parcheados coinciden con la referencia probada, normalizando
+finales de línea y el include del runner; la desactivación habitual de LTCG
+del script queda fuera de esa comparación de fuentes.
+
+El ejecutable de `54b7107` mide 70.469.632 bytes; su SHA-256 es
+`706ACF0D64CD601E935C2050ACF184730B5698DBF2BE3D82A57C5BD68427D3F6`.
+Este mismo binario se utiliza con la opción 0/1 en la comparación del juego.
+
+## Selección del tramo del juego
+
+Las cuatro pasadas usan presentación compartida, perfil solo de cuadros,
+tarjeta inicialmente ausente y la misma carpeta privada de caché. Alternan
+descarte 0, 1, 1, 0 durante 180 segundos por proceso, sin capturas ni
+diagnósticos GPU, con vigilancia de otras partidas y compilaciones.
+
+La precarga separa el reloj del perfil y el del mando unos 38 segundos en
+las primeras pasadas y unos 5 después de preparar la caché. El intervalo
+inicial previsto de 100–170 segundos del perfil mezcla momentos distintos
+de la secuencia de entrada; no se usa para atribuir una mejora al shader.
+
+Se delimitan en cambio informes del mando entre sus segundos 100 y 125,
+con estado 11, `pending=0` y `levelReady=1`. El primer informe del perfil
+posterior al primer estado limita el inicio, y el último anterior al estado
+final limita el fin. `resumir.py --partida` selecciona las ventanas completas
+entre esos límites por orden de líneas, sin igualar ambos relojes. Esto deja
+unos 15 segundos medidos por pasada; se conserva el intervalo efectivo.
+
+El mando usa tiempo real y no constituye un replay determinista del juego.
+Los estados muestreados no prueban igualdad de todos los enemigos o animaciones.
+La muestra corta y las dos repeticiones por modo limitan la conclusión a este
+tramo observado; no certifican un porcentaje estable para el juego completo.
+
+| Pasada | Descarte | Límites del perfil (s) | Ventanas | Tiempo medido (s) | `guest_flip_hz` |
+|---|---|---|---|---|---|
+| 1 | 0 | 143,55–158,58 | 3 | 15,03 | 6,857 |
+| 2 | 1 | 143,01–158,01 | 3 | 15,00 | 7,200 |
+| 3 | 1 | 105,02–120,03 | 3 | 15,00 | 7,333 |
+| 4 | 0 | 105,02–120,04 | 3 | 15,01 | 7,060 |
+
+El promedio ponderado por tiempo es **6,958 cuadros/s sin descarte** y
+**7,267 con descarte** (+4,43 %). Cuenta llamadas de `vid::Flip` en
+`0x001837B8`, no los refrescos del host de 60 Hz. Ambos modos confirman
+rasterizado hardware y partida cargada. La vigilancia no detecta compiladores
+ni otra partida durante las cuatro ejecuciones.
+
+Los límites de la tabla permiten repetir la selección con
+`python tools/rendimiento/resumir.py <registro-privado> --partida --desde <inicio> --hasta <fin>`.
+La alineación se eligió al detectar la separación de relojes, antes de completar
+la cuarta pasada. Los registros y tarjetas son privados. La comparación usa el
+mismo ejecutable nuevo y no atribuye al descarte diferencias con binarios anteriores.
+
+
+## Control funcional del ejecutable
+
+Una ejecución de 240 segundos con descarte 1, presentación compartida,
+diagnósticos GS y capturas usa el binario del SHA indicado. La ISO real se
+confirma en el registro; el mando de prueba atraviesa el menú y alcanza
+estado 11, `pending=0`, `levelReady=1`. Las capturas a los segundos del mando
+90, 160 y 190 muestran a Kratos, la cubierta, lluvia, HUD y enemigos en combate.
+Son capturas diagnósticas de la VRAM actual con el CRTC latched, no una
+comparación exacta con CPU del juego ni una certificación de todos sus efectos.
+El proceso se cierra por el límite del ensayo: no prueba el cierre normal.
+Los diagnósticos invalidan usar esta ejecución como medida de FPS.
+
+La primera tentativa privada no cargó la ISO por una ruta con acentos leída
+con codificación incorrecta en su lanzador PowerShell. Se excluye del control
+funcional y se conserva separadamente; la repetición corrige la codificación.
+Las cuatro pasadas de rendimiento sí confirman ISO real y partida cargada.

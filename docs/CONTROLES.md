@@ -272,3 +272,18 @@ controles.
 La comparación real de cuatro pasadas está documentada en
 `docs/RENDIMIENTO_PRESENTACION.md`; sus archivos derivados del juego son
 privados y no se utilizan como fixtures de CI.
+
+
+## Descarte hardware fuera de cobertura (2026-10-09)
+
+El parche 77 añade `OpenGL hardware preserves thin subpixel triangle coverage
+and blending`. Compara exactamente los 4 MiB de VRAM con CPU usando triángulos
+finos, mezcla, scissor y VRAM inicial no nula. Repite durante la preparación
+asíncrona y exige una pasada hardware sin aumentar tiles compute. La suite
+Windows pasa 624/624, con 34 controles OpenGL reales, tanto con
+`PS2X_GS_HW_DISCARD_UNCOVERED=0` como con el valor 1. El resultado de píxeles
+es equivalente en ambos modos; la medida de tiempo se realiza aparte.
+
+Compilación oficial completa y condiciones de las cuatro pasadas del juego:
+`docs/RENDER_DESCARTE_FRAGMENTOS.md`. El ensayo sintético y los registros del
+juego permanecen privados y no forman parte de los fixtures de CI.

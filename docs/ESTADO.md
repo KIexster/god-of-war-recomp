@@ -2522,3 +2522,26 @@ descarte frente a 16,63–18,35 ms con él para un lote de 4096 triángulos. No
 son FPS de partida. Se inicia la suite completa y la compilación oficial;
 el detalle y las restricciones del interlock están en
 `docs/RENDER_DESCARTE_FRAGMENTOS.md`.
+
+
+### 2026-10-09 — Descarte hardware: validación completa
+
+La suite nativa termina 624/624 en ambos modos, incluidos 34 controles
+OpenGL reales. La compilación oficial termina con código 0 y 77 parches;
+los 103 archivos parcheados coinciden con la referencia probada. El mismo
+binario se compara en cuatro pasadas 0/1/1/0 de 180 s: el tramo conservador
+alineado por informes del mando suma unos 30 s por modo y da 6,958 cuadros/s
+sin descarte frente a 7,267 con él (+4,43 %). La muestra es corta y no es un
+replay determinista: no acredita un porcentaje estable del juego completo.
+
+El control funcional repetido reconoce la ISO real y llega a partida cargada.
+Las capturas del mando a 90/160/190 s muestran a Kratos, enemigos en combate,
+cubierta, lluvia y HUD. El ensayo usa diagnósticos y termina por límite;
+no valida FPS, todos los efectos ni el cierre normal. La primera tentativa
+con ruta mal codificada se descarta. Hash, selección y límites del ensayo:
+`docs/RENDER_DESCARTE_FRAGMENTOS.md`.
+
+Se detecta como siguiente tarea que el decorador de captura GS no reenvía
+`UsesSharedPresentation()`: al grabar podría hacer que el host eligiese RAM
+sobre un backend que presenta texturas compartidas. Se corregirá por separado
+con una regresión independiente del juego.
