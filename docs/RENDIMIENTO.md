@@ -636,3 +636,16 @@ transferencia en la misma iteración que antes. Vale para el intérprete y el c�
 Huellas de VU1 (compilado e intérprete, que incluyen los ciclos) idénticas en `vif_pcsx2_inicio2` y
 `vif_port_480s`; `probar_vu1_compilada.cmd`, `probar_vu1_fmac.cmd` y suite 573/573. Reproducción alternando
 ejecutables (6 rondas de 150 pasadas): mediana 82,2 → 78,2 ms por cuadro.
+
+### Más microcódigo capturado: Batalla final (9 de octubre)
+
+Con una copia de una tarjeta de PCSX2 y `GOW_PAD_GUION` se cargó una partida de la Batalla final con
+`GOW_VU1_CAPTURA`, sin jugar a mano. En 300 s salieron 1.801 micromemorias nuevas (había 501), pero ningún par
+nuevo: los 5.991 pares (dirección y palabras) ya estaban capturados. El juego arma sus programas de VU1 con los
+mismos trozos en otras combinaciones, así que solo aparecen bloques nuevos (1.294 → 1.417) y el C++ generado
+crece de 11,6 a 12,2 MB. Con lo capturado hasta ahora, la Batalla final no pasa por el intérprete.
+
+`generar_vu1` acepta una carpeta (todas sus `*.bin`, por nombre) y `ps2recomp-vu1-generator-dir.patch` hace que
+CMake le pase la carpeta de `GOW_VU1_MICROCODIGO` en vez de cada archivo: 2.302 rutas superan los 32 K
+caracteres de la línea de órdenes de Windows. Con las 501 micromemorias de antes el C++ generado es idéntico
+byte a byte.

@@ -1,0 +1,14 @@
+diff --git a/ps2xRuntime/CMakeLists.txt b/ps2xRuntime/CMakeLists.txt
+index 51a50b5..7de8829 100644
+--- a/ps2xRuntime/CMakeLists.txt
++++ b/ps2xRuntime/CMakeLists.txt
+@@ -540,7 +540,8 @@ if(PS2X_VU1_MICROCODE_DIR AND PS2X_VU1_GENERATOR_SOURCE AND NOT PS2X_IS_ANDROID
+         endforeach()
+         add_custom_command(OUTPUT ${PS2X_VU1_GENERATED_PARTS}
+             COMMAND "${CMAKE_COMMAND}" -E make_directory "${PS2X_VU1_GENERATED_DIR}"
+-            COMMAND "$<TARGET_FILE:ps2x_vu1_generator>" "${PS2X_VU1_GENERATED_DIR}" ${PS2X_VU1_IMAGES}
++            # GOW-Port: la carpeta, no cada archivo: miles de rutas superan la línea de órdenes de Windows.
++            COMMAND "$<TARGET_FILE:ps2x_vu1_generator>" "${PS2X_VU1_GENERATED_DIR}" "${PS2X_VU1_MICROCODE_DIR}"
+             DEPENDS ps2x_vu1_generator ${PS2X_VU1_IMAGES}
+             VERBATIM)
+         target_sources(ps2EntryRunner PRIVATE ${PS2X_VU1_GENERATED_PARTS})

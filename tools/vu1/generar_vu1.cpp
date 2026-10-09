@@ -18,6 +18,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -150,19 +152,36 @@ int main(int argc, char **argv)
 {
     if (argc < 3)
     {
-        std::cerr << "Uso: generar_vu1 <carpeta de salida> <micromemoria.bin>...\n";
+        std::cerr << "Uso: generar_vu1 <carpeta de salida> <micromemoria.bin | carpeta>...\n";
         return 2;
+    }
+    // GOW-Port: una carpeta cuenta como todas sus micromemorias (*.bin, por nombre). Miles de rutas no caben
+    // en la línea de órdenes de Windows (32 K caracteres).
+    std::vector<std::string> inputs;
+    for (int a = 2; a < argc; ++a)
+    {
+        if (std::filesystem::is_directory(argv[a]))
+        {
+            std::vector<std::string> files;
+            for (const auto &entry : std::filesystem::directory_iterator(argv[a]))
+                if (entry.is_regular_file() && entry.path().extension() == ".bin")
+                    files.push_back(entry.path().string());
+            std::sort(files.begin(), files.end());
+            inputs.insert(inputs.end(), files.begin(), files.end());
+        }
+        else
+            inputs.push_back(argv[a]);
     }
     VU1Interpreter vu;
     std::vector<Code> codes;
-    for (int a = 2; a < argc; ++a)
+    for (const std::string &input : inputs)
     {
-        std::ifstream file(argv[a], std::ios::binary);
+        std::ifstream file(input, std::ios::binary);
         Code code;
         code.bytes.assign((std::istreambuf_iterator<char>(file)), {});
         if (code.bytes.size() != PS2_VU1_CODE_SIZE)
         {
-            std::cerr << argv[a] << ": la micromemoria de VU1 debe tener 16384 bytes\n";
+            std::cerr << input << ": la micromemoria de VU1 debe tener 16384 bytes\n";
             return 1;
         }
         const uint32_t count = static_cast<uint32_t>(code.bytes.size() / 8u);
