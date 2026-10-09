@@ -101,3 +101,15 @@ La modificación afecta al profiler activado por variable de entorno. No se
 declara una mejora de FPS con el profiler apagado ni se modifican shaders,
 VU1, FPU, EE, IOP o reproducción FMV. Tampoco se habilita por defecto
 `PS2X_GS_GPU_FINISH_ASYNC`.
+
+### 2026-10-09: consumidor compartido conectado en la PR #33
+
+La limitación de presentación por RAM descrita arriba corresponde a la
+prueba anterior del profiler. La PR #33 conecta el host raylib con las
+texturas compartidas al seleccionar backend GPU y
+`PS2X_GS_DIRECT_PRESENT=1`. La pasada funcional de 241,18 s confirma el
+modo efectivo en el registro y llega a la escena del barco; las capturas
+diagnósticas siguen disponibles bajo demanda. La ruta CPU/RAM permanece
+como referencia. Validación y límites en
+[presentación compartida](RENDER_PRESENTACION_COMPARTIDA.md). No se usan
+los tiempos de esa pasada con diagnósticos para atribuir una mejora de FPS.

@@ -87,6 +87,7 @@ $vu1DirectStorePatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-direct-store.p
 $vu1ColdScalarPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-cold-scalar.patch'
 $vu1SimdZeroPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-simd-zero.patch'
 $vu1XgkickFlushPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-xgkick-flush.patch'
+$gsSharedHostPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-shared-host.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -198,6 +199,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1DirectStorePatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1ColdScalarPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1SimdZeroPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1XgkickFlushPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsSharedHostPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
@@ -256,6 +258,22 @@ Get-ChildItem -LiteralPath (Join-Path $RepoRoot 'src') -Filter '*.h' -File | Cop
 # Con MSVC en espanol ninja no registra las dependencias /showIncludes: los .cpp incluidos desde los
 # archivos unity (codigo generado, register_functions.cpp, overrides) no fuerzan recompilacion. Borramos
 # los objetos unity para que se recompilen siempre con el codigo recien generado.
+# GOW-Port: un cambio de headers tambien altera el ABI del runtime y de los tests.
+# Sin dependencias registradas, conservar esos objetos o el PCH puede mezclar
+# interfaces anteriores con el runner nuevo (C3668 o una violacion de acceso).
+foreach ($objectRelative in @('ps2xRuntime\CMakeFiles\ps2_runtime.dir',
+                             'ps2xTest\CMakeFiles\ps2_test_lib.dir',
+                             'ps2xTest\CMakeFiles\ps2_test_function_table.dir')) {
+    $objectDir = Join-Path $bld $objectRelative
+    if (Test-Path -LiteralPath $objectDir) {
+        Get-ChildItem -LiteralPath $objectDir -Recurse -Filter '*.obj' -File | Remove-Item -Force
+    }
+}
+$runnerObjectDir = Join-Path $bld 'ps2xRuntime\CMakeFiles\ps2EntryRunner.dir'
+if (Test-Path -LiteralPath $runnerObjectDir) {
+    Get-ChildItem -LiteralPath $runnerObjectDir -Filter '*.pch' -File | Remove-Item -Force
+    Get-ChildItem -LiteralPath $runnerObjectDir -Filter 'cmake_pch*.obj' -File | Remove-Item -Force
+}
 $unityDir = Join-Path $bld 'ps2xRuntime\CMakeFiles\ps2EntryRunner.dir\Unity'
 if (Test-Path -LiteralPath $unityDir) { Get-ChildItem -LiteralPath $unityDir -Filter '*.obj' | Remove-Item -Force }
 Run 'cmake' @('-S', $rec, '-B', $bld)
