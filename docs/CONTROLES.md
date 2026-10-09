@@ -364,3 +364,10 @@ No fuerza su actualización ni cambia la selección de vistas. Las muestras se
 identifican por fase, modelo, vista y ordinal; el tiempo transcurrido es del
 host y las marcas del objeto/esqueleto son de jerarquía, no números de cuadro.
 No usar estas ejecuciones para medir FPS.
+
+Compilación completa Windows con 78 parches correcta. Dos controles de 95 s
+sobre el mismo binario (SHA en ESTADO): con modelos activos se obtienen 343
+muestras en intro y 1.016 matrices finitas en total; sin modelos se obtienen
+128 muestras de cámara en intro. Ninguno registra estado 11. Terminación por
+límite controlado; no se verifican aquí partida, equivalencia visual ni FPS.
+Una mutación que comparte cupos entre menú e intro hace fallar la prueba.

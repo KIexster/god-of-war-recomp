@@ -2744,3 +2744,39 @@ Se integra `eebf73b` (PR #42 de Opus) antes de la compilación completa del jueg
 REA está conectado, pero `open_binary` rechaza este ELF como arquitectura no
 soportada: no se atribuye a REA una descompilación ni validación del R5900.
 El fallo visual de encuadre continúa abierto.
+
+Control nativo final: `scripts/2_compilar.cmd` completo, 78 parches, retorno 0;
+ELF SHA-256 `ec9397d252f14d4412daffaad6be1f1931769e56222b5dbb9b39a947fc8ad71c`.
+Ejecutable de `eebf73b + 54c2dd1`, SHA-256
+`b67f4e7b9b3377ecdc05b5d8a8033c8acf60f665050ec9ebf8174e51e70a4569`.
+En 95 segundos con OpenGL, presentación RAM, FINISH síncrono, fast boot
+apagado, FMV omitido y prueba de pad: 123 muestras de modelos en menú y
+343 en intro, respectivamente 15 y 11 pares modelo/vista. Los 466 objetos
+observados son legibles; 84 lecturas de raíz son válidas. Se registran 1.016
+matrices, ninguna no finita ni totalmente nula. La ausencia de una raíz válida
+en los demás objetos no se interpreta como corrupción: hay objetos sin
+paleta articulada. Los dos modelos articulados observados en intro tienen
+125 y 103 articulaciones; sus matrices de raíz son constantes en las 32
+muestras de cada uno. No se identifica todavía cuál recurso es Kratos ni se
+comprueban aquí las matrices de las otras articulaciones.
+
+El control terminó por su límite temporal deliberado, sin muestras del estado
+11. Una segunda ejecución del mismo binario, otros 95 segundos, con
+`GOW_MODEL_DIAG=0` y cámara activa, tampoco registra ese estado (128 muestras
+de cámara en estado 4, ningún registro de modelos). Esto no establece una
+causa ni equivale a verificar visualmente la partida. No se comparan FPS.
+Ambos procesos propios finalizaron; no se modificó el checkout de Opus.
+
+La prueba local que vuelve a compartir el cupo de menú/intro falla, como se
+espera. Las instrucciones de las dos funciones usadas para recuperar offsets
+coinciden con el ELF local: 254 de `0x1303D0` y 380 de `0x137508`, sin huecos ni
+bytes distintos. Ghidra 12.1.4 y `ghidra-emotionengine-reloaded` importan ese ELF
+con `r5900:LE:32:default` y descompilan ambas funciones en un proyecto privado,
+sin análisis global. REA 6.2.0 no admite MIPS en su lector ELF, proveedor Ghidra
+y enums de evidencia; además su servidor no tiene `GHIDRA_INSTALL_DIR` definido.
+La prueba directa de Ghidra no demuestra soporte del puente REA.
+
+Siguiente comparación: identificar el modelo y las articulaciones del personaje,
+y relacionarlas con el cliente de cámara durante el mismo instante de PCSX2.
+La sonda no modifica renderizado ni arregla el encuadre; registros y proyecto
+Ghidra permanecen privados.
