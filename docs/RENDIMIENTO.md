@@ -694,3 +694,21 @@ quitar sin cambiar el comportamiento:
 
 `ps2recomp-dma-iop-timers-cache.patch`. Suite 590/590. En partida, con las dos opciones del GS activas y
 alternando ejecutables (dos rondas válidas de 3 min): 11,59 → 11,90 y 11,19 → 11,37 cuadros/s (~2 %).
+
+## UNPACK de VIF1 por formato y temporizadores del EE sin divisiones (9 de octubre)
+
+`ps2recomp-vif1-ee-timers-fast.patch`:
+
+- **UNPACK de VIF1.** Sin máscara, sin sumar la fila (STMOD 0/3) y con CL >= WL, cada escritura tiene su vector de
+  origen y el bucle general solo lee el qword, sustituye las componentes descomprimidas y lo escribe. Ahora se
+  hace lo mismo por formato antes del bucle general: V4-32 se copia de una vez; V3 conserva W de la memoria, V2
+  escribe XYXY, V1 repite X y V4-5 expande como antes.
+- **Temporizadores del EE.** `advanceEeTimers` corre en cada punto de control. Con BUSCLK/2, /32 y /512 (el reloj
+  del temporizador divide exactamente el del EE, clock = Hz / d), con R = q · clock + r se cumple
+  floor((ciclos · clock + R) / Hz) = (ciclos + q) / d, y el resto nuevo es ((ciclos + q) mod d) · clock + r: sin
+  divisiones de 64 bits por un divisor variable. HBLANK sigue con la cuenta general. Comprobado contra la
+  fórmula original con 200.000 pasos aleatorios por modo, incluidos restos arbitrarios tras cambiar de modo.
+
+Huellas de VU1 (compilado e intérprete, con la memoria de datos que escribe VIF1) idénticas en
+`vif_pcsx2_inicio2` y `vif_port_480s`; suite 590/590. En partida, alternando ejecutables, con FINISH asíncrono:
+11,26 → 11,33 y 10,75 → 11,08 cuadros/s con presentación compartida, y 6,91 → 7,21 sin ella (~2 %, ruidoso).
