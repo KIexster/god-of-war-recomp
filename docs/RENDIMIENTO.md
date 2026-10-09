@@ -21,6 +21,34 @@ y el rechazo de pasadas invalidadas.
 El script retira también `PS2X_GS_DISCARD_DRAWS` y los diagnósticos de GS/VU1 durante el perfil,
 y restaura sus valores al terminar.
 
+## Comparar presentación RAM y compartida
+
+`probar_rendimiento.ps1` fija `PS2X_GS_DIRECT_PRESENT` en cada pasada y restaura su
+valor al terminar. El valor por defecto es `-Presentacion ram`, también con OpenGL;
+`-Presentacion compartida` requiere `-Renderer opengl`. No basta con solicitarlo:
+comprobar `[gs-present] host mode: shared texture (opt-in)` en el registro, porque
+el backend puede volver a RAM si falla la creación del contexto compartido.
+
+```powershell
+.\scripts\probar_rendimiento.ps1 -Renderer opengl -Presentacion ram -SoloCuadros -Segundos 240 -Etiqueta ram_1
+.\scripts\probar_rendimiento.ps1 -Renderer opengl -Presentacion compartida -SoloCuadros -Segundos 240 -Etiqueta compartida_1
+python tools/rendimiento/resumir.py logs/perf_ram_1.log --partida --desde 100 --hasta 220
+python tools/rendimiento/resumir.py logs/perf_compartida_1.log --partida --desde 100 --hasta 220
+```
+
+Usar el mismo ejecutable y estado inicial de tarjeta en todas las pasadas,
+conservar su SHA-256 y alternar el orden al repetir. `-SoloCuadros` reduce el
+coste del perfil; `guest_flip_hz` cuenta entradas reales en `vid::Flip`, mientras
+`host_hz` cuenta presentaciones y no representa FPS del juego. La vigilancia
+rechaza compilaciones o partidas simultáneas y conserva una marca de invalidez.
+Los controles del script comprueban ambos modos frente a valores heredados,
+su restauración y el rechazo de la combinación compartida/CPU.
+
+La [comparación del 9 de octubre](RENDIMIENTO_PRESENTACION.md) repite cuatro
+pasadas con el mismo ejecutable: 6,848 FPS con RAM y 6,908 compartidos. La
+diferencia observada de +0,88 % no demuestra una mejora estable frente a la
+variación entre repeticiones. El informe conserva condiciones, intervalos y límites.
+
 ## Perfil por muestreo (`tools/perfil/muestrear.cpp`)
 
 `GOW_PERF_DIAG` reparte el tiempo por subsistema, pero no dice qué función lo consume. Este

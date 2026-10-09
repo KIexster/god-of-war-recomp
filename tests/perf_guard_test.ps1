@@ -4,7 +4,7 @@ $testRepo = Split-Path -Parent $PSScriptRoot
 $testTempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
 $testRoot = Join-Path $testTempRoot ('gow-perf-guard-' + [Guid]::NewGuid().ToString('N'))
 $testPrevious = @{}
-foreach ($name in @('GOW_WORK','GOW_ELF','GOW_PERF_DIAG','PS2X_GS_GPU_PROF')) {
+foreach ($name in @('GOW_WORK','GOW_ELF','GOW_PERF_DIAG','PS2X_GS_GPU_PROF','PS2X_GS_DIRECT_PRESENT')) {
     $testPrevious[$name] = [Environment]::GetEnvironmentVariable($name,'Process')
 }
 function Assert-Guard([bool]$condition,[string]$message) {
@@ -28,6 +28,7 @@ function global:Start-Process {
     param($FilePath,$ArgumentList,$WorkingDirectory,$RedirectStandardOutput,$RedirectStandardError,
           [switch]$PassThru,$WindowStyle)
     $global:GowPerfGuardFixture.starts++
+    $global:GowPerfGuardFixture.actualPresentation = $env:PS2X_GS_DIRECT_PRESENT
     Set-Content -LiteralPath $RedirectStandardOutput -Value 'proceso simulado'
     Set-Content -LiteralPath $RedirectStandardError -Value '[gow-perf] t=20.00 window=5.00 guest_flip_hz=10.00'
     $global:GowPerfGuardFixture.process
@@ -47,6 +48,7 @@ try {
     $env:GOW_ELF = Join-Path $testRoot 'SCUS_973.99'
     $env:GOW_PERF_DIAG = 'valor_previo'
     $env:PS2X_GS_GPU_PROF = 'diagnostico_previo'
+    $env:PS2X_GS_DIRECT_PRESENT = '1'
     New-Item -ItemType Directory -Path (Join-Path $env:GOW_WORK 'PS2Recomp/out/build') -Force | Out-Null
     New-Item -ItemType File -Path $env:GOW_ELF | Out-Null
     New-Item -ItemType File -Path (Join-Path $env:GOW_WORK 'PS2Recomp/out/build/ps2EntryRunner.exe') | Out-Null
@@ -67,6 +69,10 @@ try {
         try { & (Join-Path $testRoot 'scripts/probar_rendimiento.ps1') -Segundos 5 -Etiqueta $scenario }
         catch { $caught = $_ }
         Assert-Guard ($env:GOW_PERF_DIAG -eq 'valor_previo' -and $env:PS2X_GS_GPU_PROF -eq 'diagnostico_previo') 'No se restauro el entorno'
+        Assert-Guard ($env:PS2X_GS_DIRECT_PRESENT -eq '1') 'No se restauro la presentacion previa'
+        if ($global:GowPerfGuardFixture.starts -gt 0) {
+            Assert-Guard ($global:GowPerfGuardFixture.actualPresentation -eq '0') 'La presentacion RAM heredo el entorno anterior'
+        }
         $destination = Join-Path $testRoot "logs/perf_$scenario.log"
         if ($scenario -eq 'startup') {
             Assert-Guard ($null -ne $caught -and $global:GowPerfGuardFixture.starts -eq 0) 'No se rechazo la compilacion previa'
@@ -84,6 +90,20 @@ try {
         }
         Write-Host "Control de vigilancia: $scenario OK"
     }
+    # GOW-Port: la opcion compartida tambien debe reemplazar y restaurar el modo heredado.
+    $env:PS2X_GS_DIRECT_PRESENT = '0'
+    $global:GowPerfGuardFixture.process.HasExited = $false
+    $global:GowPerfGuardFixture.process.waits = 0
+    $global:GowPerfGuardFixture.snapshots = 0
+    & (Join-Path $testRoot 'scripts/probar_rendimiento.ps1') -Segundos 5 -Renderer opengl -Presentacion compartida -Etiqueta shared
+    Assert-Guard ($global:GowPerfGuardFixture.actualPresentation -eq '1') 'La presentacion compartida heredo RAM'
+    Assert-Guard ($env:PS2X_GS_DIRECT_PRESENT -eq '0') 'No se restauro RAM tras la opcion compartida'
+    $startsBefore = $global:GowPerfGuardFixture.starts
+    $caught = $null
+    try { & (Join-Path $testRoot 'scripts/probar_rendimiento.ps1') -Renderer cpu -Presentacion compartida }
+    catch { $caught = $_ }
+    Assert-Guard ($null -ne $caught -and $global:GowPerfGuardFixture.starts -eq $startsBefore) 'Se acepto presentacion compartida con CPU'
+    Write-Host 'Controles de presentacion: RAM, compartida y CPU incompatible OK'
 }
 finally {
     foreach ($name in $testPrevious.Keys) {

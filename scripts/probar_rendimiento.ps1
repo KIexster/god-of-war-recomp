@@ -3,9 +3,13 @@ param(
     [int]$Segundos = 150,
     [switch]$SoloCuadros,
     [ValidateSet('cpu', 'cpu-hilo', 'opengl')][string]$Renderer = 'cpu',
+    [ValidateSet('ram', 'compartida')][string]$Presentacion = 'ram',
     [ValidatePattern('^[a-zA-Z0-9_-]+$')][string]$Etiqueta = 'limpio'
 )
 $ErrorActionPreference = 'Stop'
+if ($Presentacion -eq 'compartida' -and $Renderer -ne 'opengl') {
+    throw 'La presentacion compartida requiere -Renderer opengl.'
+}
 . (Join-Path $PSScriptRoot 'common.ps1')
 $clear = @('GOW_VIF_DIAG', 'GOW_RENDER_DIAG', 'GOW_EE_PRIM_DIAG', 'GOW_MODEL_DIAG', 'GOW_PATH_DIAG', 'GOW_ANM_DIAG', 'GOW_CLIP_TRACE',
            'GOW_GEOM_DIAG', 'GOW_GEOMETRY_DIAG', 'GOW_SIO2_DIAG', 'GOW_GS_GPU_TEST', 'GOW_VU1_BUDGET_DIAG',
@@ -23,6 +27,8 @@ $set = @{
     GOW_FAST_BOOT = '1'
     PS2X_GS_GPU = $(if ($Renderer -eq 'opengl') { '1' } else { '0' })
     PS2X_GS_THREAD = $(if ($Renderer -eq 'cpu-hilo') { '1' } else { '0' })
+    # GOW-Port: fijar ambos modos evita heredar una presentacion distinta en la comparacion.
+    PS2X_GS_DIRECT_PRESENT = $(if ($Presentacion -eq 'compartida') { '1' } else { '0' })
 }
 $previous = @{}
 foreach ($name in @($clear) + @($set.Keys)) { $previous[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
@@ -37,7 +43,7 @@ try {
     # getenv() aún lo detecta: eliminar la entrada evita activar diagnósticos por presencia.
     foreach ($name in $clear) { Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue }
     foreach ($name in $set.Keys) { [Environment]::SetEnvironmentVariable($name, $set[$name], 'Process') }
-    Write-Host "Renderer: $Renderer"
+    Write-Host "Renderer: $Renderer; presentacion solicitada: $Presentacion"
     $destination = Join-Path $LogsDir "perf_$Etiqueta.log"
     try {
         & (Join-Path $PSScriptRoot 'ejecutar.ps1') -Segundos $Segundos -VigilarRendimiento
