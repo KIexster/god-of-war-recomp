@@ -615,7 +615,9 @@ ejemplo `ACC + VF29 × VF0.w`) con carriles donde un factor es cero, sobre todo 
 cero. La comprobación SSE de MADD/MSUB/OPMSUB exigía un resultado con exponente 2..0xFD, así que esos carriles
 rehacían toda la instrucción por la ruta escalar. `ps2recomp-vu1-simd-zero.patch` acepta en la ruta SSE los
 carriles con un factor cero (el mismo razonamiento que en la escalar: ACC ∓ 0 es exacto en float y ACC es cero
-o normal) y les da Z si el resultado es cero, además de S.
+o normal) y les da Z si el resultado es cero, además de S. También acepta los carriles con un factor ±1, donde
+el producto es exacto: con exponente del resultado 2..0xFD el valor no cambia y los flags son el signo, y si ACC
+cancela exactamente el producto el resultado es un cero exacto (+0, Z). Esto último añade ~1 % (82,8 → 82,1 ms).
 
 Huellas de VU1 (compilado e intérprete) idénticas en `vif_pcsx2_inicio2` y `vif_port_480s`;
 `probar_vu1_fmac.cmd` (valores límite con ±0) y `probar_vu1_compilada.cmd` en verde. Reproducción alternando
