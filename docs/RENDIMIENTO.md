@@ -677,3 +677,20 @@ crece de 11,6 a 12,2 MB. Con lo capturado hasta ahora, la Batalla final no pasa 
 CMake le pase la carpeta de `GOW_VU1_MICROCODIGO` en vez de cada archivo: 2.302 rutas superan los 32 K
 caracteres de la línea de órdenes de Windows. Con las 501 micromemorias de antes el C++ generado es idéntico
 byte a byte.
+
+## Cadenas DMA y temporizadores del IOP (9 de octubre)
+
+Con `GOW_GS_FINISH_ASINCRONO=1` y `PS2X_GS_DIRECT_PRESENT=1` el hilo del juego deja de esperar a la GPU (7,3 →
+11,1–11,4 cuadros/s en partida) y queda ~90 % ocupado. En su perfil aparecían dos costes fijos fáciles de
+quitar sin cambiar el comportamiento:
+
+- **Cadenas DMA.** Cada envío en modo cadena (VIF1, VIF0, GIF) construía un `std::vector` nuevo y lo hacía crecer
+  copia a copia (`_Insert_counted_range` bajo `writeIORegister`, ~1,6 %). Ahora los buffers ya procesados vuelven
+  a una reserva (`thread_local`, como mucho 16) y el siguiente envío reutiliza su capacidad.
+- **Temporizadores del IOP.** `IopTimrman::serviceDue` corre en cada porción del IOP y recorría los seis
+  temporizadores aunque nada venciera (~1,6 %), igual que `nextEventCycle`. Ahora se guarda el primer evento
+  programado y se recalcula tras cualquier importación de timrman, servicio o reset; si el ciclo actual es
+  anterior, `serviceDue` vuelve sin recorrer.
+
+`ps2recomp-dma-iop-timers-cache.patch`. Suite 590/590. En partida, con las dos opciones del GS activas y
+alternando ejecutables (dos rondas válidas de 3 min): 11,59 → 11,90 y 11,19 → 11,37 cuadros/s (~2 %).

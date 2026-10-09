@@ -1,0 +1,160 @@
+diff --git a/ps2xIOP/src/emulator/imports/iop_timrman.cpp b/ps2xIOP/src/emulator/imports/iop_timrman.cpp
+index 3d80897..9f9bd6c 100644
+--- a/ps2xIOP/src/emulator/imports/iop_timrman.cpp
++++ b/ps2xIOP/src/emulator/imports/iop_timrman.cpp
+@@ -56,6 +56,23 @@ namespace ps2x::iop::detail
+         }
+         m_holdMode = 0u;
+         m_servicing = false;
++        m_earliestValid = false;
++    }
++
++    uint64_t IopTimrman::earliestEventCycle() const noexcept
++    {
++        if (!m_earliestValid)
++        {
++            uint64_t next = UINT64_MAX;
++            for (const Timer &timer : m_timers)
++            {
++                next = std::min(next, timer.compareCycle);
++                next = std::min(next, timer.overflowCycle);
++            }
++            m_earliestEvent = next;
++            m_earliestValid = true;
++        }
++        return m_earliestEvent;
+     }
+ 
+     uint32_t IopTimrman::timerId(size_t index) noexcept
+@@ -160,6 +177,7 @@ namespace ps2x::iop::detail
+         const uint32_t a2 = cpu.gpr[6];
+         const uint32_t a3 = cpu.gpr[7];
+         const auto setV0 = [&](uint32_t value) { cpu.gpr[2] = value; };
++        m_earliestValid = false; // GOW-Port: las importaciones pueden programar o parar temporizadores
+ 
+         switch (ordinal)
+         {
+@@ -418,12 +436,18 @@ namespace ps2x::iop::detail
+     {
+         if (m_servicing)
+             return;
++        // GOW-Port: nada vence antes del primer evento programado (el bucle de abajo no haría nada).
++        if (currentCycle < earliestEventCycle())
++            return;
++        m_earliestValid = false;
+         m_servicing = true;
+         struct ServiceGuard
+         {
+             bool &flag;
+-            ~ServiceGuard() { flag = false; }
+-        } guard{m_servicing};
++            bool &earliestValid;
++            // GOW-Port: las retrollamadas pueden consultar el próximo evento a mitad del servicio.
++            ~ServiceGuard() { flag = false; earliestValid = false; }
++        } guard{m_servicing, m_earliestValid};
+ 
+         for (Timer &timer : m_timers)
+         {
+@@ -465,12 +489,6 @@ namespace ps2x::iop::detail
+ 
+     uint64_t IopTimrman::nextEventCycle(uint64_t fallback) const noexcept
+     {
+-        uint64_t next = fallback;
+-        for (const Timer &timer : m_timers)
+-        {
+-            next = std::min(next, timer.compareCycle);
+-            next = std::min(next, timer.overflowCycle);
+-        }
+-        return next;
++        return std::min(fallback, earliestEventCycle());
+     }
+ }
+diff --git a/ps2xIOP/src/emulator/imports/iop_timrman.h b/ps2xIOP/src/emulator/imports/iop_timrman.h
+index 11b53b6..e38ccff 100644
+--- a/ps2xIOP/src/emulator/imports/iop_timrman.h
++++ b/ps2xIOP/src/emulator/imports/iop_timrman.h
+@@ -60,8 +60,15 @@ namespace ps2x::iop::detail
+         static void schedule(Timer &timer, uint64_t currentCycle) noexcept;
+         static void stop(Timer &timer, uint64_t currentCycle) noexcept;
+ 
++        // GOW-Port: el primer compareCycle/overflowCycle de los temporizadores. serviceDue corre en cada
++        // porción del IOP (millones de veces por segundo) y casi nunca hay nada vencido. Se recalcula tras
++        // cualquier cambio (importaciones, servicio, reset).
++        [[nodiscard]] uint64_t earliestEventCycle() const noexcept;
++
+         std::array<Timer, 6> m_timers{};
+         uint32_t m_holdMode = 0u;
+         bool m_servicing = false;
++        mutable uint64_t m_earliestEvent = 0u;
++        mutable bool m_earliestValid = false;
+     };
+ }
+diff --git a/ps2xRuntime/src/lib/ps2_memory.cpp b/ps2xRuntime/src/lib/ps2_memory.cpp
+index 6b419a4..213a440 100644
+--- a/ps2xRuntime/src/lib/ps2_memory.cpp
++++ b/ps2xRuntime/src/lib/ps2_memory.cpp
+@@ -408,6 +408,31 @@ void PS2Memory::resetEeTimers() noexcept
+     m_eeTimers = {};
+ }
+ 
++namespace
++{
++    // GOW-Port: buffers de las cadenas DMA ya procesadas. Cada envío construía un vector nuevo y lo hacía
++    // crecer copia a copia; reutilizar uno con capacidad evita las reservas y copias repetidas.
++    thread_local std::vector<std::vector<uint8_t>> g_chainSpare;
++
++    std::vector<uint8_t> takeChainBuffer()
++    {
++        if (g_chainSpare.empty())
++            return {};
++        std::vector<uint8_t> buffer = std::move(g_chainSpare.back());
++        g_chainSpare.pop_back();
++        buffer.clear();
++        return buffer;
++    }
++
++    template <class Transfers>
++    void recycleChainBuffers(Transfers &transfers)
++    {
++        for (auto &transfer : transfers)
++            if (transfer.chainData.capacity() != 0u && g_chainSpare.size() < 16u)
++                g_chainSpare.push_back(std::move(transfer.chainData));
++    }
++}
++
+ uint32_t PS2Memory::advanceEeTimers(uint64_t eeCycles) noexcept
+ {
+     if (eeCycles == 0u)
+@@ -1358,7 +1383,7 @@ bool PS2Memory::writeIORegister(uint32_t address, uint32_t value)
+                     // GOW-Port: las cadenas largas (mas de 4096 tags) se cortaban y dejaban el GIF en modo IMAGE
+                     // (fork de SotC, e36fbf1).
+                     const int kMaxChainTags = 1 << 20;
+-                    std::vector<uint8_t> chainBuf;
++                    std::vector<uint8_t> chainBuf = takeChainBuffer();
+ 
+                     auto appendData = [&](uint32_t srcAddr, uint32_t qwCount)
+                     {
+@@ -1899,6 +1924,7 @@ void PS2Memory::processPendingTransfers()
+             }
+         }
+     }
++    recycleChainBuffers(m_pendingGifTransfers);
+     m_pendingGifTransfers.clear();
+ 
+     const bool hadVif0 = !m_pendingVif0Transfers.empty();
+@@ -1957,6 +1983,7 @@ void PS2Memory::processPendingTransfers()
+             }
+         }
+     }
++    recycleChainBuffers(m_pendingVif0Transfers);
+     m_pendingVif0Transfers.clear();
+ 
+     const bool hadVif1 = !m_pendingVif1Transfers.empty();
+@@ -2015,6 +2042,7 @@ void PS2Memory::processPendingTransfers()
+             }
+         }
+     }
++    recycleChainBuffers(m_pendingVif1Transfers);
+     m_pendingVif1Transfers.clear();
+ 
+     if (m_gifArbiter)

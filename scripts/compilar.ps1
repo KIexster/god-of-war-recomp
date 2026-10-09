@@ -90,6 +90,7 @@ $vu1XgkickFlushPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-xgkick-flush.p
 $gsSharedHostPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-shared-host.patch'
 $vu1GeneratorDirPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-generator-dir.patch'
 $gsDiscardUncoveredPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-discard-uncovered.patch'
+$dmaIopTimersCachePatch = Join-Path $RepoRoot 'patches\ps2recomp-dma-iop-timers-cache.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -204,6 +205,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1XgkickFlushPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsSharedHostPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1GeneratorDirPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsDiscardUncoveredPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $dmaIopTimersCachePatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
