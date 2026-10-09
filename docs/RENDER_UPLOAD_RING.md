@@ -67,9 +67,20 @@ falla en tres comprobaciones: no amplía el buffer, difiere del CPU al leer
 y conserva bytes del color anterior. La primera lectura y el upload sí
 coinciden, por lo que el fallo queda aislado a la reserva posterior.
 
-La primera integración del arreglo pasó **610/610 pruebas nativas**, incluidas
-**25 OpenGL efectivas**, antes de añadir la corrección de capacidad del
-fallback. Quedan pendientes el control positivo GL de esa capacidad, la
-compilación oficial del parche final, la suite final y la prueba funcional del juego.
-Los resultados se registrarán aquí cuando terminen. No se atribuye a este
-parche una mejora de FPS.
+La biblioteca corregida pasa también el control positivo de capacidad:
+**1/1**, con las dos lecturas completas y la VRAM exactas frente a CPU.
+La integración final de `e1a9270` pasó **611/611 pruebas nativas**, incluidas
+**26 OpenGL efectivas**, después de la compilación oficial con
+`scripts\2_compilar.cmd`, código 0 y las 501 micromemorias locales.
+El ejecutable tiene 70.229.504 bytes, SHA256
+`4066E704CDF1357FE74ECC21D7FF4E0834811B2812B240389BB147676D4530A3`.
+Las 97 fuentes de los parches coinciden con el runtime compilado, normalizando
+solo CRLF y el include del runner añadido por el script. Los dos jobs de la
+CI de la PR #30 pasan.
+
+La base incorporó después los cambios publicados por Opus en `ca69e9b`.
+Se repite la compilación oficial con ese generador VU1 para verificar la
+versión conjunta antes de terminar la PR. La prueba funcional del juego
+queda pendiente de revisar; un primer intento terminó a los 40,24 s,
+todavía en las pantallas iniciales. No se cuenta como prueba de partida.
+No se atribuye a este parche una mejora de FPS.
