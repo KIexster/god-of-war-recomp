@@ -2408,3 +2408,49 @@ compila, ejecuta las ocho pruebas y falla en cuatro, incluida la lectura
 prematura; después se restaura la copia. La compilación oficial se lanza con
 cuatro trabajos simultáneos en `E:\gowgpuprof`, que apunta a una carpeta privada
 del workspace. Los controles OpenGL y de juego siguen pendientes de esa build.
+
+### Verificación del profiler y protección de uploads (8 de octubre)
+
+La PR #25 del profiler diferido quedó integrada en `43c3a47`, con CI correcta.
+La compilación oficial de `2f6579d`, 67 parches, termina con código 0 tras
+reanudar el mismo build después del reinicio. El control funcional de
+240,31 s llega al estado 11 con nivel listo y produce ventanas completas
+del profiler. Las capturas revisadas muestran a Kratos y enemigos sobre el
+barco, lluvia y HUD, sin polígonos estirados visibles en esa escena.
+Se utiliza una ISO de solo lectura y tarjetas privadas; FMV está omitido.
+Había compilaciones ajenas y no se certifican nuevos FPS.
+
+La revisión confirma que el juego todavía presenta mediante copia a CPU.
+Faltan las llamadas del host raylib a la captura de contexto y al consumidor
+de texturas compartidas; configurar `PS2X_GS_DIRECT_PRESENT=1` no basta.
+Los tests sí ejercitan un share group real de forma explícita. Se conserva
+esta diferencia para no confundir la capacidad del backend con su uso real.
+Detalles: [verificación del profiler](RENDIMIENTO_PERFIL_GPU.md).
+
+Se prepara un parche separado para impedir sobrescribir chunks del ring
+persistente cuya fence no se haya señalado y liberar sus 64 MiB aunque
+el host siga vivo. Los controles negativos detectan ambos problemas.
+La primera integración pasa 610/610 controles nativos, 25 con OpenGL.
+La revisión descubre además que el fallback streaming podía encoger
+`dataBuffer` dejando una capacidad obsoleta; se corrige y se prepara su
+regresión. La compilación oficial del parche final queda pendiente de
+ese control. No se altera EE/FPU/IOP ni el trabajo de Opus.
+Detalles: [protección del ring de uploads](RENDER_UPLOAD_RING.md).
+
+### Ring OpenGL validado con la versión conjunta (9 de octubre)
+
+La PR #30 incorpora la base `ca69e9b`, con los nuevos saltos entre bloques
+compilados de VU1 de Opus. La compilación oficial de `2c8a8c1` termina con
+código 0, 69 parches y 501 micromemorias locales. Pasan 611/611 controles
+nativos, incluidos 26 OpenGL reales, y las 97 fuentes auditadas coinciden
+con la cadena. Los controles negativos detectan la sobrescritura por timeout,
+la fuga del ring con host vivo y la capacidad obsoleta del fallback.
+
+La prueba funcional previa de 240,25 s llega a estado 11 con nivel listo;
+sus capturas muestran a Kratos, enemigos, barco, lluvia y HUD sin polígonos
+estirados visibles. La versión conjunta dura 241,34 s, llega a ese estado y
+muestra también a Kratos, enemigos y HUD sobre el barco. Se omite FMV y se
+usan tarjetas privadas. No hay avisos de degradación del ring; un informe
+GPU parcial omite 2587 muestras y sus tiempos no se usan. No se certifican
+FPS ni una partida completa; la presentación compartida del juego sigue
+preparándose en un checkout separado y no forma parte de esta PR.

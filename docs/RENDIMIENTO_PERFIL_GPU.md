@@ -67,16 +67,35 @@ temporal: compila y ejecuta las ocho pruebas, pero falla en cuatro, incluida
 la lectura prematura. La copia se restaura después. Esto comprueba que las
 regresiones detectan el fallo que se quiere evitar.
 
-La CI aplica la misma cadena de parches y ejecuta la suite existente con los
-controles procedurales GS/VU1. Su resultado y el de la compilación completa
-de Windows deben constar en la PR antes de integrar.
+La [PR #25](https://github.com/KIexster/god-of-war-recomp/pull/25) quedó integrada
+en `43c3a47`. La CI de la propuesta pasó sus dos jobs. La compilación oficial
+de Windows con `scripts\2_compilar.cmd`, sobre `2f6579d` y **67 parches**, terminó
+con código 0 después de reanudar el mismo build tras reiniciar el PC. El
+ejecutable tiene 70.229.504 bytes y SHA256
+`6C035DDFFBE4FC706CAA8171AD3A6FFA642911605A3F86CE8AD3CEAC2634A470`.
 
-**Pendiente antes de integrar:** compilación oficial de Windows con
-`scripts\\2_compilar.cmd`, suite con OpenGL efectivo y prueba con el juego.
-El primer intento quedó bloqueado por el arranque del sandbox y por un 403
-de la integración GitHub. El segundo intento permite ejecutar comandos fuera
-del sandbox y usa GitHub CLI para publicar. La compilación oficial se prepara
-en un runtime privado, con la PR en borrador hasta completar los controles.
+Al integrar después los cambios de flags de VU1, una ejecución sobre
+**68 parches** pasó 596 de 597 pruebas: el directorio de trabajo impedía
+encontrar `instructions.h` en el control de mappings VU0. Los **24 controles
+OpenGL efectivos** pasaron. La siguiente suite, ya con las trece regresiones
+del ring y ejecutada desde la raíz del runtime, pasó **610/610** sin cambiar
+el código de VU0. La validación final del ring se registra por separado en
+[Protección del ring de uploads](RENDER_UPLOAD_RING.md).
+
+La prueba funcional del ejecutable de 67 parches duró **240,31 s**, con ISO
+de solo lectura, tarjetas privadas, FMV omitido y el profiler activado.
+Llegó a estado 11, `pending=0`, `levelReady=1`, y produjo ventanas de cuatro
+cuadros. Las capturas revisadas muestran a Kratos, enemigos, barco, lluvia y
+HUD sin polígonos estirados visibles en esa escena. Se cerró únicamente esa
+instancia al agotar el plazo; no fue un cierre natural del juego.
+
+El raster hardware estuvo activo, pero **la presentación del juego aún copia
+a CPU**: el runtime no captura el contexto de raylib ni llama al consumidor
+de texturas compartidas. `PS2X_GS_DIRECT_PRESENT=1` por sí sola no conecta esa
+ruta. Los controles OpenGL comparten contextos de forma explícita; su resultado
+no prueba que el juego ya use presentación compartida. Esto se investigará
+en un parche separado. Había compilaciones ajenas durante la prueba, por lo
+que estos registros no se usan para comparar FPS.
 
 La modificación afecta al profiler activado por variable de entorno. No se
 declara una mejora de FPS con el profiler apagado ni se modifican shaders,
