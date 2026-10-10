@@ -20,6 +20,11 @@ hash y validez, y estado blank. El tick del host puede avanzar mientras
 retiene la misma textura. Los ticks no acreditan alineación con PCSX2 ni
 con una matriz observada en otro momento del juego.
 
+Para la secuencia automática, usar `GOW_PAD_TEST=1` y
+`GOW_PAD_TEST_NO_CAPTURE=1`: conserva el mando y los registros de estado sin
+introducir las capturas periódicas que fuerzan readback. Mantener desactivada
+la captura GS replay y las sondas de cámara/modelos durante este control.
+
 ```powershell
 python tools/render/inspect_shared_frames.py logs/control_compartido_err.log
 ```
