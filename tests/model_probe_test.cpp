@@ -57,6 +57,30 @@ static bool test() {
     put<uint32_t>(ram,skeleton+0x8c,0); if(capture(ram.data(),ram.size(),object).validRoot) return false;
     put<uint32_t>(ram,skeleton+0x60,0); if(capture(ram.data(),ram.size(),object).validRoot) return false;
     put<uint32_t>(ram,object+0x104,0); if(capture(ram.data(),ram.size(),object).validSkeleton) return false;
+    // La paleta completa alcanza las articulaciones finales y conserva sus bits crudos.
+    ram.resize(joints+256*64);
+    for(uint32_t i=0;i<256;++i) for(size_t k=0;k<16;++k)
+        put<uint32_t>(ram,joints+i*64+k*4,0x7fc00000u+i*16+uint32_t(k));
+    const auto paletteBefore=ram;
+    uint32_t visited=0;
+    auto check=[&](uint32_t i,const Pose::Joint &j) {
+        if(i!=visited || !j.valid || j.address!=joints+i*64) visited=1000;
+        else {
+            for(size_t k=0;k<16;++k) if(j.world[k]!=0x7fc00000u+i*16+uint32_t(k)) {visited=1000; return;}
+            ++visited;
+        }
+    };
+    for(uint32_t count:{103u,125u,256u,257u,0u}) {
+        visited=0; const auto r=visitPalette(ram.data(),ram.size(),joints|0x80000000u,count,check);
+        if(visited!=(count>256u ? 256u : count) || r.read!=visited || r.complete!=(count<=256u)) return false;
+    }
+    visited=0;
+    const auto shortPalette=visitPalette(ram.data(),joints+125*64-1,joints,125,check);
+    if(shortPalette.complete || shortPalette.read!=124 || visited!=124) return false;
+    auto unused=[](uint32_t,const Pose::Joint &) {};
+    if(visitPalette(nullptr,ram.size(),joints,125,unused).complete ||
+       visitPalette(ram.data(),ram.size(),0,125,unused).complete ||
+       visitPalette(ram.data(),ram.size(),0x1ffffff0u,125,unused).read || ram!=paletteBefore) return false;
     return true;
 }
 int main() { if(!test()) { std::fputs("model_probe_test: FAIL\n",stderr); return 1; }
