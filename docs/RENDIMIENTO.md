@@ -745,3 +745,18 @@ En partida (FINISH asíncrono y presentación compartida, alternando con y sin l
 Ninguna de las cuatro partidas tuvo errores de VU1. Las cifras anteriores (15,3–22,8 con hilo) eran de la versión
 sin esperas y no valen. El tramo de 100–140 s de la prueba automática varía demasiado entre ejecuciones para compararlo. La suite
 (590/590) se pasa con la variable desactivada; con ella activada todavía se cierra en una prueba de la FIFO de VIF1.
+
+## Paquetes GIF de VU1 en otro hilo (opcional, 10 de octubre)
+
+Con el hilo de VU1, el cuadro de los muelles queda clavado en 4 vsync (15 fps): el EE espera al vsync en un bucle del
+propio juego y el hilo de VU1 está ocupado ~75 % del tiempo (~50 ms por cuadro). Parte de ese tiempo es el frontal del
+GS (`processGIFPacket`, `vertexKick`, `buildDrawBatch`, la cola del backend), que procesa los paquetes de PATH1/PATH2.
+`ps2recomp-gs-front-thread.patch` (`PS2X_GS_FRENTE=1`, solo con `PS2X_VU1_HILO=1`) lo pasa a un tercer hilo:
+
+- Los paquetes que el árbitro GIF entrega desde el hilo de VU1 se copian a una cola y otro hilo los procesa en orden.
+  Los de PATH3 (desde el EE) siguen como antes, después de esperar a los dos hilos.
+- `syncVu1Worker()` espera también a esa cola, así que todo lo que ya esperaba al hilo de VU1 espera también al GS.
+- Al vaciarse la cola se despierta al EE (los FINISH/SIGNAL salen ahora de ese hilo).
+
+Muelles, 160–230 s, 2 rondas, con hilo de VU1: 15,1 / 15,0 → 15,8 / 15,7 cuadros/s, sin errores de VU1. Las capturas
+de la prueba de arranque se ven correctas con y sin la variable (difieren por el momento de la captura).
