@@ -446,3 +446,9 @@ bits NaN, 256 matrices, truncamiento al solicitar 257, último byte ausente,
 puntero nulo y cruce de segmento; RAM intacta. Mismos cupos, intervalo y
 llamada original. No usar estas ejecuciones para medir FPS ni comparar cuadros
 distintos como si fueran una secuencia sincronizada.
+
+MSVC `/O2 /W4 /WX` pasa. Volver a limitar el lector completo a ocho matrices
+en una copia privada hace fallar la prueba. Recompilación rápida correcta sobre
+los mismos 79 parches; control nativo de 95,948 s: 84 lecturas completas,
+9.598 matrices finitas y no totalmente nulas. En intro hay 32 muestras por
+articulación de las paletas 125/103. Resultados, binario y límites: ESTADO.
