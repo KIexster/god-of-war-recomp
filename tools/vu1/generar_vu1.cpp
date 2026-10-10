@@ -359,8 +359,9 @@ int main(int argc, char **argv)
                 const Pair &p = code.pairs[pcs[i] / 8u];
                 const bool plain = i + 1u < length && !VU1CompiledGenerator::isBranch(p) && !p.eBit && !p.dBit && !p.tBit;
                 const std::string k = kStruct(code, pcs[i], part);
+                // GOW-Port: los pares que no abren el bloque se saltan las comprobaciones de entrada (Chained).
                 body << "        if (!VU1CompiledAccess::step<" << k << ", " << (dead[i] ? "true" : "false") << ", "
-                     << (plain ? "true" : "false") << ">(vu, c))\n            return 2;\n";
+                     << (plain ? "true" : "false") << ", " << (i > 0u ? "true" : "false") << ">(vu, c))\n            return 2;\n";
                 if (i + 1u < length && !plain)
                     body << "        if (VU1CompiledAccess::pc(vu) != " << pcs[i + 1u] << "u)\n            return 1;\n";
             }

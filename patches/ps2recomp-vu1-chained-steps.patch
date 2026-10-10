@@ -1,0 +1,61 @@
+diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime/ps2_vu1.h
+index 567538b..60d8308 100644
+--- a/ps2xRuntime/include/runtime/ps2_vu1.h
++++ b/ps2xRuntime/include/runtime/ps2_vu1.h
+@@ -387,7 +387,7 @@ private:
+     void lowerT(StepContext &context, uint32_t upperInstr);
+     template <class T>
+     uint64_t readyCycleT() const;
+-    template <class T, bool DeadFlags, bool Plain = false>
++    template <class T, bool DeadFlags, bool Plain = false, bool Chained = false>
+     bool stepPairT(StepContext &context);
+     bool blockPreconditions(StepContext &context, uint32_t pc, const uint32_t *words, size_t bytes) const;
+     bool stepInterpreted(StepContext &context);
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+index c93d453..f9098de 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+@@ -919,16 +919,27 @@ VU1_STEP_INLINE uint64_t VU1Interpreter::readyCycleT() const
+     return ready;
+ }
+ 
+-template <class T, bool DeadFlags, bool Plain>
++template <class T, bool DeadFlags, bool Plain, bool Chained>
+ VU1_STEP_INLINE bool VU1Interpreter::stepPairT(StepContext &context)
+ {
+     constexpr const DecodedInstructionPair &k = T::value;
+ 
+     // Igual que compiledPrologue + stepPair.
+-    if (m_cycle >= context.budgetEnd || m_stopRequested)
+-        return false;
+-    if (m_cycle >= m_nextCommitCycle)
+-        commitReadyPipelines();
++    // GOW-Port: Chained = par que no es el primero de su bloque. El par anterior acaba de confirmar los
++    // pipelines en este mismo ciclo, y blockPreconditions dejó al entrar 16384 ciclos de margen hasta el
++    // final del presupuesto (las esperas de abajo lo siguen comprobando).
++    if constexpr (Chained)
++    {
++        if (m_stopRequested)
++            return false;
++    }
++    else
++    {
++        if (m_cycle >= context.budgetEnd || m_stopRequested)
++            return false;
++        if (m_cycle >= m_nextCommitCycle)
++            commitReadyPipelines();
++    }
+ 
+     uint64_t readyCycle = readyCycleT<T>();
+     if (readyCycle > m_cycle)
+@@ -1104,8 +1115,8 @@ struct VU1CompiledAccess
+     using P = VU1Interpreter::DecodedInstructionPair;
+     using C = VU1Interpreter::StepContext;
+     using Pipeline = VU1Interpreter::Pipeline;
+-    template <class T, bool DeadFlags, bool Plain = false>
+-    static VU1_STEP_INLINE bool step(VU1Interpreter &vu, C &c) { return vu.stepPairT<T, DeadFlags, Plain>(c); }
++    template <class T, bool DeadFlags, bool Plain = false, bool Chained = false>
++    static VU1_STEP_INLINE bool step(VU1Interpreter &vu, C &c) { return vu.stepPairT<T, DeadFlags, Plain, Chained>(c); }
+     static bool interpret(VU1Interpreter &vu, C &c) { return vu.stepInterpreted(c); }
+     static uint32_t pc(const VU1Interpreter &vu) { return vu.m_state.pc; }
+     static VU1_STEP_INLINE bool block(const VU1Interpreter &vu, C &c, uint32_t pc, const uint32_t *words, size_t bytes)

@@ -794,3 +794,13 @@ Muelles con hilo de VU1 y del GS, solo cuadros, alternando ejecutables: 17,4 / 1
 errores de VU1.
 La comprobación se fuerza en línea en cada bloque (`VU1_STEP_INLINE`), porque MSVC la dejaba como llamada (~4 % del
 hilo de VU1): 18,4 / 18,2 → 18,8 / 18,8 cuadros/s.
+
+## Pares encadenados en los bloques de VU1 compilada (10 de octubre)
+
+Cada par de un bloque compilado repetía las comprobaciones de entrada: presupuesto de ciclos y confirmación de
+pipelines. Dentro de un bloque, el par anterior acaba de confirmar los pipelines en ese mismo ciclo, y
+`blockPreconditions` dejó al entrar 16384 ciclos de margen (las esperas siguen comprobando el presupuesto). El
+generador marca ahora los pares que no abren el bloque (`Chained`) y `stepPairT` solo mira `m_stopRequested` en
+ellos (`ps2recomp-vu1-chained-steps.patch` y `tools/vu1/generar_vu1.cpp`). Huellas de VU1 idénticas, suite
+590/590. Muelles con hilo de VU1 y del GS, solo cuadros, alternando ejecutables, cuatro rondas:
+19,4 / 19,9 / 19,2 / 19,4 → 19,9 / 19,9 / 19,9 / 20,0 cuadros/s (+2 %), sin errores de VU1.
