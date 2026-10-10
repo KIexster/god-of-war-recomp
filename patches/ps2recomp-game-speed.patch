@@ -1,0 +1,75 @@
+diff --git a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+index a1a078d..5ef31c4 100644
+--- a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
++++ b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+@@ -10,6 +10,8 @@
+ #include <limits>
+ #include <stdexcept>
+ 
++void gowCountGuestFrame(uint32_t pc, const uint8_t *rdram); // GOW-Port: ps2_runtime.cpp (velocidad del juego)
++
+ namespace
+ {
+     constexpr int KE_OK = 0;
+@@ -299,6 +301,7 @@ void EeScheduler::run()
+             m_insideInterrupt = !running->invocations.empty() && running->invocations.back().kind == GuestInvocationKind::Interrupt;
+             m_guestExecuting.store(true, std::memory_order_release);
+             ps2_perf::guestEntry(context.pc);
++            gowCountGuestFrame(context.pc, m_rdram);
+             loadSharedVu0Random(context);
+             function(m_rdram, &context, &m_runtime);
+             saveSharedVu0Random(context);
+diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
+index 447a12f..f5d72b6 100644
+--- a/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -96,6 +96,41 @@ namespace ps2_stubs
+     void resetSifState();
+ }
+ 
++// GOW-Port: velocidad del juego = tiempo de juego / tiempo real (1 = tiempo real; < 1 = cámara lenta). En cada
++// cuadro (entrada a GOW_PERF_FRAME_PC, vid::Flip) suma el paso de tiempo del juego (float en 0x29C64C de
++// SCUS-97399). Con GOW_DELTA_DIAG=1 se imprime cada segundo. Idea tomada de Tobiichi-Port (YYOzcan).
++std::atomic<float> g_gowGameSpeed{0.0f};
++void gowCountGuestFrame(uint32_t pc, const uint8_t *rdram)
++{
++    static const uint32_t framePc = [] {
++        const char *value = std::getenv("GOW_PERF_FRAME_PC");
++        return value ? static_cast<uint32_t>(std::strtoul(value, nullptr, 0)) : 0u;
++    }();
++    if (framePc == 0u || pc != framePc || !rdram)
++        return;
++    static const bool diag = [] { const char *v = std::getenv("GOW_DELTA_DIAG"); return v && v[0] == '1'; }();
++    static auto windowStart = std::chrono::steady_clock::now();
++    static double gameSeconds = 0.0;
++    static unsigned frames = 0;
++    float delta = 0.0f;
++    std::memcpy(&delta, rdram + 0x29C64Cu, sizeof(delta));
++    if (delta > 0.0f && delta < 1.0f)
++        gameSeconds += delta;
++    ++frames;
++    const auto now = std::chrono::steady_clock::now();
++    const double wall = std::chrono::duration<double>(now - windowStart).count();
++    if (wall >= 1.0)
++    {
++        g_gowGameSpeed.store(static_cast<float>(gameSeconds / wall), std::memory_order_relaxed);
++        if (diag)
++            std::fprintf(stderr, "[gow-delta] frames=%u wall=%.2f game=%.3f speed=%.2f last_delta=%.4f\n",
++                         frames, wall, gameSeconds, gameSeconds / wall, delta);
++        windowStart = now;
++        gameSeconds = 0.0;
++        frames = 0;
++    }
++}
++
+ #define ELF_MAGIC 0x464C457F // "\x7FELF" in little endian
+ #define ET_EXEC 2            // Executable file
+ #define EM_MIPS 8            // MIPS architecture
+@@ -1457,6 +1492,7 @@ bool PS2Runtime::dispatchGuestBranch(uint8_t *rdram,
+     const uint64_t checkpointSerial = m_eeCheckpointSerial;
+     const uint64_t jumpSerial = g_guestJumpSerial;
+     ps2_perf::guestEntry(targetPc); // GOW-Port: también cuenta llamadas que no vuelven al dispatcher.
++    gowCountGuestFrame(targetPc, rdram);
+     targetFn(rdram, ctx, this);
+ 
+     if (isStopRequested() || ctx->pc == 0u)
