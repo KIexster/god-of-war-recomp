@@ -2935,3 +2935,46 @@ no demuestra qué transformaciones consumió VU1. El siguiente control debe
 leer ese destino después del skinning y relacionarlo con VIF, respetando las
 reanudaciones de la función y alineando la secuencia con PCSX2. Pseudocódigo,
 RAM y registros permanecen privados.
+
+## Perfil de CPU por hilo en los muelles: el cuello de botella es VU1 (2026-10-10)
+
+`tools/rendimiento/muestreo.cpp` es un muestreador externo para Windows: suspende cada hilo del proceso
+cada 1 ms, lee su RIP y al final resuelve funciones, archivos y líneas con el `.pdb` del runner. Da la
+ocupación real de cada hilo (muestras fuera de las funciones de espera del núcleo). La forma de compilarlo
+y de usarlo está en la cabecera del archivo. A diferencia de `GOW_PERF_DIAG=1`, no añade código al runner.
+
+**Medido** (main `895bfad`, OpenGL con presentación compartida, `GOW_GS_FINISH_ASINCRONO=1`,
+`PS2X_VU1_HILO=1`, `PS2X_GS_FRENTE=1`, guion de mando del A/B, 60 s a partir de t=150 s en los muelles,
+20,0 fps):
+
+| Hilo | Ocupado | Qué hace |
+|---|---|---|
+| VU1/VIF1 (`PS2X_VU1_HILO`) | **91,5 %** | ~66 % en bloques de microcódigo compilado (`programa1..12`), 8,6 % en el despachador `vu1c_gen::run` (el `switch (pc)` solo, ~1,4 %), 11,4 % en `ps2_vu1_core.cpp` (`commitReadyPipelines` 3,8 %, XGKICK, flags, pares interpretados), 3,4 % en `processVIF1Data` |
+| GameThread (EE + IOP) | 55 % | el resto espera; el IOP y sus temporizadores ocupan ~25 % de este hilo |
+| GSThread | 20 % | |
+| frente GS (`PS2X_GS_FRENTE`) | 13,5 % | |
+
+Consecuencias:
+
+- **El camino crítico es el hilo de VU1.** El cuadro dura lo que tarda VU1 (~46 ms), no la suma de EE y VU1:
+  ya se solapan.
+- **Los fps van en escalones** porque el juego espera VBlank: 60/30/20. En los muelles va clavado a 20,00
+  (3 VBlanks). Para pasar a 30 fps el hilo de VU1 debe bajar de ~46 a <33 ms por cuadro (**-28 %**). Una
+  mejora menor no cambia los fps: hay que medirla con la ocupación de este muestreador, no con
+  `guest_flip_hz`.
+- El perfil del hilo de VU1 es plano (ninguna línea pasa del 1,5 %): el coste está en cada par de cada bloque.
+  La siguiente mejora grande tendría que reducir el coste por par en `stepPairT`, por ejemplo resolviendo al
+  generar las esperas y las latencias de los registros que se escriben dentro del mismo bloque.
+
+**Resultado negativo: agrupar los ciclos del IOP.** `iop_ms` de `GOW_PERF_DIAG=1` atribuía al IOP 2,2–3,2 s
+de cada 5 s, y `PS2X_IOP_PC_EVERY` mostró que el IOP solo ejecuta ~0,6 M instrucciones/s: el coste es la
+gestión de `runCycles`, que se llama en cada checkpoint del EE (32 ciclos del EE = 4 del IOP) y repasa SPU2,
+DMA, callbacks, temporizadores y planificador. Además, la propia medición (dos lecturas del reloj en cada
+checkpoint) infla mucho `iop_ms`. Se probó acumular los ciclos del IOP en lotes de 256 ciclos suyos dentro de
+`IopEmulator::runEeCycles` (suite 591/591). En la misma escena: **19,92 fps con el lote frente a 19,97 sin
+él** (dos rondas alternas). No hay mejora porque el EE no es el camino crítico. Además, el lote provocó
+atascos de varios segundos en la carga (host_hz < 1) que desfasan el guion del mando. En una de las rondas
+el juego acabó en otra escena (estado 4 → 14) a 60 fps, lo que parecía falsamente una mejora de 20 → 55 fps.
+Se descartó y no se publica. Lecciones: comprobar siempre en el registro que las dos variantes siguen la misma
+secuencia de estados (`[gow-pad2:state]`), y `scripts\probar_rendimiento.ps1` borra `PS2X_IOP_PC_EVERY`
+(para muestrear el IOP hay que llamar a `ejecutar.ps1` directamente).
