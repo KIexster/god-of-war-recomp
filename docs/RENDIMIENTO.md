@@ -792,3 +792,5 @@ mismo PC se prueban varias variantes. La micromemoria solo cambia cuando cambia 
 que se hizo. Huellas de VU1 idénticas (compilada e intérprete, dos grabaciones), suite 590/590, capturas correctas.
 Muelles con hilo de VU1 y del GS, solo cuadros, alternando ejecutables: 17,4 / 17,3 → 18,4 / 18,3 cuadros/s, sin
 errores de VU1.
+La comprobación se fuerza en línea en cada bloque (`VU1_STEP_INLINE`), porque MSVC la dejaba como llamada (~4 % del
+hilo de VU1): 18,4 / 18,2 → 18,8 / 18,8 cuadros/s.

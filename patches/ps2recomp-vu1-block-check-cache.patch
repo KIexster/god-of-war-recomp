@@ -1,8 +1,15 @@
 diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
-index d8a43c9..388d037 100644
+index d8a43c9..c93d453 100644
 --- a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
 +++ b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
-@@ -845,7 +845,21 @@ inline bool VU1Interpreter::blockPreconditions(StepContext &context, uint32_t pc
+@@ -839,13 +839,27 @@ VU1_STEP_INLINE void VU1Interpreter::pushFmacFlags(uint32_t mac, uint32_t status
+     entry.readyCycle = m_cycle + kFmacLatency;
+ }
+ 
+-inline bool VU1Interpreter::blockPreconditions(StepContext &context, uint32_t pc, const uint32_t *words, size_t bytes) const
++VU1_STEP_INLINE bool VU1Interpreter::blockPreconditions(StepContext &context, uint32_t pc, const uint32_t *words, size_t bytes) const
+ {
+     if (m_state.branchPending || m_state.ebit || m_state.haltAfterDelaySlot || m_stopRequested)
          return false;
      if (m_cycle + 16384u >= context.budgetEnd || pc + bytes > context.codeSize)
          return false;
@@ -25,3 +32,12 @@ index d8a43c9..388d037 100644
  }
  
  template <class T>
+@@ -1094,7 +1108,7 @@ struct VU1CompiledAccess
+     static VU1_STEP_INLINE bool step(VU1Interpreter &vu, C &c) { return vu.stepPairT<T, DeadFlags, Plain>(c); }
+     static bool interpret(VU1Interpreter &vu, C &c) { return vu.stepInterpreted(c); }
+     static uint32_t pc(const VU1Interpreter &vu) { return vu.m_state.pc; }
+-    static bool block(const VU1Interpreter &vu, C &c, uint32_t pc, const uint32_t *words, size_t bytes)
++    static VU1_STEP_INLINE bool block(const VU1Interpreter &vu, C &c, uint32_t pc, const uint32_t *words, size_t bytes)
+     {
+         return vu.blockPreconditions(c, pc, words, bytes);
+     }
