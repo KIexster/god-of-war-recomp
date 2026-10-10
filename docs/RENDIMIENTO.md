@@ -712,3 +712,32 @@ alternando ejecutables (dos rondas válidas de 3 min): 11,59 → 11,90 y 11,19 �
 Huellas de VU1 (compilado e intérprete, con la memoria de datos que escribe VIF1) idénticas en
 `vif_pcsx2_inicio2` y `vif_port_480s`; suite 590/590. En partida, alternando ejecutables, con FINISH asíncrono:
 11,26 → 11,33 y 10,75 → 11,08 cuadros/s con presentación compartida, y 6,91 → 7,21 sin ella (~2 %, ruidoso).
+
+## VIF1 y VU1 en un hilo propio (opcional, 10 de octubre)
+
+Con `GOW_GS_FINISH_ASINCRONO=1` y `PS2X_GS_DIRECT_PRESENT=1` el hilo del juego ya no espera a la GPU y VU1 pasa a
+ser ~59 % de él. En la PS2 (y en PCSX2 con MTVU) VU1 trabaja en paralelo con el EE; en el port lo hacía el mismo
+hilo, uno detrás de otro. `ps2recomp-vu1-thread.patch` (`PS2X_VU1_HILO=1`, desactivado por defecto) lo separa:
+
+- Al lanzar el DMA de VIF1, el EE copia los datos (la cadena ya se copiaba; en modo normal se copia ahora desde la
+  RAM o el scratchpad) y los encola. El DMA se sigue dando por terminado en el acto, como antes.
+- Un hilo procesa la cola en orden: desempaquetado de VIF1, microprogramas de VU1 y sus paquetes GIF (PATH1 por
+  XGKICK y PATH2 por DIRECT), y vacía el árbitro GIF tras cada envío.
+- Al terminar cada envío despierta al planificador del EE (`EeEventType::Dmac`, que no hace nada más). Sin esto el
+  EE, esperando la interrupción de FINISH que acaba de producir ese hilo, dormía hasta el siguiente vsync y el
+  hilo propio salía más lento que sin él.
+- El EE espera a que el hilo termine antes de tocar algo suyo: la memoria de VU (`mapVuMemory`), los registros de
+  VIF1 y su canal DMA, la FIFO de VIF1, el GIF desde el EE (PATH3 y sus rutas nativas) y al destruir el runtime
+  (el GS se destruye antes que la memoria). Un diagnóstico temporal en partida contó cero lecturas de VIF1, VU1 y
+  registros privados del GS por parte del EE, y ningún DMA del GIF.
+- Desde ese hilo, las retrollamadas de MSCAL/MSCNT no consultan el planificador del EE.
+
+En partida (FINISH asíncrono y presentación compartida, alternando con y sin la variable):
+
+| Escena | Sin hilo | Con hilo |
+|---|---:|---:|
+| Muelles de Atenas, partida de la tarjeta, Kratos quieto (160–230 s, 2 rondas) | 13,5 / 13,5 | 15,3 / 15,5 |
+| Primeros 40 s de partida de la prueba automática (2 rondas) | 16,7 / 16,8 | 18,3 / 22,8 |
+
+El tramo de 100–140 s de la prueba automática varía demasiado entre ejecuciones para compararlo. La suite
+(590/590) se pasa con la variable desactivada: sus pruebas esperan que VIF1 termine dentro de la llamada.
