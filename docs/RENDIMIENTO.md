@@ -774,3 +774,11 @@ Muelles, 160–230 s, con hilo de VU1 (cuatro partidas por fila, sin errores de 
 
 Por paquete, el hilo de VU1 gastaba ~7 % en reservar memoria y avisar al otro hilo. Las capturas
 de la prueba de arranque se ven correctas con y sin la variable (difieren por el momento de la captura).
+
+## UNPACK de VIF1 con un bucle por formato (10 de octubre)
+
+El camino rápido de UNPACK (sin máscara, sin sumar la fila, CL >= WL) leía el qword de destino y decidía el formato
+componente a componente en cada vector. `ps2recomp-vif1-unpack-formats.patch` elige el formato una vez por UNPACK y
+usa un bucle propio para cada uno (V4/V3/V2/V1 de 32, 16 y 8 bits y V4-5), con el mismo resultado: V3 conserva W,
+V2 escribe XYXY y V1 repite X. Suite 590/590. Muelles con hilo de VU1 y del GS, solo cuadros, alternando
+ejecutables: 17,0 / 16,7 → 17,3 / 17,2 cuadros/s, sin errores de VU1.

@@ -94,6 +94,7 @@ $dmaIopTimersCachePatch = Join-Path $RepoRoot 'patches\ps2recomp-dma-iop-timers-
 $vif1EeTimersFastPatch = Join-Path $RepoRoot 'patches\ps2recomp-vif1-ee-timers-fast.patch'
 $vu1ThreadPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-thread.patch'
 $gsFrontPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-front-thread.patch'
+$vif1UnpackFormatsPatch = Join-Path $RepoRoot 'patches\ps2recomp-vif1-unpack-formats.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -212,6 +213,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $dmaIopTimersCachePatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vif1EeTimersFastPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1ThreadPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsFrontPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vif1UnpackFormatsPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
