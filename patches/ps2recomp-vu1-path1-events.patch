@@ -1,0 +1,320 @@
+diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime/ps2_vu1.h
+index 60d8308..8847848 100644
+--- a/ps2xRuntime/include/runtime/ps2_vu1.h
++++ b/ps2xRuntime/include/runtime/ps2_vu1.h
+@@ -298,6 +298,11 @@ private:
+     // en que se emiten: una cola circular (cabeza y número de entradas) en lugar de buscar huecos.
+     uint32_t m_flagHead = 0u, m_flagCount = 0u;
+     XgkickPipeline m_xgkick{};
++    // GOW-Port: PATH1 avanza por eventos. m_xgkickCycle es el ciclo hasta el que se ha contado el crédito de
++    // PATH1; m_xgkickEvent, el próximo ciclo en que PATH1 lee una GIFtag o termina el paquete (~0 si no hay
++    // envío). Entre eventos solo copia carga útil, que se puede aplazar mientras la VU no escriba en su memoria.
++    uint64_t m_xgkickCycle = 0;
++    uint64_t m_xgkickEvent = ~0ull;
+     std::array<std::array<uint64_t, 4>, 32> m_vfReady{};
+     std::array<uint64_t, 16> m_viReady{};
+     std::array<uint64_t, 4> m_accReady{};
+@@ -372,6 +377,9 @@ private:
+     void advanceTo(uint64_t targetCycle);
+     void flushPipelines();
+     void progressXgkick();
++    void xgkickCopy();
++    void xgkickAdvanceTo(uint64_t cycle);
++    void xgkickScheduleEvent();
+     void finishXgkick();
+     uint64_t calculatePairReadyCycle(const DecodedInstructionPair &decoded) const;
+     void markPairWrites(const DecodedInstructionPair &decoded);
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+index dd3d6f6..57f1d0f 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+@@ -662,6 +662,8 @@ VU1_STEP_INLINE void VU1Interpreter::lowerT(StepContext &context, uint32_t upper
+         {
+             uint32_t words[4]{};
+             std::memcpy(words, m_state.vf[fs], sizeof(words));
++            if (m_xgkick.active)
++                xgkickAdvanceTo(m_cycle); // GOW-Port: PATH1 copia antes de que la VU escriba en su memoria
+             vu1c::storeT<dest>(vuData + addr, words);
+         }
+     }
+@@ -686,6 +688,8 @@ VU1_STEP_INLINE void VU1Interpreter::lowerT(StepContext &context, uint32_t upper
+         {
+             const uint32_t val = static_cast<uint32_t>(static_cast<uint16_t>(m_state.vi[viT] & 0xFFFF));
+             const uint32_t words[4] = {val, val, val, val};
++            if (m_xgkick.active)
++                xgkickAdvanceTo(m_cycle); // GOW-Port: PATH1 copia antes de que la VU escriba en su memoria
+             vu1c::storeT<dest>(vuData + addr, words);
+         }
+     }
+@@ -788,6 +792,8 @@ VU1_STEP_INLINE void VU1Interpreter::lowerT(StepContext &context, uint32_t upper
+         {
+             uint32_t words[4]{};
+             std::memcpy(words, m_state.vf[fs], sizeof(words));
++            if (m_xgkick.active)
++                xgkickAdvanceTo(m_cycle); // GOW-Port: PATH1 copia antes de que la VU escriba en su memoria
+             vu1c::storeT<dest>(vuData + addr, words);
+         }
+         if constexpr (viT != 0)
+@@ -839,6 +845,8 @@ VU1_STEP_INLINE void VU1Interpreter::lowerT(StepContext &context, uint32_t upper
+     }
+     else
+     {
++        if (m_xgkick.active)
++            xgkickAdvanceTo(m_cycle); // GOW-Port: puede escribir en la memoria de datos o iniciar un XGKICK
+         execLower(instr, vuData, dataSize, *context.gs, context.memory, upperInstr);
+     }
+ }
+@@ -973,6 +981,11 @@ VU1_STEP_INLINE bool VU1Interpreter::stepPairT(StepContext &context)
+             commitReadyPipelines();
+     }
+ 
++    if constexpr (k.lowerUsage.pipeline == PipelineXgkick)
++    {
++        if (m_xgkick.active)
++            xgkickAdvanceTo(m_cycle); // GOW-Port: saber si el envío anterior sigue activo
++    }
+     uint64_t readyCycle = readyCycleT<T>();
+     if (readyCycle > m_cycle)
+     {
+@@ -1084,8 +1097,8 @@ VU1_STEP_INLINE bool VU1Interpreter::stepPairT(StepContext &context)
+         // GOW-Port: m_state.cycles lo fija run() al terminar; nada lo lee durante la ejecución.
+         if (m_cycle >= m_nextCommitCycle)
+             commitReadyPipelines();
+-        if (m_xgkick.active)
+-            progressXgkick();
++        if (m_cycle >= m_xgkickEvent)
++            xgkickAdvanceTo(m_cycle); // GOW-Port: PATH1 solo en sus eventos
+         return true;
+     }
+ 
+@@ -1139,8 +1152,8 @@ VU1_STEP_INLINE bool VU1Interpreter::stepPairT(StepContext &context)
+     ++m_cycle;
+     if (m_cycle >= m_nextCommitCycle)
+         commitReadyPipelines();
+-    if (m_xgkick.active)
+-        progressXgkick();
++    if (m_cycle >= m_xgkickEvent)
++        xgkickAdvanceTo(m_cycle); // GOW-Port: PATH1 solo en sus eventos
+     return !context.programEnded;
+ }
+ 
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+index c6c1602..0b0968f 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+@@ -117,6 +117,8 @@ void VU1Interpreter::resetScheduler()
+     m_storePending = m_vfPending = m_viPending = m_accPending = 0u;
+     m_flagHead = m_flagCount = 0u;
+     m_xgkick.reset();
++    m_xgkickCycle = 0u;
++    m_xgkickEvent = ~0ull;
+     m_vfReady = {};
+     m_viReady = {};
+     m_accReady = {};
+@@ -926,6 +928,8 @@ void VU1Interpreter::commitReadyPipelines()
+         }
+     }
+ 
++    if (m_storePending != 0u && m_xgkick.active && m_cycle > m_xgkickCycle + 1u)
++        xgkickAdvanceTo(m_cycle - 1u); // GOW-Port: PATH1 copia antes de los stores que se confirman ahora
+     for (uint32_t pending = m_storePending; pending != 0u; pending &= pending - 1u)
+     {
+         const uint32_t index = static_cast<uint32_t>(std::countr_zero(pending));
+@@ -1019,7 +1023,54 @@ namespace
+     const bool g_xgkickTrace = std::getenv("GOW_VIF_DIAG") != nullptr;
+ }
+ 
++// Un ciclo de PATH1 (como antes, en cada ciclo): suma un crédito y copia los qwords que alcancen.
+ void VU1Interpreter::progressXgkick()
++{
++    if (!m_xgkick.active || !m_activeVuData || m_activeVuDataSize == 0u)
++        return;
++    ++m_xgkick.cycleCredit;
++    xgkickCopy();
++}
++
++// GOW-Port: cuenta los ciclos de PATH1 hasta 'cycle' de una vez. La copia solo depende del número de ciclos y de
++// la memoria de datos, así que es igual que avanzar ciclo a ciclo siempre que se llame antes de que la VU escriba
++// en su memoria, antes de mirar si hay un envío activo y en cada evento (GIFtag o final, que pueden fallar o
++// enviar el paquete): en esos ciclos ocurre lo mismo que antes.
++void VU1Interpreter::xgkickAdvanceTo(uint64_t cycle)
++{
++    if (!m_xgkick.active || !m_activeVuData || m_activeVuDataSize == 0u)
++    {
++        m_xgkickEvent = ~0ull;
++        return;
++    }
++    if (cycle > m_xgkickCycle)
++    {
++        const uint64_t credit = m_xgkick.cycleCredit + (cycle - m_xgkickCycle);
++        m_xgkick.cycleCredit = static_cast<uint32_t>(std::min<uint64_t>(credit, 0x40000000u));
++        m_xgkickCycle = cycle;
++        xgkickCopy();
++    }
++    xgkickScheduleEvent();
++}
++
++// Próximo ciclo en que PATH1 copia una GIFtag (currentTagEnd == 0) o el último qword de la etiqueta actual
++// (después termina el paquete o la siguiente copia es una GIFtag). La copia j-ésima ocurre cuando el crédito
++// llega a 2: ciclo m_xgkickCycle + 2 * (j - copiados + 1) - crédito.
++void VU1Interpreter::xgkickScheduleEvent()
++{
++    if (!m_xgkick.active)
++    {
++        m_xgkickEvent = ~0ull;
++        return;
++    }
++    const uint64_t copied = m_xgkick.copiedBytes / 16u;
++    uint64_t target = m_xgkick.currentTagEnd == 0u ? copied : m_xgkick.currentTagEnd / 16u - 1u;
++    if (target < copied)
++        target = copied;
++    m_xgkickEvent = m_xgkickCycle + 2u * (target - copied + 1u) - std::min<uint64_t>(m_xgkick.cycleCredit, 2u * (target - copied + 1u));
++}
++
++void VU1Interpreter::xgkickCopy()
+ {
+     if (!m_xgkick.active || !m_activeVuData || m_activeVuDataSize == 0u)
+         return;
+@@ -1037,7 +1088,6 @@ void VU1Interpreter::progressXgkick()
+                      static_cast<unsigned long long>(lo), static_cast<unsigned long long>(hi));
+     };
+ 
+-    ++m_xgkick.cycleCredit;
+     while (m_xgkick.active && m_xgkick.cycleCredit >= 2u)
+     {
+         m_xgkick.cycleCredit -= 2u;
+@@ -1092,15 +1142,8 @@ void VU1Interpreter::progressXgkick()
+                 tagBytes += static_cast<uint64_t>(nloop) * nreg * 16u;
+             else if (format == 1u)
+                 tagBytes += ((static_cast<uint64_t>(nloop) * nreg + 1u) & ~1ull) * 8u;
+-            else if (format == 2u)
++            else // GOW-Port: IMAGE (2) y FLG=3, que el GS trata igual que IMAGE (el frontend ya lo hace)
+                 tagBytes += static_cast<uint64_t>(nloop) * 16u;
+-            else
+-            {
+-                traceRejectedTag("format", qwordOffset);
+-                reportReservedInstruction(false, 0xFFFFFFF8u);
+-                m_xgkick.active = false;
+-                return;
+-            }
+ 
+             if (tagBytes > XgkickPipeline::kBufferSize - qwordOffset)
+             {
+@@ -1152,6 +1195,7 @@ void VU1Interpreter::startXgkick(uint32_t qwordAddress)
+     m_xgkick.sourceAddress = sourceAddress;
+     m_xgkick.cycleCredit = 1u; // XGKICK's issue cycle counts toward PATH1.
+     m_xgkick.issueCycle = m_cycle;
++    m_xgkickCycle = m_cycle; // GOW-Port: PATH1 por eventos
+     // Opt-in packet snapshot, following Scotho/socom-unzipped's XGKICK workaround.
+     // Capture before later VU instructions re-template the source buffer. Keep
+     // the existing bounded parser and circular-memory handling in both modes.
+@@ -1160,6 +1204,7 @@ void VU1Interpreter::startXgkick(uint32_t qwordAddress)
+         m_xgkick.cycleCredit = 0x40000000u;
+         progressXgkick();
+     }
++    xgkickScheduleEvent();
+ }
+ 
+ void VU1Interpreter::advanceOneCycle()
+@@ -1171,7 +1216,7 @@ void VU1Interpreter::advanceOneCycle()
+     if (m_cycle >= m_nextCommitCycle)
+         commitReadyPipelines();
+     if (m_xgkick.active)
+-        progressXgkick();
++        xgkickAdvanceTo(m_cycle); // GOW-Port: un ciclo, o los que falten tras código compilado
+ }
+ 
+ void VU1Interpreter::advanceTo(uint64_t targetCycle)
+@@ -1207,6 +1252,7 @@ bool VU1Interpreter::pipelinesPending() const
+ 
+ void VU1Interpreter::flushPipelines()
+ {
++    xgkickAdvanceTo(m_cycle); // GOW-Port: PATH1 al día antes de vaciar
+     commitReadyFlags();
+     while (pipelinesPending())
+     {
+@@ -1226,6 +1272,8 @@ void VU1Interpreter::flushPipelines()
+                 const uint64_t iterations = (static_cast<uint64_t>(kCredit) + 1u - m_xgkick.cycleCredit) / 2u;
+                 m_cycle += 2u * iterations - startCredit;
+                 m_state.cycles = m_cycle;
++                m_xgkickCycle = m_cycle; // GOW-Port: el envío ha terminado en este ciclo
++                m_xgkickEvent = ~0ull;
+                 if (m_cycle >= m_nextCommitCycle)
+                     commitReadyPipelines();
+                 commitReadyFlags();
+@@ -1858,6 +1906,7 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
+         m_pendingHaltT = false;
+     }
+     m_lastRunHitBudget = !programEnded && !m_stopRequested && m_cycle >= context.budgetEnd; // GOW-Port
++    xgkickAdvanceTo(m_cycle); // GOW-Port: PATH1 al día tras la ejecución (si se cortó por presupuesto)
+     commitReadyFlags(); // GOW-Port: el estado visible tras la ejecución
+     m_state.cycles = m_cycle;
+     if (useVuRounding && previousRoundingMode != -1)
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_step.inl b/ps2xRuntime/src/lib/vu/ps2_vu1_step.inl
+index bb22297..d436b5f 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_step.inl
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_step.inl
+@@ -156,6 +156,8 @@ VU1_STEP_INLINE void VU1Interpreter::markPairWrites(const DecodedInstructionPair
+ 
+ VU1_STEP_INLINE bool VU1Interpreter::stepPair(const DecodedInstructionPair &decoded, StepContext &context)
+ {
++    if (m_xgkick.active)
++        xgkickAdvanceTo(m_cycle); // GOW-Port: PATH1 al día tras código compilado (por eventos)
+     uint64_t readyCycle = calculatePairReadyCycle(decoded);
+     while (readyCycle > m_cycle)
+     {
+diff --git a/ps2xTest/src/ps2_vu1_tests.cpp b/ps2xTest/src/ps2_vu1_tests.cpp
+index d07ffbd..1a7e47f 100644
+--- a/ps2xTest/src/ps2_vu1_tests.cpp
++++ b/ps2xTest/src/ps2_vu1_tests.cpp
+@@ -1400,6 +1400,50 @@ void register_ps2_vu1_tests()
+             }
+         });
+ 
++        // GOW-Port: FLG=3 ("disable") funciona como IMAGE en el GS. XGKICK lo rechazaba como instrucción reservada y
++        // detenía el microprograma, aunque el frontend del GS ya lo procesa como IMAGE.
++        tc.Run("XGKICK treats a GIFtag with FLG=3 like IMAGE", [](TestCase &t)
++        {
++            PS2Memory mem;
++            t.IsTrue(mem.initialize(), "PS2Memory initialize should succeed");
++
++            std::vector<std::vector<uint8_t>> captured;
++            mem.setGifPacketCallback([&](const uint8_t *data, uint32_t sizeBytes)
++            {
++                captured.emplace_back(data, data + sizeBytes);
++            });
++
++            std::vector<uint8_t> vram(PS2_GS_VRAM_SIZE, 0u);
++            GS gs;
++            gs.init(vram.data(), static_cast<uint32_t>(vram.size()), nullptr);
++
++            uint8_t *code = mem.getVU1Code();
++            uint8_t *data = mem.getVU1Data();
++            std::memset(code, 0, PS2_VU1_CODE_SIZE);
++            std::memset(data, 0, PS2_VU1_DATA_SIZE);
++
++            const uint64_t tag = makeGifTag(1u, GIF_FMT_IMAGE2, 0u, true);
++            std::memcpy(data, &tag, sizeof(tag));
++            for (uint32_t i = 0; i < 16u; ++i)
++                data[16u + i] = static_cast<uint8_t>(0xA0u + i);
++            writeVuInstructionPair(code, 0u, makeVuLowerSpecial(0x6Cu, 1u), kVuUpperNop);
++            writeVuInstructionPair(code, 8u, makeVuIaddiu(2u, 0u, 7), kVuUpperNop);
++            writeVuInstructionPair(code, 16u, 0u, kVuUpperNop);
++
++            VU1Interpreter vu1;
++            vu1.state().vi[1] = 0;
++            vu1.execute(code, PS2_VU1_CODE_SIZE, data, PS2_VU1_DATA_SIZE, gs, &mem, 0u, 0u, 0u, 3u);
++
++            t.Equals(vu1.state().vi[2], 7, "the program should keep running after the FLG=3 XGKICK");
++            t.Equals(captured.size(), static_cast<size_t>(1u), "PATH1 should send the FLG=3 packet");
++            if (!captured.empty())
++            {
++                t.Equals(captured[0].size(), static_cast<size_t>(32u), "FLG=3 consumes NLOOP qwords like IMAGE");
++                t.IsTrue(captured[0].size() >= 32u && captured[0][16u] == 0xA0u && captured[0][31u] == 0xAFu,
++                         "the FLG=3 payload should be the qword after the tag");
++            }
++        });
++
+         tc.Run("XGKICK observes stores committed before a future PATH1 qword", [](TestCase &t)
+         {
+             PS2Memory mem;

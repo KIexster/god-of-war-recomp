@@ -251,7 +251,7 @@ int main(int argc, char **argv)
         }
 
     // Bloques.
-    // Prueba de cada bloque en el despacho de su dirección.
+    // Bloques de cada dirección, en el orden en que se generan.
     std::map<uint32_t, std::vector<std::string>> blockCases;
     std::set<std::pair<uint32_t, std::vector<uint32_t>>> seenBlocks;
     size_t blockCount = 0, deadCount = 0, fmacCount = 0, prunedReads = 0, keptReads = 0, prunedPairs = 0;
@@ -468,10 +468,7 @@ int main(int argc, char **argv)
             body << "        return 1;\n    }\n";
             parts[part] << body.str();
             declarations << "    int " << name << "(VU1Interpreter &vu, C &c);\n";
-            std::ostringstream test;
-            test << "            if (inRange(pc))\n            {\n                const int r = " << name << "(vu, c);\n"
-                 << "                if (r != 0)\n                    return r;\n            }\n";
-            blockCases[head].push_back(test.str());
+            blockCases[head].push_back(name);
             ++blockCount;
         }
     }
@@ -503,7 +500,7 @@ int main(int argc, char **argv)
                        header + "namespace vu1c_gen\n{\n" + parts[k].str() + "}\n" + footer);
 
     std::ostringstream out;
-    out << header
+    out << header << "#include <atomic>\n\n"
         << "namespace\n{\n"
         << "    // GOW_VU1C_DIAG: pares compilados e interpretados al salir. GOW_VU1C_RANGO=inicio-fin (hex): solo usa el\n"
         << "    // código compilado en ese rango de direcciones (para acotar una diferencia con el intérprete).\n"
@@ -532,9 +529,31 @@ int main(int argc, char **argv)
             << "        (void)vu; (void)c; (void)pc; (void)lower; (void)upper;\n";
         if (const auto it = blockCases.find(pc); it != blockCases.end())
         {
-            out << "        if (g_range.blocks)\n        {\n";
-            for (const std::string &t : it->second)
-                out << t;
+            // GOW-Port: una dirección puede tener muchas variantes de bloque (una por microcódigo distinto) y
+            // cada intento que no coincide es una llamada. Se prueba primero la última que coincidió aquí; la
+            // micromemoria cambia poco y suele ser la misma. Cualquier variante que coincide es exacta.
+            const std::vector<std::string> &blocks = it->second;
+            out << "        if (g_range.blocks && inRange(pc))\n        {\n";
+            if (blocks.size() == 1u)
+                out << "            if (const int r = " << blocks[0] << "(vu, c); r != 0)\n                return r;\n";
+            else
+            {
+                out << "            using BlockFn = int (*)(VU1Interpreter &, C &);\n"
+                    << "            static constexpr BlockFn kBlocks[" << blocks.size() << "] = {";
+                for (size_t b = 0; b < blocks.size(); ++b)
+                    out << (b ? ", " : "") << blocks[b];
+                out << "};\n"
+                    << "            static std::atomic<uint32_t> last{0};\n"
+                    << "            const uint32_t first = last.load(std::memory_order_relaxed);\n"
+                    << "            if (const int r = kBlocks[first](vu, c); r != 0)\n                return r;\n"
+                    << "            for (uint32_t b = 0; b < " << blocks.size() << "u; ++b)\n"
+                    << "                if (b != first)\n"
+                    << "                    if (const int r = kBlocks[b](vu, c); r != 0)\n"
+                    << "                    {\n"
+                    << "                        last.store(b, std::memory_order_relaxed);\n"
+                    << "                        return r;\n"
+                    << "                    }\n";
+            }
             out << "        }\n";
         }
         if (const auto it = pairCases.find(pc); it != pairCases.end())
