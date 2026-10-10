@@ -2935,3 +2935,103 @@ no demuestra qué transformaciones consumió VU1. El siguiente control debe
 leer ese destino después del skinning y relacionarlo con VIF, respetando las
 reanudaciones de la función y alineando la secuencia con PCSX2. Pseudocódigo,
 RAM y registros permanecen privados.
+
+## Perfil de CPU por hilo en los muelles: el cuello de botella es VU1 (2026-10-10)
+
+`tools/rendimiento/muestreo.cpp` es un muestreador externo para Windows: suspende cada hilo del proceso
+cada 1 ms, lee su RIP y al final resuelve funciones, archivos y líneas con el `.pdb` del runner. Da la
+ocupación real de cada hilo (muestras fuera de las funciones de espera del núcleo). La forma de compilarlo
+y de usarlo está en la cabecera del archivo. A diferencia de `GOW_PERF_DIAG=1`, no añade código al runner.
+
+**Medido** (main `895bfad`, OpenGL con presentación compartida, `GOW_GS_FINISH_ASINCRONO=1`,
+`PS2X_VU1_HILO=1`, `PS2X_GS_FRENTE=1`, guion de mando del A/B, 60 s a partir de t=150 s en los muelles,
+20,0 fps):
+
+| Hilo | Ocupado | Qué hace |
+|---|---|---|
+| VU1/VIF1 (`PS2X_VU1_HILO`) | **91,5 %** | ~66 % en bloques de microcódigo compilado (`programa1..12`), 8,6 % en el despachador `vu1c_gen::run` (el `switch (pc)` solo, ~1,4 %), 11,4 % en `ps2_vu1_core.cpp` (`commitReadyPipelines` 3,8 %, XGKICK, flags, pares interpretados), 3,4 % en `processVIF1Data` |
+| GameThread (EE + IOP) | 55 % | el resto espera; el IOP y sus temporizadores ocupan ~25 % de este hilo |
+| GSThread | 20 % | |
+| frente GS (`PS2X_GS_FRENTE`) | 13,5 % | |
+
+Consecuencias:
+
+- **El camino crítico es el hilo de VU1.** El cuadro dura lo que tarda VU1 (~46 ms), no la suma de EE y VU1:
+  ya se solapan.
+- **Los fps van en escalones** porque el juego espera VBlank: 60/30/20. En los muelles va clavado a 20,00
+  (3 VBlanks). Para pasar a 30 fps el hilo de VU1 debe bajar de ~46 a <33 ms por cuadro (**-28 %**). Una
+  mejora menor no cambia los fps: hay que medirla con la ocupación de este muestreador, no con
+  `guest_flip_hz`.
+- El perfil del hilo de VU1 es plano (ninguna línea pasa del 1,5 %): el coste está en cada par de cada bloque.
+  La siguiente mejora grande tendría que reducir el coste por par en `stepPairT`, por ejemplo resolviendo al
+  generar las esperas y las latencias de los registros que se escriben dentro del mismo bloque.
+
+**Resultado negativo: agrupar los ciclos del IOP.** `iop_ms` de `GOW_PERF_DIAG=1` atribuía al IOP 2,2–3,2 s
+de cada 5 s, y `PS2X_IOP_PC_EVERY` mostró que el IOP solo ejecuta ~0,6 M instrucciones/s: el coste es la
+gestión de `runCycles`, que se llama en cada checkpoint del EE (32 ciclos del EE = 4 del IOP) y repasa SPU2,
+DMA, callbacks, temporizadores y planificador. Además, la propia medición (dos lecturas del reloj en cada
+checkpoint) infla mucho `iop_ms`. Se probó acumular los ciclos del IOP en lotes de 256 ciclos suyos dentro de
+`IopEmulator::runEeCycles` (suite 591/591). En la misma escena: **19,92 fps con el lote frente a 19,97 sin
+él** (dos rondas alternas). No hay mejora porque el EE no es el camino crítico. Además, el lote provocó
+atascos de varios segundos en la carga (host_hz < 1) que desfasan el guion del mando. En una de las rondas
+el juego acabó en otra escena (estado 4 → 14) a 60 fps, lo que parecía falsamente una mejora de 20 → 55 fps.
+Se descartó y no se publica. Lecciones: comprobar siempre en el registro que las dos variantes siguen la misma
+secuencia de estados (`[gow-pad2:state]`), y `scripts\probar_rendimiento.ps1` borra `PS2X_IOP_PC_EVERY`
+(para muestrear el IOP hay que llamar a `ejecutar.ps1` directamente).
+
+## VU1 compilada más rápida: despachador optimizado, esperas imposibles y flags por tabla (2026-10-10)
+
+Con el muestreador por hilo (`tools/rendimiento/muestreo.cpp`, que ahora también da un histograma por
+instrucción con un quinto argumento) se cruzaron las muestras con el desensamblado (`dumpbin /disasm`).
+Cuatro cambios, todos exactos:
+
+- **El despachador `vu1c_gen::run` estaba sin optimizar.** Era un único `switch` con miles de casos y MSVC no
+  optimiza funciones tan grandes: lo compilaba como con `/Od` (`pc()` como llamada, variables en la pila).
+  Ocupaba el 8–9 % del hilo de VU1. Ahora cada dirección tiene una función pequeña y `run` usa una tabla
+  (`tools/vu1/generar_vu1.cpp`): 8,7 → 2,3 % en el banco.
+- **Esperas imposibles.** Cada par de un bloque avanza al menos un ciclo. Si el último escritor de un
+  registro leído es un par anterior del mismo bloque a una distancia >= su latencia, esa lectura no puede
+  detener el par: el generador la quita de `readyCycleT` (struct R, idéntica al par K salvo las lecturas).
+  Se quitan 26.090 de 57.305 lecturas.
+- **Flags MAC/estado por tabla.** La inversión de bits de las máscaras de carriles (~20 instrucciones por
+  FMAC) pasa a ser una consulta en una tabla de 256 entradas. `recordViWriteForBranch` se expande en línea
+  (era una llamada en cada par que escribe un VI) y desaparece el store de `m_state.cycles` en cada par
+  (`run()` lo fija al terminar y nada lo lee mientras tanto). `patches/ps2recomp-vu1-fast-pairs.patch`.
+- **Escrituras de VF de 16 bytes.** `applyDestT`, `applyDest` y el reinicio de VF0 escribían carril a carril.
+  Ahora mezclan y escriben 16 bytes, para que el load de 16 bytes del par siguiente pueda reenviarse
+  desde el store. Efecto medido pequeño (~1 %).
+
+**Comprobado:** huellas por lanzamiento idénticas entre el intérprete, la VU1 compilada de main y la nueva en
+`vif_pcsx2_inicio2` y `vif_port_480s` (incluyen ciclos y flags), suite 590/590, `probar_vu1_compilada` y
+`probar_vu1_fmac` (con FTZ/DAZ) correctas.
+
+**Banco** (`repetir_cadena_vif`, VIF1/VU1 sin rasterizar, 40 pasadas, mediana de 5 rondas alternas):
+`vif_pcsx2_inicio2` 65,1 → 55,4 ms por cuadro y `vif_port_480s` 71,0 → 60,6 ms (**−15 %**).
+
+**Juego** (muelles de Atenas, muestreador de 60 s desde t=150 s, mismo guion y mismas opciones que el A/B):
+
+| | Hilo de VU1 ocupado | fps | VU1 por cuadro |
+|---|---|---|---|
+| main | 90,8 % | 20,0 | ~45 ms |
+| esta versión | 78,3 % | 20,5 | ~38 ms |
+
+El juego espera VBlank y en los muelles sigue en el escalón de 20 fps: para pasar a 30 la VU1 debe bajar
+de ~31 ms por cuadro, otro ~19 %. Medido también: sin normalizar operandos (experimento, resultado
+incorrecto) el banco baja ~5 %; sin comprobar esperas, ~3 %.
+
+**Experimentos que engañaban.** Quitar el reinicio de VF0 parecía dar −41 %, pero algún microprograma
+escribe en VF0 y el juego hacía otro trabajo; las variantes que cambian el comportamiento (sin flags, sin
+VF0) no sirven para medir. Hay que comprobar las huellas también en los experimentos.
+
+**Guion de mando.** Con un arranque rápido, `5:start` elige New Game en el menú principal y el A/B mide la
+intro (cámara en movimiento, 16–57 fps, errores XGKICK de formato 3 en main y en la versión nueva) en lugar
+de los muelles. El guion `13:abajo,20:x,62:x` carga la partida en ambos casos (ver `CONTROLES.md`).
+
+**Cuelgues esporádicos** con `PS2X_VU1_HILO=1`, `PS2X_GS_FRENTE=1`, `GOW_GS_FINISH_ASINCRONO=1` y presentación
+compartida, en 2 de 8 partidas: una vez con main el juego dejó de presentar cuadros (`guest_flip_hz=0`)
+mientras la ventana seguía viva, y otra vez con esta versión se detuvo el hilo de presentación
+(`[gow-perf]` a los 15 s) mientras el juego seguía a 20 fps. Pendiente de investigar.
+
+Siguientes pasos para VU1: XGKICK perezoso (copiar el paquete cuando la VU escribe en su memoria o al
+acabar, en vez de llamar a `progressXgkick` en cada par), confirmar los flags por lotes, operandos sin
+normalizar con DAZ/FTZ, y bloques con temporización estática.

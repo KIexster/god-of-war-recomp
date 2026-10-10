@@ -1,0 +1,236 @@
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+index f9098de..dd3d6f6 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+@@ -138,13 +138,30 @@ namespace vu1c
+     }
+ 
+     // applyDest con la máscara constante.
++    // GOW-Port: un único store de 16 bytes (mezcla de carriles). Varios stores de 4 bytes seguidos de la
++    // lectura de 16 bytes del registro en el par siguiente impedían el reenvío store->load.
+     template <uint32_t Dest>
+     VU1_STEP_INLINE void applyDestT(float *dst, const float *src)
+     {
+-        if constexpr ((Dest & 8u) != 0u) dst[0] = src[0];
+-        if constexpr ((Dest & 4u) != 0u) dst[1] = src[1];
+-        if constexpr ((Dest & 2u) != 0u) dst[2] = src[2];
+-        if constexpr ((Dest & 1u) != 0u) dst[3] = src[3];
++        if constexpr (Dest == 0u)
++            return;
++#if defined(_MSC_VER) || defined(__SSE4_1__)
++        else if constexpr (Dest == 0xFu)
++            _mm_storeu_ps(dst, _mm_loadu_ps(src));
++        else
++        {
++            constexpr int lanes = ((Dest & 8u) ? 1 : 0) | ((Dest & 4u) ? 2 : 0) | ((Dest & 2u) ? 4 : 0) | ((Dest & 1u) ? 8 : 0);
++            _mm_storeu_ps(dst, _mm_blend_ps(_mm_loadu_ps(dst), _mm_loadu_ps(src), lanes));
++        }
++#else
++        else
++        {
++            if constexpr ((Dest & 8u) != 0u) dst[0] = src[0];
++            if constexpr ((Dest & 4u) != 0u) dst[1] = src[1];
++            if constexpr ((Dest & 2u) != 0u) dst[2] = src[2];
++            if constexpr ((Dest & 1u) != 0u) dst[3] = src[3];
++        }
++#endif
+     }
+     // GOW-Port: store de VU1 con DEST constante, escrito en el acto. queueStore lo encolaba con un ciclo de
+     // latencia, pero el mismo paso avanza ese ciclo y commitReadyPipelines lo escribe antes de que nada más
+@@ -214,6 +231,24 @@ namespace vu1c
+     }
+     constexpr uint32_t crossLeft(uint32_t c) { return c == 0 ? 1u : c == 1 ? 2u : c == 2 ? 0u : 3u; }
+     constexpr uint32_t crossRight(uint32_t c) { return c == 0 ? 2u : c == 1 ? 0u : c == 2 ? 1u : 3u; }
++    // GOW-Port: MAC (bits 0-3 Z, 4-7 S en orden de componente) y estado (Z = bit 0, S = bit 1) de una FMAC a
++    // partir de las máscaras de carriles de movemask (bit 0 = x): índice z | (s << 4), valor mac | (estado << 8).
++    // Una consulta en lugar de invertir los bits de cada máscara en cada FMAC.
++    struct MacStatusTable
++    {
++        uint16_t v[256];
++    };
++    constexpr MacStatusTable makeMacStatusTable()
++    {
++        MacStatusTable t{};
++        for (uint32_t i = 0; i < 256u; ++i)
++        {
++            const uint32_t z = i & 0xFu, s = i >> 4;
++            t.v[i] = static_cast<uint16_t>((reverse4(z) | (reverse4(s) << 4)) | (((s != 0u ? 0x2u : 0u) | (z != 0u ? 0x1u : 0u)) << 8));
++        }
++        return t;
++    }
++    inline constexpr MacStatusTable kMacStatus = makeMacStatusTable();
+ }
+ 
+ // Una componente de una operación FMAC: calcula como execUpper (operandos normalizados, mismas expresiones
+@@ -523,8 +558,8 @@ VU1_STEP_INLINE void VU1Interpreter::upperT()
+                         // Mismo MAC y status que updateFmacFlags con los flags por carril (Z = bit 0, S = bit 1).
+                         const uint32_t z = static_cast<uint32_t>(zeroLanes) & static_cast<uint32_t>(lanes);
+                         const uint32_t sg = static_cast<uint32_t>(signs) & static_cast<uint32_t>(lanes);
+-                        pushFmacFlags(vu1c::reverse4(z) | (vu1c::reverse4(sg) << 4),
+-                                      (sg != 0u ? 0x2u : 0u) | (z != 0u ? 0x1u : 0u), productSticky);
++                        const uint32_t macStatus = vu1c::kMacStatus.v[z | (sg << 4)];
++                        pushFmacFlags(macStatus & 0xFFu, macStatus >> 8, productSticky);
+                     }
+                 }
+                 float *target = info.toAcc ? m_state.acc : m_state.vf[fd];
+@@ -581,10 +616,7 @@ VU1C_NOINLINE void VU1Interpreter::fmacScalarT()
+             }
+         }
+         float *target = info.toAcc ? m_state.acc : m_state.vf[fd];
+-        if constexpr ((dest & 8u) != 0u) target[0] = result[0];
+-        if constexpr ((dest & 4u) != 0u) target[1] = result[1];
+-        if constexpr ((dest & 2u) != 0u) target[2] = result[2];
+-        if constexpr ((dest & 1u) != 0u) target[3] = result[3];
++        vu1c::applyDestT<dest>(target, result);
+ }
+ 
+ // Instrucciones inferiores frecuentes especializadas. Cada caso es copia exacta del de execLower
+@@ -1030,12 +1062,16 @@ VU1_STEP_INLINE bool VU1Interpreter::stepPairT(StepContext &context)
+         if constexpr ((accWrite & 1u) != 0u) m_accReady[3] = m_cycle + kAccForwardLatency;
+     }
+     if constexpr (writtenVi != 0u && k.lowerUsage.delaysNextBranchRead)
+-        recordViWriteForBranch(static_cast<uint8_t>(writtenVi), oldVi);
++    {
++        // GOW-Port: recordViWriteForBranch en línea (era una llamada en cada par que escribe un VI).
++        m_viBranchBackupValue = oldVi;
++        m_viBranchBackupReg = static_cast<uint8_t>(writtenVi);
++        m_viBranchBackupValid = true;
++    }
+ 
+-    m_state.vf[0][0] = 0.0f;
+-    m_state.vf[0][1] = 0.0f;
+-    m_state.vf[0][2] = 0.0f;
+-    m_state.vf[0][3] = 1.0f;
++    // GOW-Port: VF0 con un solo store de 16 bytes: la lectura de 16 bytes de VF0 en el par siguiente
++    // (vf00w = 1.0 es muy frecuente) no puede reenviarse desde cuatro stores de 4 bytes.
++    vu1StoreVf0(m_state.vf[0]);
+     m_state.vi[0] = 0;
+ 
+     // Plain: par intermedio de un bloque que no salta ni termina. blockPreconditions garantiza que al
+@@ -1045,7 +1081,7 @@ VU1_STEP_INLINE bool VU1Interpreter::stepPairT(StepContext &context)
+     {
+         m_state.pc += 8u;
+         ++m_cycle;
+-        m_state.cycles = m_cycle;
++        // GOW-Port: m_state.cycles lo fija run() al terminar; nada lo lee durante la ejecución.
+         if (m_cycle >= m_nextCommitCycle)
+             commitReadyPipelines();
+         if (m_xgkick.active)
+@@ -1101,7 +1137,6 @@ VU1_STEP_INLINE bool VU1Interpreter::stepPairT(StepContext &context)
+ 
+     // advanceOneCycle con las comprobaciones en línea.
+     ++m_cycle;
+-    m_state.cycles = m_cycle;
+     if (m_cycle >= m_nextCommitCycle)
+         commitReadyPipelines();
+     if (m_xgkick.active)
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+index 5cecb70..c6c1602 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+@@ -200,14 +200,8 @@ void VU1Interpreter::recordViWriteForBranch(uint8_t reg, int32_t oldValue)
+ 
+ void VU1Interpreter::applyDest(float *dst, const float *result, uint8_t dest)
+ {
+-    if (dest & 0x8u)
+-        dst[0] = result[0];
+-    if (dest & 0x4u)
+-        dst[1] = result[1];
+-    if (dest & 0x2u)
+-        dst[2] = result[2];
+-    if (dest & 0x1u)
+-        dst[3] = result[3];
++    // GOW-Port: un único store de 16 bytes (ver applyDestT en ps2_vu1_compiled.inl).
++    vu1StoreLanes(dst, result, dest);
+ }
+ 
+ void VU1Interpreter::applyDestAcc(const float *result, uint8_t dest)
+@@ -1817,10 +1811,7 @@ void VU1Interpreter::execute(uint8_t *vuCode, uint32_t codeSize,
+     m_state.branchPending = false;
+     m_state.branchTarget = 0;
+     m_state.branchDelay = 0;
+-    m_state.vf[0][0] = 0.0f;
+-    m_state.vf[0][1] = 0.0f;
+-    m_state.vf[0][2] = 0.0f;
+-    m_state.vf[0][3] = 1.0f;
++    vu1StoreVf0(m_state.vf[0]);
+     run(vuCode, codeSize, vuData, dataSize, gs, memory, maxCycles);
+ }
+ 
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_step.inl b/ps2xRuntime/src/lib/vu/ps2_vu1_step.inl
+index b8ed53a..bb22297 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_step.inl
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_step.inl
+@@ -8,6 +8,9 @@
+ #include <algorithm>
+ #include <bit>
+ #include <cstring>
++#if defined(_MSC_VER) || defined(__SSE4_1__)
++#include <immintrin.h>
++#endif
+ 
+ // GOW-Port: la aritmética de VU no depende de /fp:fast. El runtime se compila con /fp:fast, que deja al
+ // compilador fusionar a*b+c en FMA según dónde esté el código: el intérprete y el microcódigo compilado
+@@ -29,6 +32,48 @@ static constexpr uint8_t vu1StepLane(uint32_t component)
+     return static_cast<uint8_t>(1u << (3u - component));
+ }
+ 
++// GOW-Port: escrituras de registros VF/ACC con un único store de 16 bytes. Si un registro se escribe con
++// varios stores de 4 bytes y el par siguiente lo lee con un load de 16 bytes (lo normal en las FMAC con SSE),
++// el reenvío store->load falla y el load espera a que los stores lleguen a la caché. Los carriles se mezclan
++// bit a bit (sin operaciones de coma flotante): el resultado es idéntico.
++VU1_STEP_INLINE void vu1StoreVf0(float *vf0)
++{
++#if defined(_MSC_VER) || defined(__SSE4_1__)
++    _mm_storeu_ps(vf0, _mm_setr_ps(0.0f, 0.0f, 0.0f, 1.0f));
++#else
++    vf0[0] = 0.0f;
++    vf0[1] = 0.0f;
++    vf0[2] = 0.0f;
++    vf0[3] = 1.0f;
++#endif
++}
++
++// dest: máscara de VU (bit 3 = x ... bit 0 = w).
++VU1_STEP_INLINE void vu1StoreLanes(float *dst, const float *src, uint32_t dest)
++{
++#if defined(_MSC_VER) || defined(__SSE4_1__)
++    alignas(16) static constexpr int32_t kMasks[16][4] = {
++        {0, 0, 0, 0}, {0, 0, 0, -1}, {0, 0, -1, 0}, {0, 0, -1, -1},
++        {0, -1, 0, 0}, {0, -1, 0, -1}, {0, -1, -1, 0}, {0, -1, -1, -1},
++        {-1, 0, 0, 0}, {-1, 0, 0, -1}, {-1, 0, -1, 0}, {-1, 0, -1, -1},
++        {-1, -1, 0, 0}, {-1, -1, 0, -1}, {-1, -1, -1, 0}, {-1, -1, -1, -1}};
++    dest &= 0xFu;
++    if (dest == 0u)
++        return;
++    const __m128 mask = _mm_load_ps(reinterpret_cast<const float *>(kMasks[dest]));
++    _mm_storeu_ps(dst, _mm_blendv_ps(_mm_loadu_ps(dst), _mm_loadu_ps(src), mask));
++#else
++    if (dest & 0x8u)
++        dst[0] = src[0];
++    if (dest & 0x4u)
++        dst[1] = src[1];
++    if (dest & 0x2u)
++        dst[2] = src[2];
++    if (dest & 0x1u)
++        dst[3] = src[3];
++#endif
++}
++
+ VU1_STEP_INLINE uint64_t VU1Interpreter::calculatePairReadyCycle(const DecodedInstructionPair &decoded) const
+ {
+     uint64_t ready = m_cycle;
+@@ -242,10 +287,9 @@ VU1_STEP_INLINE bool VU1Interpreter::stepPair(const DecodedInstructionPair &deco
+     if (writtenVi != 0u && decoded.lowerUsage.delaysNextBranchRead)
+         recordViWriteForBranch(writtenVi, oldVi);
+ 
+-    m_state.vf[0][0] = 0.0f;
+-    m_state.vf[0][1] = 0.0f;
+-    m_state.vf[0][2] = 0.0f;
+-    m_state.vf[0][3] = 1.0f;
++    // GOW-Port: VF0 con un solo store de 16 bytes: la lectura de 16 bytes de VF0 en el par siguiente
++    // (vf00w = 1.0 es muy frecuente) no puede reenviarse desde cuatro stores de 4 bytes.
++    vu1StoreVf0(m_state.vf[0]);
+     m_state.vi[0] = 0;
+ 
+     uint32_t nextPc = m_state.pc + 8u;

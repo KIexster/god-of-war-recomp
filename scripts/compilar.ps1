@@ -98,6 +98,7 @@ $vif1UnpackFormatsPatch = Join-Path $RepoRoot 'patches\ps2recomp-vif1-unpack-for
 $vu1BlockCheckCachePatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-block-check-cache.patch'
 $vu1ChainedStepsPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-chained-steps.patch'
 $gameSpeedPatch = Join-Path $RepoRoot 'patches\ps2recomp-game-speed.patch'
+$vu1FastPairsPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-fast-pairs.patch'
 $gsHostFrameDiagPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-host-frame-diag.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
@@ -221,6 +222,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $vif1UnpackFormatsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1BlockCheckCachePatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1ChainedStepsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gameSpeedPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1FastPairsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsHostFrameDiagPatch)
 Pop-Location
 
