@@ -7,7 +7,7 @@
 // Compilar (Developer Command Prompt x64):
 //   cl /nologo /O2 /EHsc /std:c++20 /utf-8 tools\rendimiento\muestreo.cpp winmm.lib
 // Uso, con el juego ya lanzado o a punto de lanzarse (espera hasta 60 s a que aparezca el proceso):
-//   muestreo.exe ps2EntryRunner.exe <espera_s> <duracion_s> [intervalo_ms] > perfil.txt
+//   muestreo.exe ps2EntryRunner.exe <espera_s> <duracion_s> [intervalo_ms [funcion]] > perfil.txt
 #define NOMINMAX
 #include <windows.h>
 #include <dbghelp.h>
@@ -83,10 +83,14 @@ int wmain(int argc, wchar_t **argv)
 {
     if (argc < 4)
     {
-        std::fprintf(stderr, "uso: muestreo <exe> <espera_s> <duracion_s> [intervalo_ms]\n");
+        std::fprintf(stderr, "uso: muestreo <exe> <espera_s> <duracion_s> [intervalo_ms [funcion]]\n");
         return 2;
     }
     const double wait = _wtof(argv[2]), duration = _wtof(argv[3]);
+    std::string detail;
+    if (argc > 5)
+        for (const wchar_t *c = argv[5]; *c; ++c)
+            detail.push_back(static_cast<char>(*c));
     const int interval = argc > 4 ? std::max(1, _wtoi(argv[4])) : 1;
     DWORD pid = 0;
     for (int i = 0; i < 600 && !pid; ++i)
@@ -221,6 +225,34 @@ int wmain(int argc, wchar_t **argv)
         section("funciones", byFn, 40);
         section("archivos", byFile, 20);
         section("lineas", byLine, 30);
+        // Con un quinto argumento, histograma por instrucción de las funciones que contienen ese texto:
+        // "direccion muestras funcion+desplazamiento" (para cruzar con dumpbin /disasm).
+        if (!detail.empty())
+        {
+            std::vector<std::pair<uint64_t, uint32_t>> hits;
+            for (const auto &[rip, n] : t->rips)
+                if (name(rip).find(detail) != std::string::npos)
+                    hits.push_back({rip, n});
+            std::sort(hits.begin(), hits.end());
+            if (!hits.empty())
+                report += "  -- instrucciones de '" + detail + "'\n";
+            for (const auto &[rip, n] : hits)
+            {
+                alignas(SYMBOL_INFO) char buf[sizeof(SYMBOL_INFO) + 512];
+                auto *s = reinterpret_cast<SYMBOL_INFO *>(buf);
+                s->SizeOfStruct = sizeof(SYMBOL_INFO);
+                s->MaxNameLen = 511;
+                DWORD64 disp = 0;
+                char row[700];
+                if (SymFromAddr(proc, rip, &disp, s))
+                    std::snprintf(row, sizeof(row), "  %llx %u %s+0x%llx rva=0x%llx\n", static_cast<unsigned long long>(rip), n,
+                                  s->Name, static_cast<unsigned long long>(disp),
+                                  static_cast<unsigned long long>(rip - s->ModBase));
+                else
+                    std::snprintf(row, sizeof(row), "  %llx %u\n", static_cast<unsigned long long>(rip), n);
+                report += row;
+            }
+        }
     }
     std::sort(busyByThread.begin(), busyByThread.end(), [](const auto &a, const auto &b) { return a.second > b.second; });
     std::printf("\nOcupacion por hilo:\n");

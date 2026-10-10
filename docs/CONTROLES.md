@@ -50,6 +50,12 @@ pulsaciones de 0,7 s. Botones: `start`, `select`, `arriba`, `abajo`, `izquierda`
 $env:GOW_PAD_GUION = '5:start,13:abajo,20:x'
 ```
 
+El menú principal acepta botones sin pulsar Start, y lo que tarda en aparecer depende de la carga del
+equipo (el tiempo emulado avanza con el tiempo real en las esperas). Con un arranque rápido, el Start de
+`5:start` cae ya en el menú y elige New Game. Para cargar la primera partida de la tarjeta sea cual sea el
+tiempo de arranque: `13:abajo,20:x,62:x` (bajar a Load, abrirlo y elegir la partida). Las mediciones de
+rendimiento en los muelles usan ese guion sin más pulsaciones, para que Kratos quede quieto.
+
 Para investigar búsquedas de nodos durante las transiciones:
 
 ```powershell
