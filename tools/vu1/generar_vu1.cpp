@@ -33,6 +33,8 @@ struct VU1CompiledGenerator
 {
     using Pair = VU1Interpreter::DecodedInstructionPair;
     using Usage = VU1Interpreter::InstructionUsage;
+    using VfAccess = VU1Interpreter::VfAccess;
+    static constexpr uint32_t kAccLatency = VU1Interpreter::kAccForwardLatency;
 
     static Pair decode(const VU1Interpreter &vu, const uint8_t *code, uint32_t pc)
     {
@@ -242,23 +244,17 @@ int main(int argc, char **argv)
                 continue;
             const std::string name = pairFunction(code, pc, false);
             std::ostringstream test;
-            test << "                if (lower == 0x" << std::hex << code.lower(pc) << "u && upper == 0x" << code.upper(pc)
+            test << "        if (lower == 0x" << std::hex << code.lower(pc) << "u && upper == 0x" << code.upper(pc)
                  << "u && inRange(pc))\n" << std::dec
-                 << "                {\n                    ++g_stats.compiled;\n                    if (!" << name << "(vu, c))\n"
-                 << "                        return;\n                    continue;\n                }\n";
+                 << "        {\n            ++g_stats.compiled;\n            return " << name << "(vu, c) ? 1 : 2;\n        }\n";
             pairCases[pc].push_back(test.str());
         }
 
     // Bloques.
-    // Prueba de cada bloque en el despacho y sus sucesores conocidos al generar (para encadenar sin el switch).
-    struct BlockCase
-    {
-        std::string test;
-        std::vector<uint32_t> successors;
-    };
-    std::map<uint32_t, std::vector<BlockCase>> blockCases;
+    // Prueba de cada bloque en el despacho de su dirección.
+    std::map<uint32_t, std::vector<std::string>> blockCases;
     std::set<std::pair<uint32_t, std::vector<uint32_t>>> seenBlocks;
-    size_t blockCount = 0, deadCount = 0, fmacCount = 0;
+    size_t blockCount = 0, deadCount = 0, fmacCount = 0, prunedReads = 0, keptReads = 0, prunedPairs = 0;
     for (const Code &code : codes)
     {
         const uint32_t count = static_cast<uint32_t>(code.bytes.size() / 8u);
@@ -342,6 +338,100 @@ int main(int argc, char **argv)
                 deadCount += dead[i] ? 1u : 0u;
             }
 
+            // GOW-Port: esperas imposibles. Cada par de un bloque avanza al menos un ciclo, así que si el último
+            // escritor de un registro leído es un par anterior del bloque a una distancia de pares >= su
+            // latencia, m_vfReady/m_viReady/m_accReady ya no pueden superar el ciclo actual: esa lectura no
+            // puede detener el par y se quita de readyCycleT (struct R: el par K con solo las lecturas que quedan).
+            // Mismo modelo que markPairWrites: el último escritor sustituye al anterior.
+            std::vector<Pair> reads(length);
+            std::vector<bool> pruned(length, false);
+            {
+                struct Writer
+                {
+                    int64_t pair = -1;
+                    uint32_t latency = 0;
+                };
+                Writer vfW[32][4]{}, viW[16]{}, accW[4]{};
+                for (size_t i = 0; i < length; ++i)
+                {
+                    const Pair &p = code.pairs[pcs[i] / 8u];
+                    Pair r = p;
+                    const auto ready = [&](const Writer &w)
+                    { return w.pair >= 0 && static_cast<int64_t>(i) - w.pair >= static_cast<int64_t>(w.latency); };
+                    for (VU1CompiledGenerator::Usage *u : {&r.upperUsage, &r.lowerUsage})
+                    {
+                        for (uint32_t idx = 0; idx < u->vfReadCount && idx < 2u; ++idx)
+                        {
+                            VU1CompiledGenerator::VfAccess &a = u->vfRead[idx];
+                            for (uint32_t c = 0; c < 4u; ++c)
+                            {
+                                const uint8_t bit = static_cast<uint8_t>(8u >> c);
+                                if ((a.lanes & bit) != 0u && (a.reg == 0u || ready(vfW[a.reg & 31u][c])))
+                                {
+                                    a.lanes = static_cast<uint8_t>(a.lanes & ~bit);
+                                    ++prunedReads;
+                                }
+                                else if ((a.lanes & bit) != 0u)
+                                    ++keptReads;
+                            }
+                        }
+                        for (uint32_t v = 1; v < 16u; ++v)
+                        {
+                            if ((u->viRead & (1u << v)) == 0u)
+                                continue;
+                            if (ready(viW[v]))
+                            {
+                                u->viRead = static_cast<uint16_t>(u->viRead & ~(1u << v));
+                                ++prunedReads;
+                            }
+                            else
+                                ++keptReads;
+                        }
+                        for (uint32_t c = 0; c < 4u; ++c)
+                        {
+                            const uint8_t bit = static_cast<uint8_t>(8u >> c);
+                            if ((u->accRead & bit) == 0u)
+                                continue;
+                            if (ready(accW[c]))
+                            {
+                                u->accRead = static_cast<uint8_t>(u->accRead & ~bit);
+                                ++prunedReads;
+                            }
+                            else
+                                ++keptReads;
+                        }
+                    }
+                    pruned[i] = std::memcmp(&r.upperUsage, &p.upperUsage, sizeof(r.upperUsage)) != 0 ||
+                                std::memcmp(&r.lowerUsage, &p.lowerUsage, sizeof(r.lowerUsage)) != 0;
+                    reads[i] = r;
+
+                    // Escrituras del par (markPairWrites).
+                    const VU1CompiledGenerator::VfAccess lw = p.lowerUsage.vfWrite;
+                    if (lw.reg != 0u && p.suppressedLowerVf != lw.reg)
+                    {
+                        const uint32_t lat = p.lowerUsage.vfLatency != 0u ? p.lowerUsage.vfLatency : p.lowerUsage.latency;
+                        for (uint32_t c = 0; c < 4u; ++c)
+                            if ((lw.lanes & (8u >> c)) != 0u)
+                                vfW[lw.reg & 31u][c] = {static_cast<int64_t>(i), lat};
+                    }
+                    const VU1CompiledGenerator::VfAccess uw = p.upperUsage.vfWrite;
+                    if (uw.reg != 0u)
+                    {
+                        const uint32_t lat = p.upperUsage.vfLatency != 0u ? p.upperUsage.vfLatency : p.upperUsage.latency;
+                        for (uint32_t c = 0; c < 4u; ++c)
+                            if ((uw.lanes & (8u >> c)) != 0u)
+                                vfW[uw.reg & 31u][c] = {static_cast<int64_t>(i), lat};
+                    }
+                    for (uint32_t v = 1; v < 16u; ++v)
+                        if ((p.lowerUsage.viWrite & (1u << v)) != 0u)
+                            viW[v] = {static_cast<int64_t>(i),
+                                      p.lowerUsage.viLatency != 0u ? p.lowerUsage.viLatency : p.lowerUsage.latency};
+                    for (uint32_t c = 0; c < 4u; ++c)
+                        if ((p.upperUsage.accWrite & (8u >> c)) != 0u)
+                            accW[c] = {static_cast<int64_t>(i), VU1CompiledGenerator::kAccLatency};
+                }
+            }
+
             // El bloque es una sola función con los pasos en línea, en el mismo archivo que sus structs K.
             // Los pares intermedios que no saltan ni terminan ("simples") no comprueban saltos ni finales.
             const std::string name = "b" + hex4(head) + "_" + std::to_string(blockCases[head].size());
@@ -359,8 +449,18 @@ int main(int argc, char **argv)
                 const Pair &p = code.pairs[pcs[i] / 8u];
                 const bool plain = i + 1u < length && !VU1CompiledGenerator::isBranch(p) && !p.eBit && !p.dBit && !p.tBit;
                 const std::string k = kStruct(code, pcs[i], part);
+                // GOW-Port: struct R con las lecturas que pueden esperar (ver "esperas imposibles").
+                std::string r = k;
+                if (pruned[i])
+                {
+                    r = "R" + name.substr(1) + "_" + std::to_string(i);
+                    parts[part] << "    struct " << r << "\n    {\n        static constexpr P value = "
+                                << VU1CompiledGenerator::pairInitializer(reads[i]) << ";\n    };\n";
+                    ++prunedPairs;
+                }
                 // GOW-Port: los pares que no abren el bloque se saltan las comprobaciones de entrada (Chained).
-                body << "        if (!VU1CompiledAccess::step<" << k << ", " << (dead[i] ? "true" : "false") << ", "
+                // stepPairT solo consulta las lecturas en readyCycleT, así que R sustituye a K sin más cambios.
+                body << "        if (!VU1CompiledAccess::step<" << r << ", " << (dead[i] ? "true" : "false") << ", "
                      << (plain ? "true" : "false") << ", " << (i > 0u ? "true" : "false") << ">(vu, c))\n            return 2;\n";
                 if (i + 1u < length && !plain)
                     body << "        if (VU1CompiledAccess::pc(vu) != " << pcs[i + 1u] << "u)\n            return 1;\n";
@@ -369,24 +469,9 @@ int main(int argc, char **argv)
             parts[part] << body.str();
             declarations << "    int " << name << "(VU1Interpreter &vu, C &c);\n";
             std::ostringstream test;
-            test << "                if (inRange(pc))\n                {\n                    const int r = " << name << "(vu, c);\n"
-                 << "                    if (r == 2)\n                        return;\n                    if (r == 1)\n";
-            // Sucesores: tras el último par sigue el siguiente; si el bloque acaba en un salto con su hueco de
-            // retardo, también el destino (JR/JALR lo toman de un registro: solo el siguiente).
-            std::vector<uint32_t> successors{(pcs.back() + 8u) & 0x3FFFu};
-            if (pcs.size() >= 2u)
-            {
-                const Pair &b = code.pairs[pcs[pcs.size() - 2u] / 8u];
-                const uint32_t op = b.lower >> 25;
-                if (VU1CompiledGenerator::isBranch(b) && op != 0x24u && op != 0x25u)
-                {
-                    const int32_t imm = static_cast<int32_t>(b.lower << 21) >> 21;
-                    const uint32_t target = static_cast<uint32_t>(static_cast<int32_t>(pcs[pcs.size() - 2u]) + 8 + imm * 8) & 0x3FFFu;
-                    if (target != successors[0])
-                        successors.push_back(target);
-                }
-            }
-            blockCases[head].push_back({test.str(), successors});
+            test << "            if (inRange(pc))\n            {\n                const int r = " << name << "(vu, c);\n"
+                 << "                if (r != 0)\n                    return r;\n            }\n";
+            blockCases[head].push_back(test.str());
             ++blockCount;
         }
     }
@@ -432,13 +517,10 @@ int main(int argc, char **argv)
         << "                hi = end && *end == '-' ? static_cast<uint32_t>(std::strtoul(end + 1, nullptr, 16)) : lo;\n            }\n"
         << "            blocks = std::getenv(\"GOW_VU1C_SIN_BLOQUES\") == nullptr;\n        }\n    } g_range;\n"
         << "    inline bool inRange(uint32_t pc) { return pc >= g_range.lo && pc <= g_range.hi; }\n}\n\n"
-        << "namespace vu1c_gen\n{\n" << declarations.str()
-        << "    void run(VU1Interpreter &vu, C &c)\n    {\n        for (;;)\n        {\n"
-        << "            uint32_t pc = VU1CompiledAccess::pc(vu);\n"
-        << "            if (pc + 8u <= c.codeSize)\n            {\n"
-        << "                uint32_t lower, upper;\n"
-        << "                std::memcpy(&lower, c.vuCode + pc, 4);\n                std::memcpy(&upper, c.vuCode + pc + 4, 4);\n"
-        << "                switch (pc)\n                {\n";
+        << "namespace vu1c_gen\n{\n" << declarations.str();
+    // GOW-Port: el despacho era un único switch con miles de casos dentro de run, y MSVC no optimiza una función
+    // tan grande (la compilaba como con /Od: pc() como llamada, variables en la pila). Ahora cada dirección
+    // tiene su función pequeña (0 = nada compilado coincide, 1 = seguir, 2 = parar) y run usa una tabla.
     std::set<uint32_t> allPcs;
     for (const auto &[pc, v] : pairCases)
         allPcs.insert(pc);
@@ -446,33 +528,35 @@ int main(int argc, char **argv)
         allPcs.insert(pc);
     for (const uint32_t pc : allPcs)
     {
-        out << "                case 0x" << hex4(pc) << ":\n                L" << hex4(pc) << ":\n";
+        out << "    static int d" << hex4(pc) << "(VU1Interpreter &vu, C &c, uint32_t pc, uint32_t lower, uint32_t upper)\n    {\n"
+            << "        (void)vu; (void)c; (void)pc; (void)lower; (void)upper;\n";
         if (const auto it = blockCases.find(pc); it != blockCases.end())
         {
-            out << "                if (g_range.blocks)\n                {\n";
-            for (const BlockCase &t : it->second)
-            {
-                // GOW-Port: si el bloque termina en un sucesor conocido con su propio case, se salta a él
-                // directamente (mismo trabajo que volver al principio del bucle, sin el switch).
-                out << t.test << "                    {\n                        pc = VU1CompiledAccess::pc(vu);\n";
-                for (const uint32_t next : t.successors)
-                    if (allPcs.count(next) != 0u && next + 8u <= PS2_VU1_CODE_SIZE)
-                        out << "                        if (pc == 0x" << hex4(next) << "u && pc + 8u <= c.codeSize)\n"
-                            << "                        {\n"
-                            << "                            std::memcpy(&lower, c.vuCode + pc, 4);\n"
-                            << "                            std::memcpy(&upper, c.vuCode + pc + 4, 4);\n"
-                            << "                            goto L" << hex4(next) << ";\n"
-                            << "                        }\n";
-                out << "                        continue;\n                    }\n                }\n";
-            }
-            out << "                }\n";
+            out << "        if (g_range.blocks)\n        {\n";
+            for (const std::string &t : it->second)
+                out << t;
+            out << "        }\n";
         }
         if (const auto it = pairCases.find(pc); it != pairCases.end())
             for (const auto &t : it->second)
                 out << t;
-        out << "                break;\n";
+        out << "        return 0;\n    }\n";
     }
-    out << "                default:\n                    break;\n                }\n            }\n"
+    out << "    using DispatchFn = int (*)(VU1Interpreter &, C &, uint32_t, uint32_t, uint32_t);\n"
+        << "    static constexpr DispatchFn kDispatch[" << PS2_VU1_CODE_SIZE / 8u << "] = {\n";
+    for (uint32_t pc = 0; pc < PS2_VU1_CODE_SIZE; pc += 8u)
+        out << "        " << (allPcs.count(pc) ? "d" + hex4(pc) : std::string("nullptr")) << ",\n";
+    out << "    };\n\n"
+        << "    void run(VU1Interpreter &vu, C &c)\n    {\n        for (;;)\n        {\n"
+        << "            const uint32_t pc = VU1CompiledAccess::pc(vu);\n"
+        << "            if (pc + 8u <= c.codeSize && pc < " << PS2_VU1_CODE_SIZE << "u && (pc & 7u) == 0u)\n            {\n"
+        << "                if (const DispatchFn fn = kDispatch[pc >> 3])\n                {\n"
+        << "                    uint32_t lower, upper;\n"
+        << "                    std::memcpy(&lower, c.vuCode + pc, 4);\n                    std::memcpy(&upper, c.vuCode + pc + 4, 4);\n"
+        << "                    const int r = fn(vu, c, pc, lower, upper);\n"
+        << "                    if (r == 1)\n                        continue;\n"
+        << "                    if (r == 2)\n                        return;\n"
+        << "                }\n            }\n"
         << "            ++g_stats.interpreted;\n"
         << "            if (!VU1CompiledAccess::interpret(vu, c))\n                return;\n        }\n    }\n}\n\n"
         << "static const bool g_registered = (VU1Interpreter::registerCompiledProgram(&vu1c_gen::run), true);\n"
@@ -480,5 +564,7 @@ int main(int argc, char **argv)
     writeIfChanged(base + "/programa0.cpp", out.str());
     std::printf("[generar_vu1] %zu funciones de par, %zu bloques, %zu de %zu FMAC con flags muertos, %zu imagenes\n",
                 pairFns.size(), blockCount, deadCount, fmacCount, codes.size());
+    std::printf("[generar_vu1] esperas imposibles: %zu de %zu lecturas en bloques, %zu pares con struct R\n",
+                prunedReads, prunedReads + keptReads, prunedPairs);
     return 0;
 }

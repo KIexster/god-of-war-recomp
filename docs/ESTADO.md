@@ -2978,3 +2978,60 @@ el juego acabó en otra escena (estado 4 → 14) a 60 fps, lo que parecía falsa
 Se descartó y no se publica. Lecciones: comprobar siempre en el registro que las dos variantes siguen la misma
 secuencia de estados (`[gow-pad2:state]`), y `scripts\probar_rendimiento.ps1` borra `PS2X_IOP_PC_EVERY`
 (para muestrear el IOP hay que llamar a `ejecutar.ps1` directamente).
+
+## VU1 compilada más rápida: despachador optimizado, esperas imposibles y flags por tabla (2026-10-10)
+
+Con el muestreador por hilo (`tools/rendimiento/muestreo.cpp`, que ahora también da un histograma por
+instrucción con un quinto argumento) se cruzaron las muestras con el desensamblado (`dumpbin /disasm`).
+Cuatro cambios, todos exactos:
+
+- **El despachador `vu1c_gen::run` estaba sin optimizar.** Era un único `switch` con miles de casos y MSVC no
+  optimiza funciones tan grandes: lo compilaba como con `/Od` (`pc()` como llamada, variables en la pila).
+  Ocupaba el 8–9 % del hilo de VU1. Ahora cada dirección tiene una función pequeña y `run` usa una tabla
+  (`tools/vu1/generar_vu1.cpp`): 8,7 → 2,3 % en el banco.
+- **Esperas imposibles.** Cada par de un bloque avanza al menos un ciclo. Si el último escritor de un
+  registro leído es un par anterior del mismo bloque a una distancia >= su latencia, esa lectura no puede
+  detener el par: el generador la quita de `readyCycleT` (struct R, idéntica al par K salvo las lecturas).
+  Se quitan 26.090 de 57.305 lecturas.
+- **Flags MAC/estado por tabla.** La inversión de bits de las máscaras de carriles (~20 instrucciones por
+  FMAC) pasa a ser una consulta en una tabla de 256 entradas. `recordViWriteForBranch` se expande en línea
+  (era una llamada en cada par que escribe un VI) y desaparece el store de `m_state.cycles` en cada par
+  (`run()` lo fija al terminar y nada lo lee mientras tanto). `patches/ps2recomp-vu1-fast-pairs.patch`.
+- **Escrituras de VF de 16 bytes.** `applyDestT`, `applyDest` y el reinicio de VF0 escribían carril a carril.
+  Ahora mezclan y escriben 16 bytes, para que el load de 16 bytes del par siguiente pueda reenviarse
+  desde el store. Efecto medido pequeño (~1 %).
+
+**Comprobado:** huellas por lanzamiento idénticas entre el intérprete, la VU1 compilada de main y la nueva en
+`vif_pcsx2_inicio2` y `vif_port_480s` (incluyen ciclos y flags), suite 590/590, `probar_vu1_compilada` y
+`probar_vu1_fmac` (con FTZ/DAZ) correctas.
+
+**Banco** (`repetir_cadena_vif`, VIF1/VU1 sin rasterizar, 40 pasadas, mediana de 5 rondas alternas):
+`vif_pcsx2_inicio2` 65,1 → 55,4 ms por cuadro y `vif_port_480s` 71,0 → 60,6 ms (**−15 %**).
+
+**Juego** (muelles de Atenas, muestreador de 60 s desde t=150 s, mismo guion y mismas opciones que el A/B):
+
+| | Hilo de VU1 ocupado | fps | VU1 por cuadro |
+|---|---|---|---|
+| main | 90,8 % | 20,0 | ~45 ms |
+| esta versión | 78,3 % | 20,5 | ~38 ms |
+
+El juego espera VBlank y en los muelles sigue en el escalón de 20 fps: para pasar a 30 la VU1 debe bajar
+de ~31 ms por cuadro, otro ~19 %. Medido también: sin normalizar operandos (experimento, resultado
+incorrecto) el banco baja ~5 %; sin comprobar esperas, ~3 %.
+
+**Experimentos que engañaban.** Quitar el reinicio de VF0 parecía dar −41 %, pero algún microprograma
+escribe en VF0 y el juego hacía otro trabajo; las variantes que cambian el comportamiento (sin flags, sin
+VF0) no sirven para medir. Hay que comprobar las huellas también en los experimentos.
+
+**Guion de mando.** Con un arranque rápido, `5:start` elige New Game en el menú principal y el A/B mide la
+intro (cámara en movimiento, 16–57 fps, errores XGKICK de formato 3 en main y en la versión nueva) en lugar
+de los muelles. El guion `13:abajo,20:x,62:x` carga la partida en ambos casos (ver `CONTROLES.md`).
+
+**Cuelgues esporádicos** con `PS2X_VU1_HILO=1`, `PS2X_GS_FRENTE=1`, `GOW_GS_FINISH_ASINCRONO=1` y presentación
+compartida, en 2 de 8 partidas: una vez con main el juego dejó de presentar cuadros (`guest_flip_hz=0`)
+mientras la ventana seguía viva, y otra vez con esta versión se detuvo el hilo de presentación
+(`[gow-perf]` a los 15 s) mientras el juego seguía a 20 fps. Pendiente de investigar.
+
+Siguientes pasos para VU1: XGKICK perezoso (copiar el paquete cuando la VU escribe en su memoria o al
+acabar, en vez de llamar a `progressXgkick` en cada par), confirmar los flags por lotes, operandos sin
+normalizar con DAZ/FTZ, y bloques con temporización estática.
