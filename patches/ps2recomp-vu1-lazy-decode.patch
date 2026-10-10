@@ -1,0 +1,77 @@
+diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime/ps2_vu1.h
+index 8847848..0709f01 100644
+--- a/ps2xRuntime/include/runtime/ps2_vu1.h
++++ b/ps2xRuntime/include/runtime/ps2_vu1.h
+@@ -263,6 +263,8 @@ private:
+     Unit m_unit;
+     VU1State m_state;
+     std::array<DecodedInstructionPair, kMaxDecodedPairs> m_decodedCodeCache{};
++    // GOW-Port: un bit por par de m_decodedCodeCache; cada par se decodifica la primera vez que se pide.
++    std::array<uint64_t, kMaxDecodedPairs / 64u> m_decodedValid{};
+     const uint8_t *m_cachedVuCode = nullptr;
+     const PS2Memory *m_cachedMemory = nullptr;
+     uint32_t m_cachedCodeSize = 0;
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+index 0b0968f..c8689ca 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+@@ -1777,8 +1777,9 @@ void VU1Interpreter::rebuildDecodedCodeCache(const uint8_t *vuCode, uint32_t cod
+                                              const PS2Memory *memory, uint64_t generation)
+ {
+     const uint32_t pairCount = std::min<uint32_t>(codeSize / 8u, kMaxDecodedPairs);
+-    for (uint32_t i = 0; i < pairCount; ++i)
+-        m_decodedCodeCache[i] = decodeInstructionPair(vuCode, i * 8u);
++    // GOW-Port: decodificar los 2048 pares en cada cambio de microcódigo costaba ~1 % del hilo de VU1 aunque
++    // el código compilado no use la caché. Ahora cada par se decodifica la primera vez que se pide.
++    m_decodedValid.fill(0u);
+ 
+     m_cachedVuCode = vuCode;
+     m_cachedMemory = memory;
+@@ -1787,18 +1788,28 @@ void VU1Interpreter::rebuildDecodedCodeCache(const uint8_t *vuCode, uint32_t cod
+     m_decodedCodeCacheValid = true;
+     // FSAND (0x16), FSEQ (0x14) y FSOR (0x17) son las únicas lecturas del estado en VU1.
+     m_statusUnread = m_directRegisterWrites;
++    // Mismas condiciones que con los pares decodificados: bit I = bit 31 de la palabra superior.
++    const auto lowerOp = [vuCode](uint32_t i, bool &iBit)
++    {
++        uint32_t lower = 0u, upper = 0u;
++        std::memcpy(&lower, vuCode + i * 8u, sizeof(lower));
++        std::memcpy(&upper, vuCode + i * 8u + 4u, sizeof(upper));
++        iBit = (upper & 0x80000000u) != 0u;
++        return lower >> 25;
++    };
+     for (uint32_t i = 0; i < pairCount && m_statusUnread; ++i)
+     {
+-        const DecodedInstructionPair &pair = m_decodedCodeCache[i];
+-        const uint32_t op = pair.lower >> 25;
+-        if (!pair.iBit && (op == 0x14u || op == 0x16u || op == 0x17u))
++        bool iBit = false;
++        const uint32_t op = lowerOp(i, iBit);
++        if (!iBit && (op == 0x14u || op == 0x16u || op == 0x17u))
+             m_statusUnread = false;
+     }
+     m_statusQuiet = m_statusUnread;
+     for (uint32_t i = 0; i < pairCount && m_statusQuiet; ++i)
+     {
+-        const DecodedInstructionPair &pair = m_decodedCodeCache[i];
+-        if (!pair.iBit && (pair.lower >> 25) == 0x15u) // FSSET
++        bool iBit = false;
++        const uint32_t op = lowerOp(i, iBit);
++        if (!iBit && op == 0x15u) // FSSET
+             m_statusQuiet = false;
+     }
+ }
+@@ -1827,6 +1838,13 @@ const VU1Interpreter::DecodedInstructionPair &VU1Interpreter::getDecodedInstruct
+     const uint32_t pairIndex = pc / 8u;
+     if (pairIndex >= kMaxDecodedPairs)
+         return m_decodedScratch = decodeInstructionPair(vuCode, pc);
++    uint64_t &valid = m_decodedValid[pairIndex / 64u];
++    const uint64_t bit = 1ull << (pairIndex % 64u);
++    if ((valid & bit) == 0u)
++    {
++        m_decodedCodeCache[pairIndex] = decodeInstructionPair(vuCode, pc);
++        valid |= bit;
++    }
+     return m_decodedCodeCache[pairIndex];
+ }
+ 

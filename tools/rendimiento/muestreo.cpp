@@ -7,7 +7,9 @@
 // Compilar (Developer Command Prompt x64):
 //   cl /nologo /O2 /EHsc /std:c++20 /utf-8 tools\rendimiento\muestreo.cpp winmm.lib
 // Uso, con el juego ya lanzado o a punto de lanzarse (espera hasta 60 s a que aparezca el proceso):
-//   muestreo.exe ps2EntryRunner.exe <espera_s> <duracion_s> [intervalo_ms [funcion]] > perfil.txt
+//   muestreo.exe ps2EntryRunner.exe <espera_s> <duracion_s> [intervalo_ms [funcion [pilas]]] > perfil.txt
+// Con "pilas", cada muestra guarda también la pila de llamadas (StackWalk64, más lento) y, para las muestras
+// dentro de <funcion>, se imprimen las cadenas de llamadores más frecuentes.
 #define NOMINMAX
 #include <windows.h>
 #include <dbghelp.h>
@@ -51,11 +53,29 @@ namespace
         return out;
     }
 
+    // ¿Contiene el nombre alguno de los textos separados por '|'?
+    bool matches(const std::string &name, const std::string &patterns)
+    {
+        size_t start = 0;
+        while (start <= patterns.size())
+        {
+            const size_t bar = patterns.find('|', start);
+            const std::string part = patterns.substr(start, bar == std::string::npos ? std::string::npos : bar - start);
+            if (!part.empty() && name.find(part) != std::string::npos)
+                return true;
+            if (bar == std::string::npos)
+                break;
+            start = bar + 1;
+        }
+        return false;
+    }
+
     struct ThreadData
     {
         HANDLE handle = nullptr;
         uint64_t samples = 0;
         std::unordered_map<uint64_t, uint32_t> rips;
+        std::map<std::vector<uint64_t>, uint32_t> stacks; // con "pilas": RIP y direcciones de retorno
     };
 
     // Un hilo bloqueado aparece dentro de una de estas funciones de ntdll/win32u.
@@ -83,7 +103,7 @@ int wmain(int argc, wchar_t **argv)
 {
     if (argc < 4)
     {
-        std::fprintf(stderr, "uso: muestreo <exe> <espera_s> <duracion_s> [intervalo_ms [funcion]]\n");
+        std::fprintf(stderr, "uso: muestreo <exe> <espera_s> <duracion_s> [intervalo_ms [funcion [pilas]]]\n");
         return 2;
     }
     const double wait = _wtof(argv[2]), duration = _wtof(argv[3]);
@@ -92,6 +112,7 @@ int wmain(int argc, wchar_t **argv)
         for (const wchar_t *c = argv[5]; *c; ++c)
             detail.push_back(static_cast<char>(*c));
     const int interval = argc > 4 ? std::max(1, _wtoi(argv[4])) : 1;
+    const bool withStacks = argc > 6 && _wcsicmp(argv[6], L"pilas") == 0;
     DWORD pid = 0;
     for (int i = 0; i < 600 && !pid; ++i)
     {
@@ -106,6 +127,8 @@ int wmain(int argc, wchar_t **argv)
     }
     HANDLE proc = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
     Sleep(static_cast<DWORD>(wait * 1000));
+    SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS | SYMOPT_LOAD_LINES);
+    SymInitialize(proc, nullptr, TRUE);
 
     // Sleep(1) puede durar 15,6 ms: temporizador de alta resolución.
     timeBeginPeriod(1);
@@ -125,11 +148,31 @@ int wmain(int argc, wchar_t **argv)
             if (!t.handle || SuspendThread(t.handle) == DWORD(-1))
                 continue;
             CONTEXT ctx{};
-            ctx.ContextFlags = CONTEXT_CONTROL;
+            ctx.ContextFlags = withStacks ? (CONTEXT_CONTROL | CONTEXT_INTEGER) : CONTEXT_CONTROL;
             if (GetThreadContext(t.handle, &ctx))
             {
                 ++t.samples;
                 ++t.rips[ctx.Rip];
+                if (withStacks)
+                {
+                    std::vector<uint64_t> stack{ctx.Rip};
+                    STACKFRAME64 frame{};
+                    frame.AddrPC.Offset = ctx.Rip;
+                    frame.AddrPC.Mode = AddrModeFlat;
+                    frame.AddrStack.Offset = ctx.Rsp;
+                    frame.AddrStack.Mode = AddrModeFlat;
+                    frame.AddrFrame.Offset = ctx.Rbp;
+                    frame.AddrFrame.Mode = AddrModeFlat;
+                    for (int depth = 0; depth < 10; ++depth)
+                    {
+                        if (!StackWalk64(IMAGE_FILE_MACHINE_AMD64, proc, t.handle, &frame, &ctx, nullptr,
+                                         SymFunctionTableAccess64, SymGetModuleBase64, nullptr) ||
+                            frame.AddrReturn.Offset == 0)
+                            break;
+                        stack.push_back(frame.AddrReturn.Offset);
+                    }
+                    ++t.stacks[stack];
+                }
             }
             ResumeThread(t.handle);
         }
@@ -143,8 +186,6 @@ int wmain(int argc, wchar_t **argv)
     }
     timeEndPeriod(1);
 
-    SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS | SYMOPT_LOAD_LINES);
-    SymInitialize(proc, nullptr, TRUE);
     std::unordered_map<uint64_t, std::string> names;
     const auto name = [&](uint64_t addr) -> const std::string & {
         if (const auto it = names.find(addr); it != names.end())
@@ -225,13 +266,40 @@ int wmain(int argc, wchar_t **argv)
         section("funciones", byFn, 40);
         section("archivos", byFile, 20);
         section("lineas", byLine, 30);
+        // Con "pilas": cadenas de llamadores de las muestras dentro de <funcion>.
+        if (withStacks && !detail.empty())
+        {
+            std::map<std::string, uint64_t> chains;
+            uint64_t total = 0;
+            for (const auto &[stack, n] : t->stacks)
+            {
+                if (!matches(name(stack[0]), detail))
+                    continue;
+                std::string chain;
+                for (size_t i = 0; i < stack.size() && i < 7; ++i)
+                    chain += (i ? " <- " : "") + name(stack[i]);
+                chains[chain] += n;
+                total += n;
+            }
+            if (total)
+            {
+                report += "  -- llamadores de '" + detail + "'\n";
+                const auto v = sorted(chains);
+                for (size_t i = 0; i < v.size() && i < 15; ++i)
+                {
+                    char row[64];
+                    std::snprintf(row, sizeof(row), "  %6.2f %%  ", 100.0 * static_cast<double>(v[i].second) / static_cast<double>(t->samples));
+                    report += row + v[i].first + "\n";
+                }
+            }
+        }
         // Con un quinto argumento, histograma por instrucción de las funciones que contienen ese texto:
         // "direccion muestras funcion+desplazamiento" (para cruzar con dumpbin /disasm).
         if (!detail.empty())
         {
             std::vector<std::pair<uint64_t, uint32_t>> hits;
             for (const auto &[rip, n] : t->rips)
-                if (name(rip).find(detail) != std::string::npos)
+                if (matches(name(rip), detail))
                     hits.push_back({rip, n});
             std::sort(hits.begin(), hits.end());
             if (!hits.empty())

@@ -56,3 +56,53 @@ corregida la transición ni se activan opciones de rendimiento por defecto.
 
 Las mediciones de FPS deben esperar a que el PC compartido esté libre de
 compilaciones y de otras ejecuciones del juego.
+
+## Integración de #55 y controles ligeros (2026-10-10)
+
+Se integra `main` en `7800bc27c27ab5ddb0dd19338b834e0e2eff3829`, mediante
+merge. Los dos conflictos de inserción en `scripts/compilar.ps1` se resuelven
+conservando PATH1 por eventos, decodificación perezosa y búferes GIF, seguidos
+por el diagnóstico del host. La cadena contiene 90 parches únicos.
+
+Controles locales de esta integración, sin compilar ni ejecutar el juego:
+
+- Las seis pruebas Python del inspector pasan con Python 3.14.7.
+- Configuración: 0 errores y los 4 avisos existentes.
+- Sintaxis PowerShell: 20 scripts, 0 errores; incluye los controles privados.
+- Los 90 parches pasan `git apply --check --ignore-whitespace` y se aplican
+  en orden en un worktree privado nuevo sobre
+  `c5a9d02573410a2085a4b4b831b0b68ba3515440`.
+- El diff de las fuentes del runtime existente coincide antes y después del
+  control. Su ejecutable no se reconstruye ni acredita los cambios integrados.
+
+El PC continúa reservado para las mediciones de Opus. La compilación Windows
+completa y el control funcional siguen pendientes; #51 permanece en borrador.
+La comprobación de parches no sustituye la compilación, la suite nativa ni la
+verificación de las imágenes adquiridas.
+
+## Matriz para el próximo control funcional
+
+Una vez que el usuario confirme que el PC está disponible, compilar la cadena
+completa con `GOW_WORK` privado y registrar commit y SHA-256 del ejecutable.
+Preparar una carpeta de ejecución privada y una copia independiente de la
+misma tarjeta inicial para cada pasada; fijar `GOW_MC0` a esa copia y
+`GOW_MC1=0`. No escribir sobre la tarjeta original.
+
+| Pasada | `GOW_GS_FINISH_ASINCRONO` | `PS2X_GS_DIRECT_PRESENT` |
+|---|---|---|
+| FINISH síncrono, RAM | `0` | `0` |
+| FINISH síncrono, compartida | `0` | `1` |
+| FINISH asíncrono, RAM | `1` | `0` |
+| FINISH asíncrono, compartida | `1` | `1` |
+
+Fijar explícitamente `PS2X_VU1_HILO=0` y `PS2X_GS_FRENTE=0` en las cuatro
+pasadas. Mantener el mismo binario, ELF, ISO, escena y guion de mando, con
+`PS2X_GS_GPU=1`, `PS2X_GS_PRESENT_DIAG=1`, `PS2X_FRAME_HASH=1`,
+`GOW_PAD_TEST=1`, `GOW_PAD_TEST_NO_CAPTURE=1`, `GOW_FAST_BOOT=0` y
+`GOW_SKIP_FMV=1`. Desactivar otros diagnósticos, replay GS y capturas automáticas
+antes de iniciar. Comprobar la secuencia de estados y los errores VU1/GIF antes
+de interpretar las diferencias. Ninguna de estas pasadas mide FPS.
+
+Analizar los registros compartidos con el inspector y conservar por separado
+la investigación del encuadre dentro del framebuffer GS. Evaluar después
+los hilos VU1 y frente GS, por separado, si el control inicial es estable.

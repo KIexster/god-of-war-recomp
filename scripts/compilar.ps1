@@ -99,6 +99,9 @@ $vu1BlockCheckCachePatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-block-chec
 $vu1ChainedStepsPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-chained-steps.patch'
 $gameSpeedPatch = Join-Path $RepoRoot 'patches\ps2recomp-game-speed.patch'
 $vu1FastPairsPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-fast-pairs.patch'
+$vu1Path1EventsPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-path1-events.patch'
+$vu1LazyDecodePatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-lazy-decode.patch'
+$gifArbiterBuffersPatch = Join-Path $RepoRoot 'patches\ps2recomp-gif-arbiter-buffers.patch'
 $gsHostFrameDiagPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-host-frame-diag.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
@@ -223,6 +226,9 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1BlockCheckCachePatch
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1ChainedStepsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gameSpeedPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1FastPairsPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1Path1EventsPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1LazyDecodePatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gifArbiterBuffersPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsHostFrameDiagPatch)
 Pop-Location
 
@@ -300,6 +306,11 @@ if (Test-Path -LiteralPath $runnerObjectDir) {
 }
 $unityDir = Join-Path $bld 'ps2xRuntime\CMakeFiles\ps2EntryRunner.dir\Unity'
 if (Test-Path -LiteralPath $unityDir) { Get-ChildItem -LiteralPath $unityDir -Filter '*.obj' | Remove-Item -Force }
+# GOW-Port: la VU1 compilada (vu1_generado\programa*.cpp) no usa el PCH. Si el generador produce el mismo
+# texto, ninja no la recompila aunque cambien ps2_vu1.h o ps2_vu1_compiled.inl, y sus bloques acceden a
+# VU1Interpreter con la disposición anterior (bucles de espera infinitos al arrancar).
+$vu1ObjectDir = Join-Path $bld 'ps2xRuntime\CMakeFiles\ps2EntryRunner.dir\vu1_generado'
+if (Test-Path -LiteralPath $vu1ObjectDir) { Get-ChildItem -LiteralPath $vu1ObjectDir -Filter '*.obj' | Remove-Item -Force }
 Run 'cmake' @('-S', $rec, '-B', $bld)
 
 Paso 'Compilando el juego optimizado en paralelo'
