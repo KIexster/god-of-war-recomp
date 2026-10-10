@@ -31,10 +31,10 @@ index 867348b..ce4ee29 100644
      // invalida). advanceEeTimers lo usa ~1,5 millones de veces por segundo.
      uint32_t *m_gifStatSlot = nullptr;
 diff --git a/ps2xRuntime/src/lib/ps2_memory.cpp b/ps2xRuntime/src/lib/ps2_memory.cpp
-index 9c09cd0..49db141 100644
+index 9c09cd0..a72b972 100644
 --- a/ps2xRuntime/src/lib/ps2_memory.cpp
 +++ b/ps2xRuntime/src/lib/ps2_memory.cpp
-@@ -266,6 +266,18 @@ struct Vu1Worker
+@@ -266,10 +266,29 @@ struct Vu1Worker
      std::deque<std::vector<uint8_t>> queue;
      bool busy = false;
      bool stop = false;
@@ -45,7 +45,11 @@ index 9c09cd0..49db141 100644
 +        std::mutex mutex;
 +        std::condition_variable workCv;
 +        std::condition_variable idleCv;
-+        std::deque<std::pair<GifPathId, std::vector<uint8_t>>> queue;
++        // Lotes: [ruta u8][tamaño u32][datos] seguidos. El hilo de VU1 llena uno por envío (sin reservar
++        // memoria ni despertar a nadie por paquete) y lo publica al terminar el envío.
++        std::deque<std::vector<uint8_t>> queue;
++        std::vector<std::vector<uint8_t>> spare;
++        std::vector<uint8_t> filling; // solo lo toca el hilo de VU1
 +        bool busy = false;
 +        bool stop = false;
 +    };
@@ -53,7 +57,14 @@ index 9c09cd0..49db141 100644
  };
  std::unique_ptr<Vu1Worker> g_vu1Worker;
  // Lo pone el propio hilo de VU1 al arrancar (Vu1Worker::id se asigna después de crearlo y podría llegar tarde).
-@@ -291,6 +303,12 @@ bool PS2Memory::vu1WorkerEnabled()
+ thread_local bool t_onVu1Worker = false;
++thread_local bool t_onGsFront = false;
++void publishGsFrontBatch(Vu1Worker &worker);
++constexpr size_t kGsFrontPublishBytes = 65536u;
+ }
+ 
+ void PS2Memory::setVu1WorkerNotify(std::function<void()> notify)
+@@ -291,6 +310,12 @@ bool PS2Memory::vu1WorkerEnabled()
      {
          g_vu1Worker = std::make_unique<Vu1Worker>();
          g_vu1Worker->owner = this;
@@ -66,7 +77,15 @@ index 9c09cd0..49db141 100644
          g_vu1Worker->thread = std::thread([this] { vu1WorkerLoop(); });
          g_vu1Worker->id = g_vu1Worker->thread.get_id();
          std::fprintf(stderr, "[vu1-hilo] VIF1/VU1 en un hilo propio\n");
-@@ -338,6 +356,58 @@ void PS2Memory::vu1WorkerLoop()
+@@ -328,6 +353,7 @@ void PS2Memory::vu1WorkerLoop()
+         processVIF1Data(data.data(), static_cast<uint32_t>(data.size()));
+         if (m_gifArbiter)
+             m_gifArbiter->drain();
++        publishGsFrontBatch(worker);
+         {
+             std::lock_guard<std::mutex> lock(worker.mutex);
+             worker.busy = false;
+@@ -338,6 +364,94 @@ void PS2Memory::vu1WorkerLoop()
      }
  }
  
@@ -78,24 +97,52 @@ index 9c09cd0..49db141 100644
 +
 +bool PS2Memory::enqueueGsFront(GifPathId path, const uint8_t *data, uint32_t sizeBytes)
 +{
-+    if (!t_onVu1Worker || !g_vu1Worker || !g_vu1Worker->front || g_vu1Worker->owner != this || !m_gsFrontProcess)
++    if (!t_onVu1Worker || t_onGsFront || !g_vu1Worker || !g_vu1Worker->front || g_vu1Worker->owner != this || !m_gsFrontProcess)
 +        return false;
-+    Vu1Worker::Front &front = *g_vu1Worker->front;
++    std::vector<uint8_t> &batch = g_vu1Worker->front->filling;
++    const size_t at = batch.size();
++    batch.resize(at + 5u + sizeBytes);
++    batch[at] = static_cast<uint8_t>(path);
++    std::memcpy(batch.data() + at + 1u, &sizeBytes, 4u);
++    std::memcpy(batch.data() + at + 5u, data, sizeBytes);
++    // Publicar pronto: el GS empieza mientras la VU1 sigue (esperar al final del envío lo retrasa todo).
++    if (batch.size() >= kGsFrontPublishBytes)
++        publishGsFrontBatch(*g_vu1Worker);
++    return true;
++}
++
++namespace
++{
++// Desde el hilo de VU1, al terminar cada envío: publica el lote de paquetes GIF.
++void publishGsFrontBatch(Vu1Worker &worker)
++{
++    if (!worker.front || worker.front->filling.empty())
++        return;
++    Vu1Worker::Front &front = *worker.front;
 +    {
 +        std::lock_guard<std::mutex> lock(front.mutex);
-+        front.queue.emplace_back(path, std::vector<uint8_t>(data, data + sizeBytes));
++        front.queue.push_back(std::move(front.filling));
++        if (!front.spare.empty())
++        {
++            front.filling = std::move(front.spare.back());
++            front.spare.pop_back();
++        }
++        else
++            front.filling = {};
 +    }
++    front.filling.clear();
 +    front.workCv.notify_one();
-+    return true;
++}
 +}
 +
 +void PS2Memory::gsFrontLoop()
 +{
++    t_onGsFront = true;
 +    t_onVu1Worker = true; // sus llamadas a la memoria no esperan al hilo de VU1 (ni a sí mismo)
 +    Vu1Worker::Front &front = *g_vu1Worker->front;
 +    for (;;)
 +    {
-+        std::pair<GifPathId, std::vector<uint8_t>> item;
++        std::vector<uint8_t> item;
 +        bool last = false;
 +        {
 +            std::unique_lock<std::mutex> lock(front.mutex);
@@ -106,9 +153,17 @@ index 9c09cd0..49db141 100644
 +            front.queue.pop_front();
 +            front.busy = true;
 +        }
-+        m_gsFrontProcess(item.first, item.second.data(), static_cast<uint32_t>(item.second.size()));
++        for (size_t at = 0u; at + 5u <= item.size();)
++        {
++            uint32_t size = 0u;
++            std::memcpy(&size, item.data() + at + 1u, 4u);
++            m_gsFrontProcess(static_cast<GifPathId>(item[at]), item.data() + at + 5u, size);
++            at += 5u + size;
++        }
++        item.clear();
 +        {
 +            std::lock_guard<std::mutex> lock(front.mutex);
++            front.spare.push_back(std::move(item));
 +            front.busy = false;
 +            last = front.queue.empty();
 +        }
@@ -125,7 +180,7 @@ index 9c09cd0..49db141 100644
  bool PS2Memory::onVu1WorkerThread() const
  {
      return t_onVu1Worker && g_vu1Worker && g_vu1Worker->owner == this;
-@@ -348,8 +418,16 @@ void PS2Memory::syncVu1Worker() const
+@@ -348,8 +462,16 @@ void PS2Memory::syncVu1Worker() const
      Vu1Worker *worker = (g_vu1Worker && g_vu1Worker->owner == this ? g_vu1Worker.get() : nullptr);
      if (!worker || t_onVu1Worker)
          return;
@@ -144,7 +199,7 @@ index 9c09cd0..49db141 100644
  }
  
  PS2Memory::~PS2Memory()
-@@ -362,6 +440,15 @@ PS2Memory::~PS2Memory()
+@@ -362,6 +484,15 @@ PS2Memory::~PS2Memory()
          }
          g_vu1Worker->workCv.notify_all();
          g_vu1Worker->thread.join();

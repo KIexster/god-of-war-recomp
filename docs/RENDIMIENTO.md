@@ -753,10 +753,24 @@ propio juego y el hilo de VU1 está ocupado ~75 % del tiempo (~50 ms por cuadro)
 GS (`processGIFPacket`, `vertexKick`, `buildDrawBatch`, la cola del backend), que procesa los paquetes de PATH1/PATH2.
 `ps2recomp-gs-front-thread.patch` (`PS2X_GS_FRENTE=1`, solo con `PS2X_VU1_HILO=1`) lo pasa a un tercer hilo:
 
-- Los paquetes que el árbitro GIF entrega desde el hilo de VU1 se copian a una cola y otro hilo los procesa en orden.
-  Los de PATH3 (desde el EE) siguen como antes, después de esperar a los dos hilos.
+- Los paquetes que el árbitro GIF entrega desde el hilo de VU1 se copian seguidos en un lote ([ruta][tamaño][datos])
+  que se publica al llegar a 64 KB o al terminar el envío; otro hilo los procesa en orden y devuelve el búfer. Los de
+  PATH3 (desde el EE) siguen como antes, después de esperar a los dos hilos.
 - `syncVu1Worker()` espera también a esa cola, así que todo lo que ya esperaba al hilo de VU1 espera también al GS.
 - Al vaciarse la cola se despierta al EE (los FINISH/SIGNAL salen ahora de ese hilo).
 
-Muelles, 160–230 s, 2 rondas, con hilo de VU1: 15,1 / 15,0 → 15,8 / 15,7 cuadros/s, sin errores de VU1. Las capturas
+Muelles, 160–230 s, con hilo de VU1 (cuatro partidas por fila, sin errores de VU1):
+
+| Envío al hilo del GS | Cuadros/s |
+|---|---:|
+| Sin `PS2X_GS_FRENTE` | 15,0–15,1 |
+| Un vector y un aviso por paquete | 15,7–15,8 |
+| Lote publicado solo al terminar cada envío | 14,5–14,6 |
+| Lotes de 1 KB | 15,8 |
+| Lotes de 4 KB | 16,2–16,3 |
+| Lotes de 16 KB | 16,6 |
+| **Lotes de 64 KB (elegido)** | **16,7–16,9** |
+| Lotes de 256 KB | 16,8–17,0 |
+
+Por paquete, el hilo de VU1 gastaba ~7 % en reservar memoria y avisar al otro hilo. Las capturas
 de la prueba de arranque se ven correctas con y sin la variable (difieren por el momento de la captura).
