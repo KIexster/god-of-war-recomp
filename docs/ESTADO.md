@@ -3119,3 +3119,12 @@ juegos ni benchmarks. La validación Windows completa y la transición con el
 HEAD integrado siguen pendientes; #51 conserva el estado de borrador.
 El protocolo y la matriz de cuatro controles están en `TRANSICION_COMPARTIDA.md`.
 No se declara corregida la alternancia, el encuadre ni los cuelgues intermitentes.
+
+En la revisión posterior del inspector se reproduce una omisión con entradas
+sintéticas: una secuencia que reaparece después de otra no se contrastaba con
+sus metadatos originales. `inspect_shared_frames.py` conserva ahora esa
+referencia hasta el cambio de modo; el tick del host puede variar. Las filas
+inconsistentes no alimentan los patrones de retorno. Ocho pruebas pasan; la
+nueva regresión falla con la versión anterior para hash, validez, dimensiones
+y secuencia de renderizado. No se cambia el parche del runtime ni se ejecuta
+el juego: es una mejora de análisis, no un arreglo visual demostrado.

@@ -11,12 +11,14 @@ FIELDS = ('seq render hostTick frameTick displayFbp sourceFbp width height hashV
 def inspect(text):
     previous = None
     history = deque(maxlen=2)
+    metadata_by_sequence = {}
     result = dict(acquisitions=0, retained=0, unknown_hashes=0,
                   sequence_regressions=[], inconsistent_repeats=[], content_returns=[])
     for number, line in enumerate(text.splitlines(), 1):
         if '[gs-present] host mode:' in line:
             previous = None
             history.clear()
+            metadata_by_sequence.clear()
         if MARKER not in line:
             continue
         tokens = line.split(MARKER, 1)[1].strip().split()
@@ -31,12 +33,18 @@ def inspect(text):
         row = {k: int(v, 16 if k == 'hash' else 10) for k, v in values.items()}
         if row['hashValid'] > 1 or row['blank'] > 1 or not row['seq']:
             raise ValueError(f'línea {number}: flags o secuencia inválidos')
+        # Una secuencia conserva sus metadatos aunque reaparezca después de otra.
+        # El tick actual del host puede avanzar mientras retiene la misma textura.
+        metadata = tuple(row[k] for k in FIELDS if k != 'hostTick')
+        inconsistent = (row['seq'] in metadata_by_sequence and
+                        metadata_by_sequence[row['seq']] != metadata)
+        if inconsistent:
+            result['inconsistent_repeats'].append(number)
+            history.clear()
+        else:
+            metadata_by_sequence.setdefault(row['seq'], metadata)
         if previous and row['seq'] == previous['seq']:
             result['retained'] += 1
-            # El tick actual del host puede avanzar mientras retiene la misma textura.
-            if any(row[k] != previous[k] for k in FIELDS if k != 'hostTick'):
-                result['inconsistent_repeats'].append(number)
-                history.clear()
             continue
         result['acquisitions'] += 1
         if previous and (row['width'], row['height']) != (previous['width'], previous['height']):
@@ -47,7 +55,7 @@ def inspect(text):
         if not row['hashValid']:
             result['unknown_hashes'] += 1
             history.clear()
-        else:
+        elif not inconsistent:
             signature = tuple(row[k] for k in ('hash', 'width', 'height', 'blank'))
             if len(history) == 2 and signature == history[0][0] and signature != history[1][0]:
                 result['content_returns'].append(dict(line=number, seq=row['seq'],

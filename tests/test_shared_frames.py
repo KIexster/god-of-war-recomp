@@ -25,6 +25,25 @@ class SharedFramesTest(unittest.TestCase):
         result = frames.inspect('\n'.join([frame(1, 11), frame(1, 22)]))
         self.assertEqual(result['inconsistent_repeats'], [2])
 
+    def test_nonconsecutive_sequence_keeps_its_original_metadata(self):
+        for changed in [frame(1, 33), frame(1, 11, valid=0), frame(1, 11, width=512),
+                        frame(1, 11).replace('render=1', 'render=3')]:
+            with self.subTest(changed=changed):
+                result = frames.inspect('\n'.join([frame(1, 11), frame(2, 22), changed,
+                                                  frame(3, 22), frame(4, 33)]))
+                self.assertEqual(result['inconsistent_repeats'], [3])
+                self.assertEqual(result['sequence_regressions'], [3])
+                self.assertEqual(result['content_returns'], [])
+
+    def test_reappearing_sequence_allows_host_tick_and_mode_changes(self):
+        result = frames.inspect('\n'.join([frame(1, 11), frame(2, 22), frame(1, 11, host=11)]))
+        self.assertEqual(result['inconsistent_repeats'], [])
+        self.assertEqual(result['sequence_regressions'], [3])
+        text = frame(1, 11)+'\n[gs-present] host mode: RAM frames\n'+frame(1, 33)
+        result = frames.inspect(text)
+        self.assertEqual(result['inconsistent_repeats'], [])
+        self.assertEqual(result['sequence_regressions'], [])
+
     def test_sequence_regression_and_mode_reset(self):
         self.assertEqual(frames.inspect(frame(2, 22)+'\n'+frame(1, 11))['sequence_regressions'], [2])
         text = frame(1, 11)+'\n'+frame(2, 22).replace('render=2', 'render=0')

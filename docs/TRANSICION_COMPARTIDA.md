@@ -106,3 +106,19 @@ de interpretar las diferencias. Ninguna de estas pasadas mide FPS.
 Analizar los registros compartidos con el inspector y conservar por separado
 la investigación del encuadre dentro del framebuffer GS. Evaluar después
 los hilos VU1 y frente GS, por separado, si el control inicial es estable.
+
+## Metadatos de secuencias que reaparecen (2026-10-10)
+
+Un control sintético `1 → 2 → 1` con metadatos distintos en la segunda
+aparición de `1` mostró una omisión: el inspector informaba el retroceso,
+pero solo comparaba metadatos de secuencias repetidas consecutivamente.
+Ahora conserva los primeros metadatos de cada secuencia hasta un cambio de
+modo del host; excluye `hostTick`, que puede avanzar. Una fila inconsistente
+rompe la continuidad y no inicia un nuevo patrón de retorno de contenido.
+
+Ocho pruebas Python pasan. La nueva regresión falla con la versión anterior
+en cuatro casos: hash, validez de hash, dimensiones y secuencia de renderizado.
+También se comprueba que avanzar el tick del host es válido y que un cambio de
+modo permite reiniciar la numeración con otros metadatos. Son entradas
+procedurales, sin datos del juego. Este cambio al inspector no prueba que el
+runtime produzca tales inconsistencias ni corrige la presentación del juego.
