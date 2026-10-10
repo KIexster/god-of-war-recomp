@@ -3035,3 +3035,64 @@ mientras la ventana seguía viva, y otra vez con esta versión se detuvo el hilo
 Siguientes pasos para VU1: XGKICK perezoso (copiar el paquete cuando la VU escribe en su memoria o al
 acabar, en vez de llamar a `progressXgkick` en cada par), confirmar los flags por lotes, operandos sin
 normalizar con DAZ/FTZ, y bloques con temporización estática.
+
+## VU1, ronda 2: despacho por última variante, PATH1 por eventos y FLG=3 (2026-10-10)
+
+`muestreo.cpp` admite ahora un sexto argumento `pilas`: guarda la pila de cada muestra (StackWalk64) e imprime
+las cadenas de llamadores de las funciones elegidas (varias separadas por `|`). Con eso se localizaron los
+costes del hilo de VU1 fuera de los bloques. Todos los cambios son exactos:
+
+- **Despacho por última variante** (`tools/vu1/generar_vu1.cpp`). Una dirección puede tener hasta 13
+  variantes de bloque, una por microcódigo, y se probaban en orden: para el bloque más caliente de los
+  muelles, cuatro llamadas fallidas antes de la buena. Ahora cada dirección recuerda la última variante que
+  coincidió y la prueba primero. Banco: −5 % / −7 %.
+- **Decodificación perezosa** (`ps2recomp-vu1-lazy-decode.patch`). En cada cambio de microcódigo se
+  decodificaban los 2048 pares (~1 % del hilo de VU1) aunque el código compilado no usa esa caché. Ahora cada
+  par se decodifica la primera vez que se pide y `m_statusQuiet` sale de recorrer las palabras.
+- **Búferes del árbitro GIF** (`ps2recomp-gif-arbiter-buffers.patch`): cada paquete (XGKICK, DMA) reservaba
+  un vector nuevo; ahora se reutilizan los ya procesados.
+- **PATH1 por eventos** (`ps2recomp-vu1-path1-events.patch`). Mientras hay un XGKICK activo (casi siempre),
+  cada par llamaba a `progressXgkick`. La copia solo depende del número de ciclos y de la memoria de datos, así
+  que ahora se cuenta de una vez y se pone al día antes de que la VU escriba en su memoria, antes de mirar si
+  el envío sigue activo, al terminar y en cada evento (copia de una GIFtag o fin del paquete), que ocurren en
+  el mismo ciclo que antes. Las seis pruebas de XGKICK de la suite pasan, incluidas las de stores durante el
+  envío y la espera del segundo XGKICK.
+- **FLG=3 en XGKICK.** Una GIFtag con FLG=3 ("disable") funciona como IMAGE en el GS (y así la trata ya el
+  frontend), pero XGKICK la rechazaba como instrucción reservada (`0xFFFFFFF8`) y detenía el microprograma.
+  Ocurre en la intro y, según lo que haya en pantalla, también en los muelles: en esas partidas faltaba
+  geometría y el cuadro salía más barato (29–30 fps falsos). Prueba de regresión nueva en `ps2_vu1_tests.cpp`.
+
+**Comprobado:** huellas por lanzamiento e imágenes de `vif_pcsx2_inicio2` y `vif_port_480s` idénticas a main
+(compilado e intérprete), suite 591/591, `probar_vu1_compilada` y `probar_vu1_fmac` (100.800 casos + 2.016 con
+FTZ/DAZ) correctas.
+
+**Banco:** `vif_pcsx2_inicio2` 55,4 → 52,1 ms y `vif_port_480s` 60,6 → 55,7 ms por cuadro (desde main, −20 %
+y −22 %). **Juego** (muelles, mismas condiciones que en la ronda 1, sin errores de VU1):
+
+| | Hilo de VU1 ocupado | fps | VU1 por cuadro |
+|---|---|---|---|
+| main | 90,8 % | 20,0 | ~45 ms |
+| ronda 1 (#54) | 78,3 % | 20,5 | ~38 ms |
+| ronda 2 | 82,3 % | 24,0 | ~34 ms |
+
+Para 30 fps estables faltan ~3 ms por cuadro (~10 %).
+
+**Dependencias de compilación rotas con MSVC en español.** `rules.ninja` tiene el prefijo
+`Nota: inclusión del archivo:` en UTF-8, pero `cl.exe` lo escribe en la página de códigos OEM: ninja no
+registra ninguna dependencia de cabeceras (`ninja -t deps` da `#deps 0`). `compilar.ps1` ya borraba los
+objetos del runtime, de las pruebas y del unity por eso, pero no los de la VU1 compilada (`vu1_generado`, sin
+PCH): tras cambiar `ps2_vu1.h`, los bloques quedaban con la disposición anterior de `VU1Interpreter` y el juego
+se quedaba en un bucle de espera infinito al arrancar. `compilar.ps1` los borra ahora también. Con
+`cmake --build` a mano hay que borrarlos igual tras cambiar cabeceras.
+
+**Descartados tras analizarlos:**
+- *Operandos sin normalizar con DAZ.* `normalizeOperand` es por bits, pero el intérprete calcula en float
+  productos que pueden ser subnormales y luego los suma; con DAZ, `normalizeFmacExactResult` conservaría otro
+  último bit. No es equivalente.
+- *Saltarse la normalización de resultados de FMAC.* Solo ADD/SUB/MUL/MAX/MINI/ITOF/ABS dan siempre valores
+  normalizados: una MADD/MSUB por la ruta escalar puede dejar un subnormal (dos redondeos con el exacto justo
+  por encima de FLT_MIN), así que no se puede suponer en general.
+- *Agrupar los ciclos del IOP* (ver la entrada anterior).
+
+Siguiente: bloques con temporización estática (comprobar las esperas una vez a la entrada del bloque en lugar
+de en cada par), vida de los flags MAC entre bloques y la copia de PATH1 por tramos.
