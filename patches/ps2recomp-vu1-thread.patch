@@ -1,5 +1,5 @@
 diff --git a/ps2xRuntime/include/runtime/ps2_memory.h b/ps2xRuntime/include/runtime/ps2_memory.h
-index 740582f..3072ac5 100644
+index 740582f..867348b 100644
 --- a/ps2xRuntime/include/runtime/ps2_memory.h
 +++ b/ps2xRuntime/include/runtime/ps2_memory.h
 @@ -10,6 +10,7 @@
@@ -20,7 +20,7 @@ index 740582f..3072ac5 100644
 +    bool onVu1WorkerThread() const;
 +    // GOW-Port: lo llama el hilo de VU1 al terminar cada envío (para despertar al planificador del EE, que puede
 +    // estar esperando a la interrupción de un FINISH/SIGNAL que ese envío acaba de producir).
-+    static void setVu1WorkerNotify(std::function<void()> notify);
++    void setVu1WorkerNotify(std::function<void()> notify);
      std::vector<uint32_t> consumeCompletedDmacCauses();
  
      int pollDmaRegisters();
@@ -34,8 +34,16 @@ index 740582f..3072ac5 100644
      Vu1MscalCallback m_vu1MscalCallback;
      Vu1MscntCallback m_vu1MscntCallback;
  
+@@ -452,6 +463,7 @@ public:
+     };
+ 
+     std::array<EeTimer, 4> m_eeTimers{};
++    std::function<void()> m_vu1WorkerNotify; // GOW-Port: ver setVu1WorkerNotify
+     // GOW-Port: GIF_STAT en m_ioRegisters (los elementos de unordered_map no se mueven; solo clear() lo
+     // invalida). advanceEeTimers lo usa ~1,5 millones de veces por segundo.
+     uint32_t *m_gifStatSlot = nullptr;
 diff --git a/ps2xRuntime/src/lib/ps2_memory.cpp b/ps2xRuntime/src/lib/ps2_memory.cpp
-index 0d4ace8..16186cc 100644
+index 0d4ace8..9c09cd0 100644
 --- a/ps2xRuntime/src/lib/ps2_memory.cpp
 +++ b/ps2xRuntime/src/lib/ps2_memory.cpp
 @@ -3,6 +3,9 @@
@@ -48,7 +56,7 @@ index 0d4ace8..16186cc 100644
  #include <cstdio>
  #include <cstring>
  #include <limits>
-@@ -245,8 +248,117 @@ PS2Memory::PS2Memory()
+@@ -245,8 +248,122 @@ PS2Memory::PS2Memory()
      ps2SetScratchpadHostPtr(nullptr);
  }
  
@@ -72,12 +80,14 @@ index 0d4ace8..16186cc 100644
 +    bool stop = false;
 +};
 +std::unique_ptr<Vu1Worker> g_vu1Worker;
-+std::function<void()> g_vu1WorkerNotify;
++// Lo pone el propio hilo de VU1 al arrancar (Vu1Worker::id se asigna después de crearlo y podría llegar tarde).
++thread_local bool t_onVu1Worker = false;
 +}
 +
 +void PS2Memory::setVu1WorkerNotify(std::function<void()> notify)
 +{
-+    g_vu1WorkerNotify = std::move(notify);
++    syncVu1Worker();
++    m_vu1WorkerNotify = std::move(notify);
 +}
 +
 +bool PS2Memory::vu1WorkerEnabled()
@@ -92,11 +102,13 @@ index 0d4ace8..16186cc 100644
 +    if (!g_vu1Worker)
 +    {
 +        g_vu1Worker = std::make_unique<Vu1Worker>();
++        g_vu1Worker->owner = this;
 +        g_vu1Worker->thread = std::thread([this] { vu1WorkerLoop(); });
 +        g_vu1Worker->id = g_vu1Worker->thread.get_id();
 +        std::fprintf(stderr, "[vu1-hilo] VIF1/VU1 en un hilo propio\n");
 +    }
-+    return true;
++    // Un solo hilo, del primer PS2Memory que lo pide; otra memoria a la vez (pruebas) procesa VIF1 en su hilo.
++    return g_vu1Worker->owner == this;
 +}
 +
 +void PS2Memory::enqueueVu1Work(std::vector<uint8_t> &&data)
@@ -111,6 +123,7 @@ index 0d4ace8..16186cc 100644
 +
 +void PS2Memory::vu1WorkerLoop()
 +{
++    t_onVu1Worker = true;
 +    Vu1Worker &worker = *g_vu1Worker;
 +    for (;;)
 +    {
@@ -132,20 +145,20 @@ index 0d4ace8..16186cc 100644
 +            worker.busy = false;
 +        }
 +        worker.idleCv.notify_all();
-+        if (g_vu1WorkerNotify)
-+            g_vu1WorkerNotify();
++        if (m_vu1WorkerNotify)
++            m_vu1WorkerNotify();
 +    }
 +}
 +
 +bool PS2Memory::onVu1WorkerThread() const
 +{
-+    return g_vu1Worker && g_vu1Worker->owner == this && std::this_thread::get_id() == g_vu1Worker->id;
++    return t_onVu1Worker && g_vu1Worker && g_vu1Worker->owner == this;
 +}
 +
 +void PS2Memory::syncVu1Worker() const
 +{
 +    Vu1Worker *worker = (g_vu1Worker && g_vu1Worker->owner == this ? g_vu1Worker.get() : nullptr);
-+    if (!worker || std::this_thread::get_id() == worker->id)
++    if (!worker || t_onVu1Worker)
 +        return;
 +    std::unique_lock<std::mutex> lock(worker->mutex);
 +    worker->idleCv.wait(lock, [&] { return worker->queue.empty() && !worker->busy; });
@@ -166,7 +179,7 @@ index 0d4ace8..16186cc 100644
      if (m_rdram)
      {
          delete[] m_rdram;
-@@ -595,6 +707,8 @@ uint8_t *PS2Memory::mapVuMemory(uint32_t physAddr, uint32_t size, uint32_t &offs
+@@ -595,6 +712,8 @@ uint8_t *PS2Memory::mapVuMemory(uint32_t physAddr, uint32_t size, uint32_t &offs
  
  const uint8_t *PS2Memory::mapVuMemory(uint32_t physAddr, uint32_t size, uint32_t &offset, uint32_t &limit) const
  {
@@ -175,7 +188,7 @@ index 0d4ace8..16186cc 100644
      auto mapRange = [&](uint32_t base, uint32_t rangeSize, const uint8_t *ptr) -> const uint8_t *
      {
          if (!ptr || physAddr < base)
-@@ -1140,6 +1254,7 @@ void PS2Memory::write128(uint32_t address, __m128i value)
+@@ -1140,6 +1259,7 @@ void PS2Memory::write128(uint32_t address, __m128i value)
      }
      if (!scratch && physAddr == 0x10005000u) // VIF1_FIFO
      {
@@ -183,7 +196,7 @@ index 0d4ace8..16186cc 100644
          alignas(16) uint8_t fifoData[16];
          _mm_storeu_si128(reinterpret_cast<__m128i *>(fifoData), value);
          processVIF1Data(fifoData, sizeof(fifoData));
-@@ -1185,6 +1300,8 @@ void PS2Memory::write128(uint32_t address, __m128i value)
+@@ -1185,6 +1305,8 @@ void PS2Memory::write128(uint32_t address, __m128i value)
  
  bool PS2Memory::writeIORegister(uint32_t address, uint32_t value)
  {
@@ -192,7 +205,7 @@ index 0d4ace8..16186cc 100644
      size_t timerIndex = 0u;
      uint32_t timerOffset = 0u;
      if (decodeEeTimerRegister(address, timerIndex, timerOffset))
-@@ -1872,6 +1989,8 @@ void PS2Memory::completeDmacChannel(uint32_t channelBase, uint32_t cause)
+@@ -1872,6 +1994,8 @@ void PS2Memory::completeDmacChannel(uint32_t channelBase, uint32_t cause)
  
  void PS2Memory::processPendingTransfers()
  {
@@ -201,7 +214,7 @@ index 0d4ace8..16186cc 100644
      const bool hadGif = !m_pendingGifTransfers.empty();
      uint32_t observedGifQwc = 0u;
      for (const auto &transfer : m_pendingGifTransfers)
-@@ -2014,8 +2133,47 @@ void PS2Memory::processPendingTransfers()
+@@ -2014,8 +2138,47 @@ void PS2Memory::processPendingTransfers()
      m_pendingVif0Transfers.clear();
  
      const bool hadVif1 = !m_pendingVif1Transfers.empty();
@@ -249,7 +262,7 @@ index 0d4ace8..16186cc 100644
          if (!p.chainData.empty())
          {
              processVIF1Data(p.chainData.data(), static_cast<uint32_t>(p.chainData.size()));
-@@ -2072,7 +2230,7 @@ void PS2Memory::processPendingTransfers()
+@@ -2072,7 +2235,7 @@ void PS2Memory::processPendingTransfers()
      recycleChainBuffers(m_pendingVif1Transfers);
      m_pendingVif1Transfers.clear();
  
@@ -258,7 +271,7 @@ index 0d4ace8..16186cc 100644
          m_gifArbiter->drain();
  
      static constexpr uint32_t GIF_CHANNEL = 0x1000A000;
-@@ -2160,6 +2318,7 @@ void PS2Memory::submitGifPacket(GifPathId pathId, const uint8_t *data, uint32_t
+@@ -2160,6 +2323,7 @@ void PS2Memory::submitGifPacket(GifPathId pathId, const uint8_t *data, uint32_t
  {
      if (!data || sizeBytes < 16)
          return;
@@ -266,7 +279,7 @@ index 0d4ace8..16186cc 100644
  
      if (pathId == GifPathId::Path3)
      {
-@@ -2216,6 +2375,7 @@ void PS2Memory::processGIFPacket(const uint8_t *data, uint32_t sizeBytes)
+@@ -2216,6 +2380,7 @@ void PS2Memory::processGIFPacket(const uint8_t *data, uint32_t sizeBytes)
  
  bool PS2Memory::tryProcessNativeGifImageUploadChain(GS &gs, uint32_t tadr, uint32_t chcr)
  {
@@ -274,7 +287,7 @@ index 0d4ace8..16186cc 100644
      static constexpr uint32_t GIF_CHANNEL = 0x1000A000u;
      static constexpr uint32_t D_STAT = 0x1000E010u;
      static constexpr uint32_t D_CTRL = 0x1000E000u;
-@@ -2412,6 +2572,7 @@ bool PS2Memory::tryProcessNativeGifImageUploadChain(GS &gs, uint32_t tadr, uint3
+@@ -2412,6 +2577,7 @@ bool PS2Memory::tryProcessNativeGifImageUploadChain(GS &gs, uint32_t tadr, uint3
  
  bool PS2Memory::tryProcessNativeGifPackedChain(GS &gs, uint32_t tadr, uint32_t chcr)
  {
@@ -282,7 +295,7 @@ index 0d4ace8..16186cc 100644
      static constexpr uint32_t GIF_CHANNEL = 0x1000A000u;
      static constexpr uint32_t D_STAT = 0x1000E010u;
      static constexpr uint32_t D_CTRL = 0x1000E000u;
-@@ -2497,6 +2658,8 @@ int PS2Memory::pollDmaRegisters()
+@@ -2497,6 +2663,8 @@ int PS2Memory::pollDmaRegisters()
  
  uint32_t PS2Memory::readIORegister(uint32_t address)
  {
@@ -292,7 +305,7 @@ index 0d4ace8..16186cc 100644
      uint32_t timerOffset = 0u;
      if (decodeEeTimerRegister(address, timerIndex, timerOffset))
 diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
-index 3534268..8b03259 100644
+index 3534268..61502ea 100644
 --- a/ps2xRuntime/src/lib/ps2_runtime.cpp
 +++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
 @@ -504,6 +504,7 @@ PS2Runtime::~PS2Runtime()
@@ -308,7 +321,7 @@ index 3534268..8b03259 100644
                                      { m_gs.processGIFPacket(data, size, path); });
      m_memory.setGifArbiter(&m_gifArbiter);
 +    // GOW-Port: con VIF1/VU1 en su hilo, despertar al EE cuando termina cada envío (Dmac no hace nada más).
-+    PS2Memory::setVu1WorkerNotify([this]
++    m_memory.setVu1WorkerNotify([this]
 +                                  {
 +                                      if (m_eeScheduler)
 +                                          m_eeScheduler->postEvent(EeEvent{EeEventType::Dmac});

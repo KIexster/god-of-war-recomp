@@ -728,16 +728,20 @@ hilo, uno detrás de otro. `ps2recomp-vu1-thread.patch` (`PS2X_VU1_HILO=1`, desa
   hilo propio salía más lento que sin él.
 - El EE espera a que el hilo termine antes de tocar algo suyo: la memoria de VU (`mapVuMemory`), los registros de
   VIF1 y su canal DMA, la FIFO de VIF1, el GIF desde el EE (PATH3 y sus rutas nativas) y al destruir el runtime
-  (el GS se destruye antes que la memoria). Un diagnóstico temporal en partida contó cero lecturas de VIF1, VU1 y
-  registros privados del GS por parte del EE, y ningún DMA del GIF.
+  (el GS se destruye antes que la memoria).
+- **Corrección:** la primera versión nunca asignaba el dueño del hilo, así que esas esperas no se hacían nunca (y un
+  diagnóstico que las contaba dio cero). En algunas partidas la VU1 acababa ejecutando basura
+  (`[VU1 reserved lower] pc=0xb0`, de 48 a 377 veces) y se saltaba trabajo, lo que daba ~20 fps falsos. Ahora el hilo
+  sabe de qué memoria es, se reconoce a sí mismo con una variable `thread_local` (su `id` se asigna después de
+  arrancarlo) y el aviso al EE es de cada memoria, no global.
 - Desde ese hilo, las retrollamadas de MSCAL/MSCNT no consultan el planificador del EE.
 
 En partida (FINISH asíncrono y presentación compartida, alternando con y sin la variable):
 
 | Escena | Sin hilo | Con hilo |
 |---|---:|---:|
-| Muelles de Atenas, partida de la tarjeta, Kratos quieto (160–230 s, 2 rondas) | 13,5 / 13,5 | 15,3 / 15,5 |
-| Primeros 40 s de partida de la prueba automática (2 rondas) | 16,7 / 16,8 | 18,3 / 22,8 |
+| Muelles de Atenas, partida de la tarjeta, Kratos quieto (160–230 s, 2 rondas), versión corregida | 13,3 / 13,3 | 14,9 / 15,0 |
 
-El tramo de 100–140 s de la prueba automática varía demasiado entre ejecuciones para compararlo. La suite
-(590/590) se pasa con la variable desactivada: sus pruebas esperan que VIF1 termine dentro de la llamada.
+Ninguna de las cuatro partidas tuvo errores de VU1. Las cifras anteriores (15,3–22,8 con hilo) eran de la versión
+sin esperas y no valen. El tramo de 100–140 s de la prueba automática varía demasiado entre ejecuciones para compararlo. La suite
+(590/590) se pasa con la variable desactivada; con ella activada todavía se cierra en una prueba de la FIFO de VIF1.
