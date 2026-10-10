@@ -2929,7 +2929,7 @@ rutinas retail `0x158DA8`, `0x1590F0`, `0x157100` y `0x166BE8`. La llamada
 `0x158B94` actualiza la jerarquía en `0x1590F0` antes de procesar el grupo
 en `0x158D48`; las llamadas `0x159570` / `0x15958C` seleccionan
 CalcSkinHierarchy / su variante según la visibilidad. La rutina recibe en
-a3 un buffer de matrices reservado para el paquete, distinto de la paleta
+a2 un buffer de matrices reservado para el paquete, distinto de la paleta
 mundo observada a la entrada de ProcessModel. Por ello la paleta de entrada
 no demuestra qué transformaciones consumió VU1. El siguiente control debe
 leer ese destino después del skinning y relacionarlo con VIF, respetando las
