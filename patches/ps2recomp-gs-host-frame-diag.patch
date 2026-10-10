@@ -1,0 +1,35 @@
+diff --git a/ps2xRuntime/include/runtime/gs/gs_host_present.h b/ps2xRuntime/include/runtime/gs/gs_host_present.h
+--- a/ps2xRuntime/include/runtime/gs/gs_host_present.h
++++ b/ps2xRuntime/include/runtime/gs/gs_host_present.h
+@@ -41,6 +41,7 @@
+     View current;
+     uint64_t lastTick = 0u;
+     uint64_t lastSharedSequence = 0u;
++    uint32_t diagnosticSharedFrames = 0u; // GOW-Port: salida opcional acotada.
+     uint32_t lastDisplayFbp = UINT32_MAX;
+     uint32_t lastSourceFbp = UINT32_MAX;
+     uint32_t lastWidth = 0u;
+diff --git a/ps2xRuntime/src/lib/gs/gs_host_present.cpp b/ps2xRuntime/src/lib/gs/gs_host_present.cpp
+--- a/ps2xRuntime/src/lib/gs/gs_host_present.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_host_present.cpp
+@@ -99,6 +99,20 @@
+             current.frame = frame;
+             if (frame.sequence != lastSharedSequence)
+             {
++                // GOW-Port: observar la textura adquirida sin otra lectura ni otra barrera.
++                static const bool diagnostic = [] {
++                    const char *v = std::getenv("PS2X_GS_PRESENT_DIAG");
++                    return v && std::strcmp(v, "1") == 0;
++                }();
++                if (diagnostic && diagnosticSharedFrames < 4096u)
++                {
++                    ++diagnosticSharedFrames;
++                    std::fprintf(stderr, "[gs-present:shared] seq=%llu render=%llu hostTick=%llu frameTick=%llu displayFbp=%u sourceFbp=%u width=%u height=%u hashValid=%u hash=%016llx blank=%u\n",
++                        (unsigned long long)frame.sequence, (unsigned long long)frame.renderSequence,
++                        (unsigned long long)vsyncTick, (unsigned long long)frame.vsyncTick,
++                        frame.displayFbp, frame.sourceFbp, frame.width, frame.height,
++                        unsigned(frame.hashValid), (unsigned long long)frame.contentHash, unsigned(frame.blank));
++                }
+                 gs.recordAcquiredSharedFrame(frame);
+                 lastSharedSequence = frame.sequence;
+             }

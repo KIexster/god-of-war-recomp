@@ -102,6 +102,7 @@ $vu1FastPairsPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-fast-pairs.patch
 $vu1Path1EventsPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-path1-events.patch'
 $vu1LazyDecodePatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-lazy-decode.patch'
 $gifArbiterBuffersPatch = Join-Path $RepoRoot 'patches\ps2recomp-gif-arbiter-buffers.patch'
+$gsHostFrameDiagPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-host-frame-diag.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -228,6 +229,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1FastPairsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1Path1EventsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1LazyDecodePatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gifArbiterBuffersPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsHostFrameDiagPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner

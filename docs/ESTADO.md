@@ -3096,3 +3096,35 @@ se quedaba en un bucle de espera infinito al arrancar. `compilar.ps1` los borra 
 
 Siguiente: bloques con temporización estática (comprobar las esperas una vez a la entrada del bloque en lugar
 de en cada par), vida de los flags MAC entre bloques y la copia de PATH1 por tramos.
+
+## Integración del diagnóstico compartido con #55 (2026-10-10)
+
+La rama `codex/shared-frame-diagnostics` integra mediante merge el `main`
+`7800bc27c27ab5ddb0dd19338b834e0e2eff3829`. Se conservan todos los cambios
+de #55; los dos conflictos de inserción en `scripts/compilar.ps1` se resuelven
+añadiendo el diagnóstico del host después de los tres parches nuevos de Opus.
+No se modifica su checkout ni se detienen sus procesos.
+
+Control ligero local: seis pruebas del inspector correctas (Python 3.14.7),
+configuración con 0 errores y 4 avisos existentes, sintaxis de 20 scripts
+PowerShell con 0 errores. Los 90 parches únicos pasan comprobación y aplicación
+en orden en un worktree nuevo sobre el commit fijado
+`c5a9d02573410a2085a4b4b831b0b68ba3515440`; el diff del runtime existente
+coincide antes y después. Registro privado: `logs/transition_review/patch_chain_90.txt`.
+
+Se comprueba que `E:\gowgpuprof` es una junction a nuestro
+`E:\Decompilación de God of War\gow-gpu-work`. No se limpia ni reconstruye ese
+runtime. El PC continúa reservado para Opus: no se ejecutan compilaciones,
+juegos ni benchmarks. La validación Windows completa y la transición con el
+HEAD integrado siguen pendientes; #51 conserva el estado de borrador.
+El protocolo y la matriz de cuatro controles están en `TRANSICION_COMPARTIDA.md`.
+No se declara corregida la alternancia, el encuadre ni los cuelgues intermitentes.
+
+En la revisión posterior del inspector se reproduce una omisión con entradas
+sintéticas: una secuencia que reaparece después de otra no se contrastaba con
+sus metadatos originales. `inspect_shared_frames.py` conserva ahora esa
+referencia hasta el cambio de modo; el tick del host puede variar. Las filas
+inconsistentes no alimentan los patrones de retorno. Ocho pruebas pasan; la
+nueva regresión falla con la versión anterior para hash, validez, dimensiones
+y secuencia de renderizado. No se cambia el parche del runtime ni se ejecuta
+el juego: es una mejora de análisis, no un arreglo visual demostrado.
