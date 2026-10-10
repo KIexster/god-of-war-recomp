@@ -27,6 +27,8 @@ class SharedFramesTest(unittest.TestCase):
 
     def test_sequence_regression_and_mode_reset(self):
         self.assertEqual(frames.inspect(frame(2, 22)+'\n'+frame(1, 11))['sequence_regressions'], [2])
+        text = frame(1, 11)+'\n'+frame(2, 22).replace('render=2', 'render=0')
+        self.assertEqual(frames.inspect(text)['sequence_regressions'], [2])
         text = frame(2, 22)+'\n[gs-present] host mode: RAM frames\n'+frame(1, 11)
         self.assertEqual(frames.inspect(text)['sequence_regressions'], [])
 
@@ -34,6 +36,9 @@ class SharedFramesTest(unittest.TestCase):
         for middle in [frame(2, 22, valid=0), frame(2, 11)]:
             self.assertEqual(frames.inspect('\n'.join([frame(1, 11), middle, frame(3, 11)]))['content_returns'], [])
         self.assertEqual(frames.inspect('\n'.join([frame(1, 11), frame(2, 22), frame(3, 11, width=512)]))['content_returns'], [])
+        self.assertEqual(frames.inspect('\n'.join([frame(1, 11), frame(2, 22, width=512), frame(3, 11)]))['content_returns'], [])
+        text = '\n'.join([frame(1, 11), frame(2, 22), frame(2, 33), frame(3, 11)])
+        self.assertEqual(frames.inspect(text)['content_returns'], [])
 
     def test_missing_or_corrupt_logs_are_rejected(self):
         for text in ['', 'otro registro', frame(1, 11).rsplit(' ', 1)[0], frame(1, 11).replace('hashValid=1', 'hashValid=2'), frame(1, 11).replace('seq=1', 'seq=-1')]:

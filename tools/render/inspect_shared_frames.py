@@ -36,8 +36,11 @@ def inspect(text):
             # El tick actual del host puede avanzar mientras retiene la misma textura.
             if any(row[k] != previous[k] for k in FIELDS if k != 'hostTick'):
                 result['inconsistent_repeats'].append(number)
+                history.clear()
             continue
         result['acquisitions'] += 1
+        if previous and (row['width'], row['height']) != (previous['width'], previous['height']):
+            history.clear()
         if previous and (row['seq'] < previous['seq'] or row['render'] < previous['render']):
             result['sequence_regressions'].append(number)
             history.clear()
