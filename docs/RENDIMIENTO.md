@@ -782,3 +782,13 @@ componente a componente en cada vector. `ps2recomp-vif1-unpack-formats.patch` el
 usa un bucle propio para cada uno (V4/V3/V2/V1 de 32, 16 y 8 bits y V4-5), con el mismo resultado: V3 conserva W,
 V2 escribe XYXY y V1 repite X. Suite 590/590. Muelles con hilo de VU1 y del GS, solo cuadros, alternando
 ejecutables: 17,0 / 16,7 → 17,3 / 17,2 cuadros/s, sin errores de VU1.
+
+## Comprobación de bloques de VU1 compilada sin memcmp repetido (10 de octubre)
+
+Cada entrada a un bloque compilado comparaba su microcódigo (hasta decenas de bytes) con la micromemoria, y en un
+mismo PC se prueban varias variantes. La micromemoria solo cambia cuando cambia su generación, que
+`compiledProgramFor` apunta al empezar cada ejecución. `ps2recomp-vu1-block-check-cache.patch` recuerda, por bloque
+(caché de 2048 entradas indexada por la dirección de sus palabras), el resultado de la comparación y la generación en
+que se hizo. Huellas de VU1 idénticas (compilada e intérprete, dos grabaciones), suite 590/590, capturas correctas.
+Muelles con hilo de VU1 y del GS, solo cuadros, alternando ejecutables: 17,4 / 17,3 → 18,4 / 18,3 cuadros/s, sin
+errores de VU1.
