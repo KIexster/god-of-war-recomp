@@ -804,3 +804,14 @@ generador marca ahora los pares que no abren el bloque (`Chained`) y `stepPairT`
 ellos (`ps2recomp-vu1-chained-steps.patch` y `tools/vu1/generar_vu1.cpp`). Huellas de VU1 idénticas, suite
 590/590. Muelles con hilo de VU1 y del GS, solo cuadros, alternando ejecutables, cuatro rondas:
 19,4 / 19,9 / 19,2 / 19,4 → 19,9 / 19,9 / 19,9 / 20,0 cuadros/s (+2 %), sin errores de VU1.
+
+## Velocidad del juego y VBlank en tiempo real (10 de octubre)
+
+Tobiichi-Port (YYOzcan), que sigue este repositorio, añadió un medidor de velocidad del juego y `GOW_VBLANK_REALTIME`,
+porque en su versión de Linux el juego iba a cámara lenta (38–43 %). `ps2recomp-game-speed.patch` trae solo el
+medidor: en cada cuadro (`GOW_PERF_FRAME_PC`) suma el paso de tiempo del juego (float en `0x29C64C`) y, con
+`GOW_DELTA_DIAG=1`, imprime cada segundo `[gow-delta] ... speed=` (tiempo de juego / tiempo real).
+
+En los muelles, con hilos de VU1 y GS, cuatro partidas alternando: velocidad 1,00 con y sin `GOW_VBLANK_REALTIME`, y
+19,9 / 20,0 frente a 19,9 / 19,9 cuadros/s. Aquí el juego ya va a tiempo real, así que el VBlank en tiempo real no se
+trae.
