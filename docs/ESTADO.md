@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-_Última actualización: 8 de octubre de 2026_
+_Última actualización: 9 de octubre de 2026_
 
 ## Qué funciona
 
@@ -2829,3 +2829,57 @@ del mismo instante produciría una falsa discrepancia.
 Siguiente paso: comparar las articulaciones no raíz y el padre de cámara
 con una secuencia alineada. La referencia y su captura permanecen fuera de
 Git. No se cambia el renderer ni se afirma una mejora de FPS con este control.
+
+## Primeras articulaciones y padre de cámara (2026-10-09)
+
+Se amplían los diagnósticos opcionales de modelos y cámara, sin escribir RAM,
+calcular matrices ni forzar actualizaciones. ProcessModel lee como máximo las
+primeras ocho matrices de la paleta, limitadas por el count de skin y los
+rangos físicos de RAM. SetupPipeline registra la matriz de la articulación del
+padre seleccionada por el cliente de cámara. Los bits se conservan sin operar
+floats; `validJoint` indica lectura válida, no identidad semántica comprobada.
+La cámara no usa el count de skin: en la referencia PCSX2 vale cero, aunque
+su articulación 1 es legible y coincide con la vista.
+
+Controles locales MSVC `/std:c++20 /O2 /W4 /WX`: cámara y modelos pasan,
+incluidos alias, memoria intacta, NaN sintéticos, count 0/3/20, límite de ocho,
+punteros nulos y matrices truncadas o que cruzan el segmento. Una mutación
+privada del paso de paleta de 64 a 32 bytes hace fallar el control de modelos.
+El lector C++ sobre la RAM privada de PCSX2 recupera ambas paletas iniciales
+y confirma igualdad por bits entre vista, cliente y articulación del padre.
+
+Compilación completa con `scripts/2_compilar.cmd`, 79 parches, retorno 0.
+Código de la sonda `1fc7ff7`, sobre `c8c9860`; ELF retail con el SHA-256 ya
+registrado arriba. Binario SHA-256
+`5b1c81330f499fca55180dce830160bdeafbaa757ef8971e3e1692a95820cdbd`.
+Control nativo de 95,612 segundos con cámara/modelos activos, OpenGL,
+presentación RAM, FINISH síncrono, fast boot apagado, FMV omitido y prueba
+de pad. Se finaliza el proceso propio al alcanzar el límite; el registro del
+host no dispone de ExitCode. No se registran muestras de estado 11 ni se
+atribuye el límite a un fallo del juego. La captura final muestra un primer
+plano frontal de Kratos, pero no está alineada con la referencia PCSX2 y no
+demuestra una corrección del encuadre anterior.
+
+Se leen 656 matrices de articulaciones: ninguna no finita ni totalmente nula.
+Las 32 muestras válidas de cámara coinciden por bits entre viewWorld,
+clientWorld y parentJointWorld. El padre `0x1111F20`, esqueleto `0x1114130`,
+paleta `0x112ED00` y articulación 1 (`0x112ED40`) coinciden estructuralmente
+con la referencia. En intro, los modelos `0x111B700` (125 articulaciones) y
+`0xD51C80` (103) tienen 32 muestras por cada índice 0..7. En el primero, los
+índices 3..7 cambian y la raíz permanece constante: una raíz constante no
+implica animación congelada. En el segundo las ocho matrices son constantes
+durante este tramo observado.
+
+Frente al único cuadro posterior de PCSX2, la diferencia absoluta máxima
+de la raíz de 125 es `3,7253e-8`; en índices 1..4, la última muestra queda
+entre `6,1035e-5` y `1,8311e-4`. Las articulaciones animadas 5..7 llegan a
+`0,048279` en la última muestra. En la paleta de 103 el máximo de los ocho
+índices es `1,1444e-5`. Son diferencias descriptivas de instantes distintos,
+no tolerancias de equivalencia ni prueba de fidelidad de la animación.
+
+Quedan sin verificar las restantes 117/95 articulaciones, la identidad del
+recurso visible y los datos que terminan enviados a VU1. El siguiente paso es
+alinear la secuencia y seguir la paleta hasta InitUNPACKData/VIF; no cambiar
+la matemática por estas diferencias sin una comparación del mismo instante.
+No se mide rendimiento ni cambia el estado del renderer en el mapa. Registros,
+capturas y volcados permanecen privados; no se modifica el checkout de Opus.

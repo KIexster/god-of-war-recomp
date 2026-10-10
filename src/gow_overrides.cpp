@@ -706,6 +706,13 @@ namespace
             };
             if(pose.validObject) { matrix("local",pose.local); matrix("world",pose.world); }
             if(pose.validRoot) matrix("rootWorld",pose.rootWorld);
+            for(size_t i=0;i<pose.firstJoints.size();++i) if(pose.firstJoints[i].valid) {
+                const auto &joint=pose.firstJoints[i];
+                std::fprintf(stderr,"[gow-model:joint] sample=%u state=%u this=%x view=%x index=%zu address=%x bits=",
+                    sample,state,model,view,i,joint.address);
+                for(size_t k=0;k<joint.world.size();++k) std::fprintf(stderr,"%s%08x",k ? "," : "",joint.world[k]);
+                std::fprintf(stderr,"\n");
+            }
         }
         sub_00157A60_0x157a60(rdram, ctx, runtime);
     }
@@ -780,6 +787,13 @@ namespace
             matrix("projection",s.projection); matrix("combined",s.combined);
         }
         if(s.validCamera) { matrix("clientWorld",s.clientWorld); matrix("clientInverse",s.clientInverse); }
+        if(s.validCamera) {
+            std::fprintf(stderr,"[gow-camera:parent] sample=%u state=%u stamp=%llu parent=%x validParent=%u parentTick=%llu skeleton=%x validSkeleton=%u skeletonTick=%llu joints=%x index=%u address=%x validJoint=%u\n",
+                sample,state,(unsigned long long)stamp,s.parent,unsigned(s.validParent),(unsigned long long)s.parentTick,
+                s.parentSkeleton,unsigned(s.validParentSkeleton),(unsigned long long)s.parentSkeletonTick,
+                s.parentJoints,unsigned(s.joint),s.parentJointAddress,unsigned(s.validParentJoint));
+            if(s.validParentJoint) matrix("parentJointWorld",s.parentJointWorld);
+        }
     }
 
     void gowDiagPrimPoll(uint8_t *rdram, double seconds)
