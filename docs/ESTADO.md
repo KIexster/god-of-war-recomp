@@ -2883,3 +2883,55 @@ alinear la secuencia y seguir la paleta hasta InitUNPACKData/VIF; no cambiar
 la matemática por estas diferencias sin una comparación del mismo instante.
 No se mide rendimiento ni cambia el estado del renderer en el mapa. Registros,
 capturas y volcados permanecen privados; no se modifica el checkout de Opus.
+
+## Paleta completa antes de ProcessModel (2026-10-09)
+
+`GOW_MODEL_DIAG=1` y `GOW_MODEL_PALETTE_DIAG=1` permiten leer hasta 256
+articulaciones por muestra, con los mismos cupos y frecuencia anteriores.
+Cada matriz conserva sus bits y la marca de esqueleto; se registra el count
+solicitado, las matrices leídas y si se alcanzó ese count. El límite de 256
+solo acota el diagnóstico. Se detiene antes de leer una matriz fuera de RAM,
+sin cambiar ninguna matriz ni la ejecución original. Cada línea nueva de
+matriz se emite en una sola escritura para evitar intercalar componentes con
+registros de otros hilos. Una primera prueba con escrituras por componente
+produjo líneas intercaladas y no se usa para estas cifras.
+
+Pruebas MSVC `/O2 /W4 /WX`: paletas 103/125/256, petición de 257 truncada,
+alias, bits NaN intactos, último byte ausente, NULL, segmento y RAM intacta.
+Limitar el lector completo a ocho matrices en una copia privada hace fallar
+la prueba. El mismo lector sobre la RAM pausada de PCSX2 lee completas las
+125 y 103 articulaciones sin modificar la referencia.
+
+Se integra sobre `98d06c1`; código de la sonda `4ea6204`, runtime de 79
+parches sin cambios. `scripts/2_recompilar_rapido.cmd` termina con retorno 0;
+se comprueba igualdad de headers/override entre fuente y runtime. SHA-256 del
+ejecutable privado utilizado y del binario recompilado:
+`80c8cfa9bed8d53e25efdfbbfbf80f9bd1d81f46ff2d20d40d724d1953e1a4e1`.
+No se regeneran las fuentes del juego ni se modifica el checkout de Opus.
+
+Control de 95,948 s, OpenGL con presentación RAM y FINISH síncrono,
+fast boot apagado, FMV omitido y prueba de pad. El proceso propio se termina
+por el límite deliberado; ExitCode no está disponible. Se leen 9.598 matrices
+en 84 paletas completas, sin matrices no finitas ni totalmente nulas. Se
+observan estados 3/4; no hay registros de estado 11. No se mide rendimiento
+ni se valida partida o equivalencia visual.
+
+En intro se obtienen 32 muestras por cada una de las 125/103 articulaciones
+de `0x111B700` / `0xD51C80`. Cambian 116 índices de la primera paleta; toda
+la segunda permanece constante durante este tramo. Frente al único cuadro
+posterior de PCSX2, la última muestra tiene diferencia absoluta máxima
+`0,0802001953125` (índice 20) / `0,000011444091796875`. Como los instantes
+son distintos, estas cifras no son tolerancias de equivalencia. El encuadre
+y la identidad del recurso visible siguen pendientes.
+
+Ghidra 12.1.4 con el lenguaje R5900 recupera en modo de solo lectura las
+rutinas retail `0x158DA8`, `0x1590F0`, `0x157100` y `0x166BE8`. La llamada
+`0x158B94` actualiza la jerarquía en `0x1590F0` antes de procesar el grupo
+en `0x158D48`; las llamadas `0x159570` / `0x15958C` seleccionan
+CalcSkinHierarchy / su variante según la visibilidad. La rutina recibe en
+a2 un buffer de matrices reservado para el paquete, distinto de la paleta
+mundo observada a la entrada de ProcessModel. Por ello la paleta de entrada
+no demuestra qué transformaciones consumió VU1. El siguiente control debe
+leer ese destino después del skinning y relacionarlo con VIF, respetando las
+reanudaciones de la función y alineando la secuencia con PCSX2. Pseudocódigo,
+RAM y registros permanecen privados.

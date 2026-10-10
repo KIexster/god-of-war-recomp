@@ -428,3 +428,27 @@ clientWorld y parentJointWorld. En intro hay 32 muestras por cada índice
 cambian mientras su raíz permanece constante. El control acaba por límite
 deliberado, sin registros de estado 11; no mide FPS ni valida la paleta completa.
 Identidad del binario, comparación y límites: ESTADO.
+
+## Paleta articulada completa (2026-10-09)
+
+`GOW_MODEL_DIAG=1` junto con `GOW_MODEL_PALETTE_DIAG=1` añade
+`[gow-model:palette-joint]` y `[gow-model:palette]` en las mismas muestras de
+ProcessModel. Incluye la marca de esqueleto, índice, dirección y bits de cada
+matriz. Lee hasta el count de skin o 256 articulaciones, el primero que se
+alcance. Ese máximo limita la salida del diagnóstico; no modifica la jerarquía
+del juego. Se detiene ante la primera matriz fuera de RAM. `requested`, `read`
+y `complete` distinguen una lectura completa de una truncada; no acreditan
+fidelidad ni que VU1 haya recibido esas matrices. No emite paletas sin count
+legible distinto de cero. Los ocho registros anteriores permanecen disponibles.
+
+Control sintético sin juego: últimos índices de paletas 103/125, alias,
+bits NaN, 256 matrices, truncamiento al solicitar 257, último byte ausente,
+puntero nulo y cruce de segmento; RAM intacta. Mismos cupos, intervalo y
+llamada original. No usar estas ejecuciones para medir FPS ni comparar cuadros
+distintos como si fueran una secuencia sincronizada.
+
+MSVC `/O2 /W4 /WX` pasa. Volver a limitar el lector completo a ocho matrices
+en una copia privada hace fallar la prueba. Recompilación rápida correcta sobre
+los mismos 79 parches; control nativo de 95,948 s: 84 lecturas completas,
+9.598 matrices finitas y no totalmente nulas. En intro hay 32 muestras por
+articulación de las paletas 125/103. Resultados, binario y límites: ESTADO.

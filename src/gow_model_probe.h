@@ -41,6 +41,25 @@ namespace gow_model_probe {
         // Primeras ocho articulaciones: lectura acotada, sin copiar toda la paleta.
         std::array<Joint,8> firstJoints{};
     };
+    // GOW-Port: límite de salida del diagnóstico, no límite de la jerarquía del juego.
+    struct PaletteRead { uint32_t read=0; bool complete=false; };
+    template<class Visitor> inline PaletteRead visitPalette(const uint8_t *ram,size_t size,
+        uint32_t palette,uint32_t count,Visitor visitor) {
+        using namespace gow_camera_probe;
+        PaletteRead result;
+        for(uint32_t i=0;i<count && i<256u;++i) {
+            if(!palette) break;
+            const uint64_t at=(palette & 0x1FFFFFFFu)+uint64_t(i)*64u;
+            if(at>=0x20000000ull) break;
+            const auto *matrix=span(ram,size,uint32_t(at),64u);
+            if(!matrix) break;
+            Pose::Joint joint; joint.valid=true; joint.address=uint32_t(at);
+            std::memcpy(joint.world.data(),matrix,64u);
+            visitor(i,joint); ++result.read;
+        }
+        result.complete=result.read==count;
+        return result;
+    }
     inline Pose capture(const uint8_t *ram,size_t size,uint32_t object) {
         using namespace gow_camera_probe;
         Pose p;
