@@ -1,0 +1,337 @@
+diff --git a/ps2xRuntime/include/runtime/ps2_memory.h b/ps2xRuntime/include/runtime/ps2_memory.h
+index 740582f..3072ac5 100644
+--- a/ps2xRuntime/include/runtime/ps2_memory.h
++++ b/ps2xRuntime/include/runtime/ps2_memory.h
+@@ -10,6 +10,7 @@
+ #include <atomic>
+ #include <iostream>
+ #include <mutex>
++#include <memory>
+ 
+ #include "gs/ps2_gif_arbiter.h"
+ #if defined(_MSC_VER)
+@@ -344,6 +345,13 @@ public:
+     void processVIF1Data(uint32_t srcPhysAddr, uint32_t sizeBytes);
+     void processVIF1Data(const uint8_t *data, uint32_t sizeBytes);
+     void processPendingTransfers();
++    // GOW-Port: VIF1/VU1 en un hilo propio (PS2X_VU1_HILO=1). Espera a que ese hilo termine lo encolado; no
++    // hace nada si está desactivado o si la llama el propio hilo.
++    void syncVu1Worker() const;
++    bool onVu1WorkerThread() const;
++    // GOW-Port: lo llama el hilo de VU1 al terminar cada envío (para despertar al planificador del EE, que puede
++    // estar esperando a la interrupción de un FINISH/SIGNAL que ese envío acaba de producir).
++    static void setVu1WorkerNotify(std::function<void()> notify);
+     std::vector<uint32_t> consumeCompletedDmacCauses();
+ 
+     int pollDmaRegisters();
+@@ -399,6 +407,9 @@ public:
+ 
+     GifPacketCallback m_gifPacketCallback;
+     GifArbiter *m_gifArbiter = nullptr;
++    bool vu1WorkerEnabled();
++    void enqueueVu1Work(std::vector<uint8_t> &&data);
++    void vu1WorkerLoop();
+     Vu1MscalCallback m_vu1MscalCallback;
+     Vu1MscntCallback m_vu1MscntCallback;
+ 
+diff --git a/ps2xRuntime/src/lib/ps2_memory.cpp b/ps2xRuntime/src/lib/ps2_memory.cpp
+index 0d4ace8..16186cc 100644
+--- a/ps2xRuntime/src/lib/ps2_memory.cpp
++++ b/ps2xRuntime/src/lib/ps2_memory.cpp
+@@ -3,6 +3,9 @@
+ #include "runtime/gs/gs_frontend.h"
+ #include "ps2_log.h"
+ #include <atomic>
++#include <condition_variable>
++#include <deque>
++#include <thread>
+ #include <cstdio>
+ #include <cstring>
+ #include <limits>
+@@ -245,8 +248,117 @@ PS2Memory::PS2Memory()
+     ps2SetScratchpadHostPtr(nullptr);
+ }
+ 
++// GOW-Port: VIF1/VU1 en un hilo propio, como el MTVU de PCSX2 (PS2X_VU1_HILO=1, desactivado por defecto).
++// El EE sigue tras lanzar el DMA de VIF1 (que ya se daba por terminado al instante); este hilo procesa los
++// datos en el mismo orden: desempaquetado, microprogramas de VU1 y sus paquetes GIF (PATH1/PATH2). El EE
++// espera a que termine (syncVu1Worker) antes de tocar algo de VIF1, VU1 o del GIF.
++namespace
++{
++// Uno solo: el del PS2Memory que lo activó (el juego tiene una única memoria).
++struct Vu1Worker
++{
++    const PS2Memory *owner = nullptr;
++    std::thread thread;
++    std::thread::id id;
++    std::mutex mutex;
++    std::condition_variable workCv;
++    std::condition_variable idleCv;
++    std::deque<std::vector<uint8_t>> queue;
++    bool busy = false;
++    bool stop = false;
++};
++std::unique_ptr<Vu1Worker> g_vu1Worker;
++std::function<void()> g_vu1WorkerNotify;
++}
++
++void PS2Memory::setVu1WorkerNotify(std::function<void()> notify)
++{
++    g_vu1WorkerNotify = std::move(notify);
++}
++
++bool PS2Memory::vu1WorkerEnabled()
++{
++    static const bool enabled = []
++    {
++        const char *value = std::getenv("PS2X_VU1_HILO");
++        return value && value[0] == '1';
++    }();
++    if (!enabled)
++        return false;
++    if (!g_vu1Worker)
++    {
++        g_vu1Worker = std::make_unique<Vu1Worker>();
++        g_vu1Worker->thread = std::thread([this] { vu1WorkerLoop(); });
++        g_vu1Worker->id = g_vu1Worker->thread.get_id();
++        std::fprintf(stderr, "[vu1-hilo] VIF1/VU1 en un hilo propio\n");
++    }
++    return true;
++}
++
++void PS2Memory::enqueueVu1Work(std::vector<uint8_t> &&data)
++{
++    Vu1Worker &worker = *g_vu1Worker;
++    {
++        std::lock_guard<std::mutex> lock(worker.mutex);
++        worker.queue.push_back(std::move(data));
++    }
++    worker.workCv.notify_one();
++}
++
++void PS2Memory::vu1WorkerLoop()
++{
++    Vu1Worker &worker = *g_vu1Worker;
++    for (;;)
++    {
++        std::vector<uint8_t> data;
++        {
++            std::unique_lock<std::mutex> lock(worker.mutex);
++            worker.workCv.wait(lock, [&] { return worker.stop || !worker.queue.empty(); });
++            if (worker.queue.empty())
++                return; // stop
++            data = std::move(worker.queue.front());
++            worker.queue.pop_front();
++            worker.busy = true;
++        }
++        processVIF1Data(data.data(), static_cast<uint32_t>(data.size()));
++        if (m_gifArbiter)
++            m_gifArbiter->drain();
++        {
++            std::lock_guard<std::mutex> lock(worker.mutex);
++            worker.busy = false;
++        }
++        worker.idleCv.notify_all();
++        if (g_vu1WorkerNotify)
++            g_vu1WorkerNotify();
++    }
++}
++
++bool PS2Memory::onVu1WorkerThread() const
++{
++    return g_vu1Worker && g_vu1Worker->owner == this && std::this_thread::get_id() == g_vu1Worker->id;
++}
++
++void PS2Memory::syncVu1Worker() const
++{
++    Vu1Worker *worker = (g_vu1Worker && g_vu1Worker->owner == this ? g_vu1Worker.get() : nullptr);
++    if (!worker || std::this_thread::get_id() == worker->id)
++        return;
++    std::unique_lock<std::mutex> lock(worker->mutex);
++    worker->idleCv.wait(lock, [&] { return worker->queue.empty() && !worker->busy; });
++}
++
+ PS2Memory::~PS2Memory()
+ {
++    if (g_vu1Worker && g_vu1Worker->owner == this)
++    {
++        {
++            std::lock_guard<std::mutex> lock(g_vu1Worker->mutex);
++            g_vu1Worker->stop = true;
++        }
++        g_vu1Worker->workCv.notify_all();
++        g_vu1Worker->thread.join();
++        g_vu1Worker.reset();
++    }
+     if (m_rdram)
+     {
+         delete[] m_rdram;
+@@ -595,6 +707,8 @@ uint8_t *PS2Memory::mapVuMemory(uint32_t physAddr, uint32_t size, uint32_t &offs
+ 
+ const uint8_t *PS2Memory::mapVuMemory(uint32_t physAddr, uint32_t size, uint32_t &offset, uint32_t &limit) const
+ {
++    if (physAddr >= 0x11000000u && physAddr < 0x11010000u)
++        syncVu1Worker(); // GOW-Port: VU1 puede estar trabajando en su hilo
+     auto mapRange = [&](uint32_t base, uint32_t rangeSize, const uint8_t *ptr) -> const uint8_t *
+     {
+         if (!ptr || physAddr < base)
+@@ -1140,6 +1254,7 @@ void PS2Memory::write128(uint32_t address, __m128i value)
+     }
+     if (!scratch && physAddr == 0x10005000u) // VIF1_FIFO
+     {
++        syncVu1Worker(); // GOW-Port: el orden de los datos de VIF1
+         alignas(16) uint8_t fifoData[16];
+         _mm_storeu_si128(reinterpret_cast<__m128i *>(fifoData), value);
+         processVIF1Data(fifoData, sizeof(fifoData));
+@@ -1185,6 +1300,8 @@ void PS2Memory::write128(uint32_t address, __m128i value)
+ 
+ bool PS2Memory::writeIORegister(uint32_t address, uint32_t value)
+ {
++    if (address >= 0x10003C00u && address < 0x10004000u)
++        syncVu1Worker(); // GOW-Port: VIF1
+     size_t timerIndex = 0u;
+     uint32_t timerOffset = 0u;
+     if (decodeEeTimerRegister(address, timerIndex, timerOffset))
+@@ -1872,6 +1989,8 @@ void PS2Memory::completeDmacChannel(uint32_t channelBase, uint32_t cause)
+ 
+ void PS2Memory::processPendingTransfers()
+ {
++    if (!m_pendingGifTransfers.empty())
++        syncVu1Worker(); // GOW-Port: PATH3 detrás de PATH1/PATH2 del hilo de VU1
+     const bool hadGif = !m_pendingGifTransfers.empty();
+     uint32_t observedGifQwc = 0u;
+     for (const auto &transfer : m_pendingGifTransfers)
+@@ -2014,8 +2133,47 @@ void PS2Memory::processPendingTransfers()
+     m_pendingVif0Transfers.clear();
+ 
+     const bool hadVif1 = !m_pendingVif1Transfers.empty();
++    // GOW-Port: con el hilo de VU1, se le pasan los datos (copiados ahora: el EE puede reescribir la RAM).
++    const bool vu1Thread = hadVif1 && vu1WorkerEnabled();
+     for (auto &p : m_pendingVif1Transfers)
+     {
++        if (vu1Thread)
++        {
++            std::vector<uint8_t> data;
++            if (!p.chainData.empty())
++                data = std::move(p.chainData);
++            else if (p.qwc > 0)
++            {
++                uint32_t srcPhys = 0;
++                const uint64_t bytes64 = static_cast<uint64_t>(p.qwc) * 16ull;
++                uint32_t bytesLeft = (bytes64 > 0xFFFFFFFFull) ? 0xFFFFFFFFu : static_cast<uint32_t>(bytes64);
++                try
++                {
++                    srcPhys = translateAddress(p.srcAddr);
++                }
++                catch (const std::exception &)
++                {
++                    continue;
++                }
++                const uint8_t *base = p.fromScratchpad ? m_scratchpad : m_rdram;
++                const uint32_t limit = p.fromScratchpad ? PS2_SCRATCHPAD_SIZE : PS2_RAM_SIZE;
++                data.reserve(bytesLeft);
++                while (bytesLeft > 0)
++                {
++                    if (srcPhys >= limit)
++                        srcPhys = 0;
++                    const uint32_t chunk = std::min(bytesLeft, limit - srcPhys);
++                    if (chunk == 0)
++                        break;
++                    data.insert(data.end(), base + srcPhys, base + srcPhys + chunk);
++                    bytesLeft -= chunk;
++                    srcPhys += chunk;
++                }
++            }
++            if (!data.empty())
++                enqueueVu1Work(std::move(data));
++            continue;
++        }
+         if (!p.chainData.empty())
+         {
+             processVIF1Data(p.chainData.data(), static_cast<uint32_t>(p.chainData.size()));
+@@ -2072,7 +2230,7 @@ void PS2Memory::processPendingTransfers()
+     recycleChainBuffers(m_pendingVif1Transfers);
+     m_pendingVif1Transfers.clear();
+ 
+-    if (m_gifArbiter)
++    if (m_gifArbiter && !g_vu1Worker) // GOW-Port: con el hilo de VU1, lo vacía ese hilo tras cada envío
+         m_gifArbiter->drain();
+ 
+     static constexpr uint32_t GIF_CHANNEL = 0x1000A000;
+@@ -2160,6 +2318,7 @@ void PS2Memory::submitGifPacket(GifPathId pathId, const uint8_t *data, uint32_t
+ {
+     if (!data || sizeBytes < 16)
+         return;
++    syncVu1Worker(); // GOW-Port: desde el EE, después de lo que tenga pendiente el hilo de VU1
+ 
+     if (pathId == GifPathId::Path3)
+     {
+@@ -2216,6 +2375,7 @@ void PS2Memory::processGIFPacket(const uint8_t *data, uint32_t sizeBytes)
+ 
+ bool PS2Memory::tryProcessNativeGifImageUploadChain(GS &gs, uint32_t tadr, uint32_t chcr)
+ {
++    syncVu1Worker(); // GOW-Port: el GS y el árbitro los usa también el hilo de VU1
+     static constexpr uint32_t GIF_CHANNEL = 0x1000A000u;
+     static constexpr uint32_t D_STAT = 0x1000E010u;
+     static constexpr uint32_t D_CTRL = 0x1000E000u;
+@@ -2412,6 +2572,7 @@ bool PS2Memory::tryProcessNativeGifImageUploadChain(GS &gs, uint32_t tadr, uint3
+ 
+ bool PS2Memory::tryProcessNativeGifPackedChain(GS &gs, uint32_t tadr, uint32_t chcr)
+ {
++    syncVu1Worker(); // GOW-Port: el GS y el árbitro los usa también el hilo de VU1
+     static constexpr uint32_t GIF_CHANNEL = 0x1000A000u;
+     static constexpr uint32_t D_STAT = 0x1000E010u;
+     static constexpr uint32_t D_CTRL = 0x1000E000u;
+@@ -2497,6 +2658,8 @@ int PS2Memory::pollDmaRegisters()
+ 
+ uint32_t PS2Memory::readIORegister(uint32_t address)
+ {
++    if ((address >= 0x10003C00u && address < 0x10004000u) || (address >= 0x10009000u && address < 0x1000A000u))
++        syncVu1Worker(); // GOW-Port: VIF1 y su canal DMA
+     size_t timerIndex = 0u;
+     uint32_t timerOffset = 0u;
+     if (decodeEeTimerRegister(address, timerIndex, timerOffset))
+diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
+index 3534268..8b03259 100644
+--- a/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -504,6 +504,7 @@ PS2Runtime::~PS2Runtime()
+     try
+     {
+         requestStop();
++        m_memory.syncVu1Worker(); // GOW-Port: el hilo de VU1 usa el GS, que se destruye antes que la memoria
+ #if !defined(PLATFORM_VITA)
+         stopSpu2Audio(); // GOW-Port: antes de destruir el IOP que produce las muestras
+ #endif
+@@ -665,9 +666,18 @@ bool PS2Runtime::syncCoreSubsystems()
+     m_gifArbiter.setProcessPathPacketFn([this](GifPathId path, const uint8_t *data, uint32_t size)
+                                     { m_gs.processGIFPacket(data, size, path); });
+     m_memory.setGifArbiter(&m_gifArbiter);
++    // GOW-Port: con VIF1/VU1 en su hilo, despertar al EE cuando termina cada envío (Dmac no hace nada más).
++    PS2Memory::setVu1WorkerNotify([this]
++                                  {
++                                      if (m_eeScheduler)
++                                          m_eeScheduler->postEvent(EeEvent{EeEventType::Dmac});
++                                  });
+     m_memory.setVu1MscalCallback([this](uint32_t startPC, uint32_t top, uint32_t itop)
+                                  {
+-                                     R5900Context *cpuContext = m_eeScheduler ? m_eeScheduler->currentContext() : nullptr;
++                                     // GOW-Port: desde el hilo de VU1 no se consulta el planificador del EE.
++                                     R5900Context *cpuContext = m_eeScheduler && !m_memory.onVu1WorkerThread()
++                                                                    ? m_eeScheduler->currentContext()
++                                                                    : nullptr;
+                                      if (!cpuContext)
+                                      {
+                                          cpuContext = &m_cpuContext;
+@@ -686,7 +696,10 @@ bool PS2Runtime::syncCoreSubsystems()
+                                          (m_vu1.state().stoppedByT ? 0x0400u : 0u); });
+     m_memory.setVu1MscntCallback([this](uint32_t top, uint32_t itop)
+                                  {
+-                                     R5900Context *cpuContext = m_eeScheduler ? m_eeScheduler->currentContext() : nullptr;
++                                     // GOW-Port: desde el hilo de VU1 no se consulta el planificador del EE.
++                                     R5900Context *cpuContext = m_eeScheduler && !m_memory.onVu1WorkerThread()
++                                                                    ? m_eeScheduler->currentContext()
++                                                                    : nullptr;
+                                      if (!cpuContext)
+                                      {
+                                          cpuContext = &m_cpuContext;
