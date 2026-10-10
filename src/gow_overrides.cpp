@@ -720,10 +720,12 @@ namespace
             if(paletteDiag && pose.jointCount) {
                 const auto read=gow_model_probe::visitPalette(rdram,0x02000000u,pose.joints,pose.jointCount,
                     [&](uint32_t index,const gow_model_probe::Pose::Joint &joint) {
-                        std::fprintf(stderr,"[gow-model:palette-joint] sample=%u state=%u this=%x view=%x tick=%llu index=%u address=%x bits=",
-                            sample,state,model,view,(unsigned long long)pose.skeletonTick,index,joint.address);
-                        for(size_t k=0;k<joint.world.size();++k) std::fprintf(stderr,"%s%08x",k ? "," : "",joint.world[k]);
-                        std::fprintf(stderr,"\n");
+                        // Una sola escritura evita intercalar componentes con otros hilos.
+                        char bits[144]{};
+                        for(size_t k=0;k<joint.world.size();++k)
+                            std::snprintf(bits+k*9,sizeof(bits)-k*9,"%08x%s",joint.world[k],k+1<joint.world.size() ? "," : "");
+                        std::fprintf(stderr,"[gow-model:palette-joint] sample=%u state=%u this=%x view=%x tick=%llu index=%u address=%x bits=%s\n",
+                            sample,state,model,view,(unsigned long long)pose.skeletonTick,index,joint.address,bits);
                     });
                 std::fprintf(stderr,"[gow-model:palette] sample=%u state=%u this=%x view=%x tick=%llu requested=%u read=%u complete=%u\n",
                     sample,state,model,view,(unsigned long long)pose.skeletonTick,pose.jointCount,read.read,unsigned(read.complete));
