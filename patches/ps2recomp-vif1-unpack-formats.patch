@@ -1,0 +1,153 @@
+diff --git a/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp b/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
+index f04efb1..30d437b 100644
+--- a/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
++++ b/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
+@@ -563,55 +563,108 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
+             if (fastUnpack && m_vu1Data && totalBytes > 0 && pos + totalBytes <= sizeBytes)
+             {
+                 const uint8_t *srcBase = data + pos;
+-                const uint32_t limit = static_cast<uint32_t>(components);
+-                for (uint32_t writeIndex = 0; writeIndex < writeVectorCount; ++writeIndex)
++                // GOW-Port: un bucle por formato (el formato no cambia dentro del UNPACK); mismo resultado que el
++                // bucle general por componente de antes: V4 escribe XYZW, V3 conserva W de la memoria, V2 escribe
++                // XYXY, V1 repite X y V4-5 expande RGBA5551.
++                const auto unpackAll = [&](auto fill)
+                 {
+-                    const uint32_t destVec = (cl == wl) ? ((vuAddr + writeIndex) & 0x3FFu)
+-                                                        : ((vuAddr + (writeIndex / wl) * cl + writeIndex % wl) & 0x3FFu);
+-                    uint8_t *dst = m_vu1Data + destVec * 16u;
+-                    const uint8_t *srcVec = srcBase + writeIndex * bytesPerVector;
+-                    if (vl == 0u && limit == 4u)
++                    for (uint32_t writeIndex = 0; writeIndex < writeVectorCount; ++writeIndex)
+                     {
+-                        std::memcpy(dst, srcVec, 16u);
+-                        continue;
++                        const uint32_t destVec = (cl == wl) ? ((vuAddr + writeIndex) & 0x3FFu)
++                                                            : ((vuAddr + (writeIndex / wl) * cl + writeIndex % wl) & 0x3FFu);
++                        uint8_t *dst = m_vu1Data + destVec * 16u;
++                        fill(dst, srcBase + writeIndex * bytesPerVector);
+                     }
+-                    uint32_t out[4];
+-                    std::memcpy(out, dst, sizeof(out));
+-                    if (vl == 3u) // V4-5
++                };
++                const auto sext16 = [](const uint8_t *src) -> uint32_t
++                {
++                    int16_t v;
++                    std::memcpy(&v, src, 2u);
++                    return static_cast<uint32_t>(static_cast<int32_t>(v));
++                };
++                const auto zext16 = [](const uint8_t *src) -> uint32_t
++                {
++                    uint16_t v;
++                    std::memcpy(&v, src, 2u);
++                    return v;
++                };
++                const auto ext8 = [zeroExtend](uint8_t v) -> uint32_t
++                {
++                    return zeroExtend ? static_cast<uint32_t>(v) : static_cast<uint32_t>(static_cast<int32_t>(static_cast<int8_t>(v)));
++                };
++                const auto store4 = [](uint8_t *dst, uint32_t x, uint32_t y, uint32_t z, uint32_t w)
++                {
++                    const uint32_t out[4] = {x, y, z, w};
++                    std::memcpy(dst, out, sizeof(out));
++                };
++                const auto store3 = [](uint8_t *dst, uint32_t x, uint32_t y, uint32_t z)
++                {
++                    const uint32_t out[3] = {x, y, z};
++                    std::memcpy(dst, out, sizeof(out)); // W se conserva
++                };
++                const uint32_t limit = static_cast<uint32_t>(components);
++                if (vl == 3u) // V4-5
++                {
++                    unpackAll([&](uint8_t *dst, const uint8_t *src)
++                              {
++                                  uint16_t packed = 0;
++                                  std::memcpy(&packed, src, sizeof(packed));
++                                  store4(dst, (packed & 0x001Fu) << 3u, (packed & 0x03E0u) >> 2u,
++                                         (packed & 0x7C00u) >> 7u, (packed & 0x8000u) >> 8u); });
++                }
++                else if (vl == 0u) // 32 bits
++                {
++                    if (limit == 4u)
++                        unpackAll([](uint8_t *dst, const uint8_t *src) { std::memcpy(dst, src, 16u); });
++                    else if (limit == 3u)
++                        unpackAll([](uint8_t *dst, const uint8_t *src) { std::memcpy(dst, src, 12u); });
++                    else if (limit == 2u)
++                        unpackAll([](uint8_t *dst, const uint8_t *src)
++                                  {
++                                      std::memcpy(dst, src, 8u);
++                                      std::memcpy(dst + 8u, src, 8u); });
++                    else
++                        unpackAll([&](uint8_t *dst, const uint8_t *src)
++                                  {
++                                      uint32_t x;
++                                      std::memcpy(&x, src, 4u);
++                                      store4(dst, x, x, x, x); });
++                }
++                else if (vl == 1u) // 16 bits
++                {
++                    if (zeroExtend)
+                     {
+-                        uint16_t packed = 0;
+-                        std::memcpy(&packed, srcVec, sizeof(packed));
+-                        out[0] = (packed & 0x001Fu) << 3u;
+-                        out[1] = (packed & 0x03E0u) >> 2u;
+-                        out[2] = (packed & 0x7C00u) >> 7u;
+-                        out[3] = (packed & 0x8000u) >> 8u;
++                        if (limit == 4u)
++                            unpackAll([&](uint8_t *dst, const uint8_t *src) { store4(dst, zext16(src), zext16(src + 2), zext16(src + 4), zext16(src + 6)); });
++                        else if (limit == 3u)
++                            unpackAll([&](uint8_t *dst, const uint8_t *src) { store3(dst, zext16(src), zext16(src + 2), zext16(src + 4)); });
++                        else if (limit == 2u)
++                            unpackAll([&](uint8_t *dst, const uint8_t *src) { const uint32_t x = zext16(src), y = zext16(src + 2); store4(dst, x, y, x, y); });
++                        else
++                            unpackAll([&](uint8_t *dst, const uint8_t *src) { const uint32_t x = zext16(src); store4(dst, x, x, x, x); });
+                     }
+                     else
+                     {
+-                        for (uint32_t c = 0; c < limit; ++c)
+-                        {
+-                            if (vl == 0u)
+-                                std::memcpy(&out[c], srcVec + c * 4u, 4u);
+-                            else if (vl == 1u)
+-                            {
+-                                uint16_t raw = 0;
+-                                std::memcpy(&raw, srcVec + c * 2u, sizeof(raw));
+-                                out[c] = zeroExtend ? static_cast<uint32_t>(raw)
+-                                                    : static_cast<uint32_t>(static_cast<int32_t>(static_cast<int16_t>(raw)));
+-                            }
+-                            else
+-                                out[c] = zeroExtend ? static_cast<uint32_t>(srcVec[c])
+-                                                    : static_cast<uint32_t>(static_cast<int32_t>(static_cast<int8_t>(srcVec[c])));
+-                        }
+-                        if (limit == 1u)
+-                            out[1] = out[2] = out[3] = out[0];
++                        if (limit == 4u)
++                            unpackAll([&](uint8_t *dst, const uint8_t *src) { store4(dst, sext16(src), sext16(src + 2), sext16(src + 4), sext16(src + 6)); });
++                        else if (limit == 3u)
++                            unpackAll([&](uint8_t *dst, const uint8_t *src) { store3(dst, sext16(src), sext16(src + 2), sext16(src + 4)); });
+                         else if (limit == 2u)
+-                        {
+-                            out[2] = out[0];
+-                            out[3] = out[1];
+-                        }
++                            unpackAll([&](uint8_t *dst, const uint8_t *src) { const uint32_t x = sext16(src), y = sext16(src + 2); store4(dst, x, y, x, y); });
++                        else
++                            unpackAll([&](uint8_t *dst, const uint8_t *src) { const uint32_t x = sext16(src); store4(dst, x, x, x, x); });
+                     }
+-                    std::memcpy(dst, out, sizeof(out));
++                }
++                else // 8 bits
++                {
++                    if (limit == 4u)
++                        unpackAll([&](uint8_t *dst, const uint8_t *src) { store4(dst, ext8(src[0]), ext8(src[1]), ext8(src[2]), ext8(src[3])); });
++                    else if (limit == 3u)
++                        unpackAll([&](uint8_t *dst, const uint8_t *src) { store3(dst, ext8(src[0]), ext8(src[1]), ext8(src[2])); });
++                    else if (limit == 2u)
++                        unpackAll([&](uint8_t *dst, const uint8_t *src) { const uint32_t x = ext8(src[0]), y = ext8(src[1]); store4(dst, x, y, x, y); });
++                    else
++                        unpackAll([&](uint8_t *dst, const uint8_t *src) { const uint32_t x = ext8(src[0]); store4(dst, x, x, x, x); });
+                 }
+             }
+             else if (m_vu1Data && totalBytes > 0 && pos + totalBytes <= sizeBytes)

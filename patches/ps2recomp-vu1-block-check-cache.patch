@@ -1,0 +1,43 @@
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+index d8a43c9..c93d453 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+@@ -839,13 +839,27 @@ VU1_STEP_INLINE void VU1Interpreter::pushFmacFlags(uint32_t mac, uint32_t status
+     entry.readyCycle = m_cycle + kFmacLatency;
+ }
+ 
+-inline bool VU1Interpreter::blockPreconditions(StepContext &context, uint32_t pc, const uint32_t *words, size_t bytes) const
++VU1_STEP_INLINE bool VU1Interpreter::blockPreconditions(StepContext &context, uint32_t pc, const uint32_t *words, size_t bytes) const
+ {
+     if (m_state.branchPending || m_state.ebit || m_state.haltAfterDelaySlot || m_stopRequested)
+         return false;
+     if (m_cycle + 16384u >= context.budgetEnd || pc + bytes > context.codeSize)
+         return false;
+-    return std::memcmp(context.vuCode + pc, words, bytes) == 0;
++    // GOW-Port: la micromemoria no cambia mientras no cambie su generación (compiledProgramFor la apunta al
++    // empezar cada ejecución); se recuerda el resultado de comparar cada bloque en vez de repetir el memcmp.
++    struct Entry
++    {
++        const uint32_t *words;
++        uint64_t generation;
++        bool matches;
++    };
++    static Entry cache[2048];
++    Entry &entry = cache[(reinterpret_cast<uintptr_t>(words) >> 3) & 2047u];
++    if (entry.words == words && entry.generation == m_compiledGeneration)
++        return entry.matches;
++    const bool matches = std::memcmp(context.vuCode + pc, words, bytes) == 0;
++    entry = {words, m_compiledGeneration, matches};
++    return matches;
+ }
+ 
+ template <class T>
+@@ -1094,7 +1108,7 @@ struct VU1CompiledAccess
+     static VU1_STEP_INLINE bool step(VU1Interpreter &vu, C &c) { return vu.stepPairT<T, DeadFlags, Plain>(c); }
+     static bool interpret(VU1Interpreter &vu, C &c) { return vu.stepInterpreted(c); }
+     static uint32_t pc(const VU1Interpreter &vu) { return vu.m_state.pc; }
+-    static bool block(const VU1Interpreter &vu, C &c, uint32_t pc, const uint32_t *words, size_t bytes)
++    static VU1_STEP_INLINE bool block(const VU1Interpreter &vu, C &c, uint32_t pc, const uint32_t *words, size_t bytes)
+     {
+         return vu.blockPreconditions(c, pc, words, bytes);
+     }

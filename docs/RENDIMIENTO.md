@@ -728,16 +728,69 @@ hilo, uno detrás de otro. `ps2recomp-vu1-thread.patch` (`PS2X_VU1_HILO=1`, desa
   hilo propio salía más lento que sin él.
 - El EE espera a que el hilo termine antes de tocar algo suyo: la memoria de VU (`mapVuMemory`), los registros de
   VIF1 y su canal DMA, la FIFO de VIF1, el GIF desde el EE (PATH3 y sus rutas nativas) y al destruir el runtime
-  (el GS se destruye antes que la memoria). Un diagnóstico temporal en partida contó cero lecturas de VIF1, VU1 y
-  registros privados del GS por parte del EE, y ningún DMA del GIF.
+  (el GS se destruye antes que la memoria).
+- **Corrección:** la primera versión nunca asignaba el dueño del hilo, así que esas esperas no se hacían nunca (y un
+  diagnóstico que las contaba dio cero). En algunas partidas la VU1 acababa ejecutando basura
+  (`[VU1 reserved lower] pc=0xb0`, de 48 a 377 veces) y se saltaba trabajo, lo que daba ~20 fps falsos. Ahora el hilo
+  sabe de qué memoria es, se reconoce a sí mismo con una variable `thread_local` (su `id` se asigna después de
+  arrancarlo) y el aviso al EE es de cada memoria, no global.
 - Desde ese hilo, las retrollamadas de MSCAL/MSCNT no consultan el planificador del EE.
 
 En partida (FINISH asíncrono y presentación compartida, alternando con y sin la variable):
 
 | Escena | Sin hilo | Con hilo |
 |---|---:|---:|
-| Muelles de Atenas, partida de la tarjeta, Kratos quieto (160–230 s, 2 rondas) | 13,5 / 13,5 | 15,3 / 15,5 |
-| Primeros 40 s de partida de la prueba automática (2 rondas) | 16,7 / 16,8 | 18,3 / 22,8 |
+| Muelles de Atenas, partida de la tarjeta, Kratos quieto (160–230 s, 2 rondas), versión corregida | 13,3 / 13,3 | 14,9 / 15,0 |
 
-El tramo de 100–140 s de la prueba automática varía demasiado entre ejecuciones para compararlo. La suite
-(590/590) se pasa con la variable desactivada: sus pruebas esperan que VIF1 termine dentro de la llamada.
+Ninguna de las cuatro partidas tuvo errores de VU1. Las cifras anteriores (15,3–22,8 con hilo) eran de la versión
+sin esperas y no valen. El tramo de 100–140 s de la prueba automática varía demasiado entre ejecuciones para compararlo. La suite
+(590/590) se pasa con la variable desactivada; con ella activada todavía se cierra en una prueba de la FIFO de VIF1.
+
+## Paquetes GIF de VU1 en otro hilo (opcional, 10 de octubre)
+
+Con el hilo de VU1, el cuadro de los muelles queda clavado en 4 vsync (15 fps): el EE espera al vsync en un bucle del
+propio juego y el hilo de VU1 está ocupado ~75 % del tiempo (~50 ms por cuadro). Parte de ese tiempo es el frontal del
+GS (`processGIFPacket`, `vertexKick`, `buildDrawBatch`, la cola del backend), que procesa los paquetes de PATH1/PATH2.
+`ps2recomp-gs-front-thread.patch` (`PS2X_GS_FRENTE=1`, solo con `PS2X_VU1_HILO=1`) lo pasa a un tercer hilo:
+
+- Los paquetes que el árbitro GIF entrega desde el hilo de VU1 se copian seguidos en un lote ([ruta][tamaño][datos])
+  que se publica al llegar a 64 KB o al terminar el envío; otro hilo los procesa en orden y devuelve el búfer. Los de
+  PATH3 (desde el EE) siguen como antes, después de esperar a los dos hilos.
+- `syncVu1Worker()` espera también a esa cola, así que todo lo que ya esperaba al hilo de VU1 espera también al GS.
+- Al vaciarse la cola se despierta al EE (los FINISH/SIGNAL salen ahora de ese hilo).
+
+Muelles, 160–230 s, con hilo de VU1 (cuatro partidas por fila, sin errores de VU1):
+
+| Envío al hilo del GS | Cuadros/s |
+|---|---:|
+| Sin `PS2X_GS_FRENTE` | 15,0–15,1 |
+| Un vector y un aviso por paquete | 15,7–15,8 |
+| Lote publicado solo al terminar cada envío | 14,5–14,6 |
+| Lotes de 1 KB | 15,8 |
+| Lotes de 4 KB | 16,2–16,3 |
+| Lotes de 16 KB | 16,6 |
+| **Lotes de 64 KB (elegido)** | **16,7–16,9** |
+| Lotes de 256 KB | 16,8–17,0 |
+
+Por paquete, el hilo de VU1 gastaba ~7 % en reservar memoria y avisar al otro hilo. Las capturas
+de la prueba de arranque se ven correctas con y sin la variable (difieren por el momento de la captura).
+
+## UNPACK de VIF1 con un bucle por formato (10 de octubre)
+
+El camino rápido de UNPACK (sin máscara, sin sumar la fila, CL >= WL) leía el qword de destino y decidía el formato
+componente a componente en cada vector. `ps2recomp-vif1-unpack-formats.patch` elige el formato una vez por UNPACK y
+usa un bucle propio para cada uno (V4/V3/V2/V1 de 32, 16 y 8 bits y V4-5), con el mismo resultado: V3 conserva W,
+V2 escribe XYXY y V1 repite X. Suite 590/590. Muelles con hilo de VU1 y del GS, solo cuadros, alternando
+ejecutables: 17,0 / 16,7 → 17,3 / 17,2 cuadros/s, sin errores de VU1.
+
+## Comprobación de bloques de VU1 compilada sin memcmp repetido (10 de octubre)
+
+Cada entrada a un bloque compilado comparaba su microcódigo (hasta decenas de bytes) con la micromemoria, y en un
+mismo PC se prueban varias variantes. La micromemoria solo cambia cuando cambia su generación, que
+`compiledProgramFor` apunta al empezar cada ejecución. `ps2recomp-vu1-block-check-cache.patch` recuerda, por bloque
+(caché de 2048 entradas indexada por la dirección de sus palabras), el resultado de la comparación y la generación en
+que se hizo. Huellas de VU1 idénticas (compilada e intérprete, dos grabaciones), suite 590/590, capturas correctas.
+Muelles con hilo de VU1 y del GS, solo cuadros, alternando ejecutables: 17,4 / 17,3 → 18,4 / 18,3 cuadros/s, sin
+errores de VU1.
+La comprobación se fuerza en línea en cada bloque (`VU1_STEP_INLINE`), porque MSVC la dejaba como llamada (~4 % del
+hilo de VU1): 18,4 / 18,2 → 18,8 / 18,8 cuadros/s.
