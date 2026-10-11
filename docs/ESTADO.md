@@ -3415,3 +3415,33 @@ incluida compilación del nuevo formato `preferred` y suite de los 96 parches.
 ([CI](https://github.com/KIexster/god-of-war-recomp/actions/runs/38114877209)).
 No sustituye el control Windows pendiente. Este ajuste solo cambia Python
 y documentación; no se recompila ni ejecuta el juego en el PC reservado.
+
+## Directorio privado del lanzador y seguimiento de fuente (2026-10-11)
+
+El control de transición ahora resuelve la salida y permite, dentro de su
+checkout, solo `logs/`; también acepta carpetas externas. Mantiene copias
+de tarjetas y resultados en la zona privada, como la herramienta de referencia
+PCSX2. Trece pruebas Windows pasan en 0,11 s. La nueva falla contra `2930666`
+con `mkdir` interceptado; no se crea la salida rechazada en ese control.
+No cambia el runtime ni lanza el juego.
+
+CI de `2930666cddd7d907a6576b2410ebed1a8695a61c` correcto en ambos controles,
+antes de este ajuste del lanzador. Comprobar el CI del HEAD final y conservar
+pendiente la compilación Windows de la cadena actual.
+
+La revisión de unidades produjo una corrección funcional separada:
+[PR #58](https://github.com/KIexster/god-of-war-recomp/pull/58).
+`FRAME/DISPFB.FBP` usa páginas de 8.192 bytes; `TEX0.TBP0` bloques de 256.
+Se normaliza la comparación en la identificación de copias completas del
+frontend y en la selección CPU/GPU de fuente sin TBW. No cambia FINISH ni fences.
+Control negativo `5f3d7de`: compila, 591/593, fallan solo las dos nuevas.
+Arreglo `e52527d1bf63b513facac380330b94bc2e998937`:
+593/593, CI remoto completo correcto
+([38115778696](https://github.com/KIexster/god-of-war-recomp/actions/runs/38115778696)).
+No se añade ninguna excepción de pruebas.
+
+El arreglo no está integrado en esta rama. Cada PR tiene 96 parches propios;
+la aplicación conjunta privada de los 97 pasa, sin compilación conjunta.
+Windows GPU y transición real pendientes. Los registros antiguos no indican
+`preferred` y no permiten atribuir el fallo visual a estas comparaciones.
+Ambas PR siguen en borrador; los problemas de alternancia y encuadre continúan abiertos.

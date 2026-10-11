@@ -492,6 +492,11 @@ valor `0`. La matriz FINISH síncrono/asíncrono y presentación RAM/compartida,
 las copias privadas de tarjetas y los límites de interpretación están en
 [TRANSICION_COMPARTIDA.md](TRANSICION_COMPARTIDA.md).
 
+El lanzador resuelve `--output-root` y admite, dentro de este checkout,
+únicamente `logs/`; también admite directorios externos. Rechaza una salida
+rastreable antes de crear la pasada. Trece pruebas Windows correctas; la
+regresión contra la versión anterior intercepta la creación del directorio.
+
 El inspector `tools/render/inspect_shared_frames.py` detecta retrocesos,
 metadatos contradictorios para una secuencia, retención y retornos A–B–A.
 Un retorno de hash es una pista; no prueba corrupción, igualdad de píxeles

@@ -219,6 +219,10 @@ crea la misma tarjeta procedural sin formatear o copia la indicada con
 Rechaza carpetas existentes y la salida dentro de los módulos de origen para
 evitar una copia recursiva. No copia ni publica el ejecutable o los datos a Git.
 
+La salida debe estar fuera de este checkout o dentro de `logs/`. El lanzador
+resuelve la ruta y rechaza otras carpetas del repositorio antes de escribir
+la pasada, conservando copias de tarjetas y resultados bajo la zona privada.
+
 El manifiesto JSON requiere `commit` completo, `exe_sha256` y `elf_sha256`.
 Registrar estos datos **después de comprobar que la compilación terminó**,
 usando el commit de esa compilación, no otro HEAD posterior. Se recomienda
@@ -340,3 +344,24 @@ El CI de `715e216fa72cec85e4112eb20b3fdcbba090a910` pasa ambos controles
 Compila la ampliación de `preferred` y valida la cadena integrada sin el juego.
 La compilación Windows y la comprobación funcional del código actual siguen
 pendientes. Este ajuste del resumen Python no cambia el parche del runtime.
+
+## Directorio privado del control (2026-10-11)
+
+Se aplica al lanzador el mismo criterio de directorio que a la referencia
+PCSX2: fuera del checkout o dentro de `logs/`. Trece pruebas Windows pasan;
+la nueva comprueba rechazo previo a cualquier escritura y aceptación de
+`logs/` o un directorio externo. Falla con el lanzador de `2930666`;
+el control negativo intercepta `mkdir` para impedir crear esa salida.
+Solo se ejecuta un hijo Python procedural, sin juego ni compilación local.
+
+El CI de `2930666cddd7d907a6576b2410ebed1a8695a61c` había pasado ambos
+controles antes de este ajuste. Comprobar el CI del HEAD final. La herramienta
+mantiene manifiesto explícito y tarjetas privadas; no altera el runtime.
+
+La investigación de fuente produce la
+[PR #58](https://github.com/KIexster/god-of-war-recomp/pull/58), independiente:
+normaliza tres comparaciones de páginas FRAME/DISPFB frente a bloques TEX0.
+Su control negativo `5f3d7de` compila y falla solo las dos regresiones nuevas;
+el arreglo `e52527d` pasa 593/593 y CI completo. Ambos ensayos son remotos,
+sin el juego. El control GPU Windows y la escena real siguen pendientes;
+no demuestra la causa de la alternancia o cámara. Las dos PR permanecen en borrador.

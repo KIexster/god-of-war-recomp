@@ -181,6 +181,22 @@ class TransitionControlTest(unittest.TestCase):
         self.assertEqual(reason, 'limit')
         self.assertEqual((child.terminated, child.killed), (1, 1))
 
+    def test_checkout_output_is_rejected_before_writes_and_logs_remains_private(self):
+        repo = path.parents[2]
+        with tempfile.TemporaryDirectory(prefix='gow_transition_test_') as name:
+            args = self.fixture(Path(name))
+            args.output_root = repo/'procedural_transition_output_forbidden_guard'
+            self.assertFalse(args.output_root.exists())
+            with patch.object(control, 'EXPECTED_ELF_SHA256', control.digest(args.elf)), \
+                    patch.object(Path, 'mkdir', side_effect=AssertionError('No crear la salida rechazada')):
+                with self.assertRaises(ValueError):
+                    control.prepare_case(args)
+            self.assertFalse(args.output_root.exists())
+        self.assertEqual(control.private_output(repo/'logs'/'procedural_transition_allowed'),
+                         repo/'logs'/'procedural_transition_allowed')
+        with tempfile.TemporaryDirectory(prefix='gow_transition_test_') as name:
+            self.assertEqual(control.private_output(Path(name)), Path(name).resolve())
+
     def test_stop_file_and_keyboard_interrupt_are_recorded_as_deliberate(self):
         with tempfile.TemporaryDirectory(prefix='gow_transition_test_') as name:
             stop = Path(name)/'STOP'

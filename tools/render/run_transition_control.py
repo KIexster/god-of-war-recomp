@@ -54,6 +54,14 @@ def manifest_digest(build, field):
     return value.lower()
 
 
+def private_output(directory):
+    directory = Path(directory).resolve()
+    repo = Path(__file__).resolve().parents[2]
+    if directory.is_relative_to(repo) and not directory.is_relative_to(repo/'logs'):
+        raise ValueError('Dentro del repositorio, usa logs/ para conservar privado el control')
+    return directory
+
+
 class WindowsApi:
     """Solo lectura; no activa ventanas, manda entradas ni captura imágenes."""
     def __init__(self):
@@ -188,7 +196,7 @@ def prepare_case(args):
     card_source = Path(args.initial_card).resolve(strict=True) if args.initial_card else None
     if card_source is not None and not card_source.is_file():
         raise ValueError('La tarjeta inicial debe ser un archivo')
-    root = Path(args.output_root).resolve()
+    root = private_output(args.output_root)
     folder = root / (args.label or args.case)
     if folder.is_relative_to(modules):
         raise ValueError('La salida no puede estar dentro del IOP_MOD de origen')
