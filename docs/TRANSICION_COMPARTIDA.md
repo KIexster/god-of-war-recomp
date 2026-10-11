@@ -857,3 +857,163 @@ La siguiente comprobación requiere unos pocos píxeles de la textura realmente
 adquirida, con metadatos de esa reserva, en una captura explícita separada:
 la VRAM latched no basta y añadirla no debe cambiar silenciosamente el coste
 del diagnóstico de #51. No convertir estas pasadas en mediciones de FPS.
+
+## Captura explícita de la reserva adquirida: preparación de 101 (2026-10-11)
+
+#51 se fusionó en `05421940617e5ce69889600d9eb727b3c36c0b3b` después de revisar
+el cambio, cerrar las validaciones anteriores y comprobar [CI del HEAD final
+`10edb76` verde](https://github.com/KIexster/god-of-war-recomp/actions/runs/38161351218).
+Quedan abiertos encuadre, causa visual de los retornos y estabilidad prolongada.
+
+Nuevo tema separado `ps2recomp-gs-host-acquired-capture.patch`, aplicado tras
+los 100 anteriores. `GSHostPresentation` puede guardar unas pocas texturas
+de la misma reserva que acaba de adquirir, con PNG RGBA y JSON de sus metadatos.
+La opción está desactivada por defecto y es independiente de PRESENT_DIAG.
+No consulta VRAM, vuelve a adquirir ni introduce glFinish global o cambios
+en FINISH/fences/composición. **Activarla sí descarga píxeles y escribe archivos**:
+usar otra pasada diagnóstica, nunca un benchmark o prueba de ausencia de cuelgues.
+
+Variables leídas al construir el host: `PS2X_GS_ACQUIRED_CAPTURE_DIR` apunta
+a una carpeta privada existente, `PS2X_GS_ACQUIRED_CAPTURE_FROM_TICK` fija
+el primer hostTick inclusivo (ausente/inválido: 0), y
+`PS2X_GS_ACQUIRED_CAPTURE_COUNT` limita intentos (por defecto 6, rango 1..16;
+inválido desactiva). No captura secuencias retenidas, retrocesos, texturas vacías
+o PMODE apagado; los fallos también consumen el cupo. Rechaza archivos existentes
+y conserva la ruta Unicode en Windows. Un JSON completo acompaña a cada PNG
+correcto; fallos se registran como `[gs-present:capture] status=failed`.
+
+El lanzador añade `--capture-acquired 6` solo para casos compartidos, crea
+`acquired/` dentro de la carpeta nueva de la pasada y utiliza `--diag-from-tick`
+también para esa ventana. Con valor 0 no instala las variables de captura,
+incluidas las heredadas. Conservar manifiesto/hash/guion/tarjetas y cerrar
+una pasada antes de iniciar otra. Los PNG y JSON del juego permanecen privados.
+
+Regresión procedural Windows/WGL pendiente de ejecución: publicar A,
+adquirirla, modificar VRAM a B y exportar la reserva A. Comparar todos los
+píxeles del PNG con A y luego publicar/exportar B; verificar metadatos, ventana,
+retención, cupo y rechazo de sobrescritura. No aceptar fallback CPU ni un éxito
+vacío en Linux. Sintaxis C++20 correcta, aplicación sobre base independiente
+de 100 correcta, 17 pruebas del lanzador correctas, configuración 0 errores/
+4 avisos existentes y sintaxis PowerShell 0 errores. Pendientes compilación
+completa de 101, suite normal/GPU, negativo significativo/restauración, CI
+y control del juego antes de atribuirle capturas o conclusiones visuales.
+
+## Validación nativa de la captura adquirida de 101 (2026-10-11)
+
+Compilación Windows completa de `394779a6dca0fd8dcaf7415e06ad048fdd9ad7f8`,
+101 parches, salida 0 en 916,19 s; Release optimizado con símbolos privados,
+VU1 intérprete y tres procesos de compilación. Runner de 54.552.576 bytes,
+SHA-256 `63e6a576307675f34b70e4671a5b34de30219627a2ca2a3a362c182effd27040`.
+Flags `/O2 /Ob2 /DNDEBUG /Zi` y `/INCREMENTAL:NO /DEBUG /OPT:REF /OPT:ICF`;
+runner/símbolos congelados antes de incluir los controles privados.
+[CI del mismo código correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38161970774).
+[CI del merge de #51 en main también correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38161755251).
+
+Windows: 600/600 normal en 12,41 s, 636/636 GPU real en 30,98 s, sin fallos
+conocidos. Los cuatro contratos FINISH/lectura/textura adquirida pasan en
+procesos nuevos `default`/`async`; el segundo compara 16 texturas por modo,
+todas las filas y reutilización de ranuras. La nueva regresión verifica PNG
+RGBA completo de A después de cambiar VRAM a B, metadatos de esa reserva y
+posterior PNG de B, además de ventana/cupo/retenciones/no sobrescritura.
+La diferencia CPU/GPU en modo cuadro descrita en 100 permanece abierta.
+
+Negativo privado compatible: sustituir únicamente LoadImageFromTexture por
+una imagen sintética magenta del mismo tamaño en el exportador. Recompilar
+solo las pruebas; runner sin cambios y ninguna partida. Compila y ejecuta
+636 casos: **635 pasan y falla exactamente «Captura de reserva adquirida
+tras cambiar VRAM»**, por píxeles distintos. Restaurar el archivo positivo
+completo y recompilar: GPU vuelve a 636/636 en 31,84 s. Fuente restaurada
+idéntica al respaldo; runner actual y copia congelada conservan el mismo hash.
+
+Se inicia después una pasada aislada del juego asíncrona/compartida sin hilos,
+ventana desde 1500 y seis capturas; todavía no hay resultado funcional ni
+conclusión visual de 101. Esa ventana difiere de la anterior desde 0 para
+reservar las capturas para partida. Después comparar otra ventana con VU1
+en hilo desde 6000, sin solapar partidas/compilación/emulador. PNG/JSON y
+análisis de píxeles permanecen privados; no usar los tiempos como FPS.
+
+## Primeras capturas de 101: procedencia y limitación de ventana (2026-10-11)
+
+Runner `394779a`/SHA-256
+`63e6a576307675f34b70e4671a5b34de30219627a2ca2a3a362c182effd27040`,
+asíncrona/compartida sin hilos, seis capturas desde hostTick=1500. Completa
+360,07 s por límite (proceso 1/lanzador 0), primer informe 11 a 131,78 s,
+último 11; tarjeta intacta, ninguna firma buscada de error ni sondas antiguas.
+**El monitor registra minimización entre 44,22 y 156,01 s**, con primer plano
+antes/después; no se conoce su causa y no hubo entrada automatizada de Computer
+Use. No presentar la pasada como condición de ventana constante. Las capturas
+son posteriores a la restauración, bajo último informe 11; se repetirá el caso.
+
+643 adquisiciones desde 1500, todas SMODE2=2227921 (`&3=1`), 512×448/fuente
+CRTC/hash válido, sin regresiones/inconsistencias/A–B–A/cambios de dimensión,
+distancia de ticks 0. Se guardan seis PNG RGBA y seis JSON de secuencias
+486..491/ticks 1500..1505; cada campo coincide con su adquisición en el log.
+Los seis contenidos RGBA son distintos entre sí; los 224 pares adyacentes
+de filas son idénticos dentro de cada imagen, conforme al compositor de campos.
+La revisión de las primeras dos muestra Kratos/cubierta/lluvia, sin alternar
+menú y partida en esas muestras. No demuestra ausencia de contenido antiguo
+en otras ventanas, escena correcta, equivalencia PCSX2 o encuadre resuelto.
+
+## VU1 de 101: A–B–A confirmado en píxeles adquiridos (2026-10-11)
+
+Mismo runner, asíncrona/compartida, VU1 en hilo y frente GS 0, seis capturas
+desde hostTick=6000. Completa 360,05 s por límite, primer informe 11 a 80,83 s
+y último 11 a 358,22 s; tarjeta intacta, sin firmas buscadas de error ni sondas
+antiguas. Ventana visible/no minimizada/sin primer plano según el monitor.
+4.096 adquisiciones bajo último informe 11, todas SMODE2=2227921 (`&3=1`),
+512×448/fuente CRTC/hash válido; sin regresiones/inconsistencias/cambios de
+dimensión, distancia de ticks 0..2. Los 3.204 A–B–A alternan paridad y tienen
+modo de campos en las tres muestras. El cupo no cubre todo el intervalo.
+
+Seis PNG/JSON completos de secuencias 5806..5811, ticks de textura
+5999, 6000, 6001, 6003, 6005, 6006. Metadatos correlacionados exactamente
+contra los registros de esas adquisiciones; 224/224 pares de filas duplicados
+en cada PNG. Las texturas 5806 y 5808, de paridad impar, son **idénticas en
+todos sus bytes RGBA**, y 5807 (par) es distinta: A–B–A real en esta terna,
+no solo coincidencia del hash GPU. También 5809 y 5810 son idénticas entre sí,
+ambas impares. Las demás parejas son distintas; no extrapolar esa igualdad
+a otras texturas o al renderer CPU del juego.
+
+La revisión visual de 5806/5807 muestra la misma escena/cámara de Kratos en
+cubierta, con campos distintos. Esto sostiene la compatibilidad del retorno
+con composición por campos, **sin demostrar la frescura de VRAM ni la causa
+del síntoma original**. No se observa un menú alternante en estas imágenes;
+no se descarta fuera de las seis capturas. El encuadre no se compara con una
+referencia alineada. Las ventanas 1500 y 6000 de las dos pasadas tampoco
+representan automáticamente la misma pose/instante: no comparar sus cámaras
+como evidencia de diferencia causada por los hilos.
+
+[CI del resultado nativo `ce23d73` correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38163566080).
+Se inicia otra pasada sin hilos para repetir la condición de ventana. #60
+permanece borrador durante ese control y revisión del CI del HEAD final.
+Todos los píxeles, JSON y análisis permanecen privados; no se modifican las
+matemáticas de cámara ni se publican como benchmark o solución del fallo.
+
+## Repetición sin hilos y cierre del control de captura (2026-10-11)
+
+Mismo runner `394779a` y hash anterior, asíncrona/compartida, VU1/frente GS
+desactivados, seis capturas desde 1500. Completa 360,04 s por límite (proceso
+1/lanzador 0), primer informe 11 a 116,48 s y último 11. Tarjeta intacta,
+ninguna firma buscada de error ni sondas antiguas. El monitor no registra
+minimización; pasa a primer plano al final. Esto no borra la minimización
+de la pasada anterior ni identifica su causa.
+
+870 adquisiciones bajo último informe 11, todas SMODE2=2227921 (`&3=1`),
+512×448/fuente CRTC/hash válido, distancia de ticks 0. Cero regresiones,
+inconsistencias, A–B–A o cambios de dimensión en esa ventana. Seis PNG RGBA
+y seis JSON de secuencias 1462..1467/ticks 1500..1505, todos sus metadatos
+coinciden con el registro adquirido. Los seis contenidos son distintos entre
+sí y cada imagen duplica 224/224 pares adyacentes de filas. Las primeras dos
+imágenes revisadas muestran Kratos en cubierta y la misma vista dentro del par.
+No compararlas con poses/cámaras de otra pasada por compartir el tick 1500:
+el guion usa tiempo anfitrión y ese tick no alinea el estado del juego.
+
+Las tres pasadas de 101, compilación completa, suite normal/GPU, negativo
+restaurado y contratos cierran la validación funcional de esta **captura
+opcional**. Revisión manual: la llamada usa el Frame de Acquire mientras
+su reserva sigue vigente; sin opción no hay readback ni E/S de captura.
+[CI de `9332c1b` correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38164770068).
+Antes de fusionar #60, comprobar también el CI del HEAD que incorpore este
+resultado. Encuadre, frescura del contenido, discrepancia en modo cuadro y
+estabilidad prolongada siguen abiertos; no se cambian matemáticas ni se
+declara solucionado el síntoma original. PNG/JSON/análisis quedan privados.

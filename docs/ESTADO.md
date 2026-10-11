@@ -4199,3 +4199,100 @@ se convierten en una afirmación de fidelidad: #51 solo diagnostica; no corrige
 el encuadre ni demuestra ausencia de contenido antiguo. Detalles en
 TRANSICION_COMPARTIDA.md. Siguiente tema: captura explícita y acotada de la
 textura adquirida para comparar campos; conservar privados los píxeles.
+
+## #51 fusionada; siguiente tema: píxeles de la reserva adquirida (2026-10-11)
+
+#51 fusionada en `05421940617e5ce69889600d9eb727b3c36c0b3b`, revisión manual,
+validaciones nativas/funcionales anteriores y [CI de su HEAD final `10edb76`
+correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38161351218).
+Se cierra la instrumentación; no se declaran resueltos encuadre, causa visual
+de A–B–A ni estabilidad prolongada.
+
+Rama siguiente con parche separado `ps2recomp-gs-host-acquired-capture.patch`:
+descarga explícita y acotada de la textura de esa misma reserva, PNG RGBA y
+metadatos, sin consulta a VRAM ni otro Acquire. Desactivada por defecto,
+independiente del diagnóstico de #51; máximo 16 intentos, sin sobrescritura.
+Su coste impide usarla como benchmark. `--capture-acquired 6` del lanzador
+prepara la carpeta privada y ventana desde `--diag-from-tick`. Protocolo y
+variables en TRANSICION_COMPARTIDA.md.
+
+Regresión GPU real preparada para demostrar que cambiar VRAM a B después
+de adquirir A no cambia el PNG de A; comparar todos sus píxeles y luego B.
+Sintaxis C++20 y aplicación independiente correctas; lanzador 17/17,
+configuración 0 errores/4 avisos existentes, PowerShell 0 errores.
+Pendientes compilación completa de 101, nativas/negativo/restauración, CI y
+capturas del juego. No atribuirlas al runner de 100 ni cambiar matemáticas.
+
+## Captura de reserva validada con GPU real y negativo de píxeles (2026-10-11)
+
+Compilación completa de 101 desde `394779a6dca0fd8dcaf7415e06ad048fdd9ad7f8`,
+salida 0 en 916,19 s, runner SHA-256
+`63e6a576307675f34b70e4671a5b34de30219627a2ca2a3a362c182effd27040`,
+54.552.576 bytes, Release optimizado/símbolos privados/VU1 intérprete.
+[CI del mismo código verde](https://github.com/KIexster/god-of-war-recomp/actions/runs/38161970774).
+Windows 600/600 normal, 636/636 GPU y cuatro contratos FINISH correctos.
+El PNG de A conserva todos sus píxeles aunque la VRAM ya contenga B; la prueba
+también publica/exporta B y verifica metadatos, ventana/cupo/retenciones y
+rechazo de sobrescritura. La discrepancia de altura de modo cuadro sigue abierta.
+
+Negativo API-compatible: imagen magenta del mismo tamaño en vez de leer
+la textura; solo recompilar pruebas, sin tocar/ejecutar el runner. 635/636,
+fallo único del nuevo caso de captura por píxeles distintos. Archivo positivo
+entero restaurado y otra suite GPU: 636/636. Hash de fuente restaurada igual
+al respaldo; runner actual y copia congelada idénticos.
+
+Pasada del juego sin hilos, seis capturas desde 1500, en curso. Después VU1
+desde 6000; no atribuir todavía resultados ni resolver encuadre/alternancia.
+Registrar PNG/JSON privados contra las adquisiciones antes de comparar bytes;
+sin equivalencia PCSX2 ni FPS. Identidad y límites en TRANSICION_COMPARTIDA.md.
+
+## Capturas reales: igualdad RGBA A–B–A en modo de campos (2026-10-11)
+
+Dos pasadas completas de 101, mismo runner `394779a`/SHA-256
+`63e6a576307675f34b70e4671a5b34de30219627a2ca2a3a362c182effd27040`,
+asíncrona/compartida, tarjetas intactas y sin firmas buscadas de error:
+sin hilos/desde 1500 (360,07 s, informe 11 desde 131,78 s) y VU1 solo/desde
+6000 (360,05 s, informe 11 desde 80,83 s). El primer caso estuvo minimizado
+entre 44,22 y 156,01 s; capturas posteriores, condición no constante, repetir.
+El segundo no se minimiza ni toma primer plano según el monitor.
+
+Ambos guardan seis PNG RGBA y seis JSON que coinciden con los metadatos de
+su adquisición en el log; cada imagen duplica sus 224 pares de filas. En el
+primero todos los contenidos son distintos, sin A–B–A en 643 registros de
+la ventana. En VU1 hay 4.096 registros/3.204 A–B–A, todos campos/paridad
+alterna, sin regresiones/inconsistencias; distancia de ticks 0..2. Los PNG
+de ticks 5999/6001 son idénticos byte a byte y el de 6000 es distinto:
+confirmación finita del A–B–A en píxeles, además del hash. Otro par impar
+6003/6005 es idéntico. Primeras imágenes revisadas muestran Kratos/cubierta
+en la misma cámara dentro de cada terna; no un menú alternante allí.
+
+No prueba frescura de VRAM, causa del síntoma original, ausencia fuera de la
+ventana, equivalencia CPU/PCSX2 o encuadre correcto. Tampoco son comparables
+las poses/cámaras de ventanas 1500 y 6000 entre pasadas. [CI `ce23d73` verde](https://github.com/KIexster/god-of-war-recomp/actions/runs/38163566080).
+Otra repetición sin hilos está en curso; #60 sigue borrador hasta cerrarla y
+comprobar el CI final. Píxeles/JSON privados, sin cambios matemáticos o FPS.
+
+## Repetición sin minimización: control funcional de #60 cerrado (2026-10-11)
+
+Tercera pasada de 101 con el mismo runner `394779a`/hash anterior,
+asíncrona/compartida sin hilos, desde 1500: 360,04 s por límite, primer
+informe 11 a 116,48 s y último 11; tarjeta intacta, sin firmas buscadas de
+error ni sondas antiguas. El monitor no registra minimización. 870
+adquisiciones de campos, sin regresiones/inconsistencias/A–B–A/cambios de
+dimensión, distancia de ticks 0. Seis PNG/JSON completos correlacionados
+contra sus adquisiciones (1462..1467, ticks 1500..1505), contenidos RGBA
+distintos y 224/224 pares de filas duplicados en cada imagen.
+
+Revisión visual de las primeras dos: misma vista de Kratos/cubierta dentro
+del par. Un tick coincidente entre pasadas no alinea cámara/animación,
+porque el guion depende del reloj anfitrión; no inferir causas por comparar
+esas poses. La minimización anterior se conserva como limitación separada.
+
+La compilación completa, nativas/negativo restaurado, contratos y tres
+pasadas cierran la validación de la captura opcional de #60. Revisión manual
+del uso de la reserva Acquire correcta; [CI `9332c1b` verde](https://github.com/KIexster/god-of-war-recomp/actions/runs/38164770068).
+Comprobar el CI del HEAD final antes de fusionar. No se declaran resueltos
+encuadre, contenido antiguo, modo cuadro o estabilidad prolongada. Próximo
+paso: relacionar cámara/animación con la escena realmente dibujada y una
+referencia alineada; evitar corregir matrices por observaciones de instantes
+distintos. Detalles y hash en TRANSICION_COMPARTIDA.md; píxeles privados.

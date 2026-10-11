@@ -739,3 +739,25 @@ equivalencia con PCSX2 o FPS. Identidad del runner, tiempos y límites en
 `TRANSICION_COMPARTIDA.md`. Para comparar píxeles debe usarse una captura
 explícita de la reserva adquirida en otra ejecución; no dar por equivalente
 una captura de VRAM latched ni introducir su coste en el registro de metadatos.
+
+La cadena 101 prepara una captura separada, desactivada por defecto:
+`--capture-acquired 6` guarda PNG RGBA y JSON en `acquired/` de la carpeta
+privada de una pasada compartida. Empieza desde `--diag-from-tick`, máximo
+16 intentos; no captura retenciones/vacío ni sobrescribe archivos. Usa la
+misma reserva de Acquire, no VRAM latched ni otro Acquire. **Añade readback
+y E/S**, por lo que esta pasada no sirve para medir FPS. Sin esa opción no
+se instalan variables de captura, incluso si estaban heredadas. Requiere
+compilación completa de 101 y validación nativa antes de usarla con el juego;
+regresión preparada, ejecución pendiente. Detalles y límites en
+`TRANSICION_COMPARTIDA.md`; no publicar PNG/JSON del juego.
+
+La captura de 101 ya completó compilación Windows, 600/600 normal,
+636/636 GPU real, cuatro contratos y un negativo compatible que falla
+exactamente por píxeles del PNG; fuente restaurada y GPU otra vez 636/636.
+Tres pasadas de seis minutos guardan seis PNG/JSON cada una, correlacionados
+contra las adquisiciones. La primera tuvo minimización; la repetición sin
+hilos no la registra. En VU1 los PNG de ticks 5999/6001 son idénticos y el
+de 6000 distinto: A–B–A finito confirmado en bytes, en modo de campos.
+No demuestra antigüedad del contenido ni equivalencia de cámara/escena.
+El tick de vídeo y el último estado del guion no alinean por sí solos dos
+pasadas; consultar identidades y límites en TRANSICION_COMPARTIDA.md.
