@@ -28,6 +28,7 @@ bool test() {
     put<uint32_t>(ram,def+0x10,2); put<uint32_t>(ram,def+0xC,64);
     put<uint32_t>(ram,def+32,5); // Slots 0 y 2: selección dispersa, no dos primeros.
     for(uint32_t i=0;i<3;++i) {
+        put<uint32_t>(ram,records+i*16,0x81000000u | (i==1 ? 0x6000u : 0u));
         put<int16_t>(ram,records+i*16+4,int16_t(i)-1);
         put<int16_t>(ram,records+i*16+8,int16_t(32+i));
         put<uint32_t>(ram,records+i*16+12,0x3F800000u+i);
@@ -38,9 +39,13 @@ bool test() {
     if(!l.valid || !l.selectionValid || l.count!=3 || l.selectedCount!=2 ||
        !selected(l,0) || selected(l,1) || !selected(l,2) || selected(l,3)) return false;
     const auto s=slot(mem,sk,l,1);
-    if(!s.recordValid || s.indexField!=0 || s.parent!=33 || !s.maskValid || !s.masked ||
+    if(!s.recordValid || s.flags!=0x81006000u || s.indexField!=0 || s.parent!=33 || !s.maskValid || !s.masked ||
        !s.visibilityValid || s.visibility!=1 || s.threshold!=0x3F800001u) return false;
     if(slot(mem,sk,l,3).recordValid || slot(mem,sk,l,2).masked) return false;
+    // Los flags no son el índice ni el umbral; no leer un record incompleto.
+    if(slot(mem,sk,l,0).flags!=0x81000000u) return false;
+    auto truncated=l; truncated.records=0x4FF1u;
+    if(slot(mem,sk,truncated,0).recordValid || slot(mem,sk,truncated,0).flags) return false;
     put<int16_t>(ram,records+8,-1); if(slot(mem,sk,l,0).maskValid) return false;
     put<int16_t>(ram,records+8,256); if(slot(mem,sk,l,0).maskValid) return false;
     Matrix packed{},packedRead{}; uint32_t ordinal=1000;

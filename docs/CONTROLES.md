@@ -878,3 +878,25 @@ una postura semejante al espasmo señalado por el usuario. Producto final
 coherente no demuestra pose correcta ni identifica automáticamente el modelo;
 la jerarquía previa y VIF/VU/GS requieren más investigación. Resultados y
 límites completos en ESTADO.md; no son benchmarks.
+
+### Condiciones de actualización de la jerarquía
+
+La sonda añade `recordFlags` (u32 en record+0), `worldBeforeValid` y
+`worldChanged`. Los bits `0x6000` pueden llamar a 0x136870 y transformar la
+matriz calculada; un producto simple padre por fuente no basta en esos slots.
+`worldChanged` compara bytes antes/después de la misma llamada completa,
+solo si ambas lecturas son válidas; falso no demuestra que no se escribiera.
+Se conserva la fuente previa, porque el cálculo puede sobrescribir buffers.
+No cambia el cupo, el juego, las matemáticas ni las reanudaciones. Añade lectura
+solo al diagnóstico solicitado. Registrar la validación de src/ y del control
+antes de interpretar estos campos; las muestras anteriores no los contienen.
+
+Validación de `e73e844`: compilación rápida, prueba procedural y CI correctos;
+control de cinco minutos completa 128 retornos y 16 capturas adquiridas. En
+el grupo de 111 slots, las grandes diferencias del producto indiscriminado
+pertenecen a cuatro slots no seleccionados cuyos bytes quedan retenidos.
+El producto de los slots cambiados sin transformación especial concuerda en
+la muestra. No equivale a referencia de animación PS2. En esta pasada, las
+imágenes revisadas ya muestran el brazo bajo: no reproducen la postura elevada
+anterior ni se alinean por tener el mismo tick. Véase ESTADO.md para identidad,
+cantidades y límites; no modificar matrices a partir de esa comparación parcial.

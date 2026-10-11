@@ -772,14 +772,17 @@ namespace
         const bool inputValid=memory.matrix(input,0,inputMatrix);
         uint32_t scalar=0; std::memcpy(&scalar,&ctx->f[12],4);
         uint64_t stamp=0; memory.read(0x29BDF8u,0,stamp);
-        std::array<SkinMatrix,maxSlots> before{},sourceBefore{},bindBefore{};
-        std::array<bool,maxSlots> beforeValid{},sourceValid{},bindValid{};
+        std::array<SkinMatrix,maxSlots> before{},worldBefore{},sourceBefore{},bindBefore{};
+        std::array<bool,maxSlots> beforeValid{},worldBeforeValid{},sourceValid{},bindValid{};
         std::array<uint32_t,maxSlots> ordinals{};
         std::array<Slot,maxSlots> slots{};
         bool completed=false;
         observe(ctx->pc,entry,caller,[&]{original(rdram,ctx,runtime);},[&]{
             if(l.valid) for(uint32_t i=0;i<l.count;++i) {
                 beforeValid[i]=memory.matrix(destination,i,before[i]);
+                // GOW-Port: distinguir mundo retenido de bytes cambiados, sin
+                // confundir ausencia de cambio con ausencia de escritura.
+                worldBeforeValid[i]=memory.matrix(world,i,worldBefore[i]);
                 sourceValid[i]=memory.matrix(l.source,i,sourceBefore[i]);
                 bindValid[i]=bind(memory,l,i,bindBefore[i],ordinals[i]);
                 slots[i]=slot(memory,skeleton,l,i);
@@ -806,10 +809,11 @@ namespace
                 format(output,bits); format(worldMatrix,worldBits); format(sourceBefore[i],sourceBits); format(bindBefore[i],bindBits);
                 // Selección/máscara/visibilidad son entradas, no una afirmación de que
                 // el slot se haya escrito: hay umbral y reutilización en ambas variantes.
-                std::fprintf(stderr,"[gow-skin:slot] sample=%u index=%u selected=%u recordValid=%u indexField=%d parent=%d maskValid=%u masked=%u visibilityValid=%u visibility=%u threshold=%08x beforeValid=%u outputValid=%u changed=%u worldValid=%u sourceValid=%u bindValid=%u ordinal=%u bits=%s worldBits=%s sourceBits=%s bindBits=%s\n",
-                    sample,i,unsigned(selected(l,i)),unsigned(s.recordValid),int(s.indexField),int(s.parent),unsigned(s.maskValid),unsigned(s.masked),
+                std::fprintf(stderr,"[gow-skin:slot] sample=%u index=%u selected=%u recordValid=%u recordFlags=%08x indexField=%d parent=%d maskValid=%u masked=%u visibilityValid=%u visibility=%u threshold=%08x beforeValid=%u outputValid=%u changed=%u worldBeforeValid=%u worldChanged=%u worldValid=%u sourceValid=%u bindValid=%u ordinal=%u bits=%s worldBits=%s sourceBits=%s bindBits=%s\n",
+                    sample,i,unsigned(selected(l,i)),unsigned(s.recordValid),s.flags,int(s.indexField),int(s.parent),unsigned(s.maskValid),unsigned(s.masked),
                     unsigned(s.visibilityValid),s.visibility,s.threshold,unsigned(beforeValid[i]),unsigned(outputValid),
-                    unsigned(beforeValid[i] && outputValid && before[i]!=output),unsigned(worldValid),unsigned(sourceValid[i]),unsigned(bindValid[i]),ordinals[i],bits,worldBits,sourceBits,bindBits);
+                    unsigned(beforeValid[i] && outputValid && before[i]!=output),unsigned(worldBeforeValid[i]),
+                    unsigned(worldBeforeValid[i] && worldValid && worldBefore[i]!=worldMatrix),unsigned(worldValid),unsigned(sourceValid[i]),unsigned(bindValid[i]),ordinals[i],bits,worldBits,sourceBits,bindBits);
             }
         });
         if(!completed) std::fprintf(stderr,"[gow-skin:paused] sample=%u entry=%x caller=%x skeleton=%x checkpoint=%x\n",

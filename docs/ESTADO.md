@@ -4520,3 +4520,58 @@ validan el alcance de #63: soporte de guion y diagnóstico opcional. El control
 desde 3000 sin muestras se conserva como limitación; no se presenta como
 movimiento visible validado. Comprobar también CI del HEAD documental final
 antes de fusionar. No hay cambios de parches o matemática del juego.
+
+## Condiciones de la jerarquía: diagnóstico preparado (2026-10-11)
+
+La comprobación exploratoria anterior motiva registrar flags del record y
+cambio de la matriz mundo. `recordFlags` conserva todos los bits de record+0;
+`worldBeforeValid`/`worldChanged` separan lecturas inválidas de bytes retenidos,
+sin afirmar ejecución por slot. Se añade lectura previa de mundo a la sonda
+opcional, sin modificar cálculo, argumentos, buffers, checkpoints o parches.
+La prueba procedural distingue flags/índice/umbral y rechaza records truncados;
+Windows/MSVC /W4 /WX y sintaxis C++20 del override correctos. Pendientes
+recompilación rápida, control y CI del nuevo código. No se declara que las
+diferencias exploratorias sean corrupción.
+
+## Condiciones de jerarquía observadas (2026-10-11)
+
+Src/ de `e73e844` se recompila sobre 101 completa con código 0 en 19,56 s,
+sin cambios de parches/runtime.lib. Runner 54.562.304 bytes, SHA-256
+`29a43df0d67b092b4ab67a02adf6bb24d39244d1a87b2ada1a15d7402982314e`.
+[CI del código correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38181839302).
+#63 ya fusionada en `bf6768b4e6af6fa834d5f555c92131c85c35fa2c`, tras revisión
+y [CI del HEAD final `4857fdb` correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38181681700).
+Se integra ese main mediante merge; #64 continúa la observación.
+
+Control síncrono/compartido, hilos 0, guion de menú anterior, hash 0 y ventana
+1500: 300,05 s por límite; tarjeta procedural intacta, sin firmas buscadas de
+error o minimización registrada. 128 retornos completos de ambas variantes,
+cinco grupos, ninguna pausa; 6.173 lecturas válidas finitas y 5.629 productos
+finales, residuo máximo descriptivo 0,0001494. El grupo de 111 slots vuelve a
+aportar 32 muestras en 1500..1531 y 3.296 productos finales, máximo 0,000006007.
+
+En ese grupo, los cuatro slots 107..110 conservan los bytes de mundo y de
+destino, no están seleccionados; 107/109 tienen visibilidad 0. Son los slots
+que daban las diferencias grandes al aplicar indiscriminadamente el producto
+padre por fuente. No tienen flags `0x6000` en estas muestras. Excluidos los
+bytes retenidos y las transformaciones especiales, se evalúan 3.392 productos
+de jerarquía cambiados: máximo 0,000004453. **Son magnitudes de esta muestra,
+no tolerancias PS2 ni prueba de animación correcta**; tampoco ausencia de
+cambio demuestra que no se escribiera. No se justifica corregir aquel
+producto incompleto como si revelara corrupción.
+
+16 PNG/JSON adquiridos, secuencias 1458..1473/ticks 1500..1515, metadatos
+exactos y RGBA distintos, 224 pares de filas duplicados. Las imágenes 1/8/16
+revisadas muestran el brazo/hoja ya en posición baja: no reproducen la pose
+elevada exacta de la pasada anterior. Incluso compartiendo ventana de vídeo,
+las dos ejecuciones no están alineadas por estado de animación. No usar este
+control para descartar el espasmo anterior.
+
+Como comprobación de identidad de recurso, las 103 matrices de definición
+de la muestra anterior coinciden en sus 6.592 bytes con un bloque del estado
+PCSX2 histórico .02, que sigue en estado 4. Se localiza una definición y
+skeleton compatibles. Esto relaciona los datos estáticos, **no alinea poses,
+confirma identidad de personaje ni convierte esa intro en referencia de
+partida**. Todos esos datos y análisis siguen privados. El siguiente control
+debe seguir la geometría recibida por GS durante la postura señalada y separar
+esa entrada del rasterizado/presentación; la animación fuente sigue abierta.
