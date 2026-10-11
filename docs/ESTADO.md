@@ -4691,3 +4691,27 @@ Pendientes compilación completa que regenere las cuatro instrucciones,
 suite/negativo, CI y control de la introducción con el nuevo ejecutable. La
 evidencia confirma el error de instrucción, **todavía no que corrija todos los
 espasmos, el encuadre o la presentación asíncrona/compartida**.
+
+## Cierre y controles pendientes de PMULTH (2026-10-11)
+
+#65 fusionada en `dbfbe719eea0483b768aa4eef3894db1221cf28c`, tras revisión,
+control y [CI del HEAD final `396f594` correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38183579985).
+La [PR #67](https://github.com/KIexster/god-of-war-recomp/pull/67) contiene
+PMULTH y permanece en borrador. La compilación completa privada de `2fd0fc9`
+ya regeneró los cuatro sitios con el helper correcto y sigue compilando el
+runner. Todavía no hay ejecutable final ni control visual de esta corrección.
+
+El primer CI de #67 falla compilando las regresiones: `GPR_VEC(&ctx, ...)`
+expande el puntero sin paréntesis. Se corrige el argumento de esas pruebas a
+`GPR_VEC((&ctx), ...)`; no cambia el helper, la emisión o la lógica del juego.
+Pendiente CI del nuevo HEAD, suite nativa y negativo significativo. No tratar
+el primer CI fallido como validación del runtime.
+
+También se revisa la [issue #66](https://github.com/KIexster/god-of-war-recomp/issues/66),
+aportada por otro colaborador: separa casos medidos en Transformers de sus
+hipótesis para God of War. En nuestro runtime se confirman los presupuestos
+65.536/4.096 de VU1/VU0 y que el constructor de contexto deja vf0 a cero;
+StartThread crea ese contexto. **No se ha demostrado que causen este espasmo**.
+El próximo control activará `GOW_VU1_BUDGET_DIAG=1`, sin aumentar presupuestos,
+y examinará magnitudes además de finitud. Primero comprobar PMULTH; las demás
+hipótesis requieren evidencia por separado y no se incorporan arreglos en bloque.

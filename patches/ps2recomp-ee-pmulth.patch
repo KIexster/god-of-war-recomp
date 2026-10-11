@@ -51,7 +51,7 @@ index e2a6cb0..552f5c7 100644
 +
  #endif // PS2_RUNTIME_MACROS_H
 diff --git a/ps2xTest/src/ps2_mmi_tests.cpp b/ps2xTest/src/ps2_mmi_tests.cpp
-index 61edab7..67a73c9 100644
+index 61edab7..e8b0bd0 100644
 --- a/ps2xTest/src/ps2_mmi_tests.cpp
 +++ b/ps2xTest/src/ps2_mmi_tests.cpp
 @@ -91,6 +91,57 @@ void register_ps2_mmi_tests()
@@ -70,7 +70,7 @@ index 61edab7..67a73c9 100644
 +                ctx.r[0] = fromWords(zeroSentinel);
 +                ctx.r[1] = rs; ctx.r[2] = rt;
 +                ctx.hi = ctx.lo = ctx.hi1 = ctx.lo1 = UINT64_MAX;
-+                ps2_pmulth(&ctx, GPR_VEC(&ctx, 1), GPR_VEC(&ctx, 2), rd);
++                ps2_pmulth(&ctx, GPR_VEC((&ctx), 1), GPR_VEC((&ctx), 2), rd);
 +                t.Equals(ctx.lo, 0xFFFFFFE80000000Bull, "LO contiene p0=11 y p1=-24");
 +                t.Equals(ctx.hi, 0xFFFFFFC800000027ull, "HI contiene p2=39 y p3=-56");
 +                t.Equals(ctx.lo1, 0xFFFFFFA00000004Bull, "LO alto contiene p4=75 y p5=-96");
@@ -90,9 +90,9 @@ index 61edab7..67a73c9 100644
 +            t.IsTrue(toWords(ctx.r[4]) == Words{0x40000000,0x3FFF0001,0,0x8000}, "rd completo, sin truncamiento de 16 bits");
 +            ctx.r[0] = fromWords({11,22,33,44});
 +            ctx.r[1] = rs;
-+            ps2_pmulth(&ctx, GPR_VEC(&ctx, 0), GPR_VEC(&ctx, 1), 5);
++            ps2_pmulth(&ctx, GPR_VEC((&ctx), 0), GPR_VEC((&ctx), 1), 5);
 +            t.IsTrue(!ctx.lo && !ctx.hi && !ctx.lo1 && !ctx.hi1 && toWords(ctx.r[5]) == Words{}, "rs=0 lee cero arquitectónico");
-+            ps2_pmulth(&ctx, GPR_VEC(&ctx, 1), GPR_VEC(&ctx, 0), 5);
++            ps2_pmulth(&ctx, GPR_VEC((&ctx), 1), GPR_VEC((&ctx), 0), 5);
 +            t.IsTrue(!ctx.lo && !ctx.hi && !ctx.lo1 && !ctx.hi1 && toWords(ctx.r[5]) == Words{}, "rt=0 lee cero arquitectónico");
 +            ps2_pmulth(&ctx, rs, rs, 6);
 +            t.IsTrue(toWords(ctx.r[6]) == Words{1,9,25,49}, "rs=rt usa los operandos completos previos");
