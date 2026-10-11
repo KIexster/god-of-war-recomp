@@ -3843,3 +3843,25 @@ Estado 11/capturas no certifican jugabilidad, fidelidad de cámara ni ausencia
 de alternancia. Se inicia después una repetición asíncrona/compartida aislada,
 con el mismo runner y protocolo. Ambas PR conservan borrador hasta cerrar
 validación y CI del HEAD final; los cuelgues con hilos siguen sin probarse.
+
+## Repetición asíncrona compartida con Count (2026-10-11)
+
+El mismo runner de 98 completa 360,04 s sin solapar otra instancia. Límite
+deliberado (proceso 1/lanzador 0), tarjeta intacta, sin firmas de error buscadas;
+0 → 3 → 4 → 11, primer 11 a 116,40 s y último 11. Ventana nunca observada
+minimizada; primer plano solo entre ~344 y ~353 s. Dos capturas externas
+propias muestran enemigos y después HUD/Kratos/combate en los muelles;
+conservar perturbación de captura y ausencia de alineación PCSX2/secuencia GS.
+
+2.325 adquisiciones, cero regresiones, metadatos contradictorios o hashes
+desconocidos, 140 A–B–A: ninguno en los tramos del último estado 4/11.
+1.198 adquisiciones bajo el último estado 11. Distancia de ticks 0..3,
+máximo 1 en el tramo 11; dimensiones iniciales 1×1 → 512×448 y fuente
+CRTC en páginas (`preferred=0`) en todas las filas. Esto no descarta
+alternancia visible, retenciones no registradas ni cuelgues más largos/con hilos.
+
+Las dos presentaciones compartidas superan la transición en estas pasadas;
+la corrección de Count tiene regresiones negativas/positivas y control nativo,
+sin cambiar FINISH/fences. Falta cerrar los dos controles por RAM de 98 y
+comparar cámara/escena de forma alineada antes de dar por cerrado #51.
+Se inicia síncrona/RAM aislada después de terminar asíncrona/compartida.
