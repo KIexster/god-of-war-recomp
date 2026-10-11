@@ -4359,3 +4359,49 @@ del destino a2 separado de la paleta a1. Límites, campos y descarte de pausas
 en CONTROLES.md. Pruebas procedurales Windows/MSVC con /W4 /WX y sintaxis
 C++20 del override correctas; todavía pendientes recompilación rápida de src/
 con nuevo hash y pasada funcional. No se modifica ningún parche o matemática.
+
+## Skinning observado después del retorno real (2026-10-11)
+
+La sonda opcional anterior se recompila desde `e0bf966` mediante
+`2_recompilar_rapido.cmd`, solo src/, sobre la compilación completa 101 de
+`394779a`. Sin diferencias de parches ni de runtime.lib; termina con código 0
+en 19,12 s. Runner 54.559.744 bytes, SHA-256
+`063ea7299ffb9bb5bc413432df63f555a605225198557fc5cd753983ad2780a0`.
+[CI de ese código correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38178208986),
+incluidas compilación de src/, pruebas procedurales y suite del runtime.
+No confundir esta actualización de src/ con una nueva compilación de parches.
+
+Primer intento síncrono/compartido, hilos 0, no alcanza estado 11: se detiene
+con STOP privado a 144,89 s, todavía en menú 3 y sin llamadas de skinning.
+Se conserva como intento fallido. El siguiente añade pulsaciones X de menú
+a 28/36/44/52/60/68 s: **cambia el guion**, no es repetición alineada. Termina
+a 300,05 s por límite, primer informe 11 a 135,49 s y último a 294,36 s.
+Tarjeta procedural privada intacta, sin firmas buscadas de fatal/exception/
+deadlock/assertion failed/unhandled; el monitor no registra minimización.
+Código 1 del juego por cierre externo, controlador 0: no salida natural.
+
+128 muestras completas, ninguna pausa observada, cinco combinaciones de
+skeleton/variante/vista/ownerCandidate. Se ejecutan ambas rutas 0x137508 y
+0x137AF8. Las 6.173 lecturas de destino, mundo y fuente válidas son finitas.
+5.629 slots seleccionados cuyo destino cambió tienen matriz de definición
+válida: el producto mundo por definición concuerda con el destino, con
+residuo máximo 0,0001361 usando producto de columnas en double. Es una
+descripción numérica de esta muestra, **no tolerancia PS2 ni prueba de pose
+correcta**. Las 544 matrices de definición no leídas pertenecen a slots no
+seleccionados; no son accesos fallidos ni evidencia de corrupción. El cupo
+global se agota antes de que todos los grupos lleguen a 32 muestras.
+
+16 PNG/JSON de la reserva adquirida, secuencias 1453..1468 y ticks 1500..1515:
+metadatos exactos contra el log, RGBA completos y distintos, 224 pares de
+filas duplicados en cada uno. Hash desactivado: se comparan los bytes del PNG,
+no hashes desconocidos. La revisión de la secuencia muestra movimiento de
+una figura cercana sobre la cubierta, pero **su identidad no está confirmada**
+y el encuadre no separa protagonista/enemigos. No se demuestra aún el espasmo
+comunicado ni se alinea automáticamente cada PNG con una muestra de skinning.
+Las entradas de animación o su envío posterior a VU/GS siguen bajo sospecha;
+esta evidencia no descarta esos puntos ni resuelve el encuadre.
+
+Se prepara otro guion con ataques explícitos; las direcciones actuales del
+guion son botones digitales, no stick analógico. No afirmar desplazamiento
+del protagonista a partir de ellas. Píxeles, matrices, binarios y tarjetas
+permanecen privados; controles con lecturas/E/S e intérprete no miden FPS.

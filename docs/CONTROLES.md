@@ -822,3 +822,20 @@ Preparado con pruebas procedurales de límites, selección no contigua, máscara
 y retorno/pausa, y sintaxis C++20. Requiere recompilación rápida de src/ sobre
 la cadena completa 101 y control funcional antes de usar sus registros como
 evidencia; esos resultados todavía están pendientes.
+
+Validación posterior: src/ de `e0bf966` recompilado sobre 101 completo,
+runner SHA-256 `063ea7299ffb9bb5bc413432df63f555a605225198557fc5cd753983ad2780a0`;
+pruebas locales y CI correctos. Una pasada síncrona/compartida, hilos 0,
+hash 0, guion de menú hasta 68 s recoge 128 retornos completos de ambas
+variantes, cinco grupos y ninguna pausa. Destino/mundo/fuente válidos finitos;
+producto mundo por definición coherente para 5.629 slots seleccionados y
+cambiados. No identifica personajes ni certifica animaciones correctas.
+El primer intento que quedó en menú se conserva separado; ver ESTADO.md.
+
+La captura adquirida de 16 imágenes desde 1500 conserva sus metadatos exactos
+y bytes completos. Los hashes del log son desconocidos por configuración;
+comparar PNG explícitos. No correlacionar por coincidencia de reloj/tick
+con otra ejecución o con las muestras de skinning. El guion actual solo
+expresa direcciones digitales: `izquierda`/`derecha` no equivale a mover el
+stick. Los controles de desplazamiento requieren soporte analógico explícito
+y comprobación del paquete recibido, además de revisión de movimiento.
