@@ -4154,3 +4154,23 @@ la causa del encuadre ni excluye imágenes antiguas fuera del registro.
 [CI `6a53774` verde](https://github.com/KIexster/god-of-war-recomp/actions/runs/38159575279).
 Continúa otra pasada privada con VU1 solo y ventana desde 6000; después ambos
 hilos. Mantener #51 borrador durante la validación pendiente, sin declarar FPS.
+
+## VU1 solo de 100: ventana tardía con modo de campos confirmado (2026-10-11)
+
+Mismo runner `383c6b6`/SHA-256
+`5f3b9c29dad7797e7edaa17585254eccaadd14238a834d15b69101c28895c74f`,
+asíncrona/compartida, VU1 en hilo, frente GS 0 y registro desde 6000. Completa
+360,04 s por límite, primer informe 11 a 80,98 s y último 11 a 357,24 s.
+Tarjeta intacta, sin firmas buscadas de error ni sondas antiguas; ventana
+visible/no minimizada/sin primer plano según monitor. Sin captura propia.
+
+4.096 adquisiciones de tramo 11, todas SMODE2=2227921 (`&3=1`, campos),
+512×448/fuente CRTC/hash válido. 3.562 A–B–A: todos alternan paridad y tienen
+modo de campos en las tres texturas. Sin regresiones/inconsistencias o cambios
+de dimensión; distancia de ticks 0..1. La hipótesis de campos gana apoyo,
+pero no demuestra causa visual ni ausencia de imágenes antiguas; el cupo
+no cubre toda la pasada. Encuadre/FPS/equivalencia con PCSX2 no acreditados.
+
+[CI `e3678cb` verde](https://github.com/KIexster/god-of-war-recomp/actions/runs/38160245742).
+Otra pasada aislada con ambos hilos está en curso; no usarla aún como validación.
+Se conservan las salidas anticipadas anteriores y sus causas pendientes.

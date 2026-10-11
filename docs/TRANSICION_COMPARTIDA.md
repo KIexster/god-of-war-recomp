@@ -795,3 +795,29 @@ Se inicia después VU1 en hilo solo, ventana desde 6000, en otra carpeta;
 VU1+frente GS se repetirá tras cerrar esa pasada. No solapar partidas, emulador
 o compilación, ni usar estos tiempos/hash/diagnóstico/intérprete como FPS.
 Sin comparación visual, no se declaran resueltos alternancia, encuadre o cuelgues.
+
+## Control de 100 con VU1 solo: retornos en modo de campos (2026-10-11)
+
+Mismo runner completo `383c6b6`/SHA-256
+`5f3b9c29dad7797e7edaa17585254eccaadd14238a834d15b69101c28895c74f`,
+asíncrona/compartida, VU1 en hilo y frente GS desactivado, ventana desde 6000.
+Completa 360,04 s por límite (proceso 1/lanzador 0), primer informe 11 a
+80,98 s y último 11 a 357,24 s. Tarjeta procedural intacta, ninguna firma
+buscada de error ni sondas de animación/flash-ready. Ventana visible, nunca
+minimizada y sin primer plano según el monitor; sin captura propia ni solapamientos.
+
+4.096 adquisiciones bajo último informe 11, todas `smode2=2227921` (`&3=1`),
+512×448, fuente CRTC/`preferred=0`, hash válido. Primera secuencia/render
+5877, hostTick=6000/frameTick=5999; última 9973, hostTick=10153/frameTick=10152.
+Distancia de ticks 0..1, sin regresiones de secuencia/render, inconsistencias
+de metadatos ni cambios de dimensión. Los 3.562 retornos A–B–A alternan
+paridad y conservan modo de campos en las tres muestras; no hay retornos
+de paridad igual, modos desconocidos u otros modos en esta ventana.
+
+Esto refuerza la compatibilidad con composición por campos, pero no prueba
+qué produjo el síntoma visual, igualdad de píxeles o ausencia de contenido
+antiguo. El cupo termina antes del final de la partida; no cubre todo el
+intervalo de seis minutos. No se usa como benchmark ni comparación con Opus.
+[CI del HEAD documental `e3678cb` correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38160245742).
+Se inicia después otra pasada aislada VU1+frente GS, ventana desde 6000;
+su resultado queda pendiente. Encuadre y comparación visual siguen abiertos.
