@@ -4405,3 +4405,118 @@ Se prepara otro guion con ataques explícitos; las direcciones actuales del
 guion son botones digitales, no stick analógico. No afirmar desplazamiento
 del protagonista a partir de ellas. Píxeles, matrices, binarios y tarjetas
 permanecen privados; controles con lecturas/E/S e intérprete no miden FPS.
+
+## Control de enemigos y preparación de movimiento analógico (2026-10-11)
+
+#61 fusionada en `b29e27e3f4efab6ca4b482392cd4ff56ab174f88`, tras revisión
+manual, controles anteriores y [CI del HEAD final `63f32f1` correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38179505671).
+Un negativo procedural en copia privada cambia el acceso a definición por
+índice de slot en lugar de ordinal: compila, falla la prueba (1); restaurado
+pasa (0). El header del repositorio permanece intacto. No hubo juego con
+esa copia ni cambios en el runtime.
+
+Otra pasada del runner `e0bf966` añade cuadrados/triángulos cada cuatro
+segundos entre 180 y 292 s; **cambia el guion**, hash 0, síncrona/compartida,
+hilos 0. 300,05 s por límite, informe 11 desde 121,86 s hasta 295,60 s,
+tarjeta intacta, sin las firmas buscadas de error ni minimización registrada.
+128 retornos completos de ambas variantes, cinco grupos, sin pausas:
+6.150 lecturas válidas finitas y 5.606 productos seleccionados/cambiados,
+residuo máximo descriptivo 0,0001457. Los 544 bind no leídos siguen siendo
+slots no seleccionados. No define una tolerancia PS2.
+
+16 PNG/JSON adquiridos en secuencias 1701..1716, ticks 1750..1765, con
+metadatos exactos, contenidos RGBA distintos y todos los pares de filas
+duplicados. Se revisan imágenes de varios enemigos con brazos/cuerpo en
+movimiento; no se confirma todavía una deformación anómala contra referencia.
+La escena parece corresponder a la introducción. Estado 11 no garantiza que
+el protagonista ya sea controlable; tampoco la entrega de botones confirma
+su efecto. No comparar las poses con la captura anterior por tiempo/tick.
+
+Se añade al guion opcional stick izquierdo y duración explícita, sin cambiar
+los botones digitales anteriores, más registro acotado del paquete devuelto.
+Se prepara también una ventana tardía de la sonda de poses para no gastar su
+cupo durante la introducción. Pruebas y siguiente pasada prolongada pendientes
+de documentar al completarlas; no se modifica ningún parche o matemática.
+
+Pruebas procedurales de guion/paquetes y ventana de skinning correctas en
+Windows/MSVC /W4 /WX; sintaxis C++20 del override correcta y configuración
+con 0 errores/4 avisos existentes. Compilación rápida y control analógico
+con el juego todavía pendientes. Se revisa también la referencia propuesta
+de Persona 4: [alcance y material útil](REFERENCIA_PERSONA4.md), sin importar
+su código ni atribuirle un arreglo.
+
+La actualización de src/ desde `73588d2` termina con código 0 en 19,97 s
+sobre el mismo runtime 101 (runtime.lib intacta). Runner 54.561.792 bytes,
+SHA-256 `0df18c12eb20455c0440fa26f9799f3b85be3babd7e0c0062f62f7cf5708d1be`.
+[CI de ese código correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38180275266);
+[CI del merge de #61 correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38179912408).
+La primera ejecución se cierra con STOP a 65,45 s por una ruta privada de
+salida mal escrita; no cuenta como control completado. Se relanza en el
+directorio privado verificado con tarjeta procedural nueva.
+
+El usuario identifica como espasmo la pose del brazo elevado de Kratos en
+una captura aportada. Hay una pose visualmente semejante en la secuencia
+adquirida anterior; se conserva como ejemplo señalado, no como pose normal
+verificada. El cruce por orden del log muestra una limitación concreta:
+las 32 muestras iniciales del skeleton candidato de 111 slots terminan cerca
+del informe de host 140,56 s; la adquisición de tick 1500 queda entre los
+informes 186,02 y 191,06 s. **No corresponden a la misma ventana**. Son límites
+aproximados por orden de registros, no timestamps exactos de ejecución.
+No usar aquellos productos correctos para descartar el cálculo de la pose
+señalada. Además del control tardío en marcha, recoger otra ventana de sonda
+y captura desde 1500; todavía falta identificar el modelo y una referencia
+PCSX2 alineada para localizar la alteración.
+
+El control analógico prolongado termina a 540,05 s por límite, estado 11
+desde 132,06 s hasta 536,28 s, tarjeta procedural intacta y sin firmas
+buscadas de error. 78 registros de paquete, 43 con stick no neutral: las
+cuatro direcciones se devuelven por libpad2, con botones de ataque combinados.
+No hay minimización; el primer plano cambia seis veces y las entradas reales
+están excluidas por el modo solo guion. **No se obtienen muestras de skinning,
+adquisiciones registradas ni PNG desde 3000**: no prueba movimiento visible,
+una pose tardía correcta ni la causa de la ausencia de registros. Se conserva
+ese resultado y no se cuenta como validación visual de la ventana.
+
+Nueva pasada desde 1500 en curso, con el mismo runner y el guion de nueve
+pulsaciones de menú, sin movimientos/ataques añadidos, para observar matrices
+en la ventana de la pose señalada. Sigue sin referencia PCSX2 alineada.
+
+## Ventana de matrices junto a la postura señalada (2026-10-11)
+
+La pasada anterior desde 1500 termina a 300,04 s por límite, runner `73588d2`
+y SHA-256 `0df18c12eb20455c0440fa26f9799f3b85be3babd7e0c0062f62f7cf5708d1be`.
+FINISH síncrono, compartida, hilos 0, hash 0; tarjeta procedural intacta,
+sin firmas buscadas de error ni minimización registrada. No es una salida
+natural del juego ni un control de FPS.
+
+128 retornos completos, ambas variantes, cinco grupos y ninguna pausa.
+6.150 lecturas válidas de destino/mundo/fuente finitas; 5.606 productos finales
+seleccionados y cambiados, residuo máximo descriptivo 0,0001419. El grupo
+candidato de 111 slots aporta 32 muestras en videoTick 1500..1531 y 3.296
+productos, residuo máximo 0,000005588. Ahora la sonda sí alcanza la misma
+ventana de contador que las imágenes; no se demuestra todavía la identidad
+del skeleton ni una correspondencia uno a uno entre su cálculo y cada textura.
+
+16 PNG/JSON adquiridos, secuencias 1456..1471, frameTick 1500..1515, metadatos
+exactos contra su registro y RGBA completos distintos. Cada imagen duplica
+los 224 pares adyacentes de filas. Se revisan posiciones inicial, intermedia
+y final: Kratos en cubierta pasa del brazo/hoja elevado a una posición baja;
+la inicial se parece al ejemplo que el usuario identifica como espasmo.
+No se afirma equivalencia de píxeles con su captura ni pose correcta PS2.
+
+El producto final coherente acota esa operación observada, pero no certifica
+la animación de entrada, la jerarquía previa ni el envío posterior VIF/VU/GS.
+Una comprobación privada exploratoria de mundo padre por fuente local da
+diferencias en algunos slots. **No es todavía un fallo demostrado**: el
+record tiene flags `0x6000` que pueden transformar el resultado, y selección,
+umbral y reutilización deciden qué se actualiza. Registrar esos flags y el
+cambio de mundo antes de evaluar la jerarquía; no corregir matrices por ese
+producto incompleto. La referencia Persona 4 ayuda a revisar semántica, sin
+fuente externa incorporada. Encuadre y espasmos siguen abiertos.
+
+La compilación rápida, controles de paquete y ventana, pruebas procedurales,
+revisión manual y [CI de `7df7894` correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38181222772)
+validan el alcance de #63: soporte de guion y diagnóstico opcional. El control
+desde 3000 sin muestras se conserva como limitación; no se presenta como
+movimiento visible validado. Comprobar también CI del HEAD documental final
+antes de fusionar. No hay cambios de parches o matemática del juego.

@@ -42,13 +42,31 @@ del mando y X a los 12, 20, 28, 36, 52, 60, 68, 76, 84, 100, 116 y 132 segundos.
 pantalla está activa y **no certifica que se haya iniciado una partida jugable**. La ejecución normal
 no inyecta botones. Hay que revisar las imágenes y los registros.
 
-`GOW_PAD_GUION` sustituye esa secuencia por otra: una lista `segundo:botón` separada por comas, con
-pulsaciones de 0,7 s. Botones: `start`, `select`, `arriba`, `abajo`, `izquierda`, `derecha`, `x`,
+`GOW_PAD_GUION` sustituye esa secuencia por otra: una lista `segundo:acción[:duración]` separada por
+comas, con pulsaciones de 0,7 s si se omite la duración. Botones: `start`, `select`, `arriba`, `abajo`, `izquierda`, `derecha`, `x`,
 `circulo`, `cuadrado`, `triangulo`, `l1`, `r1`, `l2`, `r2`. Por ejemplo, para abrir Cargar en el menú:
 
 ```powershell
 $env:GOW_PAD_GUION = '5:start,13:abajo,20:x'
 ```
+
+`mover_izquierda`, `mover_derecha`, `mover_arriba` y `mover_abajo` llevan el eje
+correspondiente del **stick izquierdo** a 0/255, conservando el otro eje.
+Las acciones antiguas `izquierda`/`derecha`/`arriba`/`abajo` siguen siendo
+cruceta. Ejemplo: `180:mover_izquierda:3,181:cuadrado` mantiene el stick tres
+segundos y pulsa ataque a los 181 s. Duración positiva, valores finitos;
+entradas inválidas se ignoran. Coincidiendo dos acciones del mismo eje,
+prevalece la última activa de la lista. Al terminar, cada lectura vuelve al
+estado base del mando, o a neutral con `GOW_PAD_SOLO_GUION=1`.
+
+`GOW_PAD_GUION_DIAG=1`, junto con `GOW_PAD_TEST=1`, registra hasta 128 cambios
+del paquete devuelto por libpad2 bajo `[gow-pad2:guion]`: tiempo anfitrión desde
+la primera lectura, estado, los dos bytes de botones en orden de paquete y
+sticks RX/RY/LX/LY. Permite comprobar que el guion se entrega, **no que el juego
+ya acepte control ni que se haya realizado la acción**. Los tiempos siguen
+siendo de host; no alinean animaciones entre pasadas. Prueba procedural
+`tests/pad_script_test.cpp` comprueba botones, stick separado de cruceta,
+presiones, duración, superposición, fin de ventana y entradas inválidas.
 
 El menú principal acepta botones sin pulsar Start, y lo que tarda en aparecer depende de la carga del
 equipo (el tiempo emulado avanza con el tiempo real en las esperas). Con un arranque rápido, el Start de
@@ -839,3 +857,24 @@ con otra ejecución o con las muestras de skinning. El guion actual solo
 expresa direcciones digitales: `izquierda`/`derecha` no equivale a mover el
 stick. Los controles de desplazamiento requieren soporte analógico explícito
 y comprobación del paquete recibido, además de revisión de movimiento.
+
+El soporte analógico descrito al principio ya se prepara para ese control;
+su compilación y pasada funcional se registrarán por separado. La sonda de
+poses admite `GOW_SKIN_DIAG_FROM_TICK=<uint64 decimal>`: espera el contador de
+vídeo del runtime sin gastar el cupo en llamadas anteriores, y añade
+`videoTick` a `[gow-skin]`. Ausente/inválido equivale a 0. Reutiliza el parser
+del parche de ventana GS; no modifica el reloj. Ese contador no es el stamp
+de jerarquía ni identifica automáticamente la textura adquirida o una pose
+PCSX2. Es una selección de ventana, no una prueba de alineación.
+
+Validación posterior de `73588d2`: recompilación rápida sobre 101 completa,
+runner SHA-256 `0df18c12eb20455c0440fa26f9799f3b85be3babd7e0c0062f62f7cf5708d1be`,
+pruebas locales y CI correctos. La pasada prolongada registra entrega por
+libpad2 de las cuatro direcciones del stick con ataques combinados; no recoge
+imágenes/muestras desde 3000 y no confirma desplazamiento visible. La pasada
+de ventana 1500 obtiene 128 retornos completos de ambas variantes y 16
+texturas adquiridas, con contador registrado junto a las muestras. Se revisa
+una postura semejante al espasmo señalado por el usuario. Producto final
+coherente no demuestra pose correcta ni identifica automáticamente el modelo;
+la jerarquía previa y VIF/VU/GS requieren más investigación. Resultados y
+límites completos en ESTADO.md; no son benchmarks.
