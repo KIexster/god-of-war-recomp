@@ -686,3 +686,20 @@ registrarlas. Recompilar rápidamente sobre el runtime completo de 99 y
 anotar otro hash; verificar que no aparezcan `[gow-animation]` ni
 `[gow-flash-ready]` cuando no hay diagnóstico explícito de animación/rutas.
 Conservar los resultados anteriores con esa limitación, sin usarlos como FPS.
+
+## Paridad de los retornos A–B–A (2026-10-11)
+
+El inspector conserva todos los retornos y añade `frame_ticks` con los tres
+ticks de las texturas adquiridas, más `content_return_parity`: `alternating`
+si la paridad es 0–1–0 o 1–0–1, `same` si los tres coinciden y `other` para
+los demás casos. Utiliza `frameTick`, no el tick del host que adquirió después;
+una secuencia retenida no añade otra adquisición a ese historial. Cambios de
+modo, dimensiones, hash desconocido o regresiones mantienen las separaciones
+anteriores del historial. 20 pruebas Python del inspector pasan.
+
+La presentación de campos puede producir contenido A–B–A legítimo: la suite
+nativa GPU incluye un patrón con VRAM invariable y campos par/impar distintos,
+comparados contra CPU, también con temporización GoW. Sin embargo, este registro
+no contiene SMODE2 ni demuestra que el juego esté en ese modo. La paridad
+observada no confirma entrelazado, causa del retorno, igualdad de píxeles o
+ausencia de imagen antigua; sirve para seleccionar el siguiente control.

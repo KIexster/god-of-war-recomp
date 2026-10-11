@@ -605,3 +605,34 @@ Se repite después VU1 en hilo solo con `--diag-from-tick 6000` en otra carpeta
 privada; luego VU1+frente GS. No solapar partidas, emulador o compilaciones.
 La ausencia de patrones en estas muestras no certifica presentación visual
 correcta, equivalencia de píxeles, cámara o estabilidad prolongada.
+
+## Ventana de partida con VU1 en hilo (2026-10-11)
+
+Mismo runner `a37cd85`/SHA-256
+`a4ec4365273903d525ce19ecade3fb423fb871c5628a84e695b33ac777ca3598`,
+asíncrona/compartida, VU1 en hilo y frente GS apagado, ventana desde 6000.
+Completa 360,06 s por límite; informe 11 desde 81,05 s, último 11. Tarjeta
+intacta, ninguna firma buscada de error ni sonda de animación/flash-ready,
+ventana visible/nunca minimizada, sin primer plano ni captura propia. No se
+solapa con otra partida, emulador o compilación.
+
+El primer registro tiene `hostTick=6000`, `frameTick=5999`, secuencia/render
+5880. Se registran exactamente 4.096 adquisiciones, todas bajo último informe
+11: el filtro conserva el cupo durante el arranque. Fuente CRTC/`preferred=0`,
+512×448, hash válido en todas; cero regresiones de secuencia/render, metadatos
+contradictorios o cambios de dimensión. Distancia de ticks 0..2.
+
+Hay 3.009 A–B–A en este tramo. El inspector ahora conserva los tres ticks
+por retorno y cuantifica su paridad sin suprimir ninguno: los 3.009 son
+0–1–0 o 1–0–1 en `frameTick`; cero con paridad constante o distinta.
+Sus 20 pruebas incluyen ticks del host iguales con paridades de textura
+distintas, retenciones y separaciones por modo/hash desconocido.
+El control sin hilos anterior también tiene sus 27 retornos de arranque
+con paridad alterna, ninguno durante partida.
+
+La suite GPU procedural ya comprueba dos campos distintos con VRAM invariable
+y temporización GoW contra CPU. Este resultado es compatible con alternancia
+de campos, pero el registro del juego no incluye SMODE2: no prueba ese modo,
+su causa ni ausencia de contenido antiguo. No se declaran píxeles iguales,
+cámara correcta o FPS. El cupo sigue siendo finito y deja sin registro el
+resto de la pasada. Se inicia después la repetición VU1+frente GS desde 6000.

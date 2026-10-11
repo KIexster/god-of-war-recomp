@@ -4027,3 +4027,22 @@ y ninguna A–B–A; fuente CRTC en todas. Distancia máxima de ticks 37 en arra
 5 en tramo 4 y 1 en 11. Detalles en TRANSICION_COMPARTIDA.md; no se comparan
 FPS ni se declara solución visual. Se inicia otro control privado VU1 en hilo
 con ventana tardía desde 6000; GS frontal se repetirá después, por separado.
+
+## Adquisiciones de partida con VU1 en hilo (2026-10-11)
+
+Mismo runner de 99/overrides `a37cd85`, asíncrona/compartida, VU1 en hilo
+y GS frontal apagado, ventana desde 6000: 360,06 s completos por límite,
+informe 11 desde 81,05 s, último 11, tarjeta intacta. Ninguna firma buscada
+de error ni sondas animación/flash-ready; no minimizada, sin primer plano
+o captura propia, sin solapamientos. El primer registro es hostTick=6000,
+frameTick=5999, seq/render=5880. 4.096 adquisiciones todas en tramo 11, fuente
+CRTC, 512×448/hash válido, cero regresiones/inconsistencias/cambios de dimensión,
+distancia de ticks 0..2. El filtro observa ahora partida, a diferencia de 98.
+
+Los 3.009 retornos A–B–A alternan paridad de frameTick. El inspector conserva
+los tres ticks y agrega la clasificación de paridad sin ocultar retornos;
+20 pruebas pasan. Esto es compatible con campos alternos (la prueba GPU
+procedural compara campos distintos con VRAM invariable contra CPU), pero
+no identifica SMODE2 ni demuestra causa/corrupción o ausencia de imágenes
+antiguas. Mantener límites de hash/cupo y cámara separada. Se inicia aislada
+la repetición VU1+GS frontal de 360 s con ventana desde 6000; aún pendiente.

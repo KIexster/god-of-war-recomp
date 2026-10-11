@@ -113,7 +113,8 @@ class SharedFramesTest(unittest.TestCase):
                           frame(3, 11, preferred=1)])
         result = frames.inspect(text)
         self.assertEqual(result['content_returns'], [
-            dict(line=3, seq=3, prior_seq=1, sourceFbp=208, frameTick=8, preferred=1)])
+            dict(line=3, seq=3, prior_seq=1, sourceFbp=208, frameTick=8,
+                 frame_ticks=[8, 8, 8], preferred=1)])
         self.assertEqual(result['inconsistent_repeats'], [])
 
     def test_invalid_optional_flags_and_unknown_fields_are_rejected(self):
@@ -136,6 +137,36 @@ class SharedFramesTest(unittest.TestCase):
         self.assertEqual(result['inconsistent_repeats'], [2])
         self.assertEqual(result['dimension_changes'], [
             dict(line=6, seq=2, render=2, from_size=[512, 448], to_size=[480, 448])])
+
+    def test_content_return_classifies_frame_tick_parity_without_filtering_returns(self):
+        for ticks, classification in [([21, 22, 23], 'alternating'),
+                                      ([22, 24, 26], 'same'), ([21, 22, 24], 'other')]:
+            with self.subTest(ticks=ticks):
+                text = '\n'.join(frame(seq, value, host=100).replace('frameTick=8', f'frameTick={tick}')
+                                 for seq, value, tick in zip((1, 2, 3), (11, 22, 11), ticks))
+                result = frames.inspect(text)
+                self.assertEqual(len(result['content_returns']), 1)
+                self.assertEqual(result['content_returns'][0]['frame_ticks'], ticks)
+                expected = dict(alternating=0, same=0, other=0)
+                expected[classification] = 1
+                self.assertEqual(result['content_return_parity'], expected)
+                self.assertIn('no acredita SMODE2', result['limitation'])
+
+    def test_content_return_parity_uses_acquired_ticks_and_ignores_retention(self):
+        text = '\n'.join([frame(1, 11, host=100).replace('frameTick=8', 'frameTick=21'),
+                          frame(1, 11, host=101).replace('frameTick=8', 'frameTick=21'),
+                          frame(2, 22, host=104).replace('frameTick=8', 'frameTick=22'),
+                          frame(3, 11, host=106).replace('frameTick=8', 'frameTick=23')])
+        result = frames.inspect(text)
+        self.assertEqual(result['retained'], 1)
+        self.assertEqual(result['content_return_parity'], dict(alternating=1, same=0, other=0))
+        self.assertEqual(result['content_returns'][0]['frame_ticks'], [21, 22, 23])
+
+    def test_unknown_hash_or_mode_change_breaks_parity_evidence(self):
+        for middle in (frame(2, 22, valid=0), '[gs-present] host mode: RAM frames\n'+frame(2, 22)):
+            result = frames.inspect('\n'.join([frame(1, 11), middle, frame(3, 11)]))
+            self.assertEqual(result['content_returns'], [])
+            self.assertEqual(result['content_return_parity'], dict(alternating=0, same=0, other=0))
 
 if __name__ == '__main__':
     unittest.main()

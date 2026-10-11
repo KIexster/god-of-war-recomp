@@ -16,6 +16,7 @@ def inspect(text):
     last_dimensions = None
     result = dict(acquisitions=0, retained=0, unknown_hashes=0,
                   sequence_regressions=[], inconsistent_repeats=[], content_returns=[], dimension_changes=[],
+                  content_return_parity=dict(alternating=0, same=0, other=0),
                   tick_distance=dict(samples=0, min=None, max=None, max_sample=None),
                   source_units=dict(unknown=0, pages_8192=0, blocks_256=0))
     for number, line in enumerate(text.splitlines(), 1):
@@ -86,15 +87,22 @@ def inspect(text):
             signature = tuple(row[k] for k in ('hash', 'width', 'height', 'blank'))
             if len(history) == 2 and signature == history[0][0] and signature != history[1][0]:
                 evidence = dict(line=number, seq=row['seq'], prior_seq=history[0][1],
-                                sourceFbp=row['sourceFbp'], frameTick=row['frameTick'])
+                                sourceFbp=row['sourceFbp'], frameTick=row['frameTick'],
+                                frame_ticks=[history[0][2], history[1][2], row['frameTick']])
+                # Paridad del tick de la textura, no del host que la adquiere.
+                # No conocemos SMODE2: este patrón no acredita modo de campos ni su causa.
+                parities = [tick & 1 for tick in evidence['frame_ticks']]
+                parity = ('same' if parities[0] == parities[1] == parities[2] else
+                          'alternating' if parities[0] == parities[2] else 'other')
+                result['content_return_parity'][parity] += 1
                 if 'preferred' in row:
                     evidence['preferred'] = row['preferred']
                 result['content_returns'].append(evidence)
-            history.append((signature, row['seq']))
+            history.append((signature, row['seq'], row['frameTick']))
         previous = row
     if not result['acquisitions']:
         raise ValueError('no hay imágenes compartidas registradas')
-    result['limitation'] = 'Un patrón A-B-A de hashes puede ser legítimo; no prueba corrupción, igualdad de píxeles ni FPS. La distancia entre ticks no mide tiempo ni demuestra latencia sostenida. Sin preferred no se conocen las unidades de sourceFbp. Solo cubre los registros capturados; cero filas retenidas no descarta retenciones sin registrar.'
+    result['limitation'] = 'Un patrón A-B-A de hashes puede ser legítimo; no prueba corrupción, igualdad de píxeles ni FPS. La paridad de frameTick no acredita SMODE2, entrelazado ni la causa del retorno. La distancia entre ticks no mide tiempo ni demuestra latencia sostenida. Sin preferred no se conocen las unidades de sourceFbp. Solo cubre los registros capturados; cero filas retenidas no descarta retenciones sin registrar.'
     return result
 
 def main():
