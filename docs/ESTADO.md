@@ -3748,3 +3748,12 @@ fences. La cadena de 98 parches aplica en un árbol privado nuevo; configuració
 y sintaxis PowerShell pasan (cuatro avisos existentes). Compilación, suite y
 control funcional de este código siguen pendientes. Se inicia un build
 completo privado, regenerando C++; el runner congelado de 97 permanece aparte.
+
+El CI inicial de la integración `3690bc9` también falla por la cabecera ausente
+de la prueba, no por una regresión ejecutada. Se actualiza el parche positivo
+con `ps2recomp/types.h`. La compilación privada iniciada con aquel HEAD se
+detiene deliberadamente a 333,15 s, verificando el PID del wrapper propio y
+sus descendientes; se conservan manifiesto de salida 1 y fuentes parciales.
+No hay runner nuevo validado de ese intento. Se reinicia la compilación
+completa con el parche corregido, en otra carpeta de artefactos. No se detienen
+procesos de otros colaboradores ni se modifican sus archivos.

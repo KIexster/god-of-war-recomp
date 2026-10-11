@@ -136,16 +136,17 @@ index 239042e..4aedbae 100644
      register_ps2_vu1_tests();
 diff --git a/ps2xTest/src/ps2_cop0_count_tests.cpp b/ps2xTest/src/ps2_cop0_count_tests.cpp
 new file mode 100644
-index 0000000..d25e6e2
+index 0000000..95e67eb
 --- /dev/null
 +++ b/ps2xTest/src/ps2_cop0_count_tests.cpp
-@@ -0,0 +1,85 @@
+@@ -0,0 +1,86 @@
 +// GOW-Port: Count avanza sin esperas host y es compartido entre contextos EE.
 +#include "MiniTest.h"
 +#include "ps2_runtime.h"
 +#include "runtime/ee_scheduler.h"
 +#include "ps2recomp/code_generator.h"
 +#include "ps2recomp/instructions.h"
++#include "ps2recomp/types.h"
 +#include <string>
 +#include <vector>
 +
