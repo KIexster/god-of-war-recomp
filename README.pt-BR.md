@@ -57,7 +57,7 @@ Este repositório contém tudo o que é específico de God of War:
 
 Detalhamento por biblioteca e por componente: [`docs/estado/detalle.pt-BR.md`](docs/estado/detalle.pt-BR.md). Regenerado a partir de `docs/estado/datos.toml` por `tools/estado/generar.py` (e automaticamente ao enviar para `main`).
 
-Build nativo para Windows (renderizador OpenGL) em uma RX 5700 XT, por enquanto a cerca de 10–13 quadros por segundo:
+Build nativo para Windows (renderizador OpenGL) em um Ryzen 7 5800XT com uma RX 5700 XT:
 
 <p align="center">
   <img src="docs/capturas/menu.jpg" alt="Menu principal" width="49%">
@@ -76,7 +76,7 @@ Build nativo para Windows (renderizador OpenGL) em uma RX 5700 XT, por enquanto 
 | Saída de vídeo: tela legal e logo do título | ✅ |
 | Barco, Kratos, inimigos e HUD com formas corretas; faltam outras verificações de renderização | 🔧 em andamento |
 | Controle/teclado por HLE de libpad2; menu e seleção de dificuldade | ✅ |
-| Partida alcançada; desempenho ainda de ~2–3 fps | 🔧 em andamento |
+| Partida alcançada; docas de Atenas a ~12 fps por padrão e ~25 fps com as threads opcionais de VU1/GS (meta: 30) | 🔧 em andamento |
 | Vídeo FMV: intro decodificada e exibida sem ser pulada; faltam outros vídeos | 🔧 em andamento |
 | Áudio: bancos e som contínuo emulado verificados; saída com cortes na velocidade atual | 🔧 em andamento |
 | Memory card: listar, carregar, salvar e recarregar verificados em uma cópia PCSX2; falta formatação | 🔧 em andamento |
@@ -85,8 +85,11 @@ O jogo inicializa, carrega seus dados a partir da ISO e chega ao menu e à parti
 Após corrigir as cadeias DMA do scratchpad, as capturas mostram o barco, Kratos, inimigos e HUD com formas
 corretas. A intro FMV também é decodificada sem `GOW_SKIP_FMV`. Carregar, salvar e recarregar uma partida
 foram verificados em uma cópia de cartão PCSX2 de 8 MB com ECC; faltam formatação e reabertura no PCSX2.
-O port continua experimental: a partida roda a ~2–3 fps, o áudio tem cortes e faltam verificações das
-diferenças CPU/OpenGL e da cobertura gráfica. Veja [renderização](docs/COMPARACION_PCSX2.md),
+O port continua experimental. Nas docas de Atenas ele roda a ~12 fps com a configuração padrão e a ~25 fps
+com as threads opcionais de VU1 e do front-end do GS e o FINISH assíncrono (`PS2X_VU1_HILO=1`,
+`PS2X_GS_FRENTE=1`, `GOW_GS_FINISH_ASINCRONO=1`), que ainda podem travar de vez em quando; o principal
+gargalo é o microcódigo de VU1 compilado. O áudio tem cortes e faltam verificações das diferenças CPU/OpenGL
+e da cobertura gráfica. Veja [desempenho](docs/RENDIMIENTO.md), [renderização](docs/COMPARACION_PCSX2.md),
 [FMV e áudio](docs/FMV_Y_AUDIO.md), [memory card](docs/MEMORY_CARD.md) e
 [`docs/ESTADO.md`](docs/ESTADO.md) para as verificações e seus limites (em espanhol).
 
@@ -206,6 +209,7 @@ A documentação técnica está atualmente em espanhol:
 - [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) — pipeline, overrides, patches do runtime e integração contínua
 - [`docs/CONTROLES.md`](docs/CONTROLES.md) — controles e testes do controle e do menu
 - [`docs/RENDERIZADO.md`](docs/RENDERIZADO.md) — renderers CPU/CPU com thread/OpenGL opcionais e comparações
+- [`docs/RENDIMIENTO.md`](docs/RENDIMIENTO.md) — medições de desempenho, threads opcionais e otimizações de VU1
 - [`AGENTS.md`](AGENTS.md) — convenções do projeto para colaboradores e agentes
 - [`docs/ESTADO.md`](docs/ESTADO.md) — status atual, registro da investigação, problemas conhecidos e próximos passos
 
