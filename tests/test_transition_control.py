@@ -81,7 +81,7 @@ class TransitionControlTest(unittest.TestCase):
         return argparse.Namespace(case='sync_ram', label=None, seconds=360, runner=runner,
                                   elf=elf, iso=iso, iop_mod=modules, build_manifest=manifest,
                                   output_root=root/'output', initial_card=card, collapsed_ui=False,
-                                  vu1_thread='0', gs_front='0', diag_from_tick=0)
+                                  vu1_thread='0', gs_front='0', diag_from_tick=0, capture_acquired=0)
 
     def test_environment_drops_presence_diagnostics_and_preserves_os_variables(self):
         settings = control.settings_for('async_shared', Path('/case'), Path('/iso'), Path('/cache'))
@@ -102,6 +102,36 @@ class TransitionControlTest(unittest.TestCase):
             self.assertEqual((settings['GOW_GS_FINISH_ASINCRONO'], settings['PS2X_GS_DIRECT_PRESENT']), pair)
         with self.assertRaises(ValueError):
             control.settings_for('async_shared', Path('/case'), Path('/iso'), Path('/cache'), '0', '1')
+
+    def test_acquired_capture_is_explicit_and_inherited_capture_does_not_enable_it(self):
+        settings = control.settings_for('async_shared', Path('/case'), Path('/iso'), Path('/cache'))
+        self.assertFalse(any('ACQUIRED_CAPTURE' in key for key in settings))
+        env = control.isolated_environment({'PS2X_GS_ACQUIRED_CAPTURE_DIR': '/old'}, settings)
+        self.assertNotIn('PS2X_GS_ACQUIRED_CAPTURE_DIR', env)
+
+    def test_acquired_capture_gets_a_fresh_private_folder_and_records_its_window(self):
+        with tempfile.TemporaryDirectory(prefix='gow_transition_test_') as name:
+            args = self.fixture(Path(name))
+            args.case, args.capture_acquired, args.diag_from_tick = 'async_shared', 6, 6000
+            with patch.object(control, 'EXPECTED_ELF_SHA256', control.digest(args.elf)):
+                folder, _, _, result = control.prepare_case(args)
+            self.assertEqual(result['settings']['PS2X_GS_ACQUIRED_CAPTURE_DIR'], str(folder/'acquired'))
+            self.assertEqual(result['settings']['PS2X_GS_ACQUIRED_CAPTURE_COUNT'], '6')
+            self.assertEqual(result['settings']['PS2X_GS_ACQUIRED_CAPTURE_FROM_TICK'], '6000')
+            self.assertTrue((folder/'acquired').is_dir())
+            self.assertFalse(any((folder/'acquired').iterdir()))
+
+    def test_invalid_capture_budget_or_ram_case_is_rejected_before_creating_output(self):
+        for invalid in (-1, 17, True, '6'):
+            with tempfile.TemporaryDirectory(prefix='gow_transition_test_') as name:
+                args = self.fixture(Path(name))
+                args.case, args.capture_acquired = 'async_shared', invalid
+                with patch.object(control, 'EXPECTED_ELF_SHA256', control.digest(args.elf)):
+                    with self.assertRaises(ValueError):
+                        control.prepare_case(args)
+                self.assertFalse(args.output_root.exists())
+        with self.assertRaises(ValueError):
+            control.settings_for('async_ram', Path('/case'), Path('/iso'), Path('/cache'), capture_acquired=6)
 
     def test_losing_focus_does_not_imply_minimization_or_read_another_window(self):
         api = FakeWindows()

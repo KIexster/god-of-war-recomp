@@ -1,0 +1,357 @@
+diff --git a/ps2xRuntime/CMakeLists.txt b/ps2xRuntime/CMakeLists.txt
+index f4949cb..ffca57d 100644
+--- a/ps2xRuntime/CMakeLists.txt
++++ b/ps2xRuntime/CMakeLists.txt
+@@ -383,6 +383,7 @@ add_library(ps2_runtime STATIC
+     src/lib/gs/ps2_gs_memory.cpp
+     src/lib/gs/gs_frontend.cpp
+     src/lib/gs/gs_host_present.cpp # GOW-Port: mismo consumidor de textura en juego y controles.
++    src/lib/gs/gs_host_acquired_capture.cpp # GOW-Port: descarga opcional y acotada de Acquire.
+     src/lib/gs/gs_cpu_backend.cpp
+     # GOW-Port: backend OpenGL y cola del fork SotC ac9efa0 (GPL-3.0).
+     src/lib/gs/gs_threaded_backend.cpp
+diff --git a/ps2xRuntime/include/runtime/gs/gs_host_acquired_capture.h b/ps2xRuntime/include/runtime/gs/gs_host_acquired_capture.h
+new file mode 100644
+index 0000000..6d6a755
+--- /dev/null
++++ b/ps2xRuntime/include/runtime/gs/gs_host_acquired_capture.h
+@@ -0,0 +1,26 @@
++// GOW-Port: captura explícita y acotada de la textura adquirida; desactivada por defecto.
++#pragma once
++#include "runtime/gs/gs_shared_present.h"
++#include <cstdint>
++#include <string>
++
++class GSHostAcquiredCapture
++{
++public:
++    struct Options
++    {
++        std::string directory;
++        uint64_t fromTick = 0u;
++        uint32_t limit = 6u;
++    };
++    GSHostAcquiredCapture();
++    explicit GSHostAcquiredCapture(Options options);
++    // GOW-Port: el llamador mantiene la reserva de Acquire y el contexto host actual.
++    // No adquiere otra ranura ni consulta el GS/VRAM; los fallos no interrumpen el juego.
++    bool capture(const GSSharedPresent::Frame &frame, uint64_t hostTick) noexcept;
++
++private:
++    Options options;
++    uint32_t attempts = 0u;
++    uint64_t lastSequence = 0u;
++};
+diff --git a/ps2xRuntime/include/runtime/gs/gs_host_present.h b/ps2xRuntime/include/runtime/gs/gs_host_present.h
+index 9c66088..a8389d9 100644
+--- a/ps2xRuntime/include/runtime/gs/gs_host_present.h
++++ b/ps2xRuntime/include/runtime/gs/gs_host_present.h
+@@ -3,6 +3,7 @@
+ 
+ #include "raylib.h"
+ #include "runtime/gs/gs_shared_present.h"
++#include "runtime/gs/gs_host_acquired_capture.h" // GOW-Port: captura independiente y opt-in.
+ 
+ #include <cstdint>
+ #include <functional>
+@@ -42,6 +43,7 @@ private:
+     uint64_t lastTick = 0u;
+     uint64_t lastSharedSequence = 0u;
+     uint32_t diagnosticSharedFrames = 0u; // GOW-Port: salida opcional acotada.
++    GSHostAcquiredCapture acquiredCapture; // GOW-Port: sin opción no descarga píxeles.
+     uint32_t lastDisplayFbp = UINT32_MAX;
+     uint32_t lastSourceFbp = UINT32_MAX;
+     uint32_t lastWidth = 0u;
+diff --git a/ps2xRuntime/src/lib/gs/gs_host_acquired_capture.cpp b/ps2xRuntime/src/lib/gs/gs_host_acquired_capture.cpp
+new file mode 100644
+index 0000000..3a243f9
+--- /dev/null
++++ b/ps2xRuntime/src/lib/gs/gs_host_acquired_capture.cpp
+@@ -0,0 +1,116 @@
++// GOW-Port: readback solo al solicitar una captura independiente del registro de metadatos.
++#include "runtime/gs/gs_host_acquired_capture.h"
++#include "runtime/gs/gs_host_present_diag.h"
++#include "raylib.h"
++#include <cstdio>
++#include <cstdlib>
++#include <filesystem>
++#include <fstream>
++#include <iomanip>
++#include <memory>
++#include <stdexcept>
++#include <utility>
++
++namespace
++{
++    GSHostAcquiredCapture::Options environmentOptions()
++    {
++        GSHostAcquiredCapture::Options options;
++#ifdef _WIN32
++        // GOW-Port: getenv estrecho usa ACP; convertir la ruta UTF-16 a UTF-8 sin perder Unicode.
++        const wchar_t *directory = _wgetenv(L"PS2X_GS_ACQUIRED_CAPTURE_DIR");
++        if (!directory || !*directory) return options;
++        const auto utf8 = std::filesystem::path(directory).u8string();
++        options.directory.assign(reinterpret_cast<const char *>(utf8.data()), utf8.size());
++#else
++        const char *directory = std::getenv("PS2X_GS_ACQUIRED_CAPTURE_DIR");
++        if (!directory || !*directory) return options;
++        options.directory = directory;
++#endif
++        options.fromTick = GSHostPresentDiag::parseFromTick(
++            std::getenv("PS2X_GS_ACQUIRED_CAPTURE_FROM_TICK"));
++        if (const char *count = std::getenv("PS2X_GS_ACQUIRED_CAPTURE_COUNT"))
++        {
++            const uint64_t parsed = GSHostPresentDiag::parseFromTick(count);
++            // GOW-Port: un cupo inválido desactiva la captura en vez de elevar su coste.
++            options.limit = parsed >= 1u && parsed <= 16u ? static_cast<uint32_t>(parsed) : 0u;
++        }
++        return options;
++    }
++
++    struct OwnedImage
++    {
++        Image image{};
++        explicit OwnedImage(Texture2D texture) : image(LoadImageFromTexture(texture)) {}
++        ~OwnedImage() { if (image.data) UnloadImage(image); }
++        OwnedImage(const OwnedImage &) = delete;
++        OwnedImage &operator=(const OwnedImage &) = delete;
++    };
++}
++
++GSHostAcquiredCapture::GSHostAcquiredCapture() : GSHostAcquiredCapture(environmentOptions()) {}
++
++GSHostAcquiredCapture::GSHostAcquiredCapture(Options selected) : options(std::move(selected))
++{
++    if (options.limit == 0u || options.limit > 16u) options.directory.clear();
++}
++
++bool GSHostAcquiredCapture::capture(const GSSharedPresent::Frame &frame, uint64_t hostTick) noexcept
++{
++    // GOW-Port: sin opción, fuera de ventana o con secuencia retenida no hay llamadas GL ni E/S.
++    if (options.directory.empty() || attempts >= options.limit || hostTick < options.fromTick ||
++        frame.sequence == 0u || frame.sequence <= lastSequence || frame.blank ||
++        frame.texture == 0u || frame.width == 0u || frame.height == 0u)
++        return false;
++    lastSequence = frame.sequence;
++    const uint32_t index = ++attempts; // GOW-Port: también acotar intentos que fallen.
++    try
++    {
++        const auto directory = std::filesystem::u8path(options.directory);
++        if (!std::filesystem::is_directory(directory))
++            throw std::runtime_error("La carpeta privada de captura debe existir");
++        const std::string name = "acquired_" + std::to_string(index) + "_seq_" +
++                                 std::to_string(frame.sequence) + "_tick_" + std::to_string(frame.vsyncTick);
++        const auto pngPath = directory / (name + ".png");
++        const auto metadataPath = directory / (name + ".json");
++        if (std::filesystem::exists(pngPath) || std::filesystem::exists(metadataPath))
++            throw std::runtime_error("La captura ya existe; no se sobrescribe");
++        const Texture2D borrowed{frame.texture, static_cast<int>(frame.width), static_cast<int>(frame.height),
++                                 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8};
++        OwnedImage acquired(borrowed); // GOW-Port: reserva actual, sin otro Acquire ni readback de VRAM.
++        if (!acquired.image.data || acquired.image.width != static_cast<int>(frame.width) ||
++            acquired.image.height != static_cast<int>(frame.height) ||
++            acquired.image.format != PIXELFORMAT_UNCOMPRESSED_R8G8B8A8)
++            throw std::runtime_error("No se pudo leer la textura adquirida completa");
++        int bytes = 0;
++        const std::unique_ptr<unsigned char, decltype(&MemFree)> png(
++            ExportImageToMemory(acquired.image, ".png", &bytes), &MemFree);
++        if (!png || bytes <= 0) throw std::runtime_error("No se pudo codificar PNG");
++        // GOW-Port: filesystem/ofstream conservan rutas Windows Unicode sin depender de fopen ANSI.
++        std::ofstream imageOutput(pngPath, std::ios::binary);
++        imageOutput.write(reinterpret_cast<const char *>(png.get()), bytes);
++        imageOutput.close();
++        if (!imageOutput) throw std::runtime_error("No se pudo escribir PNG completo");
++        std::ofstream metadata(metadataPath, std::ios::binary);
++        metadata << "{\n  \"source\": \"acquired_texture\",\n  \"seq\": " << frame.sequence
++                 << ",\n  \"render\": " << frame.renderSequence << ",\n  \"hostTick\": " << hostTick
++                 << ",\n  \"frameTick\": " << frame.vsyncTick << ",\n  \"displayFbp\": " << frame.displayFbp
++                 << ",\n  \"sourceFbp\": " << frame.sourceFbp << ",\n  \"preferred\": " << unsigned(frame.usedPreferred)
++                 << ",\n  \"smode2\": " << frame.smode2 << ",\n  \"width\": " << frame.width
++                 << ",\n  \"height\": " << frame.height << ",\n  \"hashValid\": " << unsigned(frame.hashValid)
++                 << ",\n  \"hash\": \"" << std::hex << std::setw(16) << std::setfill('0') << frame.contentHash
++                 << "\",\n  \"blank\": " << unsigned(frame.blank) << "\n}\n";
++        metadata.close();
++        if (!metadata) throw std::runtime_error("No se pudo escribir el metadato completo");
++        std::fprintf(stderr, "[gs-present:capture] status=ok seq=%llu frameTick=%llu hostTick=%llu file=%s.png\n",
++                     (unsigned long long)frame.sequence, (unsigned long long)frame.vsyncTick,
++                     (unsigned long long)hostTick, name.c_str());
++        return true;
++    }
++    catch (const std::exception &error)
++    {
++        std::fprintf(stderr, "[gs-present:capture] status=failed seq=%llu reason=%s\n",
++                     (unsigned long long)frame.sequence, error.what());
++        return false;
++    }
++}
+diff --git a/ps2xRuntime/src/lib/gs/gs_host_present.cpp b/ps2xRuntime/src/lib/gs/gs_host_present.cpp
+index ccca219..3e1a2d5 100644
+--- a/ps2xRuntime/src/lib/gs/gs_host_present.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_host_present.cpp
+@@ -93,7 +93,7 @@ GSHostPresentation::View GSHostPresentation::prepare(GS &gs, uint64_t vsyncTick)
+     if (shared)
+     {
+         // GOW-Port: la llamada anterior ya terminó EndDrawing, incluido el batch.
+-        // Acquire puede conservar el slot previo; nunca descargar píxeles aquí.
++        // Acquire puede conservar el slot previo; la ruta normal no descarga píxeles.
+         GSSharedPresent::Frame frame;
+         if (GSSharedPresent::Acquire(frame))
+         {
+@@ -120,6 +120,8 @@ GSHostPresentation::View GSHostPresentation::prepare(GS &gs, uint64_t vsyncTick)
+                 }
+                 gs.recordAcquiredSharedFrame(frame);
+                 lastSharedSequence = frame.sequence;
++                // GOW-Port: captura separada explícita; usa esta misma reserva/textura adquirida.
++                acquiredCapture.capture(frame, vsyncTick);
+             }
+             if (!frame.blank && frame.texture != 0u && frame.width != 0u && frame.height != 0u)
+             {
+diff --git a/ps2xTest/src/ps2_gpu_shared_present_gl_tests.cpp b/ps2xTest/src/ps2_gpu_shared_present_gl_tests.cpp
+index 8607511..a6d079c 100644
+--- a/ps2xTest/src/ps2_gpu_shared_present_gl_tests.cpp
++++ b/ps2xTest/src/ps2_gpu_shared_present_gl_tests.cpp
+@@ -8,6 +8,7 @@
+ #include "runtime/gs/gs_cpu_backend.h"
+ #include "runtime/gs/gs_gpu_backend.h"
+ #include "runtime/gs/gs_shared_present.h"
++#include "runtime/gs/gs_host_acquired_capture.h" // GOW-Port: captura de reserva real sin VRAM actual.
+ #include "runtime/gs/gs_swizzle.h"
+ #include "runtime/gs/gs_threaded_backend.h"
+ #include "raylib.h"
+@@ -15,6 +16,9 @@
+ 
+ #include <algorithm>
+ #include <chrono>
++#include <filesystem>
++#include <fstream>
++#include <iterator>
+ #include <memory>
+ #include <stdexcept>
+ #include <string>
+@@ -398,6 +402,118 @@ namespace
+         }
+     }
+ 
++    // GOW-Port: el archivo debe representar la textura reservada, aunque VRAM cambie después.
++    void sharedAcquiredCapture(TestCase &t)
++    {
++        RaylibSharedHost host;
++        if (!host.initialize(t)) return;
++        SharedFixture fixture;
++        if (!fixture.initialize(t)) return;
++        fixture.upload(32u * 32u, 1, GS_PSM_CT32, 64, 64, 7u);
++        GSPresentationRequest request{};
++        request.pmode = 1u;
++        request.smode2 = 0x100000000400ull;
++        request.dispfb1 = 32ull | (1ull << 9u);
++        request.display1 = (63ull << 32u) | (63ull << 44u);
++        request.vsyncTick = 20u;
++        const auto pixelsA = fixture.present(t, request, "Captura adquirida A");
++        if (pixelsA.empty()) return;
++        const uint32_t before = fixture.gpu->ReadVram(GS_PSM_CT32, 1024u, 1u, 0u, 0u);
++        fixture.upload(32u * 32u, 1, GS_PSM_CT32, 64, 64, 91u);
++        const uint32_t after = fixture.gpu->ReadVram(GS_PSM_CT32, 1024u, 1u, 0u, 0u);
++        t.IsTrue(before != after, "VRAM real ya contiene B antes de capturar la reserva A");
++        struct PrivateFiles
++        {
++            std::filesystem::path directory;
++            bool owned = false;
++            ~PrivateFiles()
++            {
++                if (!owned) return;
++                std::error_code error;
++                // GOW-Port: carpeta procedural nueva; quitar solo archivos directos, sin recursión.
++                for (const auto &file : std::filesystem::directory_iterator(directory, error))
++                    if (file.is_regular_file(error)) std::filesystem::remove(file.path(), error);
++                std::filesystem::remove(directory, error);
++            }
++        } files{std::filesystem::temp_directory_path() / ("gow_acquired_test_" + std::to_string(
++            std::chrono::steady_clock::now().time_since_epoch().count()))};
++        if (!std::filesystem::create_directory(files.directory))
++        {
++            t.Fail("Se requiere una carpeta procedural nueva");
++            return;
++        }
++        files.owned = true;
++        const auto utf8Directory = files.directory.u8string();
++        const std::string directory(reinterpret_cast<const char *>(utf8Directory.data()), utf8Directory.size());
++        GSHostAcquiredCapture capture({directory, 30u, 2u});
++        GSHostAcquiredCapture disabled(GSHostAcquiredCapture::Options{});
++        t.IsFalse(disabled.capture(fixture.current, 30u), "Sin carpeta la captura queda desactivada");
++        t.IsFalse(capture.capture(fixture.current, 29u), "La ventana anterior no descarga ni gasta cupo");
++        t.IsTrue(std::filesystem::is_empty(files.directory), "Sin archivos anteriores a la ventana");
++        auto fileName = [&](uint32_t index)
++        {
++            return "acquired_" + std::to_string(index) + "_seq_" + std::to_string(fixture.current.sequence) +
++                   "_tick_" + std::to_string(fixture.current.vsyncTick);
++        };
++        auto bytesFrom = [&](const std::filesystem::path &path)
++        {
++            std::ifstream stream(path, std::ios::binary);
++            return std::vector<unsigned char>(std::istreambuf_iterator<char>(stream), {});
++        };
++        auto checkFile = [&](uint32_t index, const std::vector<uint8_t> &expected)
++        {
++            const auto png = bytesFrom(files.directory / (fileName(index) + ".png"));
++            if (png.empty()) { t.Fail("Falta PNG adquirido real"); return; }
++            struct Decoded
++            {
++                Image image{};
++                ~Decoded() { if (image.data) UnloadImage(image); }
++            } decoded{LoadImageFromMemory(".png", png.data(), static_cast<int>(png.size()))};
++            t.IsTrue(decoded.image.data != nullptr, "PNG adquirido decodificable");
++            t.Equals(decoded.image.width, 64, "Ancho completo exportado");
++            t.Equals(decoded.image.height, 64, "Alto completo exportado");
++            t.Equals(decoded.image.format, int(PIXELFORMAT_UNCOMPRESSED_R8G8B8A8), "RGBA preservado");
++            if (decoded.image.data && decoded.image.width == 64 && decoded.image.height == 64 &&
++                decoded.image.format == PIXELFORMAT_UNCOMPRESSED_R8G8B8A8)
++            {
++                const auto *pixels = static_cast<const uint8_t *>(decoded.image.data);
++                t.IsTrue(std::equal(expected.begin(), expected.end(), pixels),
++                         "Todos los píxeles del PNG coinciden con la reserva, no con VRAM posterior");
++            }
++            const auto metadataBytes = bytesFrom(files.directory / (fileName(index) + ".json"));
++            const std::string metadata(metadataBytes.begin(), metadataBytes.end());
++            t.IsTrue(metadata.find("\"source\": \"acquired_texture\"") != std::string::npos &&
++                     metadata.find("\"smode2\": " + std::to_string(fixture.current.smode2)) != std::string::npos &&
++                     metadata.find("\"frameTick\": " + std::to_string(fixture.current.vsyncTick)) != std::string::npos &&
++                     metadata.find("\"seq\": " + std::to_string(fixture.current.sequence)) != std::string::npos,
++                     "Metadatos completos proceden de la misma textura exportada");
++        };
++        t.IsTrue(capture.capture(fixture.current, 30u), "Primera captura inclusiva después de cambiar VRAM");
++        checkFile(1u, pixelsA);
++        const auto original = bytesFrom(files.directory / (fileName(1u) + ".png"));
++        GSHostAcquiredCapture collision({directory, 30u, 1u});
++        t.IsFalse(collision.capture(fixture.current, 30u), "Otra instancia no sobrescribe una captura existente");
++        t.IsTrue(original == bytesFrom(files.directory / (fileName(1u) + ".png")), "PNG original intacto");
++        t.IsFalse(capture.capture(fixture.current, 31u), "Una secuencia retenida no consume otro archivo");
++        request.smode2 = 0x401u;
++        request.vsyncTick = 21u;
++        const auto pixelsB = fixture.present(t, request, "Captura adquirida B campo impar");
++        if (pixelsB.empty()) return;
++        t.IsTrue(capture.capture(fixture.current, 31u), "Segunda captura real con modo cambiado");
++        checkFile(2u, pixelsB);
++        request.vsyncTick = 22u;
++        if (fixture.present(t, request, "Captura fuera del cupo campo par").empty()) return;
++        t.IsFalse(capture.capture(fixture.current, 32u), "No descargar ni escribir después del cupo");
++        size_t pngCount = 0u, metadataCount = 0u;
++        for (const auto &file : std::filesystem::directory_iterator(files.directory))
++        {
++            pngCount += file.path().extension() == ".png" ? 1u : 0u;
++            metadataCount += file.path().extension() == ".json" ? 1u : 0u;
++        }
++        t.Equals(pngCount, size_t(2u), "Solo dos texturas únicas dentro de la ventana/cupo");
++        t.Equals(metadataCount, size_t(2u), "Un metadato por textura adquirida");
++    }
++
+     void sharedForcedReadback(TestCase &t)
+     {
+         RaylibSharedHost host;
+@@ -451,6 +567,7 @@ void runGpuSharedPresentGlTests()
+         suite.Run("Fuente, dimensiones, unidades y transición PMODE", sharedSourcesAndBlank);
+         suite.Run("Dos circuitos, ALP, filas y campos GoW", sharedCrtcFields);
+         suite.Run("SMODE2 de textura adquirida y retenida", sharedAcquiredMode); // GOW-Port
++        suite.Run("Captura de reserva adquirida tras cambiar VRAM", sharedAcquiredCapture); // GOW-Port
+         suite.Run("Captura diagnóstica síncrona mientras shared y async están activos", sharedForcedReadback);
+     });
+ #endif

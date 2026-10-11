@@ -22,14 +22,19 @@ def digest(path):
     return result.hexdigest()
 
 
-def settings_for(case, folder, iso, shader_cache, vu1_thread='0', gs_front='0', diag_from_tick=0):
+def settings_for(case, folder, iso, shader_cache, vu1_thread='0', gs_front='0', diag_from_tick=0,
+                 capture_acquired=0):
     if case not in CASES or vu1_thread not in ('0', '1') or gs_front not in ('0', '1'):
         raise ValueError('Caso o modo de hilos inválido')
     if gs_front == '1' and vu1_thread != '1':
         raise ValueError('El frente GS requiere el hilo VU1')
     if type(diag_from_tick) is not int or not 0 <= diag_from_tick <= 0xffffffffffffffff:
         raise ValueError('El inicio del diagnóstico debe ser un tick uint64')
-    return {
+    if type(capture_acquired) is not int or not 0 <= capture_acquired <= 16:
+        raise ValueError('La captura adquirida requiere un cupo de 0..16')
+    if capture_acquired and not case.endswith('shared'):
+        raise ValueError('La captura adquirida requiere presentación compartida')
+    settings = {
         'GOW_ISO': str(iso), 'GOW_MC0': str(folder / 'Mcd001.ps2'), 'GOW_MC1': '0',
         'GOW_GS_FINISH_ASINCRONO': '1' if case.startswith('async') else '0',
         'PS2X_GS_DIRECT_PRESENT': '1' if case.endswith('shared') else '0',
@@ -40,6 +45,11 @@ def settings_for(case, folder, iso, shader_cache, vu1_thread='0', gs_front='0', 
         'GOW_FAST_BOOT': '0', 'GOW_SKIP_FMV': '1',
         'PS2X_GS_SHADER_CACHE_DIR': str(shader_cache),
     }
+    if capture_acquired:
+        settings.update(PS2X_GS_ACQUIRED_CAPTURE_DIR=str(folder/'acquired'),
+                        PS2X_GS_ACQUIRED_CAPTURE_FROM_TICK=str(diag_from_tick),
+                        PS2X_GS_ACQUIRED_CAPTURE_COUNT=str(capture_acquired))
+    return settings
 
 
 def isolated_environment(inherited, settings):
@@ -204,9 +214,11 @@ def prepare_case(args):
     if folder.is_relative_to(modules):
         raise ValueError('La salida no puede estar dentro del IOP_MOD de origen')
     settings = settings_for(args.case, folder, iso, root/'shader_cache',
-                            args.vu1_thread, args.gs_front, args.diag_from_tick)
+                            args.vu1_thread, args.gs_front, args.diag_from_tick, args.capture_acquired)
     # No reutilizar una carpeta: evita sobrescribir una pasada o una tarjeta original.
     folder.mkdir(parents=True, exist_ok=False)
+    if args.capture_acquired:
+        (folder/'acquired').mkdir()
     shutil.copy2(elf, folder/'SCUS_973.99')
     shutil.copytree(modules, folder/'IOP_MOD')
     card = folder/'Mcd001.ps2'
@@ -239,6 +251,8 @@ def main():
     parser.add_argument('--gs-front', choices=('0', '1'), default='0')
     parser.add_argument('--diag-from-tick', type=int, default=0,
                         help='Primer tick host registrado; no modifica la presentación ni su cupo')
+    parser.add_argument('--capture-acquired', type=int, choices=range(17), default=0,
+                        help='Capturas explícitas de la textura adquirida desde diag-from-tick; 0 desactiva')
     args = parser.parse_args()
     if os.name != 'nt':
         parser.error('La ejecución del juego y el monitor de ventana requieren Windows')

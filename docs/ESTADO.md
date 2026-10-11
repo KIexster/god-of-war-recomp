@@ -4199,3 +4199,26 @@ se convierten en una afirmación de fidelidad: #51 solo diagnostica; no corrige
 el encuadre ni demuestra ausencia de contenido antiguo. Detalles en
 TRANSICION_COMPARTIDA.md. Siguiente tema: captura explícita y acotada de la
 textura adquirida para comparar campos; conservar privados los píxeles.
+
+## #51 fusionada; siguiente tema: píxeles de la reserva adquirida (2026-10-11)
+
+#51 fusionada en `05421940617e5ce69889600d9eb727b3c36c0b3b`, revisión manual,
+validaciones nativas/funcionales anteriores y [CI de su HEAD final `10edb76`
+correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38161351218).
+Se cierra la instrumentación; no se declaran resueltos encuadre, causa visual
+de A–B–A ni estabilidad prolongada.
+
+Rama siguiente con parche separado `ps2recomp-gs-host-acquired-capture.patch`:
+descarga explícita y acotada de la textura de esa misma reserva, PNG RGBA y
+metadatos, sin consulta a VRAM ni otro Acquire. Desactivada por defecto,
+independiente del diagnóstico de #51; máximo 16 intentos, sin sobrescritura.
+Su coste impide usarla como benchmark. `--capture-acquired 6` del lanzador
+prepara la carpeta privada y ventana desde `--diag-from-tick`. Protocolo y
+variables en TRANSICION_COMPARTIDA.md.
+
+Regresión GPU real preparada para demostrar que cambiar VRAM a B después
+de adquirir A no cambia el PNG de A; comparar todos sus píxeles y luego B.
+Sintaxis C++20 y aplicación independiente correctas; lanzador 17/17,
+configuración 0 errores/4 avisos existentes, PowerShell 0 errores.
+Pendientes compilación completa de 101, nativas/negativo/restauración, CI y
+capturas del juego. No atribuirlas al runner de 100 ni cambiar matemáticas.

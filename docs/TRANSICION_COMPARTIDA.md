@@ -857,3 +857,43 @@ La siguiente comprobación requiere unos pocos píxeles de la textura realmente
 adquirida, con metadatos de esa reserva, en una captura explícita separada:
 la VRAM latched no basta y añadirla no debe cambiar silenciosamente el coste
 del diagnóstico de #51. No convertir estas pasadas en mediciones de FPS.
+
+## Captura explícita de la reserva adquirida: preparación de 101 (2026-10-11)
+
+#51 se fusionó en `05421940617e5ce69889600d9eb727b3c36c0b3b` después de revisar
+el cambio, cerrar las validaciones anteriores y comprobar [CI del HEAD final
+`10edb76` verde](https://github.com/KIexster/god-of-war-recomp/actions/runs/38161351218).
+Quedan abiertos encuadre, causa visual de los retornos y estabilidad prolongada.
+
+Nuevo tema separado `ps2recomp-gs-host-acquired-capture.patch`, aplicado tras
+los 100 anteriores. `GSHostPresentation` puede guardar unas pocas texturas
+de la misma reserva que acaba de adquirir, con PNG RGBA y JSON de sus metadatos.
+La opción está desactivada por defecto y es independiente de PRESENT_DIAG.
+No consulta VRAM, vuelve a adquirir ni introduce glFinish global o cambios
+en FINISH/fences/composición. **Activarla sí descarga píxeles y escribe archivos**:
+usar otra pasada diagnóstica, nunca un benchmark o prueba de ausencia de cuelgues.
+
+Variables leídas al construir el host: `PS2X_GS_ACQUIRED_CAPTURE_DIR` apunta
+a una carpeta privada existente, `PS2X_GS_ACQUIRED_CAPTURE_FROM_TICK` fija
+el primer hostTick inclusivo (ausente/inválido: 0), y
+`PS2X_GS_ACQUIRED_CAPTURE_COUNT` limita intentos (por defecto 6, rango 1..16;
+inválido desactiva). No captura secuencias retenidas, retrocesos, texturas vacías
+o PMODE apagado; los fallos también consumen el cupo. Rechaza archivos existentes
+y conserva la ruta Unicode en Windows. Un JSON completo acompaña a cada PNG
+correcto; fallos se registran como `[gs-present:capture] status=failed`.
+
+El lanzador añade `--capture-acquired 6` solo para casos compartidos, crea
+`acquired/` dentro de la carpeta nueva de la pasada y utiliza `--diag-from-tick`
+también para esa ventana. Con valor 0 no instala las variables de captura,
+incluidas las heredadas. Conservar manifiesto/hash/guion/tarjetas y cerrar
+una pasada antes de iniciar otra. Los PNG y JSON del juego permanecen privados.
+
+Regresión procedural Windows/WGL pendiente de ejecución: publicar A,
+adquirirla, modificar VRAM a B y exportar la reserva A. Comparar todos los
+píxeles del PNG con A y luego publicar/exportar B; verificar metadatos, ventana,
+retención, cupo y rechazo de sobrescritura. No aceptar fallback CPU ni un éxito
+vacío en Linux. Sintaxis C++20 correcta, aplicación sobre base independiente
+de 100 correcta, 17 pruebas del lanzador correctas, configuración 0 errores/
+4 avisos existentes y sintaxis PowerShell 0 errores. Pendientes compilación
+completa de 101, suite normal/GPU, negativo significativo/restauración, CI
+y control del juego antes de atribuirle capturas o conclusiones visuales.
