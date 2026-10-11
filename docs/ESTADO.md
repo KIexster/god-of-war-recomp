@@ -3865,3 +3865,41 @@ la corrección de Count tiene regresiones negativas/positivas y control nativo,
 sin cambiar FINISH/fences. Falta cerrar los dos controles por RAM de 98 y
 comparar cámara/escena de forma alineada antes de dar por cerrado #51.
 Se inicia síncrona/RAM aislada después de terminar asíncrona/compartida.
+## Controles incorporados desde la corrección #59 (2026-10-11)
+
+Se conserva a continuación el registro de validación de la rama Count,
+incorporado por merge sin reescribir su historia ni borrar los controles
+anteriores. Su HEAD final `ab89804` pasó CI completo y #59 se fusionó en
+`cee659a733be0ae9db4764ad99b4e570e9af7849`. Los pendientes siguientes
+describen el momento de cada control; #51 conserva la investigación visual.
+
+Control nativo de la integración de 98 en #51, código `f36936e`: build Windows
+completo, 898,79 s, salida 0, runner SHA-256
+`4693c62c14919c5bd400aa55b8da50a0ab5f5d281d3d20e7b02624aeaa5c6663`.
+597/597 normal y 631/631 GPU real correctas, incluidas las cuatro regresiones
+de Count. Controles separados de FINISH y de píxeles de texturas adquiridas
+pasan ambos modos. Se comprueba la integración con dos parches GS adicionales,
+no un ejecutable independiente de esta rama. La transición nueva empieza
+después de terminar compilaciones y pruebas; el efecto funcional sigue pendiente.
+
+Primera pasada síncrona/compartida con aquel runner: 360,08 s, terminación
+deliberada por límite, tarjeta privada intacta y ninguna firma buscada de error.
+Informa estado 11 a 145,14 s; el mismo caso de las cadenas anteriores 96/97
+dejaba de informar tras 4 a ~25 s. Se supera la espera en este control.
+Capturas externas propias muestran intro, enemigos y finalmente HUD/Kratos
+en los muelles, sin alineación PCSX2/secuencia GS y con perturbación de captura.
+No se afirma jugabilidad, fidelidad de cámara, ausencia de alternancia o FPS.
+Se repite después asíncrona/compartida aislada; falta completar esa pasada y
+comprobar CI del HEAD final antes de cerrar la revisión de esta corrección.
+
+La repetición asíncrona/compartida con el mismo runner termina 360,04 s:
+primer informe 11 a 116,40 s, último 11, tarjeta intacta y sin firmas buscadas
+de error; salida deliberada por límite. Dos capturas propias muestran escena
+y después HUD/Kratos/combate, sin comparación alineada ni medida de FPS.
+2.325 adquisiciones, cero regresiones/inconsistencias/hash desconocido,
+140 A–B–A y ninguno en tramos 4/11. La pasada síncrona también completó 360 s
+y superó la espera de las cadenas anteriores. Revisión del cambio: estado
+global EE, wrap, escritura/reset de base, extensión de signo y efecto con
+destino $zero; sin modificar FINISH/fences ni el checkout de Opus.
+El CI del último HEAD documental debe pasar antes de fusionar este tema.
+La validación de cámara/alternancia y los hilos permanecen en #51.
