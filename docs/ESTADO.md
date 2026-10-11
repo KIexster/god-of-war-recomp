@@ -3659,3 +3659,60 @@ Comienza la matriz del juego con el runner identificado de 97, inicialmente
 sin hilo VU1/frente GS. La validación procedural no acredita fidelidad de
 la escena, solución de la espera síncrona, alternancia visible ni cámara.
 #51 sigue en borrador; su revisión visual y CI del próximo HEAD siguen pendientes.
+
+## Matriz integrada y espera localizada en Count (2026-10-11)
+
+Se completa la matriz de 97 parches con el mismo runner `f51cc2c` y SHA-256
+`ba80364535c22d728058ad98bf8182937f36c2db9ada5a11063f684c1a57add0`.
+Cada pasada válida dura 360 s; finaliza por límite deliberado (proceso 1,
+lanzador 0), sin las firmas de error buscadas y con tarjeta procedural intacta.
+VU1 y frente GS permanecen sin sus hilos opcionales. Primer informe del guion:
+
+| FINISH / presentación | Primer estado 11 | Último estado |
+|---|---:|---:|
+| Asíncrono / compartida | 135,35 s | 11 |
+| Síncrono / compartida | No observado | 4, a 25,31 s |
+| Síncrono / RAM | 126,78 s | 11 |
+| Asíncrono / RAM, repetición aislada | 121,40 s | 11 |
+
+Estos tiempos son informes del guion, no tiempos de carga comparables ni FPS.
+La pasada síncrona/RAM estuvo minimizada durante buena parte del control y
+sus últimos ~30 s coincidieron por un error de coordinación del lanzador con
+otra instancia propia asíncrona/RAM. La entrada en 11 ocurrió antes del
+solapamiento, pero no se afirma una pasada completa aislada. Se paró únicamente
+la instancia nueva mediante su archivo STOP a 34,35 s y se repitió asíncrona/RAM
+sin solapamiento. Se conservan ambos registros; no se presenta la parada como
+un cuelgue. No se obtuvo una captura válida de la ventana minimizada.
+
+Asíncrona/compartida: 1.986 adquisiciones, 20 retornos A–B–A, ninguno en los
+tramos del último estado 4 o 11; 1.056 adquisiciones bajo el último estado 11.
+Distancia de ticks 0..6. Síncrona/compartida vuelve a esperar sin nuevos informes
+tras estado 4: agota 4.096 registros, con 3.896 A–B–A (3.800 en el tramo 4),
+distancia 0..3. En ambas: cero regresiones, metadatos contradictorios o hashes
+desconocidos; un cambio inicial 1×1 → 512×448 y siempre `preferred=0`, fuente
+CRTC en páginas. El cupo de la síncrona deja sin observar el resto de la pasada;
+la alternancia de dos hashes podría corresponder a campos de una escena quieta.
+
+Capturas externas privadas de la superficie de nuestra ventana mediante
+PrintWindow muestran HUD, Kratos y enemigos en asíncrona/compartida; dos
+capturas síncronas muestran una escena de llamas/primer plano sin el progreso
+esperado. Se verifican PID, ruta, visibilidad y ausencia de minimización antes
+de capturar. La petición de captura puede perturbar ese instante; las imágenes
+no se alinean con secuencias adquiridas ni con PCSX2. No prueban cámara correcta,
+ausencia de imágenes antiguas, equivalencia de píxeles del juego o rendimiento.
+
+Dos muestreos externos de 5 s al PID propio 12184, con PDB privado, encuentran
+el ejecutor EE recorriendo `sub_00185A20` y trabajo IOP; el worker GS espera
+comandos. El segundo resuelve líneas del bucle 0x185D88..0x185DD8: consulta
+COP0.Count para comprobar un plazo. La traducción actual lee `ctx->cop0_count`,
+pero la contabilización de ciclos EE no actualiza ese campo. Es un defecto
+preexistente de la semántica del contador y una pista concreta para esta espera;
+no demuestra todavía que corregirlo resuelva la transición. El muestreo suspende
+brevemente hilos, y no se utiliza como benchmark ni como prueba de bloqueo GL.
+
+Se prepara un parche separado de Count, con pruebas sin juego de ciclos, wrap,
+contextos, reset y traducción MFC0/MTC0. Debe compilarse, demostrar regresiones
+y regenerar completamente el runner antes de atribuirle cualquier efecto.
+No modifica archivos ni procesos de Opus; su checkout se comprobó limpio.
+El CI del HEAD publicado `10a7bec` está verde. #51 continúa en borrador: siguen
+pendientes resolver la espera y comparar la escena/cámara de forma alineada.

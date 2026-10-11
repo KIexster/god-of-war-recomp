@@ -592,3 +592,26 @@ alturas menores de 64: el CPU las interpreta como configuración inválida.
 La comparación inicial con altura 48 se conserva como fallida y no equivalente,
 sin modificar el renderer CPU. No afirmar FPS, fidelidad del juego, cámara
 correcta o ausencia de alternancia por estas pruebas procedurales.
+
+## Matriz de 97 parches y muestreo de la espera (2026-10-11)
+
+El runner `f51cc2c`, SHA-256
+`ba80364535c22d728058ad98bf8182937f36c2db9ada5a11063f684c1a57add0`,
+completa controles de 360 s: asíncrona/compartida y ambas RAM informan estado 11;
+síncrona/compartida deja de informar después de estado 4 a 25,31 s.
+Los detalles, la minimización y el solapamiento accidental de ~30 s al final
+de síncrona/RAM constan en ESTADO.md. Se descarta la primera asíncrona/RAM
+parada a 34,35 s y se repite aislada. No usar estos tiempos para comparar FPS.
+
+El muestreo por PID con símbolos se realiza después de observar la espera,
+solo sobre nuestra instancia: dos ventanas de 5 s. Localiza trabajo EE en
+un bucle de COP0.Count; el worker GS espera comandos durante esas muestras.
+Conservar las perturbaciones del muestreo y las capturas junto al resultado.
+No concluir bloqueo del driver ni eliminar fences a partir de una espera
+del juego que todavía no se ha explicado experimentalmente.
+
+Una captura externa PrintWindow de la ventana propia visible y no minimizada
+permite revisar la superficie aunque no esté en primer plano. Comprobar
+siempre PID, ruta y propiedad de la ventana; rechazar la captura minimizada
+o posterior al cierre. Sigue sin identificar por sí sola la secuencia GS
+adquirida ni sustituye una comparación alineada con PCSX2. Imágenes privadas.
