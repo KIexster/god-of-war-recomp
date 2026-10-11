@@ -1,0 +1,145 @@
+diff --git a/ps2xRuntime/include/runtime/gs/gs_host_present_diag.h b/ps2xRuntime/include/runtime/gs/gs_host_present_diag.h
+new file mode 100644
+index 0000000..56ecb4b
+--- /dev/null
++++ b/ps2xRuntime/include/runtime/gs/gs_host_present_diag.h
+@@ -0,0 +1,29 @@
++// GOW-Port: ventana opcional del registro; no controla render, fences ni Acquire.
++#pragma once
++#include <cstdint>
++#include <limits>
++
++namespace GSHostPresentDiag
++{
++    inline uint64_t parseFromTick(const char *text) noexcept
++    {
++        if (!text || !*text) return 0u;
++        uint64_t value = 0u;
++        for (const char *at = text; *at; ++at)
++        {
++            if (*at < '0' || *at > '9') return 0u;
++            const uint64_t digit = static_cast<uint64_t>(*at - '0');
++            if (value > (std::numeric_limits<uint64_t>::max() - digit) / 10u) return 0u;
++            value = value * 10u + digit;
++        }
++        return value;
++    }
++
++    inline bool consume(uint64_t hostTick, uint64_t fromTick, uint32_t &records) noexcept
++    {
++        // GOW-Port: las adquisiciones anteriores no gastan el cupo de 4096 por instancia.
++        if (hostTick < fromTick || records >= 4096u) return false;
++        ++records;
++        return true;
++    }
++}
+diff --git a/ps2xRuntime/src/lib/gs/gs_host_present.cpp b/ps2xRuntime/src/lib/gs/gs_host_present.cpp
+index f0092ee..f8bc6c6 100644
+--- a/ps2xRuntime/src/lib/gs/gs_host_present.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_host_present.cpp
+@@ -1,5 +1,6 @@
+ // GOW-Port: contexto host, selección de frames y dibujo raylib usados por el port.
+ #include "runtime/gs/gs_host_present.h"
++#include "runtime/gs/gs_host_present_diag.h" // GOW-Port: ventana sin lecturas GPU adicionales.
+ #include "runtime/gs/gs_frontend.h"
+ #include "runtime/ps2_perf.h"
+ #include "ps2_log.h"
+@@ -104,9 +105,11 @@ GSHostPresentation::View GSHostPresentation::prepare(GS &gs, uint64_t vsyncTick)
+                     const char *v = std::getenv("PS2X_GS_PRESENT_DIAG");
+                     return v && std::strcmp(v, "1") == 0;
+                 }();
+-                if (diagnostic && diagnosticSharedFrames < 4096u)
++                // GOW-Port: desplazar el registro sin elevar su cupo ni cambiar la presentación.
++                static const uint64_t diagnosticFromTick = GSHostPresentDiag::parseFromTick(
++                    std::getenv("PS2X_GS_PRESENT_DIAG_FROM_TICK"));
++                if (diagnostic && GSHostPresentDiag::consume(vsyncTick, diagnosticFromTick, diagnosticSharedFrames))
+                 {
+-                    ++diagnosticSharedFrames;
+                     // GOW-Port: sourceFbp son páginas DISPFB o bloques TEX0 según la fuente adquirida.
+                     std::fprintf(stderr, "[gs-present:shared] seq=%llu render=%llu hostTick=%llu frameTick=%llu displayFbp=%u sourceFbp=%u preferred=%u width=%u height=%u hashValid=%u hash=%016llx blank=%u\n",
+                         (unsigned long long)frame.sequence, (unsigned long long)frame.renderSequence,
+diff --git a/ps2xTest/CMakeLists.txt b/ps2xTest/CMakeLists.txt
+index 9781688..b4ded93 100644
+--- a/ps2xTest/CMakeLists.txt
++++ b/ps2xTest/CMakeLists.txt
+@@ -41,6 +41,7 @@ add_library(ps2_test_lib STATIC
+     src/ps2_gpu_shared_present_gl_tests.cpp # GOW-Port: compositor compartido en host raylib.
+     src/ps2_gs_shared_queue_tests.cpp # GOW-Port: FIFO y capturas bajo demanda.
+     src/ps2_gs_host_present_tests.cpp # GOW-Port: consumidor real, escala y cierre.
++    src/ps2_gs_host_diag_window_tests.cpp # GOW-Port: tick de inicio y cupo del registro.
+     src/ps2_iop_tests.cpp
+     src/ps2_sif_rpc_tests.cpp
+     src/ps2_sif_dma_tests.cpp
+diff --git a/ps2xTest/src/main.cpp b/ps2xTest/src/main.cpp
+index 4aedbae..d183476 100644
+--- a/ps2xTest/src/main.cpp
++++ b/ps2xTest/src/main.cpp
+@@ -22,6 +22,7 @@ void runGpuStreamingGlTests(); // GOW-Port
+ void runGpuSharedPresentGlTests(); // GOW-Port
+ void runGsSharedQueueTests(); // GOW-Port
+ void runGsHostPresentTests(); // GOW-Port
++void runGsHostDiagWindowTests(); // GOW-Port
+ void register_ps2_iop_tests();
+ void register_ps2_sif_rpc_tests();
+ void register_ps2_sif_dma_tests();
+@@ -56,6 +57,7 @@ int main()
+     runGpuSharedPresentGlTests();
+     runGsSharedQueueTests();
+     runGsHostPresentTests();
++    runGsHostDiagWindowTests(); // GOW-Port
+     register_ps2_iop_tests();
+     register_ps2_sif_rpc_tests();
+     register_ps2_sif_dma_tests();
+diff --git a/ps2xTest/src/ps2_gs_host_diag_window_tests.cpp b/ps2xTest/src/ps2_gs_host_diag_window_tests.cpp
+new file mode 100644
+index 0000000..8d91691
+--- /dev/null
++++ b/ps2xTest/src/ps2_gs_host_diag_window_tests.cpp
+@@ -0,0 +1,47 @@
++// GOW-Port: el filtro no gasta el cupo antes del tick y mantiene el límite antiguo.
++#include "MiniTest.h"
++#include "runtime/gs/gs_host_present_diag.h"
++#include <cstdint>
++#include <limits>
++
++void runGsHostDiagWindowTests()
++{
++    MiniTest::Case("GOW GS host diagnostic window", [](TestCase &tc)
++    {
++        tc.Run("deferred acquisitions preserve the budget until the inclusive tick", [](TestCase &t)
++        {
++            uint32_t records = 0u;
++            bool premature = false;
++            for (uint64_t tick = 0u; tick < 6000u; ++tick)
++                premature |= GSHostPresentDiag::consume(tick, 6000u, records);
++            t.IsTrue(!premature, "No emitir registros anteriores al tick solicitado");
++            t.Equals(records, 0u, "El arranque no consume el cupo de la partida");
++            t.IsTrue(GSHostPresentDiag::consume(6000u, 6000u, records), "Inicio inclusivo");
++            t.Equals(records, 1u, "La primera adquisición seleccionada consume uno");
++        });
++        tc.Run("default and deferred windows retain the per-instance 4096 limit", [](TestCase &t)
++        {
++            for (uint64_t start : {0ull, 6000ull})
++            {
++                uint32_t records = 0u;
++                uint32_t accepted = 0u;
++                for (uint64_t step = 0u; step < 5000u; ++step)
++                    accepted += GSHostPresentDiag::consume(start + step, start, records) ? 1u : 0u;
++                t.Equals(accepted, 4096u, "Mismo cupo para diagnóstico antiguo y diferido");
++                t.Equals(records, 4096u, "No crecer tras agotar el cupo");
++                t.IsTrue(!GSHostPresentDiag::consume(0u, start, records), "El retroceso no renueva el cupo");
++            }
++            uint32_t full = std::numeric_limits<uint32_t>::max();
++            t.IsTrue(!GSHostPresentDiag::consume(6000u, 6000u, full), "No desbordar el contador");
++        });
++        tc.Run("from-tick accepts decimal uint64 and rejects signs suffixes and overflow", [](TestCase &t)
++        {
++            t.Equals(GSHostPresentDiag::parseFromTick(nullptr), uint64_t(0u), "Ausente conserva el diagnóstico antiguo");
++            t.Equals(GSHostPresentDiag::parseFromTick("6000"), uint64_t(6000u), "Tick solicitado");
++            t.Equals(GSHostPresentDiag::parseFromTick("18446744073709551615"),
++                     std::numeric_limits<uint64_t>::max(), "Último tick válido");
++            for (const char *invalid : {"", "-1", "+1", "1x", " 1", "18446744073709551616"})
++                t.Equals(GSHostPresentDiag::parseFromTick(invalid), uint64_t(0u), "Inválido conserva inicio cero");
++        });
++    });
++}

@@ -461,6 +461,63 @@ los mismos 79 parches; control nativo de 95,948 s: 84 lecturas completas,
 9.598 matrices finitas y no totalmente nulas. En intro hay 32 muestras por
 articulación de las paletas 125/103. Resultados, binario y límites: ESTADO.
 
+## Adquisiciones de presentación compartida (2026-10-10)
+
+`PS2X_GS_PRESENT_DIAG=1` registra `[gs-present:shared]` cuando el host adquiere
+una secuencia distinta de la anterior, hasta 4.096 por instancia. Usa los
+metadatos de esa textura: secuencia publicada/renderizada, ticks del host y
+de la imagen, framebuffer/fuente, dimensiones, hash/validez y blank. No añade
+readback, otra adquisición ni glFinish. El hash existente requiere
+`PS2X_FRAME_HASH=1`; su coste y el del registro impiden usar este control para FPS.
+
+Desde la ampliación de 2026-10-11 registra también `preferred` del frame
+adquirido. En esta ruta GPU, `displayFbp` usa páginas de 8.192 bytes;
+`sourceFbp` usa páginas con `preferred=0` o bloques de 256 bytes con
+`preferred=1`. El inspector conserva los registros antiguos y cuenta sus
+unidades como desconocidas, sin deducirlas por igualdad de valores crudos.
+`source_units` incluye solo filas consistentes. No cambia la selección de
+fuente ni verifica por sí solo que sea correcta. Quince pruebas Python pasan;
+compilación nativa y control del nuevo formato pendientes.
+
+`dimension_changes` informa línea, secuencia/render y tamaño anterior/nuevo
+de las filas consistentes. No transforma una contradicción de metadatos en
+un cambio de resolución válido ni enlaza tamaños entre modos separados.
+El inspector tiene ahora 17 pruebas correctas; las dos nuevas regresiones
+fallan con la versión anterior. Las dimensiones no acreditan encuadre ni aspecto.
+
+Usar `GOW_PAD_TEST_NO_CAPTURE=1` con el guion automático mantiene entradas y
+registros de estado sin capturas periódicas de VRAM. Eliminar del entorno los
+otros diagnósticos: algunos se activan por presencia y siguen activos con
+valor `0`. La matriz FINISH síncrono/asíncrono y presentación RAM/compartida,
+las copias privadas de tarjetas y los límites de interpretación están en
+[TRANSICION_COMPARTIDA.md](TRANSICION_COMPARTIDA.md).
+
+El lanzador resuelve `--output-root` y admite, dentro de este checkout,
+únicamente `logs/`; también admite directorios externos. Rechaza una salida
+rastreable antes de crear la pasada. Trece pruebas Windows correctas; la
+regresión contra la versión anterior intercepta la creación del directorio.
+
+El inspector `tools/render/inspect_shared_frames.py` detecta retrocesos,
+metadatos contradictorios para una secuencia, retención y retornos A–B–A.
+Un retorno de hash es una pista; no prueba corrupción, igualdad de píxeles
+ni contenido viejo. Las capturas posteriores de VRAM tampoco demuestran qué
+textura compartida adquirió el host.
+
+Desde el control de 2026-10-11, `tick_distance` informa el mínimo y máximo de
+`hostTick - frameTick` y la línea/metadatos del primer máximo. Incluye filas
+retenidas consistentes y muestras sin hash; excluye metadatos contradictorios.
+La distancia puede ser negativa si el request muestrea el tick después que el
+host. No es tiempo, no mide FPS ni prueba latencia sostenida. Cero retenciones
+en el resumen no descarta retenciones que el diagnóstico no haya registrado.
+
+`tools/render/run_transition_control.py` automatiza la matriz en carpetas
+privadas nuevas, verificando manifiesto/ELF/ejecutable y usando tarjetas
+independientes. Registra el estado de nuestra ventana sin capturas, para
+distinguir minimización de pérdida de foco. Solo detiene el proceso que
+inicia; crear `STOP` en la carpeta de la pasada conserva una parada deliberada
+en `result.json`. Variables, argumentos, protocolo y límites:
+[TRANSICION_COMPARTIDA.md](TRANSICION_COMPARTIDA.md).
+
 ## Bases de la fuente de presentación GS (2026-10-11)
 
 `ps2recomp-gs-source-address.patch` compara las bases físicas de FRAME/DISPFB
@@ -491,3 +548,194 @@ No usa `copyLatchedHostPresentationFrame` como sustituto de esa textura.
 Este readback existe solo en la regresión procedural; su ejecución Windows
 con la cadena nueva sigue pendiente. El CI previo del arreglo `e52527d`
 pasa 593/593; no acredita por sí solo esta ampliación GPU exclusiva de Windows.
+
+## Configuración de las pruebas de FINISH (2026-10-11)
+
+La suite completa normal y GPU se ejecuta con entorno de diagnósticos limpio
+y FINISH síncrono (`GOW_GS_FINISH_ASINCRONO=0` o ausente). Dos grabadores
+exigen que los draws y FINISH estén terminados al retornar. Bajo la opción
+asíncrona esas aserciones no representan su contrato y los grabadores pueden
+consultarse mientras el worker los modifica. No saltar pruebas ni añadir
+excepciones para conseguir una suite verde en esa configuración.
+
+`tests/gs_finish_async_test.cpp` ejecuta procesos separados `default` y
+`async`: verifica retorno y CSR según el modo, retiene el backend mediante
+un gate procedural y exige orden dibujos → FINISH → lectura y que la lectura
+espere siempre. El CI valida ambos. Reproducir ese control específico en
+Windows, además de la suite normal/GPU, antes de informar validación asíncrona.
+El ensayo Windows adicional de toda la suite GPU asíncrona de 96 parches se
+conserva como 623/625, sin declarar éxito ni modificar las expectativas del runtime.
+
+## FINISH y píxeles compartidos en Windows (2026-10-11)
+
+Con la cadena completa de 97 parches (`f51cc2c`), pasan 593/593 normal,
+627/627 GPU real y `gow_gs_finish_async_test default|async` en procesos nuevos.
+Se añade un control con GPU/contexto WGL reales y referencia CPU:
+
+```text
+cmake --build <build-del-runtime> --target gow_gs_shared_finish_test
+<build-del-runtime>\gow_gs_shared_finish_test.exe default
+<build-del-runtime>\gow_gs_shared_finish_test.exe async
+```
+
+El build debe incluir `tools/ci/pruebas_gs.cmake`, como hace CI para los
+controles procedurales. Este target se define solo en Windows; necesita
+OpenGL 3.3 y compartir texturas, y falla si hay fallback o no llega una
+secuencia nueva. Fija FINISH y presentación directa antes de crear el backend;
+ejecutar cada modo en un proceso separado, con el entorno GOW/PS2X limpio.
+
+Ambos modos pasan: 16 FINISH/publicaciones, selección preferida/CRTC alterna,
+píxel conocido y todas las filas comparadas con CPU, ticks/secuencias y cambio
+64×64 → 64×96 al reutilizar las ocho ranuras. Solo este control descarga la
+textura adquirida; no cambia el camino normal del host. No solicitar aquí
+alturas menores de 64: el CPU las interpreta como configuración inválida.
+La comparación inicial con altura 48 se conserva como fallida y no equivalente,
+sin modificar el renderer CPU. No afirmar FPS, fidelidad del juego, cámara
+correcta o ausencia de alternancia por estas pruebas procedurales.
+
+## Matriz de 97 parches y muestreo de la espera (2026-10-11)
+
+El runner `f51cc2c`, SHA-256
+`ba80364535c22d728058ad98bf8182937f36c2db9ada5a11063f684c1a57add0`,
+completa controles de 360 s: asíncrona/compartida y ambas RAM informan estado 11;
+síncrona/compartida deja de informar después de estado 4 a 25,31 s.
+Los detalles, la minimización y el solapamiento accidental de ~30 s al final
+de síncrona/RAM constan en ESTADO.md. Se descarta la primera asíncrona/RAM
+parada a 34,35 s y se repite aislada. No usar estos tiempos para comparar FPS.
+
+El muestreo por PID con símbolos se realiza después de observar la espera,
+solo sobre nuestra instancia: dos ventanas de 5 s. Localiza trabajo EE en
+un bucle de COP0.Count; el worker GS espera comandos durante esas muestras.
+Conservar las perturbaciones del muestreo y las capturas junto al resultado.
+No concluir bloqueo del driver ni eliminar fences a partir de una espera
+del juego que todavía no se ha explicado experimentalmente.
+
+Una captura externa PrintWindow de la ventana propia visible y no minimizada
+permite revisar la superficie aunque no esté en primer plano. Comprobar
+siempre PID, ruta y propiedad de la ventana; rechazar la captura minimizada
+o posterior al cierre. Sigue sin identificar por sí sola la secuencia GS
+adquirida ni sustituye una comparación alineada con PCSX2. Imágenes privadas.
+
+## Contador COP0.Count (2026-10-11)
+
+`ps2recomp-ee-cop0-count.patch` añade el reloj del contador al runtime y cambia
+la emisión MFC0/MTC0. Requiere `scripts\2_compilar.cmd`: el ejecutable generado
+anterior sigue leyendo el campo inmóvil aunque se recompilen overrides.
+Las cuatro regresiones sin juego comprueban avance/sondeo acotado, estado global
+y wrap entre contextos, reset y emisión con destino $zero. El control negativo
+de #59 mantiene la semántica anterior mediante APIs compatibles para poder
+comprobar fallos de comportamiento; no se usa con el juego ni como HEAD final.
+
+La integración positiva de 98 todavía debe completar compilación, suite,
+CI y transición. El hallazgo del bucle muestreado no prueba por sí solo su
+efecto funcional. Registrar otro commit/hash del runner y comparar primero
+la espera compartida síncrona, manteniendo los hilos opcionales apagados.
+
+Windows integrado de 98 (`f36936e`, runner SHA-256
+`4693c62c14919c5bd400aa55b8da50a0ab5f5d281d3d20e7b02624aeaa5c6663`):
+597/597 normal y 631/631 GPU real correctas. También pasan FINISH/lectura
+y FINISH/textura adquirida en ambos modos, cada uno en proceso nuevo.
+La pasada del juego empieza después de terminar compilaciones y controles;
+estas pruebas procedurales no prueban solución de la espera o cámara.
+
+Primera pasada síncrona/compartida con ese runner: 360,08 s por límite,
+tarjeta intacta, sin firmas de error buscadas; alcanza informe 11 a 145,14 s.
+Supera la espera de 96/97 tras 4. Capturas externas muestran progresión de
+escena y posteriormente HUD/Kratos/enemigo, sin comparación alineada.
+1.910 adquisiciones, 25 A–B–A (ninguno en tramos 4/11), sin regresiones,
+inconsistencias ni hash desconocido; distancia máxima 34 antes del primer
+informe, 1 en los tramos 4/11. Asíncrona/compartida se repite después, sin
+solapar instancias. No presentar esto como benchmark o solución del encuadre.
+
+La matriz aislada de 98 queda completa: las cuatro combinaciones llegan al
+informe 11, incluidos ambos controles RAM (126,41/121,31 s) y la compartida
+asíncrona (116,40 s). Cada control dura 360 s y termina por límite, tarjetas
+intactas y sin firmas buscadas de error; ninguno minimizado o solapado. #59
+fusionada con CI final verde. Los tiempos y capturas privadas no prueban FPS,
+fidelidad de cámara ni ausencia de alternancia; detalles de cada caso en
+`TRANSICION_COMPARTIDA.md` y `ESTADO.md`.
+
+Tras la matriz, evaluar `--vu1-thread 1 --gs-front 0` en una pasada nueva
+con etiqueta distinta. El frente GS requiere VU1 en hilo: su control posterior
+usa `--vu1-thread 1 --gs-front 1`. No atribuir a GS aislado lo observado en
+esa combinación ni usar estos controles con hash/diagnóstico como benchmarks.
+Conservar runner/manifiesto/entradas/tarjeta y verificar que la pasada anterior
+terminó antes de iniciar otra; no detener procesos de otros colaboradores.
+
+Con hilos se observa que el cupo del diagnóstico acaba antes de partida.
+La cadena 99 añade `PS2X_GS_PRESENT_DIAG_FROM_TICK` y el lanzador
+`--diag-from-tick <uint64>`: inicio inclusivo según `hostTick`, cupo inalterado
+de 4.096 por instancia, sin adquirir/leer/sincronizar más texturas. Usar una
+pasada diferente para la ventana tardía y conservar el control de arranque;
+los ticks no son segundos ni un mecanismo de alineación con PCSX2. La opción
+no existe en el runner de 98: requiere compilación completa de la cadena 99.
+
+VU1 solo completa 360 s; VU1+frente GS sale a 228,17 s con código 0 y causa
+desconocida, antes del límite. Registrar `process_exit` y conservarlo como
+incompleto, repetir aislado; llegar a estado 11 no acredita estabilidad.
+
+La cadena 99 completa (`3dbac1a`, SHA-256 del runner
+`cf063d2f03a1a78f455a9ff57a1378cd4a1ddaf71e6d279d305b34663b96fa07`)
+pasa 600/600 normal, 634/634 GPU real y los cuatro contratos independientes
+de FINISH/texturas; CI del mismo código verde. Repetición del juego pendiente.
+
+Los controles anteriores con `GOW_FAST_BOOT=0` incluían sondas antiguas de
+animación/flash-ready: el registro de overrides comprobaba presencia aunque
+el atajo exigía `1`. El ajuste posterior de `src/` exige `1` también para
+registrarlas. Recompilar rápidamente sobre el runtime completo de 99 y
+anotar otro hash; verificar que no aparezcan `[gow-animation]` ni
+`[gow-flash-ready]` cuando no hay diagnóstico explícito de animación/rutas.
+Conservar los resultados anteriores con esa limitación, sin usarlos como FPS.
+
+## Paridad de los retornos A–B–A (2026-10-11)
+
+El inspector conserva todos los retornos y añade `frame_ticks` con los tres
+ticks de las texturas adquiridas, más `content_return_parity`: `alternating`
+si la paridad es 0–1–0 o 1–0–1, `same` si los tres coinciden y `other` para
+los demás casos. Utiliza `frameTick`, no el tick del host que adquirió después;
+una secuencia retenida no añade otra adquisición a ese historial. Cambios de
+modo, dimensiones, hash desconocido o regresiones mantienen las separaciones
+anteriores del historial. 20 pruebas Python del inspector pasan.
+
+La presentación de campos puede producir contenido A–B–A legítimo: la suite
+nativa GPU incluye un patrón con VRAM invariable y campos par/impar distintos,
+comparados contra CPU, también con temporización GoW. Sin embargo, este registro
+no contiene SMODE2 ni demuestra que el juego esté en ese modo. La paridad
+observada no confirma entrelazado, causa del retorno, igualdad de píxeles o
+ausencia de imagen antigua; sirve para seleccionar el siguiente control.
+
+La cadena posterior de 100 conserva SMODE2 del request en la textura publicada
+y añade `smode2` opcional al mismo registro adquirido. Requiere compilación
+completa; el runner de 99 no tiene ese metadato. `smode2_values` del inspector
+conserva los modos del A–B–A y `content_return_modes` separa desconocidos,
+tres modos de campos (`(SMODE2 & 3) == 1`) y otros. Se aceptan logs antiguos
+sin inventar su modo a partir de la paridad. 24 pruebas Python correctas;
+regresión de texturas reales Windows/GPU y control funcional pendientes.
+
+La primera suite nativa de 100 obtiene 600/600 normal y 634/635 GPU: el test
+nuevo detecta altura CPU/GPU distinta en modo cuadro (`SMODE2 & 3 == 3`).
+Se conserva el resultado inicial en ESTADO/TRANSICION_COMPARTIDA. Su ajuste
+valida todos los modos como metadatos de texturas nuevas/retenidas y conserva
+comparación de píxeles CPU en campos/progresivo. Para cuadro imprime las
+dimensiones mediante `[gs-test:mode-frame]`; **no certifica equivalencia CPU
+en ese modo**. El runtime de composición no cambia y su discrepancia sigue
+pendiente. La revisión del test exige nueva compilación completa y validación.
+
+La revisión `383c6b6` ya completa compilación Windows de 100, 600/600 normal,
+635/635 GPU y cuatro contratos FINISH. El negativo API-compatible fuerza solo
+el modo almacenado a cero: 634/635 con fallo único del caso nuevo. Al restaurar
+la fuente positiva y recompilar, GPU vuelve a 635/635. La prueba de cuadro
+registra CPU 64×128/shared 64×64; conserva explícitamente esa diferencia abierta.
+Controles del juego con este runner y modo adquirido aún pendientes; detalles
+e identidad del ejecutable en `TRANSICION_COMPARTIDA.md`.
+
+Las tres pasadas de 100 ya completaron 360 s por límite con tarjeta intacta:
+sin hilos, VU1 solo y VU1+frente GS. Las ventanas tardías tienen 4.096
+adquisiciones cada una, todas con SMODE2=2227921 (`&3=1`). Sus 3.562 y 3.542
+A–B–A alternan paridad y conservan modo de campos; sin regresiones de
+secuencia/render ni metadatos inconsistentes. Validan que el diagnóstico
+acotado funciona durante partida, no la causa visual, estabilidad prolongada,
+equivalencia con PCSX2 o FPS. Identidad del runner, tiempos y límites en
+`TRANSICION_COMPARTIDA.md`. Para comparar píxeles debe usarse una captura
+explícita de la reserva adquirida en otra ejecución; no dar por equivalente
+una captura de VRAM latched ni introducir su coste en el registro de metadatos.

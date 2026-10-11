@@ -3097,6 +3097,112 @@ se quedaba en un bucle de espera infinito al arrancar. `compilar.ps1` los borra 
 Siguiente: bloques con temporización estática (comprobar las esperas una vez a la entrada del bloque en lugar
 de en cada par), vida de los flags MAC entre bloques y la copia de PATH1 por tramos.
 
+## Integración del diagnóstico compartido con #55 (2026-10-10)
+
+La rama `codex/shared-frame-diagnostics` integra mediante merge el `main`
+`7800bc27c27ab5ddb0dd19338b834e0e2eff3829`. Se conservan todos los cambios
+de #55; los dos conflictos de inserción en `scripts/compilar.ps1` se resuelven
+añadiendo el diagnóstico del host después de los tres parches nuevos de Opus.
+No se modifica su checkout ni se detienen sus procesos.
+
+Control ligero local: seis pruebas del inspector correctas (Python 3.14.7),
+configuración con 0 errores y 4 avisos existentes, sintaxis de 20 scripts
+PowerShell con 0 errores. Los 90 parches únicos pasan comprobación y aplicación
+en orden en un worktree nuevo sobre el commit fijado
+`c5a9d02573410a2085a4b4b831b0b68ba3515440`; el diff del runtime existente
+coincide antes y después. Registro privado: `logs/transition_review/patch_chain_90.txt`.
+
+Se comprueba que `E:\gowgpuprof` es una junction a nuestro
+`E:\Decompilación de God of War\gow-gpu-work`. No se limpia ni reconstruye ese
+runtime. El PC continúa reservado para Opus: no se ejecutan compilaciones,
+juegos ni benchmarks. La validación Windows completa y la transición con el
+HEAD integrado siguen pendientes; #51 conserva el estado de borrador.
+El protocolo y la matriz de cuatro controles están en `TRANSICION_COMPARTIDA.md`.
+No se declara corregida la alternancia, el encuadre ni los cuelgues intermitentes.
+
+En la revisión posterior del inspector se reproduce una omisión con entradas
+sintéticas: una secuencia que reaparece después de otra no se contrastaba con
+sus metadatos originales. `inspect_shared_frames.py` conserva ahora esa
+referencia hasta el cambio de modo; el tick del host puede variar. Las filas
+inconsistentes no alimentan los patrones de retorno. Ocho pruebas pasan; la
+nueva regresión falla con la versión anterior para hash, validez, dimensiones
+y secuencia de renderizado. No se cambia el parche del runtime ni se ejecuta
+el juego: es una mejora de análisis, no un arreglo visual demostrado.
+
+## Validación Windows de la cadena de 90 parches (2026-10-10)
+
+El usuario confirma que el PC está libre. Se vuelve a traer `origin` y la rama
+permanece sincronizada con `main` en `7800bc2`, mediante el merge existente.
+Se conserva un snapshot privado de los cambios anteriores del runtime y se
+comprueban los destinos de limpieza bajo nuestro `gow-gpu-work`; no se toca
+el checkout de Opus ni se detienen sus procesos.
+
+`scripts\2_compilar.cmd`, con `GOW_WORK=E:\gowgpuprof`, termina con código 0
+para `76a25bedac7842e0a35cbd5eb56ca5941ebae429`, con los 90 parches, Release,
+trazas desactivadas, tres tareas paralelas y VU1 en intérprete. El SHA-256
+del ELF coincide con el esperado. Ejecutable nuevo:
+`36e632cd39dfd73e3de3573c38b8c87715f9ef65b1eb6b2bba3ef776ed457c9f`.
+Manifiesto y registro privados: `E:\gowgpuprof\transition90\build.json` y
+`full_build.log`. Este binario sí incorpora la cadena actual; no se usa el
+ejecutable anterior para atribuirle estos cambios.
+
+La prueba Windows de paquetes libpad2 pasa. La suite nativa pasa **591/591**
+en modo normal y **625/625** con `GOW_GS_GPU_TEST=1`, incluyendo GPU real,
+compositor compartido y consumidor raylib. La primera ejecución desde una
+carpeta de registros falló porque una prueba busca `instructions.h` por rutas
+relativas; se repitió desde la raíz del runtime, sin modificar código ni
+pruebas. El diagnóstico opcional se activó durante el control GPU: seis
+adquisiciones analizadas, hashes conocidos y ningún retroceso, inconsistencia
+o retorno A–B–A en esas muestras procedurales. No acreditan imágenes del juego.
+
+La matriz funcional se ejecuta en carpetas privadas, con una copia por pasada
+de la misma tarjeta procedural sin formatear (8.650.752 bytes), sin guardados
+del usuario; no se escribe sobre su tarjeta original. Se eliminan del entorno
+los otros diagnósticos opcionales y las capturas periódicas; se mantienen
+`GOW_FAST_BOOT=0`, los wrappers que instala por presencia y el panel de depuración
+predeterminado. VU1/frente GS en hilos permanecen apagados. El hash/registro no
+se emplea para medir FPS.
+
+| FINISH / presentación | Duración de proceso | Primer estado 11 del guion | Adquisiciones compartidas |
+|---|---|---|---|
+| Síncrono / RAM | 360,06 s | 146,64 s | — |
+| Síncrono / compartida | 360,04 s | 121,16 s | 2.186 |
+| Asíncrono / RAM | 360,05 s | 116,32 s | — |
+| Asíncrono / compartida | 233,22 s | 111,31 s | 1.247 |
+
+Las tres primeras pasadas se terminan deliberadamente al límite de 360 s.
+La cuarta se interrumpe a petición del usuario, que necesita el ordenador:
+se valida y termina solo nuestro PID 11320. Su código de salida de terminación
+no se atribuye a un fallo espontáneo. Las cuatro llegan a estado 11 y sus
+últimos informes continúan en ese estado, sin las firmas buscadas de error
+VU1/GIF/excepción. Las tarjetas permanecen idénticas. El guion usa reloj del
+host: esos tiempos no alinean cuadros ni comparan rendimiento.
+
+Los dos registros compartidos tienen hashes conocidos, sin retrocesos de
+secuencia/render ni metadatos inconsistentes. Registran 105/109 retornos A–B–A,
+todos anteriores al primer informe de estado 3. Ninguno aparece en las
+1.094/342 adquisiciones posteriores al primer informe de estado 11; estos
+grupos siguen el último estado registrado, no una alineación exacta.
+El diagnóstico registra solo secuencias nuevas: su contador de retenciones
+igual a cero no demuestra que el host nunca retenga una textura.
+
+Hay una pista distinta del hash: en la pasada asíncrona se adquiere la secuencia
+906 con `hostTick=1365` y `frameTick=948`, distancia de 417 ticks; el máximo
+síncrono fue 3. La adquisición posterior vuelve a ticks cercanos. Investigar
+las esperas del host y la cola GS antes de atribuirlo a una ranura corrupta,
+a imágenes alternantes o a latencia sostenida. No convertir estos ticks en FPS.
+
+Una captura externa única de la ventana RAM muestra HUD, escena y Kratos,
+pero el panel cubre gran parte del encuadre; no acredita fidelidad de cámara.
+La captura compartida se rechaza al no estar nuestra ventana en primer plano,
+sin capturar otra aplicación. Falta revisión visual con el panel contraído,
+repetición de la combinación asíncrona y controles separados de los hilos.
+Registros, manifiestos, herramientas de ejecución y captura quedan privados en
+`logs/transition_review/` y `E:\gowgpuprof\transition90`.
+El PC vuelve a quedar reservado para el usuario; no lanzar nuevas cargas hasta
+su confirmación. #51 sigue en borrador y no se declara corregida la transición,
+el encuadre ni los cuelgues.
+
 ## VU1, ronda 3: escrituras por par fijas, especiales con SSE y más (2026-10-11)
 
 El muestreador tiene un modo `linea` (sexto argumento): línea de tiempo por hilo de las primeras 1500 muestras
@@ -3173,6 +3279,173 @@ espera al EE: faltan ~3 ms (~10 %).
   intérprete.
 - *Temporización estática* de los bloques (comprobar las esperas a la entrada en lugar de en cada par).
 
+## Integración del diagnóstico GS con #56 y #57 (2026-10-11)
+
+Se traen referencias remotas y se integra mediante merge `origin/main` en
+`34cbe58a9a47e33d1a2ed70b34a9937f72293d43`, con #56 y #57.
+Se conservan sin modificaciones los seis parches nuevos, el generador VU1,
+sus regresiones, el muestreador y los overrides de Opus. Los conflictos de
+inserción en `scripts/compilar.ps1` se resuelven dejando los seis parches en
+su orden original y el diagnóstico del host al final. El conflicto de
+`ESTADO.md` conserva ambas investigaciones, en orden de fecha.
+
+La cadena integrada contiene 96 parches únicos. Comprobación y aplicación
+completas correctas en un worktree privado nuevo sobre el upstream fijado,
+sin tocar el runtime construido ni el checkout de Opus. Configuración:
+0 errores y los 4 avisos existentes. Sintaxis PowerShell: 21 scripts,
+0 errores. Registro privado: `logs/transition_review/patch_chain_96.txt`.
+
+El CI de `ee079d21cecfbc7515f17e34db6490cc7c8a99fc` había terminado en verde
+antes de este merge. No valida el nuevo HEAD integrado. Las pruebas nativas
+591/625 y la matriz anterior corresponden a **90 parches**; el binario guardado
+no incorpora #56. Será necesaria una compilación completa de la cadena nueva
+antes de atribuirle imágenes, estabilidad o rendimiento. Los 25,2 FPS de #56
+son mediciones de Opus, no una reproducción independiente de GPT.
+
+La disponibilidad del ordenador sigue pendiente de confirmación: se continúa
+con revisión y controles ligeros, sin compilaciones, juegos ni benchmarks.
+#51 permanece en borrador; se conserva la pista de distancia entre ticks y
+el encuadre como problemas que todavía requieren control visual.
+
+## Distancia entre ticks en el inspector compartido (2026-10-11)
+
+El hallazgo de 417 ticks requería hasta ahora un análisis privado adicional.
+`inspect_shared_frames.py` informa ahora `tick_distance`: número de muestras
+consistentes, mínimo/máximo firmado de `hostTick - frameTick` y línea, secuencia,
+render y ticks del primer máximo. Incluye retenciones consistentes y registros
+sin hash; descarta metadatos contradictorios. No compara ticks entre imágenes
+de épocas distintas ni convierte el resultado en tiempo/FPS. Un valor negativo
+puede ser válido porque el request muestrea el contador después que el host.
+
+Once pruebas Python pasan. Las tres nuevas fallan con el inspector de
+`cce2d68`: máximo con evidencia, distancia negativa/hash desconocido/cambio de
+modo y retención con una fila contradictoria que no debe alterar el máximo.
+El inspector nuevo reproduce 0..3 / 0..417 y las líneas originales en los dos
+registros Windows conservados de **90 parches**, sin volver a ejecutar el juego.
+Se aclara que cero retenciones registradas no descarta las que no emite el
+diagnóstico. No se modifica el runtime ni se declara corregido un fallo visual.
+
+También se reubica el párrafo de validación de paletas bajo su sección original
+en `CONTROLES.md`; no pertenece al control de presentación compartida.
+
+## Control reproducible de transición y minimización del host (2026-10-11)
+
+Se publica `tools/render/run_transition_control.py`, derivado del control
+privado anterior: manifiesto y hashes explícitos, carpetas nuevas, ELF/IOP
+copiados, tarjeta procedural o copia privada de la inicial, entorno de
+diagnósticos limpio y misma matriz de cuatro modos. Añade selección de hilos,
+panel contraído e ignorar entradas físicas con `GOW_PAD_SOLO_GUION=1` de #56.
+No publica datos del juego ni modifica el runtime.
+
+La consulta Win32 registra cada cambio observado de visibilidad/minimización
+y primer plano, solo para el PID que inicia. No captura imágenes, activa
+ventanas ni usa readback GS. En raylib del runtime construido se confirma una
+espera de eventos al minimizar sin `FLAG_WINDOW_ALWAYS_RUN`; el EE continúa
+en otro hilo. Es una explicación posible de una pausa del host, no la causa
+demostrada de los 417 ticks: las pasadas anteriores no registraron minimización.
+No se modifica la política de ejecución en segundo plano para esconder el fallo.
+
+Once pruebas Windows de la herramienta pasan en 0,13 s, incluida la ejecución
+de un hijo Python procedural, sin juego ni ventana. Se comprueban la copia
+sin cambios sobre la tarjeta inicial, rechazo de directorios existentes y
+copia recursiva, manifiesto incorrecto, limpieza de variables por presencia,
+pérdida de foco distinta de minimización y terminación exclusiva del hijo.
+La consulta Win32 real a nuestro proceso Python no encuentra ventana y
+conserva minimización desconocida. Son comprobaciones ligeras; no se lanza
+el juego, compilación ni benchmark. Protocolo y límites en
+`TRANSICION_COMPARTIDA.md`; se incluye la herramienta en CI.
+
+El CI de `e412a1f9b0579ed3dced7083ac3d7aaab140583e` pasa ambos controles,
+con los 96 parches y las once pruebas del inspector. La ejecución anterior
+del merge `cce2d68` fue cancelada por el nuevo push; no se declara un resultado
+propio para ella. El control Windows del juego con esta cadena sigue pendiente.
+
+La revisión del lanzador detecta que un SHA-256 válido escrito en mayúsculas
+era rechazado frente al digest Python en minúsculas. Se valida el formato de
+64 cifras y se normaliza solo el texto hexadecimal, manteniendo la comparación
+de identidad. Doce pruebas Windows pasan; la nueva comprueba aceptación de
+mayúsculas y rechazo de valores ausentes, no textuales, truncados o no hexadecimales.
+
+## Fuente preferida de la textura compartida (2026-10-11)
+
+La revisión estática del renderer GPU confirma que `sourceFbp` conserva dos
+unidades posibles: páginas DISPFB de 8.192 bytes para la fuente CRTC, o bloques
+TEX0 de 256 bytes cuando se usa `preferredSource`. `displayFbp` conserva
+páginas. El diagnóstico omitía el indicador que las ranuras ya transportaban:
+el mismo número crudo en ambos campos no demostraba igualdad de direcciones.
+
+Se amplía el parche del diagnóstico host con `preferred=%u` a partir del
+`frame.usedPreferred` realmente adquirido. Conserva la condición opcional,
+una sola adquisición y el límite de 4.096. No añade readback, hash, fence ni
+`glFinish`; no modifica selección de fuente, píxeles ni renderer CPU.
+El inspector acepta el formato anterior y el nuevo, informa unidades
+desconocidas/páginas/bloques y conserva el indicador en evidencia de máximos
+y retornos de contenido. Una omisión antigua no contradice ni borra un
+indicador conocido; un cambio explícito bajo la misma secuencia sí es conflicto.
+
+Quince pruebas Python correctas. Tres regresiones fallan con el inspector
+`60ce933`; flags inválidos, campos desconocidos y duplicados se rechazan.
+La cadena completa de 96 parches pasa check/aplicación sobre el upstream fijado
+en otro worktree privado nuevo, sin tocar el runtime construido ni a Opus.
+Los registros nativos de 90 parches conservan máximos 3/417 y tienen unidades
+desconocidas en todas sus 2.186/1.247 filas; no se reconstruye un dato ausente.
+
+CI de `60ce9338f9c27d312a474cab40498f1cf6fdcdd7` correcto en ambos controles.
+Ese resultado precede a este cambio y no lo valida. Modificar el parche exige
+otra compilación completa Windows y control funcional del HEAD final.
+Siguen pendientes la visualización compartida y el encuadre dentro del GS;
+#51 permanece borrador. Se realizan solo controles ligeros mientras continúa
+la reserva del ordenador por el usuario.
+
+## Evidencia de dimensiones en el inspector (2026-10-11)
+
+`inspect_shared_frames.py` añade `dimension_changes`: línea, secuencia/render
+y tamaño anterior/nuevo. Antes solo cortaba el patrón de retornos al cambiar
+el tamaño; ahora el dato queda explícito en el resumen. Incluye muestras sin
+hash, excluye contradicciones de la misma secuencia y no enlaza épocas
+separadas por un cambio de modo.
+
+Diecisiete pruebas correctas, con dos regresiones que fallan contra `715e216`.
+Reanalizar los registros Windows conservados de 90 parches muestra en ambos
+un único cambio 1×1 → 512×448 en la secuencia 2, al inicio. No hay cambios
+posteriores entre las muestras capturadas; no prueba aspecto ni cámara correctos.
+
+El CI de `715e216fa72cec85e4112eb20b3fdcbba090a910` termina en verde,
+incluida compilación del nuevo formato `preferred` y suite de los 96 parches.
+([CI](https://github.com/KIexster/god-of-war-recomp/actions/runs/38114877209)).
+No sustituye el control Windows pendiente. Este ajuste solo cambia Python
+y documentación; no se recompila ni ejecuta el juego en el PC reservado.
+
+## Directorio privado del lanzador y seguimiento de fuente (2026-10-11)
+
+El control de transición ahora resuelve la salida y permite, dentro de su
+checkout, solo `logs/`; también acepta carpetas externas. Mantiene copias
+de tarjetas y resultados en la zona privada, como la herramienta de referencia
+PCSX2. Trece pruebas Windows pasan en 0,11 s. La nueva falla contra `2930666`
+con `mkdir` interceptado; no se crea la salida rechazada en ese control.
+No cambia el runtime ni lanza el juego.
+
+CI de `2930666cddd7d907a6576b2410ebed1a8695a61c` correcto en ambos controles,
+antes de este ajuste del lanzador. Comprobar el CI del HEAD final y conservar
+pendiente la compilación Windows de la cadena actual.
+
+La revisión de unidades produjo una corrección funcional separada:
+[PR #58](https://github.com/KIexster/god-of-war-recomp/pull/58).
+`FRAME/DISPFB.FBP` usa páginas de 8.192 bytes; `TEX0.TBP0` bloques de 256.
+Se normaliza la comparación en la identificación de copias completas del
+frontend y en la selección CPU/GPU de fuente sin TBW. No cambia FINISH ni fences.
+Control negativo `5f3d7de`: compila, 591/593, fallan solo las dos nuevas.
+Arreglo `e52527d1bf63b513facac380330b94bc2e998937`:
+593/593, CI remoto completo correcto
+([38115778696](https://github.com/KIexster/god-of-war-recomp/actions/runs/38115778696)).
+No se añade ninguna excepción de pruebas.
+
+El arreglo no está integrado en esta rama. Cada PR tiene 96 parches propios;
+la aplicación conjunta privada de los 97 pasa, sin compilación conjunta.
+Windows GPU y transición real pendientes. Los registros antiguos no indican
+`preferred` y no permiten atribuir el fallo visual a estas comparaciones.
+Ambas PR siguen en borrador; los problemas de alternancia y encuadre continúan abiertos.
+
 ## Comparación de bases de presentación GS (2026-10-11)
 
 La revisión del diagnóstico compartido revela tres comparaciones entre
@@ -3244,6 +3517,206 @@ comprueba los píxeles de cada textura nueva contra CPU; las esperas y lecturas
 solo existen en la prueba. La ampliación sigue aplicando antes del diagnóstico
 en la cadena privada conjunta de 97. Es cobertura procedural pendiente de
 ejecución GPU, no una reproducción del defecto visual ni un benchmark.
+
+## Compilación de referencia actual y merge de fuente (2026-10-11)
+
+Con el PC libre se completa `scripts\2_compilar.cmd` en nuestro runtime privado,
+verificando la junction y conservando las fuentes anteriores. Referencia:
+`de5a89ad437c952a6ae384025ed602e4e62a9c1b`, 96 parches, Release, VU1 intérprete,
+tres tareas paralelas, código final 0 y 886,33 s. El ejecutable de 54.542.336 bytes
+tiene SHA-256 `e5aae46440de86b0eeb97da91f742330ce0e95d22bbf70b368e83c44f082f0bd`.
+Se congela una copia privada con DLL, manifiesto y registro de compilación.
+La suite Windows normal pasa 591/591; libpad2 también pasa. El control GPU y
+la nueva matriz con el juego todavía están en curso/pedientes: la compilación
+y la suite sin juego no acreditan la transición ni la cámara.
+
+Después se integra por merge #58, `fb8782525ed5b9ee7ac806675f4d58b1dfa5ac0d`,
+conservando los documentos de ambas ramas y ordenando fuente de presentación
+antes del diagnóstico. La cadena integrada tiene 97 parches. Su comprobación
+privada de aplicación es correcta y el CI de #58 pasa ambos controles
+([38131689081](https://github.com/KIexster/god-of-war-recomp/actions/runs/38131689081)).
+Esta integración aún no está compilada en Windows; el ejecutable de referencia
+anterior no incluye el arreglo ni las nuevas comprobaciones de fuente compartida.
+No se modifica el checkout de Opus, que continúa limpio. Ambas PR siguen borrador.
+
+## Suite GPU de referencia y contrato de FINISH (2026-10-11)
+
+Sobre el mismo binario/fuentes de referencia `de5a89a`, 96 parches, la suite
+Windows con GPU real y FINISH síncrono pasa 625/625. El nuevo diagnóstico
+registra `preferred` y hashes válidos en sus adquisiciones procedurales.
+Un ensayo adicional de toda la suite con `GOW_GS_FINISH_ASINCRONO=1` pasa
+623/625: fallan `FINISH and readback wait for the last compact draw state`
+y `shared FINISH and reads retain barriers after held draws`. Se conserva
+el registro completo y no se añade ninguna excepción.
+
+Ambas pruebas exigen explícitamente efectos visibles al retorno de FINISH,
+una garantía del modo síncrono. El modo opcional encola FINISH y retorna antes,
+mientras las lecturas conservan su barrera; el proyecto comprueba ambos
+contratos por separado con `tests/gs_finish_async_test.cpp` en CI. Ejecutar
+toda la suite bajo la opción asíncrona no hace válidas esas aserciones y
+puede leer sus grabadores mientras el worker los modifica. No se declara
+verde ese ensayo ni se usa para probar estabilidad del juego. El control
+específico todavía debe reproducirse en Windows con la integración nueva.
+
+Primera pasada de referencia síncrona/RAM: 360,06 s, terminación deliberada
+por límite (código de proceso 1, código del lanzador 0), estados
+0 → 3 → 4 → 9 → 11; primer informe 11 a 149,78 s del guion y último 11.
+Tarjeta procedural intacta, sin las firmas de error VU1/GIF/excepción buscadas.
+Ventana visible desde ~1 s, nunca observada minimizada; primer plano desde
+113,78 s. Dos capturas externas propias con panel contraído muestran escena,
+Kratos y, en la posterior, HUD/enemigos. No están alineadas con PCSX2 ni
+acreditan fidelidad de cámara, jugabilidad o FPS. Capturas y registros privados.
+La matriz compartida/asíncrona está en curso; no se trasladan estos resultados
+al ejecutable de 97 parches pendiente de construcción.
+
+## Espera en la referencia compartida síncrona (2026-10-11)
+
+La segunda pasada de la referencia `de5a89a` (96 parches), FINISH síncrono y
+textura compartida, completa 360,05 s y termina deliberadamente por límite.
+El último informe del mando es estado 4 a 25,36 s del guion, con
+`levelReady=0` y `flashReady=0`; no registra estado 9 ni 11 ni nuevos informes
+del mando después. Esto acredita una espera sin progreso observado, no el
+estado exacto de RAM al terminar ni una causa demostrada en GS/VU1/IOP.
+No hay firmas buscadas de error y la tarjeta permanece intacta.
+
+El host continúa respondiendo. La ventana está visible desde ~1 s, nunca se
+observa minimizada y no recibe primer plano en esta pasada. Hasta el cupo
+de 4.096: cero retrocesos, hashes desconocidos o metadatos contradictorios;
+ticks 0..3 de distancia; todas las fuentes son CRTC en páginas
+(`preferred=0`). Un único cambio de dimensiones inicial 1×1 → 512×448.
+Hay 3.895 retornos A–B–A; 3.792 corresponden al tramo del último estado 4,
+con dos hashes alternados. Podrían ser campos par/impar de contenido estático;
+no constituyen por sí solos prueba de ranura antigua o corrupción.
+El cupo se agota alrededor de 116 s reales: no cubre el resto del control
+ni las retenciones que nunca se registran.
+
+Tras observar la espera durante varios minutos se realiza un muestreo externo
+de 5 s exclusivamente al PID propio 13840, usando `tools/perfil/muestrear.cpp`,
+que selecciona por PID. No se usa el muestreador por nombre de Opus. Las muestras
+carecen de símbolos del ejecutable y no identifican una función responsable;
+no se publican como medida de rendimiento. El muestreo suspende brevemente
+hilos y puede perturbar la ejecución; se conserva ese límite junto al registro.
+La siguiente pasada asíncrona/RAM está en curso. La espera debe repetirse con
+símbolos antes de modificar sincronización o atribuirla al arreglo de fuentes.
+
+## Cierre de la matriz de referencia actual (2026-10-11)
+
+Las cuatro pasadas de `de5a89a` (96 parches) completan 360 s y terminan por
+límite deliberado; las tarjetas privadas quedan intactas y no aparecen las
+firmas de error buscadas. Síncrona/RAM llega a 11 a 149,78 s del guion;
+asíncrona/RAM a 116,44 s y asíncrona/compartida a 116,39 s. La síncrona
+compartida sigue siendo una espera sin nuevos informes tras estado 4 a 25,36 s.
+
+La asíncrona compartida registra 2.310 adquisiciones, ticks de distancia
+0..3, cero retrocesos, metadatos contradictorios o hashes desconocidos.
+113 retornos A–B–A anteriores al primer informe de estado 3; ninguno en
+las 1.205 adquisiciones del tramo del último estado 11. Ambas compartidas
+registran únicamente fuentes CRTC (`preferred=0`) y un cambio inicial
+1×1 → 512×448. No se reproduce el máximo antiguo de 417 ticks ni se observa
+la selección de fuente que corrige #58; no atribuirle todavía un efecto real.
+
+La ventana no se observa minimizada en ningún caso. Solo síncrona/RAM está
+en primer plano y tiene capturas externas válidas: el resto conserva pendiente
+revisión visual. Estado 11/hash y una captura no acreditan fidelidad ni ausencia
+de imágenes antiguas. No hay medición de FPS ni comparación alineada con PCSX2.
+Tabla, protocolo y límites completos en `TRANSICION_COMPARTIDA.md`.
+
+Se inicia después otra compilación completa del código integrado (97 parches),
+con /O2 y PDB privados para investigar la espera. Debe registrar otro
+commit/hash/configuración; las pruebas GPU de fuente adquirida/ranuras y el
+control Windows específico de FINISH de ambos contratos siguen pendientes.
+#51 conserva borrador; no se declara corregida la transición o el encuadre.
+
+## Cadena integrada Windows y contratos FINISH con GPU (2026-10-11)
+
+Compilación completa de 97 parches terminada con código 0: código
+`f51cc2cb7ee981c1cb6419926d46acc217de1f86`, runner de 54.542.336 bytes,
+SHA-256 `ba80364535c22d728058ad98bf8182937f36c2db9ada5a11063f684c1a57add0`.
+Release optimizado con /Zi y /DEBUG, VU1 intérprete, tres tareas; unos 902 s
+entre las marcas 07:58:20 y 08:13:22 del registro. El helper privado falla
+después al guardar metadatos por ocultar sus argumentos; se conserva ese
+fallo, se corrige el helper y se recupera el manifiesto desde el registro,
+sin repetir ni atribuirle un fallo a la compilación. Flags y PDB se verifican
+y guardan solo en `E:\gowgpuprof\transition97`; no se publica el PDB.
+
+Suite nativa: **593/593 normal y 627/627 GPU real**, cero fallos conocidos.
+Incluye las regresiones nuevas de #58: selección de dirección física y
+comparación de píxeles de la textura compartida al reutilizar las ranuras.
+El control separado `gow_gs_finish_async_test` pasa `default` y `async`
+en procesos Windows nuevos: retorno, CSR, orden y lectura sincronizada.
+
+Se añade `tests/gs_shared_finish_test.cpp`: GPU/contexto compartido real,
+sin admitir fallback CPU como éxito; ambos modos pasan 16 publicaciones
+con FINISH, secuencias/ticks, fuente esperada, todas las filas comparadas
+con CPU y tamaños 64×64 → 64×96 al reutilizar las ocho ranuras. El readback
+existe solo en este control sin juego. Primer ensayo conservado: solicitaba
+64×48, que el decodificador CPU considera inválido y sustituye por su tamaño
+por defecto, mientras GPU usa 64×48. Se ajusta la premisa a alturas válidas;
+no se modifica la referencia CPU ni se presenta aquel ensayo como equivalente.
+Esa diferencia de tamaño pequeño no explica por sí sola la escena 512×448.
+
+Comienza la matriz del juego con el runner identificado de 97, inicialmente
+sin hilo VU1/frente GS. La validación procedural no acredita fidelidad de
+la escena, solución de la espera síncrona, alternancia visible ni cámara.
+#51 sigue en borrador; su revisión visual y CI del próximo HEAD siguen pendientes.
+
+## Matriz integrada y espera localizada en Count (2026-10-11)
+
+Se completa la matriz de 97 parches con el mismo runner `f51cc2c` y SHA-256
+`ba80364535c22d728058ad98bf8182937f36c2db9ada5a11063f684c1a57add0`.
+Cada pasada válida dura 360 s; finaliza por límite deliberado (proceso 1,
+lanzador 0), sin las firmas de error buscadas y con tarjeta procedural intacta.
+VU1 y frente GS permanecen sin sus hilos opcionales. Primer informe del guion:
+
+| FINISH / presentación | Primer estado 11 | Último estado |
+|---|---:|---:|
+| Asíncrono / compartida | 135,35 s | 11 |
+| Síncrono / compartida | No observado | 4, a 25,31 s |
+| Síncrono / RAM | 126,78 s | 11 |
+| Asíncrono / RAM, repetición aislada | 121,40 s | 11 |
+
+Estos tiempos son informes del guion, no tiempos de carga comparables ni FPS.
+La pasada síncrona/RAM estuvo minimizada durante buena parte del control y
+sus últimos ~30 s coincidieron por un error de coordinación del lanzador con
+otra instancia propia asíncrona/RAM. La entrada en 11 ocurrió antes del
+solapamiento, pero no se afirma una pasada completa aislada. Se paró únicamente
+la instancia nueva mediante su archivo STOP a 34,35 s y se repitió asíncrona/RAM
+sin solapamiento. Se conservan ambos registros; no se presenta la parada como
+un cuelgue. No se obtuvo una captura válida de la ventana minimizada.
+
+Asíncrona/compartida: 1.986 adquisiciones, 20 retornos A–B–A, ninguno en los
+tramos del último estado 4 o 11; 1.056 adquisiciones bajo el último estado 11.
+Distancia de ticks 0..6. Síncrona/compartida vuelve a esperar sin nuevos informes
+tras estado 4: agota 4.096 registros, con 3.896 A–B–A (3.800 en el tramo 4),
+distancia 0..3. En ambas: cero regresiones, metadatos contradictorios o hashes
+desconocidos; un cambio inicial 1×1 → 512×448 y siempre `preferred=0`, fuente
+CRTC en páginas. El cupo de la síncrona deja sin observar el resto de la pasada;
+la alternancia de dos hashes podría corresponder a campos de una escena quieta.
+
+Capturas externas privadas de la superficie de nuestra ventana mediante
+PrintWindow muestran HUD, Kratos y enemigos en asíncrona/compartida; dos
+capturas síncronas muestran una escena de llamas/primer plano sin el progreso
+esperado. Se verifican PID, ruta, visibilidad y ausencia de minimización antes
+de capturar. La petición de captura puede perturbar ese instante; las imágenes
+no se alinean con secuencias adquiridas ni con PCSX2. No prueban cámara correcta,
+ausencia de imágenes antiguas, equivalencia de píxeles del juego o rendimiento.
+
+Dos muestreos externos de 5 s al PID propio 12184, con PDB privado, encuentran
+el ejecutor EE recorriendo `sub_00185A20` y trabajo IOP; el worker GS espera
+comandos. El segundo resuelve líneas del bucle 0x185D88..0x185DD8: consulta
+COP0.Count para comprobar un plazo. La traducción actual lee `ctx->cop0_count`,
+pero la contabilización de ciclos EE no actualiza ese campo. Es un defecto
+preexistente de la semántica del contador y una pista concreta para esta espera;
+no demuestra todavía que corregirlo resuelva la transición. El muestreo suspende
+brevemente hilos, y no se utiliza como benchmark ni como prueba de bloqueo GL.
+
+Se prepara un parche separado de Count, con pruebas sin juego de ciclos, wrap,
+contextos, reset y traducción MFC0/MTC0. Debe compilarse, demostrar regresiones
+y regenerar completamente el runner antes de atribuirle cualquier efecto.
+No modifica archivos ni procesos de Opus; su checkout se comprobó limpio.
+El CI del HEAD publicado `10a7bec` está verde. #51 continúa en borrador: siguen
+pendientes resolver la espera y comparar la escena/cámara de forma alineada.
+
 ## Regresiones de COP0.Count para investigar una espera (2026-10-11)
 
 En la rama de diagnóstico GS, dos controles completos con presentación
@@ -3264,6 +3737,26 @@ las lecturas y repetición con el juego. No se modifica FINISH ni fences, no se
 afirma fidelidad de cámara, estabilidad general o FPS, ni se implementa aquí
 la interrupción de COP0.Compare. Referencia semántica del contador:
 [PCSX2 COP0.cpp](https://github.com/PCSX2/pcsx2/blob/master/pcsx2/COP0.cpp).
+
+La rama compartida integra después la implementación positiva de #59:
+Count global del runtime actualizado perezosamente por ciclos EE, lecturas
+consecutivas con avance mínimo de uno, wrap de 32 bits, escritura que cambia
+la base y reset conjunto con el reloj. MFC0 conserva extensión de signo y
+ejecuta la lectura incluso con destino $zero, fuera de la macro que descarta
+ese registro. No usa reloj de pared ni altera temporizadores, VU1, FINISH o
+fences. La cadena de 98 parches aplica en un árbol privado nuevo; configuración
+y sintaxis PowerShell pasan (cuatro avisos existentes). Compilación, suite y
+control funcional de este código siguen pendientes. Se inicia un build
+completo privado, regenerando C++; el runner congelado de 97 permanece aparte.
+
+El CI inicial de la integración `3690bc9` también falla por la cabecera ausente
+de la prueba, no por una regresión ejecutada. Se actualiza el parche positivo
+con `ps2recomp/types.h`. La compilación privada iniciada con aquel HEAD se
+detiene deliberadamente a 333,15 s, verificando el PID del wrapper propio y
+sus descendientes; se conservan manifiesto de salida 1 y fuentes parciales.
+No hay runner nuevo validado de ese intento. Se reinicia la compilación
+completa con el parche corregido, en otra carpeta de artefactos. No se detienen
+procesos de otros colaboradores ni se modifican sus archivos.
 
 Primer CI negativo `e7e8914`/38137005221: falla al compilar la nueva prueba
 por faltar `ps2recomp/types.h` (Instruction/Symbol/Section incompletos).
@@ -3287,6 +3780,98 @@ El positivo `5c64a2248f52ffb09921d439137116901d638012` pasa
 procedurales completos correctos. La integración de 98 en #51, `f36936e`,
 pasa también 597/597 en CI. Se mantiene borrador hasta comprobar Windows
 y la transición con el runner recién generado; no se declara resuelta la espera.
+
+## Runner Windows de 98 parches con Count (2026-10-11)
+
+Compilación completa terminada con código 0 a partir de
+`f36936e067aa283e4567e3b16700cfe4e546b629`: 898,79 s, 98 parches,
+VU1 intérprete y tres tareas. Runner de 54.542.848 bytes, SHA-256
+`4693c62c14919c5bd400aa55b8da50a0ab5f5d281d3d20e7b02624aeaa5c6663`.
+Se verifican /O2 /Ob2 /DNDEBUG /Zi y enlace /DEBUG /OPT:REF /OPT:ICF;
+PDB privado de 177.598.464 bytes. Manifiesto/binario congelado en
+`E:\gowgpuprof\transition98_validating`. Las lecturas de Count en el bucle
+muestreado se han regenerado con la API del runtime; no se reutiliza el runner 97.
+
+El CI de ese HEAD pasa 597/597. El HEAD documental final de #59, `00d5575`,
+pasa también CI completo (38138091541). Se integra mediante merge en #51,
+conservando ambos registros en el conflicto de documentación; el parche
+positivo es idéntico al usado en la compilación y no cambia la cadena.
+La compilación de las pruebas nativas está en curso. La transición todavía
+debe repetirse y no se afirma que el defecto de Count explique el encuadre,
+alternancia o todos los FPS bajos. Las mediciones de Opus siguen siendo suyas:
+documenta 11,6 FPS por defecto y 25,2 con su configuración optimizada; estos
+controles con intérprete/hilos apagados/hash/diagnóstico no son comparables.
+
+## Suite nativa de Count y nuevo control del juego (2026-10-11)
+
+Con el runner identificado de 98 y sus fuentes `f36936e`, pasan **597/597
+normal y 631/631 GPU real** en Windows, cero fallos conocidos. Hash del
+ejecutable de pruebas:
+`8741cc50b8a5db8587dd989bd94b143bbda2a9f490bad9764ec84e62f2de4607`.
+Pasan los cuatro procesos separados: FINISH/CSR/orden/lectura `default|async`
+y FINISH/píxeles de la textura realmente adquirida `default|async`, cada
+uno con sus 16 publicaciones y reutilización de ranuras. No se repite la
+suite global bajo FINISH asíncrono ni se cambian contratos de los grabadores.
+
+Comienza una pasada nueva de 360 s síncrona/compartida con la misma tarjeta
+procedural, guion, variables y hilos apagados, después de terminar las
+compilaciones y pruebas. Debe comprobar si persiste la espera observada en
+96 y 97; los éxitos anteriores todavía no la dan por resuelta.
+
+## Primera transición compartida síncrona con Count (2026-10-11)
+
+El runner de 98 identificado arriba completa 360,08 s, salida deliberada
+por límite (proceso 1/lanzador 0), tarjeta procedural intacta y ninguna
+firma de error buscada. Informa 0 → 3 → 4 → 11; primer 11 a 145,14 s del
+guion y último 11. En 96/97 el mismo caso dejó de informar tras 4 a ~25 s;
+en este ensayo se supera esa espera. No se utiliza el tiempo como benchmark.
+La ventana nunca se observa minimizada; primer plano entre ~11 y ~40 s.
+
+1.910 adquisiciones: cero regresiones, metadatos contradictorios o hashes
+desconocidos; 25 retornos A–B–A, ninguno en los tramos del último estado 4/11.
+Hay 952 adquisiciones en el tramo 11. Solo fuente CRTC (`preferred=0`),
+un cambio inicial 1×1 → 512×448. Distancia de ticks 0..34; máximo en secuencia
+3 antes del primer informe del mando. Desde estado 0, máximo 3; en los tramos
+4 y 11, máximo 1. Esta clasificación no alinea cuadros ni demuestra latencia
+sostenida; el diagnóstico solo registra adquisiciones nuevas.
+
+Tres capturas externas privadas de la superficie propia muestran la intro,
+enemigos y después HUD/Kratos/enemigo en los muelles. Verificados PID, ruta,
+visibilidad y ausencia de minimización, sin activar la ventana. Sus peticiones
+pueden perturbar ese instante, y no están alineadas con PCSX2 o la secuencia GS.
+Estado 11/capturas no certifican jugabilidad, fidelidad de cámara ni ausencia
+de alternancia. Se inicia después una repetición asíncrona/compartida aislada,
+con el mismo runner y protocolo. Ambas PR conservan borrador hasta cerrar
+validación y CI del HEAD final; los cuelgues con hilos siguen sin probarse.
+
+## Repetición asíncrona compartida con Count (2026-10-11)
+
+El mismo runner de 98 completa 360,04 s sin solapar otra instancia. Límite
+deliberado (proceso 1/lanzador 0), tarjeta intacta, sin firmas de error buscadas;
+0 → 3 → 4 → 11, primer 11 a 116,40 s y último 11. Ventana nunca observada
+minimizada; primer plano solo entre ~344 y ~353 s. Dos capturas externas
+propias muestran enemigos y después HUD/Kratos/combate en los muelles;
+conservar perturbación de captura y ausencia de alineación PCSX2/secuencia GS.
+
+2.325 adquisiciones, cero regresiones, metadatos contradictorios o hashes
+desconocidos, 140 A–B–A: ninguno en los tramos del último estado 4/11.
+1.198 adquisiciones bajo el último estado 11. Distancia de ticks 0..3,
+máximo 1 en el tramo 11; dimensiones iniciales 1×1 → 512×448 y fuente
+CRTC en páginas (`preferred=0`) en todas las filas. Esto no descarta
+alternancia visible, retenciones no registradas ni cuelgues más largos/con hilos.
+
+Las dos presentaciones compartidas superan la transición en estas pasadas;
+la corrección de Count tiene regresiones negativas/positivas y control nativo,
+sin cambiar FINISH/fences. Falta cerrar los dos controles por RAM de 98 y
+comparar cámara/escena de forma alineada antes de dar por cerrado #51.
+Se inicia síncrona/RAM aislada después de terminar asíncrona/compartida.
+## Controles incorporados desde la corrección #59 (2026-10-11)
+
+Se conserva a continuación el registro de validación de la rama Count,
+incorporado por merge sin reescribir su historia ni borrar los controles
+anteriores. Su HEAD final `ab89804` pasó CI completo y #59 se fusionó en
+`cee659a733be0ae9db4764ad99b4e570e9af7849`. Los pendientes siguientes
+describen el momento de cada control; #51 conserva la investigación visual.
 
 Control nativo de la integración de 98 en #51, código `f36936e`: build Windows
 completo, 898,79 s, salida 0, runner SHA-256
@@ -3319,6 +3904,33 @@ destino $zero; sin modificar FINISH/fences ni el checkout de Opus.
 El CI del último HEAD documental debe pasar antes de fusionar este tema.
 La validación de cámara/alternancia y los hilos permanecen en #51.
 
+## Cierre de la matriz aislada de 98 y publicación Count (2026-10-11)
+
+Se completan las dos RAM con el mismo runner `f36936e`, SHA-256
+`4693c62c14919c5bd400aa55b8da50a0ab5f5d281d3d20e7b02624aeaa5c6663`:
+síncrona 360,04 s, primer informe 11 a 126,41 s; asíncrona 360,05 s,
+primer 11 a 121,31 s. Último estado 11 en ambas, salida deliberada por
+límite (proceso 1/lanzador 0), tarjetas intactas y ninguna firma buscada
+de error. No minimizadas; primer plano desde ~21/~41 s respectivamente.
+Una captura propia de cada RAM muestra escena/enemigos o HUD/Kratos en
+los muelles, sin alineación PCSX2/cuadro GS y con perturbación de captura.
+
+La matriz nueva de cuatro casos termina sin solapar juegos/compilación;
+las dos compartidas alcanzaron 11 a 145,14/116,40 s. Se supera la espera
+síncrona compartida de las cadenas 96/97 con el contador actualizado. Esto
+no equivale a declarar cámara correcta, ausencia de alternancia o FPS mejores.
+Matriz y límites en `TRANSICION_COMPARTIDA.md`; los hashes no certifican
+píxeles iguales y no registran retenciones. Se inicia VU1 en hilo por separado,
+todavía con intérprete y hash/diagnóstico: control funcional, no benchmark.
+
+[PR #59](https://github.com/KIexster/god-of-war-recomp/pull/59) revisada y
+fusionada por merge en `cee659a733be0ae9db4764ad99b4e570e9af7849`, tras
+[CI completo del HEAD final `ab89804`](https://github.com/KIexster/god-of-war-recomp/actions/runs/38139636066).
+#51 y #58 integran ese main por merge conservando ambos registros; orden
+Count → direcciones GS → diagnóstico. Verificado: los 97 parches de #58
+coinciden en orden/contenido con el prefijo compilado de #51, y la cadena 98
+de #51 sigue idéntica al código del runner. No se modificó Opus. #51 sigue
+borrador por comparación visual y hilos pendientes; comprobar CI de cada HEAD.
 ## Integración y revisión final de unidades GS (2026-10-11)
 
 La corrección Count #59 se fusionó en `cee659a` tras CI completo del HEAD
@@ -3339,3 +3951,251 @@ controles negativos/positivos CPU y GPU. La semántica física de ambos pares
 y la reutilización de ocho ranuras quedan cubiertas sin alterar las
 matemáticas del renderer CPU ni FINISH/fences. Falta verificar el CI del
 HEAD final tras este merge antes de fusionar #58.
+
+## Publicación GS, controles con hilos y nueva ventana (2026-10-11)
+
+#58 se fusiona por merge en `fac216674e9d763ad418d9c1a9c9ce05088955d1`,
+tras [CI completo del HEAD final `957f9da`](https://github.com/KIexster/god-of-war-recomp/actions/runs/38140210658).
+#51 integra el main nuevo mediante merge (`a64ed52`), preservando registros
+y la cadena de 98 ya compilada. Ambas correcciones (#58/#59) están publicadas
+en main; #51 conserva borrador por investigación visual/estabilidad pendiente.
+
+Control 98 asíncrono/compartido con VU1 en hilo, frente GS apagado:
+360,04 s por límite, primer informe 11 a 80,90 s, último 11, tarjeta intacta,
+sin firmas buscadas de error o minimización; captura privada HUD/Kratos/enemigos
+sin alineación. El cupo de 4.096 se agota antes del informe 11 (`hostTick=4136`):
+3.064 A–B–A, cero regresiones/inconsistencias/hash desconocido, todos anteriores
+a partida. No utilizar ese registro para certificar la presentación de estado 11.
+
+VU1+frente GS alcanza 11 a 80,83 s pero cierra antes: 228,17 s, salida 0,
+`process_exit`, sin causa determinada. Último 11, tarjeta intacta, sin firmas
+buscadas de error/minimización o captura válida propia; no completa los 360 s
+ni prueba estabilidad. Cupo agotado también antes de 11, 3.045 A–B–A. Se conserva
+como incompleto y debe repetirse. Los dos controles usan intérprete y hash;
+sus tiempos no son FPS ni equivalencia con las mediciones optimizadas de Opus.
+
+Se implementa un parche nuevo de ventana diagnóstica, sin variar Acquire,
+FINISH/fences/readback ni el límite 4.096: permite empezar desde un hostTick
+explícito para observar partida con hilos. `PS2X_GS_PRESENT_DIAG_FROM_TICK`,
+ausente/inválido → 0; lanzador `--diag-from-tick`, rango uint64 validado antes
+de escrituras. Tres regresiones MiniTest/MSVC reducidas pasan; negativo con
+la semántica previa compatible falla exactamente dos (1/3), sin afirmar
+suite completa. 14 pruebas Python del lanzador y 17 del inspector correctas,
+configuración/sintaxis correctas, nueva aplicación independiente sobre los
+98 anteriores. Cadena 99 pendiente de compilación Windows completa,
+suite nativa/CI y repetición del juego con ventana. No se atribuye el nuevo
+parche al ejecutable existente ni se declara resuelto encuadre/alternancia.
+
+## Cadena 99 nativa completa y fast boot desactivado (2026-10-11)
+
+Código `3dbac1a442add16518b0504975bfa715f1b32dc4`: compilación Windows
+completa, 99 parches, salida 0 en 1.005,59 s; VU1 intérprete, Release
+optimizado/símbolos privados/tres tareas. Runner SHA-256
+`cf063d2f03a1a78f455a9ff57a1378cd4a1ddaf71e6d279d305b34663b96fa07`.
+600/600 normal y 634/634 GPU real correctas; cuatro controles separados
+FINISH/lectura y FINISH/textura adquirida `default|async`, todos salida 0.
+[CI del mismo HEAD correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38152876084).
+La ventana diagnóstica ya está en este ejecutable; falta repetir el juego.
+
+Revisión de overrides: `GOW_FAST_BOOT=0` no activa el atajo, pero instalaba
+las sondas por mera presencia y emitía animación/flash-ready en los controles
+anteriores. Se corrige solo su condición de instalación para exigir `1`,
+manteniendo los diagnósticos explícitos y llamadas originales. No es una
+corrección de cámara ni una medición de FPS. El runner anterior no incluye
+este cambio de `src/`: necesita recompilación rápida privada, nuevo commit/hash
+y control que compruebe la ausencia de aquellas etiquetas. Opus continúa
+limpio y no se modifica su checkout; main integrado por merge.
+
+El control de Windows por Computer Use falla al conectar su pipe nativo
+(archivo ausente); importación del módulo correcta, dos consultas ligeras
+fallidas, ninguna entrada enviada. CLI/compilación/pruebas disponibles.
+No se utiliza ese fallo como prueba visual ni se atribuye al juego.
+
+## Primer control 99 con FAST_BOOT=0 aislado (2026-10-11)
+
+Overrides recompilados sobre la cadena 99 completa desde `a37cd85`, salida 0;
+runner SHA-256 `a4ec4365273903d525ce19ecade3fb423fb871c5628a84e695b33ac777ca3598`,
+[CI del mismo HEAD verde](https://github.com/KIexster/god-of-war-recomp/actions/runs/38154314459).
+Asíncrona/compartida sin hilos, diagnóstico desde tick 0, completa 360,06 s por
+límite; informe 11 desde 154,02 s, último 11, tarjeta intacta, ninguna firma
+buscada de error. Se comprueba ausencia de sondas animación/flash-ready.
+Ventana visible/nunca minimizada, siempre sin primer plano; sin captura propia.
+
+2.046 adquisiciones, 27 A–B–A solo antes de informe 3, cero regresiones/
+inconsistencias/hash desconocido. Bajo último informe 11 hay 983 adquisiciones
+y ninguna A–B–A; fuente CRTC en todas. Distancia máxima de ticks 37 en arranque,
+5 en tramo 4 y 1 en 11. Detalles en TRANSICION_COMPARTIDA.md; no se comparan
+FPS ni se declara solución visual. Se inicia otro control privado VU1 en hilo
+con ventana tardía desde 6000; GS frontal se repetirá después, por separado.
+
+## Adquisiciones de partida con VU1 en hilo (2026-10-11)
+
+Mismo runner de 99/overrides `a37cd85`, asíncrona/compartida, VU1 en hilo
+y GS frontal apagado, ventana desde 6000: 360,06 s completos por límite,
+informe 11 desde 81,05 s, último 11, tarjeta intacta. Ninguna firma buscada
+de error ni sondas animación/flash-ready; no minimizada, sin primer plano
+o captura propia, sin solapamientos. El primer registro es hostTick=6000,
+frameTick=5999, seq/render=5880. 4.096 adquisiciones todas en tramo 11, fuente
+CRTC, 512×448/hash válido, cero regresiones/inconsistencias/cambios de dimensión,
+distancia de ticks 0..2. El filtro observa ahora partida, a diferencia de 98.
+
+Los 3.009 retornos A–B–A alternan paridad de frameTick. El inspector conserva
+los tres ticks y agrega la clasificación de paridad sin ocultar retornos;
+20 pruebas pasan. Esto es compatible con campos alternos (la prueba GPU
+procedural compara campos distintos con VRAM invariable contra CPU), pero
+no identifica SMODE2 ni demuestra causa/corrupción o ausencia de imágenes
+antiguas. Mantener límites de hash/cupo y cámara separada. Se inicia aislada
+la repetición VU1+GS frontal de 360 s con ventana desde 6000; aún pendiente.
+
+## Control 99 completo con ambos hilos (2026-10-11)
+
+Repetición asíncrona/compartida con VU1+frente GS y ventana desde 6000,
+mismo runner `a37cd85`: completa 360,04 s por límite, informe 11 desde 80,97 s,
+último 11, tarjeta intacta. No hay firmas buscadas de error ni sondas animación/
+flash-ready; no minimizada, sin primer plano/captura propia y sin solapamiento.
+No se reproduce en esta pasada el cierre de 98 a 228,17 s. Una repetición
+correcta no determina su causa ni prueba estabilidad prolongada.
+
+4.096 adquisiciones en tramo 11, primera hostTick=6000/frameTick=5999,
+seq/render=5933. Cero regresiones/inconsistencias/hash desconocido o cambios
+de dimensión; 512×448/fuente CRTC, distancia de ticks 0..1. Los 3.506 A–B–A
+alternan paridad, compatible con campos pero sin SMODE2 registrado ni prueba
+de causa. El CI de `6f30f5c` está verde. Las tres pasadas finitas de 99 ya
+terminaron; siguen pendientes comparación visual alineada/encuadre y duración
+mayor. #51 conserva borrador. Siguiente control: SMODE2 de la textura adquirida,
+con regresión que descarte confundirlo con el CRTC actual. Detalles y límites
+en TRANSICION_COMPARTIDA.md. No se publican datos del juego ni FPS.
+
+## Preparación de SMODE2 adquirido, sin cambiar la presentación (2026-10-11)
+
+Los miles de retornos A–B–A de partida en 99 alternan paridad, pero faltaba el
+modo del request. Parche nuevo por tema `ps2recomp-gs-acquired-mode-diag.patch`:
+guardar SMODE2 completo en la ranura publicada y registrarlo desde el Frame
+adquirido. No inferirlo del CRTC actual ni añadir readback/Acquire/hash/barreras.
+Una regresión GPU real comprueba campos/cuadro/progresivo, píxeles contra CPU
+y metadatos nuevos/retenidos; ejecución pendiente. La rama pasa a 100 parches,
+con aplicación independiente del nuevo correcta y sintaxis sin errores.
+
+Inspector 24/24 pruebas: campo opcional decimal uint64, metadatos consistentes,
+compatibilidad con logs previos y tres modos por retorno, sin ocultar A–B–A.
+Las adquisiciones de 99 no acreditan este runtime; necesitan otra compilación
+completa, suite/GPU/negativo y control con el juego. #51 sigue borrador.
+Se mantiene separada la investigación de encuadre y no se modifican matemáticas.
+
+## Primer control nativo de 100: diferencia de altura en modo cuadro (2026-10-11)
+
+Compilación Windows completa desde `4a000c48e2d111637a77318eb509dd88f35d653d`,
+100 parches, salida 0 en 943,29 s. Runner congelado SHA-256
+`fb46a87ac6d80a600f8662ae3ee6b74bbb5b37b84f1cc10fa0eb0b0f3d4367b5`,
+Release optimizado con símbolos privados, VU1 intérprete. [CI del mismo HEAD
+correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38156407391).
+600/600 normal; **634/635 GPU real: falla la nueva prueba de SMODE2**, por
+altura lógica distinta y comparación CPU vacía. No se ejecutan los contratos
+posteriores ni el juego con este runner; no se presenta como validación completa.
+
+La revisión localiza la diferencia en el caso `SMODE2=0x403`: con DISPLAY de
+64×128, GPU divide la altura por dos y CPU conserva la altura completa. Es
+código de composición previo, sin cambios en el parche del metadato; todavía
+no se determina qué salida debe usarse ni si el juego utiliza ese modo en la
+transición. No se atribuye al encuadre ni se cambia el renderer para hacer
+pasar una prueba del diagnóstico.
+
+Se precisa el alcance de la nueva regresión: todos los modos conservan
+SMODE2 completo en una textura realmente adquirida y retenida; campos y
+progresivo mantienen comparación de todas las filas contra CPU. En modo
+cuadro se registra la dimensión CPU/GPU y se valida solo textura/metadatos,
+conservando explícitamente pendiente su equivalencia. Se mantiene el caso,
+sin añadir excepciones a `fallos_conocidos.txt` ni ocultar el resultado inicial.
+El parche corregido aplica sobre una base independiente de 99. Requiere otra
+compilación completa, suite/negativo significativo y controles del juego;
+#51 sigue borrador. La diferencia de altura es una investigación separada.
+
+## Diagnóstico SMODE2 de 100 validado nativamente (2026-10-11)
+
+Compilación completa revisada de `383c6b65986ffe2cddebaed987d9132ea791d100`,
+salida 0 en 928,11 s, runner SHA-256
+`5f3b9c29dad7797e7edaa17585254eccaadd14238a834d15b69101c28895c74f`.
+[CI del mismo código verde](https://github.com/KIexster/god-of-war-recomp/actions/runs/38157988334).
+Windows: 600/600 normal, 635/635 GPU y cuatro contratos independientes
+FINISH/lectura/textura adquirida correctos, sin fallos conocidos. Se renuevan
+los objetos de los controles privados para el nuevo layout de Frame.
+
+El negativo privado fuerza solo el metadato a cero, conserva la API y compila:
+634/635, falla exactamente el caso nuevo de SMODE2. Restauración del archivo
+positivo y otra suite GPU: 635/635. El runner permanece positivo y congelado
+durante ese control; no se ejecuta el juego sobre la variante negativa.
+La prueba distingue modo de textura adquirida/retenida del request posterior.
+
+Se mide además la discrepancia del caso cuadro: CPU 64×128, textura GPU 64×64
+con SMODE2=1027. Su equivalencia permanece pendiente; campos/progresivo sí
+mantienen comparación de todas las filas. No se cambia el renderer para cerrar
+esa diferencia ni se atribuye a la escena del juego sin registrar su modo.
+Siguiente paso: controles de 100 sin hilos, con VU1 y con ambos hilos, ventana
+tardía y tarjetas privadas. #51 sigue borrador hasta cerrar validación del
+nuevo diagnóstico y CI final. Cámara/alternancia no se declaran resueltas.
+
+## Primer control del juego de 100: campos en la textura adquirida (2026-10-11)
+
+Runner `383c6b6`/SHA-256
+`5f3b9c29dad7797e7edaa17585254eccaadd14238a834d15b69101c28895c74f`,
+asíncrona/compartida sin hilos, ventana desde 0: 360,06 s completos por límite,
+primer informe 11 a 133,85 s, último 11, tarjeta intacta. Ninguna firma buscada
+de error ni sondas de animación/flash-ready; nunca minimizada, primer plano
+entre 17,12 y 41,29 s, sin captura propia ni solapamientos. Detalles en
+TRANSICION_COMPARTIDA.md; no se afirma cierre normal o equivalencia visual.
+
+1.955 adquisiciones, sin regresiones/inconsistencias/hash desconocido; seis
+A–B–A solo antes de los tramos 4/11, todos alternan paridad y tienen modo de
+campos. Las 1.063 adquisiciones de tramo 11 registran SMODE2=2227921 (`&3=1`),
+512×448/fuente CRTC, ninguna A–B–A y distancia de ticks 0..1. El caso cuadro
+con altura distinta (`&3=3`) no corresponde a estas muestras. Esto no prueba
+la causa del encuadre ni excluye imágenes antiguas fuera del registro.
+
+[CI `6a53774` verde](https://github.com/KIexster/god-of-war-recomp/actions/runs/38159575279).
+Continúa otra pasada privada con VU1 solo y ventana desde 6000; después ambos
+hilos. Mantener #51 borrador durante la validación pendiente, sin declarar FPS.
+
+## VU1 solo de 100: ventana tardía con modo de campos confirmado (2026-10-11)
+
+Mismo runner `383c6b6`/SHA-256
+`5f3b9c29dad7797e7edaa17585254eccaadd14238a834d15b69101c28895c74f`,
+asíncrona/compartida, VU1 en hilo, frente GS 0 y registro desde 6000. Completa
+360,04 s por límite, primer informe 11 a 80,98 s y último 11 a 357,24 s.
+Tarjeta intacta, sin firmas buscadas de error ni sondas antiguas; ventana
+visible/no minimizada/sin primer plano según monitor. Sin captura propia.
+
+4.096 adquisiciones de tramo 11, todas SMODE2=2227921 (`&3=1`, campos),
+512×448/fuente CRTC/hash válido. 3.562 A–B–A: todos alternan paridad y tienen
+modo de campos en las tres texturas. Sin regresiones/inconsistencias o cambios
+de dimensión; distancia de ticks 0..1. La hipótesis de campos gana apoyo,
+pero no demuestra causa visual ni ausencia de imágenes antiguas; el cupo
+no cubre toda la pasada. Encuadre/FPS/equivalencia con PCSX2 no acreditados.
+
+[CI `e3678cb` verde](https://github.com/KIexster/god-of-war-recomp/actions/runs/38160245742).
+Otra pasada aislada con ambos hilos está en curso; no usarla aún como validación.
+Se conservan las salidas anticipadas anteriores y sus causas pendientes.
+
+## Ambos hilos de 100 completos; diagnóstico listo para revisión final (2026-10-11)
+
+Mismo runner `383c6b6`/SHA-256
+`5f3b9c29dad7797e7edaa17585254eccaadd14238a834d15b69101c28895c74f`,
+asíncrona/compartida, VU1+frente GS en hilo, ventana desde 6000: 360,05 s
+completos por límite, primer informe 11 a 80,92 s y último 11 a 357,49 s.
+Tarjeta intacta, sin firmas buscadas de error ni sondas antiguas; ventana
+visible/no minimizada/sin primer plano según monitor, sin captura propia.
+
+4.096 adquisiciones de tramo 11, todas SMODE2=2227921 (`&3=1`, campos),
+512×448/fuente CRTC/hash válido. 3.542 A–B–A: todos alternan paridad y tienen
+modo de campos en las tres texturas. Sin regresiones/inconsistencias/cambios
+de dimensión; distancia de ticks 0..1. La salida anticipada de 98 no se
+reproduce aquí, pero su causa y la estabilidad prolongada siguen pendientes.
+
+Las tres pasadas de 100, compilación completa, suite normal/GPU, negativo
+significativo restaurado y cuatro contratos cierran la validación funcional
+de la instrumentación de #51. [CI `bae5d74` verde](https://github.com/KIexster/god-of-war-recomp/actions/runs/38160854972).
+Revisión manual del cambio y CI del HEAD final preceden a marcarla lista y
+fusionarla. Las referencias anteriores a borrador por comparación visual no
+se convierten en una afirmación de fidelidad: #51 solo diagnostica; no corrige
+el encuadre ni demuestra ausencia de contenido antiguo. Detalles en
+TRANSICION_COMPARTIDA.md. Siguiente tema: captura explícita y acotada de la
+textura adquirida para comparar campos; conservar privados los píxeles.

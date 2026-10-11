@@ -110,6 +110,9 @@ $vu1StaticStoresPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-static-stores
 $vu1SimdSpecialsPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-simd-specials.patch'
 $eeCop0CountPatch = Join-Path $RepoRoot 'patches\ps2recomp-ee-cop0-count.patch'
 $gsSourceAddressPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-source-address.patch'
+$gsHostFrameDiagPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-host-frame-diag.patch'
+$gsHostDiagWindowPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-host-diag-window.patch'
+$gsAcquiredModeDiagPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-acquired-mode-diag.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -244,6 +247,9 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1StaticStoresPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1SimdSpecialsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $eeCop0CountPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsSourceAddressPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsHostFrameDiagPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsHostDiagWindowPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsAcquiredModeDiagPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
