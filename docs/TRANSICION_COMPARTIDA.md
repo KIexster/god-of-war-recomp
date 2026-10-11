@@ -201,3 +201,82 @@ consistentes y hash desconocido, excluye metadatos contradictorios y admite
 distancia negativa cuando el request lee el contador después que el host.
 El resumen reproduce los máximos 3/417 en los registros anteriores sin
 ejecutar el juego. No demuestra latencia sostenida ni contenido antiguo.
+
+## Lanzador reproducible y ventana del host (2026-10-11)
+
+`tools/render/run_transition_control.py` prepara una carpeta nueva por pasada,
+comprueba el ejecutable y ELF contra un manifiesto de compilación y copia
+ELF/IOP a esa carpeta privada. La ISO se consume desde su origen. Cada pasada
+crea la misma tarjeta procedural sin formatear o copia la indicada con
+`--initial-card`; nunca usa el archivo original como tarjeta escribible.
+Rechaza carpetas existentes y la salida dentro de los módulos de origen para
+evitar una copia recursiva. No copia ni publica el ejecutable o los datos a Git.
+
+El manifiesto JSON requiere `commit` completo, `exe_sha256` y `elf_sha256`.
+Registrar estos datos **después de comprobar que la compilación terminó**,
+usando el commit de esa compilación, no otro HEAD posterior. Se recomienda
+conservar también cadena de parches, modo VU1 y registro privado de build.
+El hash del ELF debe coincidir con SCUS_973.99. El manifiesto verifica
+identidad del binario, no constituye por sí solo prueba de compilación correcta.
+
+Ejemplo para una **nueva compilación de 96 parches**, cuando el PC esté libre
+y se haya creado el manifiesto privado correspondiente:
+
+```powershell
+$controlArgs = @(
+    '--runner', 'E:\gowgpuprof\PS2Recomp\out\build\ps2xRuntime\ps2EntryRunner.exe',
+    '--elf', 'E:\gowgpuprof\SCUS_973.99',
+    '--iso', 'E:\gowport\God of War.iso',
+    '--iop-mod', 'E:\gowgpuprof\IOP_MOD',
+    '--build-manifest', 'E:\gowgpuprof\transition96\build.json',
+    '--output-root', 'E:\gowgpuprof\transition96',
+    '--seconds', '360',
+    '--collapsed-ui'
+)
+python tools/render/run_transition_control.py sync_ram @controlArgs
+python tools/render/run_transition_control.py sync_shared @controlArgs
+python tools/render/run_transition_control.py async_ram @controlArgs
+python tools/render/run_transition_control.py async_shared @controlArgs
+```
+
+No ejecutar esas rutas sobre el binario antiguo como si incorporase la cadena
+nueva. Usar `--label` para una repetición en carpeta distinta. Mantener la misma
+opción de panel en las cuatro pasadas. El lanzador elimina todas las variables
+heredadas `GOW_*`/`PS2X_*` y fija la matriz; activa `GOW_PAD_SOLO_GUION=1`
+(añadida en #56) para ignorar entradas físicas. No activa readback, replay ni
+capturas. Los hilos están apagados inicialmente; los argumentos
+`--vu1-thread 1` / `--gs-front 1` permiten controles posteriores separados.
+El frente GS requiere VU1 en hilo.
+
+`window_state.jsonl` registra cambios del estado consultado cada segundo:
+ventana visible del PID propio, minimización y si el primer plano pertenece
+a ese PID. No lee títulos de otras aplicaciones, activa ventanas ni captura
+imágenes. La visibilidad Win32 no garantiza que la ventana esté descubierta,
+y perder el foco no implica estar minimizada:
+[IsWindowVisible](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-iswindowvisible),
+[IsIconic](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-isiconic).
+Ventana no encontrada significa estado de minimización desconocido; el
+intervalo de muestreo puede omitir cambios de menos de un segundo.
+
+La versión raylib del runtime construido
+[`c1ab645`](https://github.com/raysan5/raylib/blob/c1ab645ca298a2801097931d1079b10ff7eb9df8/src/platforms/rcore_desktop_glfw.c#L1258)
+espera eventos mientras está minimizada sin `FLAG_WINDOW_ALWAYS_RUN`.
+El runtime configura solamente `FLAG_WINDOW_RESIZABLE`, mientras el EE corre
+en otro hilo. Esa pausa del host es una explicación posible de una imagen
+con tick antiguo al restaurar la ventana. No se registró minimización en las
+pasadas anteriores: perder el primer plano no demuestra que ocurriera y no
+permite atribuirle los 417 ticks ni dar por resuelta la alternancia.
+
+Crear el archivo `STOP` dentro de la carpeta de la pasada o pulsar Ctrl+C
+detiene solamente el proceso iniciado por el lanzador. `result.json`
+distingue límite, solicitud de parada, interrupción y salida espontánea;
+conserva código de salida, tiempo y hashes de la tarjeta. Un cierre por límite
+o por el usuario no es una prueba de crash ni de cierre normal del juego.
+
+Once pruebas locales Windows pasan, incluida una ejecución de Python como
+hijo procedural que termina sin juego ni ventana. Las otras diez prueban
+entorno, matriz, propiedad de ventana, copia de tarjetas, rechazos antes de
+escribir y parada del hijo. Se añade el control a CI; el ensayo completo
+Win32 se omite en Linux. La consulta real Win32 también se comprueba sobre
+nuestro proceso Python sin ventana. Esto valida la herramienta, no la escena.
+Su nueva matriz con el juego y la cadena de 96 parches sigue pendiente.

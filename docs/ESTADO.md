@@ -3327,3 +3327,35 @@ diagnóstico. No se modifica el runtime ni se declara corregido un fallo visual.
 
 También se reubica el párrafo de validación de paletas bajo su sección original
 en `CONTROLES.md`; no pertenece al control de presentación compartida.
+
+## Control reproducible de transición y minimización del host (2026-10-11)
+
+Se publica `tools/render/run_transition_control.py`, derivado del control
+privado anterior: manifiesto y hashes explícitos, carpetas nuevas, ELF/IOP
+copiados, tarjeta procedural o copia privada de la inicial, entorno de
+diagnósticos limpio y misma matriz de cuatro modos. Añade selección de hilos,
+panel contraído e ignorar entradas físicas con `GOW_PAD_SOLO_GUION=1` de #56.
+No publica datos del juego ni modifica el runtime.
+
+La consulta Win32 registra cada cambio observado de visibilidad/minimización
+y primer plano, solo para el PID que inicia. No captura imágenes, activa
+ventanas ni usa readback GS. En raylib del runtime construido se confirma una
+espera de eventos al minimizar sin `FLAG_WINDOW_ALWAYS_RUN`; el EE continúa
+en otro hilo. Es una explicación posible de una pausa del host, no la causa
+demostrada de los 417 ticks: las pasadas anteriores no registraron minimización.
+No se modifica la política de ejecución en segundo plano para esconder el fallo.
+
+Once pruebas Windows de la herramienta pasan en 0,13 s, incluida la ejecución
+de un hijo Python procedural, sin juego ni ventana. Se comprueban la copia
+sin cambios sobre la tarjeta inicial, rechazo de directorios existentes y
+copia recursiva, manifiesto incorrecto, limpieza de variables por presencia,
+pérdida de foco distinta de minimización y terminación exclusiva del hijo.
+La consulta Win32 real a nuestro proceso Python no encuentra ventana y
+conserva minimización desconocida. Son comprobaciones ligeras; no se lanza
+el juego, compilación ni benchmark. Protocolo y límites en
+`TRANSICION_COMPARTIDA.md`; se incluye la herramienta en CI.
+
+El CI de `e412a1f9b0579ed3dced7083ac3d7aaab140583e` pasa ambos controles,
+con los 96 parches y las once pruebas del inspector. La ejecución anterior
+del merge `cce2d68` fue cancelada por el nuevo push; no se declara un resultado
+propio para ella. El control Windows del juego con esta cadena sigue pendiente.

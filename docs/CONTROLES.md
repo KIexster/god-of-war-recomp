@@ -489,3 +489,11 @@ retenidas consistentes y muestras sin hash; excluye metadatos contradictorios.
 La distancia puede ser negativa si el request muestrea el tick después que el
 host. No es tiempo, no mide FPS ni prueba latencia sostenida. Cero retenciones
 en el resumen no descarta retenciones que el diagnóstico no haya registrado.
+
+`tools/render/run_transition_control.py` automatiza la matriz en carpetas
+privadas nuevas, verificando manifiesto/ELF/ejecutable y usando tarjetas
+independientes. Registra el estado de nuestra ventana sin capturas, para
+distinguir minimización de pérdida de foco. Solo detiene el proceso que
+inicia; crear `STOP` en la carpeta de la pasada conserva una parada deliberada
+en `result.json`. Variables, argumentos, protocolo y límites:
+[TRANSICION_COMPARTIDA.md](TRANSICION_COMPARTIDA.md).
