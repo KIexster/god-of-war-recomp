@@ -4296,3 +4296,112 @@ encuadre, contenido antiguo, modo cuadro o estabilidad prolongada. Próximo
 paso: relacionar cámara/animación con la escena realmente dibujada y una
 referencia alineada; evitar corregir matrices por observaciones de instantes
 distintos. Detalles y hash en TRANSICION_COMPARTIDA.md; píxeles privados.
+
+## #60 fusionada; cámara, repetición GS y síntomas de modelos (2026-10-11)
+
+#60 fusionada en `f41be4eefc31c0ebde3500b4c3b02f3815e9cfd9`: revisión manual,
+compilación completa y controles anteriores; [CI del HEAD final `8530914`
+correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38175464970)
+y [CI del merge correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38175870557).
+Se cierra la captura opcional, sin atribuirle la solución del fallo visual.
+El runner sigue siendo `394779a`/101, SHA-256
+`63e6a576307675f34b70e4671a5b34de30219627a2ca2a3a362c182effd27040`.
+Incluye #55 y cambios posteriores; estas pasadas con intérprete, sondas y
+hilos desactivados no reproducen la configuración de rendimiento de Opus.
+
+Control síncrono/compartido, sin hilos, con las sondas existentes de cámara
+y animación: 360,05 s por límite, primer informe 11 a 126,83 s, tarjeta intacta,
+sin firmas buscadas de error. Minimización tardía desde 325,28 s; no afirmar
+ventana constante. 268 muestras de cámara completas y finitas. La principal
+de 11 usa matriz local (`joint=0xFFFF`), con 32 posiciones distintas y matrices
+iguales a las del cliente. Residuo máximo mundo por inversa 0,0002045 y
+combinada 0,0001827: descripción numérica, no tolerancia de fidelidad. Esto no
+identifica la cámara correcta. Las referencias PCSX2 guardadas corresponden
+a menú/intro (estados 3/4), no a una partida 11 alineada.
+
+Otra pasada síncrona/RAM, sin hilos ni hash/sondas/capturas adquiridas, utiliza
+solo `5:start,12:x,20:x`; **cambia el guion** respecto a controles anteriores.
+240,04 s por límite, primer informe 11 a 126,29 s, tarjeta intacta, sin firmas
+buscadas de error. Traza GS desde TEXFLUSH real a 150,028 s, completa por
+presupuesto de bytes antes del segundo solicitado: 54.535.090 bytes, seis
+Present y 145.452 Submit. Traza/píxeles/datos del juego permanecen privados.
+
+Repetición del **prefijo hasta el primer Present**, registro 12795/12693 draws,
+con herramientas nativas enlazadas al runtime 101. CPU: dos pasadas idénticas
+entre sí y contra CPU en 4 MiB de VRAM, estado e imagen. Compute solicitado:
+dos pasadas idénticas, pero 326.270 bytes VRAM distintos frente a CPU e imagen
+distinta. Hardware: dos pasadas con 7472 primitivas/cero tiles difieren entre
+sí en 1796 bytes VRAM y 1916 bytes RGBA visibles, con mismo estado. La primera
+pasada hardware usa ruta mixta y se excluye de esa comparación.
+
+La protección experimental existente `--snapshot-feedback` congela la fuente
+por Submit: tres pasadas hardware, todas con cero tiles, son idénticas en
+VRAM/estado/RGBA; su RGB coincide con compute en esta muestra. **No es una
+corrección activada por defecto ni emulación de la caché PS2**, no resuelve la
+diferencia CPU y no prueba la causa del encuadre o del síntoma original.
+Lockstep compute protegido encuentra antes una divergencia CPU de dos bytes
+en un triángulo sin textura (registro 76/draw 73); separar esa discrepancia de
+la variación hardware. El resto de la traza y su End original no se validan
+con este prefijo. Nada de esto mide FPS ni demuestra fidelidad PCSX2.
+
+El usuario amplía el síntoma: movimientos como espasmos y deformaciones de
+modelos/animaciones de Kratos y enemigos, además del encuadre. Es una
+observación comunicada, todavía sin comparación alineada propia. En la próxima
+revisión observar una secuencia de movimiento: extremidades, forma y posición,
+no solo capturas aisladas. Priorizar entradas/salidas reales de skinning y sus
+índices, luego envío a VU/GS. La paleta leída al entrar en ProcessModel precede
+al cálculo posterior: valores finitos allí no descartan este fallo. Leer
+RAM/scratchpad con límites separados, respetar checkpoints y observar solo
+retornos reales. No corregir matrices ni activar protecciones por intuición.
+
+Se prepara `GOW_SKIN_DIAG=1`, observación posterior de ambas variantes y lectura
+del destino a2 separado de la paleta a1. Límites, campos y descarte de pausas
+en CONTROLES.md. Pruebas procedurales Windows/MSVC con /W4 /WX y sintaxis
+C++20 del override correctas; todavía pendientes recompilación rápida de src/
+con nuevo hash y pasada funcional. No se modifica ningún parche o matemática.
+
+## Skinning observado después del retorno real (2026-10-11)
+
+La sonda opcional anterior se recompila desde `e0bf966` mediante
+`2_recompilar_rapido.cmd`, solo src/, sobre la compilación completa 101 de
+`394779a`. Sin diferencias de parches ni de runtime.lib; termina con código 0
+en 19,12 s. Runner 54.559.744 bytes, SHA-256
+`063ea7299ffb9bb5bc413432df63f555a605225198557fc5cd753983ad2780a0`.
+[CI de ese código correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38178208986),
+incluidas compilación de src/, pruebas procedurales y suite del runtime.
+No confundir esta actualización de src/ con una nueva compilación de parches.
+
+Primer intento síncrono/compartido, hilos 0, no alcanza estado 11: se detiene
+con STOP privado a 144,89 s, todavía en menú 3 y sin llamadas de skinning.
+Se conserva como intento fallido. El siguiente añade pulsaciones X de menú
+a 28/36/44/52/60/68 s: **cambia el guion**, no es repetición alineada. Termina
+a 300,05 s por límite, primer informe 11 a 135,49 s y último a 294,36 s.
+Tarjeta procedural privada intacta, sin firmas buscadas de fatal/exception/
+deadlock/assertion failed/unhandled; el monitor no registra minimización.
+Código 1 del juego por cierre externo, controlador 0: no salida natural.
+
+128 muestras completas, ninguna pausa observada, cinco combinaciones de
+skeleton/variante/vista/ownerCandidate. Se ejecutan ambas rutas 0x137508 y
+0x137AF8. Las 6.173 lecturas de destino, mundo y fuente válidas son finitas.
+5.629 slots seleccionados cuyo destino cambió tienen matriz de definición
+válida: el producto mundo por definición concuerda con el destino, con
+residuo máximo 0,0001361 usando producto de columnas en double. Es una
+descripción numérica de esta muestra, **no tolerancia PS2 ni prueba de pose
+correcta**. Las 544 matrices de definición no leídas pertenecen a slots no
+seleccionados; no son accesos fallidos ni evidencia de corrupción. El cupo
+global se agota antes de que todos los grupos lleguen a 32 muestras.
+
+16 PNG/JSON de la reserva adquirida, secuencias 1453..1468 y ticks 1500..1515:
+metadatos exactos contra el log, RGBA completos y distintos, 224 pares de
+filas duplicados en cada uno. Hash desactivado: se comparan los bytes del PNG,
+no hashes desconocidos. La revisión de la secuencia muestra movimiento de
+una figura cercana sobre la cubierta, pero **su identidad no está confirmada**
+y el encuadre no separa protagonista/enemigos. No se demuestra aún el espasmo
+comunicado ni se alinea automáticamente cada PNG con una muestra de skinning.
+Las entradas de animación o su envío posterior a VU/GS siguen bajo sospecha;
+esta evidencia no descarta esos puntos ni resuelve el encuadre.
+
+Se prepara otro guion con ataques explícitos; las direcciones actuales del
+guion son botones digitales, no stick analógico. No afirmar desplazamiento
+del protagonista a partir de ellas. Píxeles, matrices, binarios y tarjetas
+permanecen privados; controles con lecturas/E/S e intérprete no miden FPS.

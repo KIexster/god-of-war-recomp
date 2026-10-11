@@ -7,6 +7,7 @@
 #include "gow_gs_replay.h" // GOW-Port: captura opcional y acotada para comparar backends.
 #include "gow_camera_probe.h"
 #include "gow_model_probe.h"
+#include "gow_skin_probe.h"
 #include <ps2_recompiled_functions.h>
 #include <cstdio>
 #include <cstdlib>
@@ -746,6 +747,81 @@ namespace
         sub_00157A60_0x157a60(rdram, ctx, runtime);
     }
 
+    // GOW-Port: observar ambas salidas reales, sin reemplazar cálculo ni reanudaciones.
+    // La paleta observada en ProcessModel precede a estas llamadas de 0x1590F0.
+    void gowDiagSkin(uint8_t *rdram,R5900Context *ctx,PS2Runtime *runtime,uint32_t entry,
+                     void (*original)(uint8_t *,R5900Context *,PS2Runtime *))
+    {
+        const uint32_t caller=GPR_U32(ctx,31);
+        const uint32_t expected=entry==0x00137508u ? 0x00159578u : 0x00159594u;
+        if(ctx->pc!=entry || caller!=expected || readGuest32(rdram,0x29E560u)!=11u) {
+            original(rdram,ctx,runtime); return;
+        }
+        using namespace gow_skin_probe;
+        using SkinMatrix=gow_skin_probe::Matrix;
+        const uint32_t skeleton=GPR_U32(ctx,4), world=GPR_U32(ctx,5), destination=GPR_U32(ctx,6);
+        const uint32_t input=GPR_U32(ctx,7), ownerCandidate=GPR_U32(ctx,17), view=readGuest32(rdram,0x33104Cu);
+        static Timeline timeline;
+        const auto now=Timeline::Clock::now();
+        static const auto started=now;
+        const unsigned sample=timeline.take(skeleton,view,entry,now);
+        if(!sample) { original(rdram,ctx,runtime); return; }
+        const Memory memory{rdram,runtime->memory().getScratchpad(),0x02000000u,0x4000u};
+        const Layout l=layout(memory,skeleton);
+        SkinMatrix inputMatrix{};
+        const bool inputValid=memory.matrix(input,0,inputMatrix);
+        uint32_t scalar=0; std::memcpy(&scalar,&ctx->f[12],4);
+        uint64_t stamp=0; memory.read(0x29BDF8u,0,stamp);
+        std::array<SkinMatrix,maxSlots> before{},sourceBefore{},bindBefore{};
+        std::array<bool,maxSlots> beforeValid{},sourceValid{},bindValid{};
+        std::array<uint32_t,maxSlots> ordinals{};
+        std::array<Slot,maxSlots> slots{};
+        bool completed=false;
+        observe(ctx->pc,entry,caller,[&]{original(rdram,ctx,runtime);},[&]{
+            if(l.valid) for(uint32_t i=0;i<l.count;++i) {
+                beforeValid[i]=memory.matrix(destination,i,before[i]);
+                sourceValid[i]=memory.matrix(l.source,i,sourceBefore[i]);
+                bindValid[i]=bind(memory,l,i,bindBefore[i],ordinals[i]);
+                slots[i]=slot(memory,skeleton,l,i);
+            }
+        },[&]{
+            completed=true;
+            std::fprintf(stderr,"[gow-skin] sample=%u state=11 entry=%x caller=%x stamp=%llu elapsed=%.3f view=%x ownerCandidate=%x skeleton=%x world=%x destination=%x input=%x scalar=%08x valid=%u slots=%u source=%x records=%x visibility=%x definition=%x selectedCount=%u selectionValid=%u inputValid=%u completed=1\n",
+                sample,entry,caller,(unsigned long long)stamp,std::chrono::duration<double>(now-started).count(),view,
+                ownerCandidate,skeleton,world,destination,input,scalar,unsigned(l.valid),unsigned(l.count),l.source,l.records,
+                l.visibility,l.definition,l.selectedCount,unsigned(l.selectionValid),unsigned(inputValid));
+            const auto format=[](const SkinMatrix &matrix,char (&bits)[144]) {
+                for(size_t k=0;k<matrix.size();++k)
+                    std::snprintf(bits+k*9,sizeof(bits)-k*9,"%08x%s",matrix[k],k+1<matrix.size() ? "," : "");
+            };
+            if(inputValid) {
+                char bits[144]{}; format(inputMatrix,bits);
+                std::fprintf(stderr,"[gow-skin:input] sample=%u bits=%s\n",sample,bits);
+            }
+            if(l.valid) for(uint32_t i=0;i<l.count;++i) {
+                SkinMatrix output{},worldMatrix{};
+                const bool outputValid=memory.matrix(destination,i,output), worldValid=memory.matrix(world,i,worldMatrix);
+                const auto &s=slots[i];
+                char bits[144]{},worldBits[144]{},sourceBits[144]{},bindBits[144]{};
+                format(output,bits); format(worldMatrix,worldBits); format(sourceBefore[i],sourceBits); format(bindBefore[i],bindBits);
+                // Selección/máscara/visibilidad son entradas, no una afirmación de que
+                // el slot se haya escrito: hay umbral y reutilización en ambas variantes.
+                std::fprintf(stderr,"[gow-skin:slot] sample=%u index=%u selected=%u recordValid=%u indexField=%d parent=%d maskValid=%u masked=%u visibilityValid=%u visibility=%u threshold=%08x beforeValid=%u outputValid=%u changed=%u worldValid=%u sourceValid=%u bindValid=%u ordinal=%u bits=%s worldBits=%s sourceBits=%s bindBits=%s\n",
+                    sample,i,unsigned(selected(l,i)),unsigned(s.recordValid),int(s.indexField),int(s.parent),unsigned(s.maskValid),unsigned(s.masked),
+                    unsigned(s.visibilityValid),s.visibility,s.threshold,unsigned(beforeValid[i]),unsigned(outputValid),
+                    unsigned(beforeValid[i] && outputValid && before[i]!=output),unsigned(worldValid),unsigned(sourceValid[i]),unsigned(bindValid[i]),ordinals[i],bits,worldBits,sourceBits,bindBits);
+            }
+        });
+        if(!completed) std::fprintf(stderr,"[gow-skin:paused] sample=%u entry=%x caller=%x skeleton=%x checkpoint=%x\n",
+            sample,entry,caller,skeleton,ctx->pc);
+    }
+    void gowDiagSkinPlain(uint8_t *rdram,R5900Context *ctx,PS2Runtime *runtime) {
+        gowDiagSkin(rdram,ctx,runtime,0x00137508u,sub_00137508_0x137508);
+    }
+    void gowDiagSkinVisible(uint8_t *rdram,R5900Context *ctx,PS2Runtime *runtime) {
+        gowDiagSkin(rdram,ctx,runtime,0x00137AF8u,sub_00137AF8_0x137af8);
+    }
+
     // GOW-Port: resultado del Clip llamado desde ProcessModel (MIPS 0x157FA8).
     // Solo observar bits de argumentos y resultado; no cambiar la FPU ni el criterio del juego.
     void gowDiagModelClip(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
@@ -1027,6 +1103,10 @@ namespace
         runtime.replaceFunction(0x00279600u, gowIpuInit);
         if(const char *v=std::getenv("GOW_CAMERA_DIAG"); v && std::strcmp(v,"1")==0)
             runtime.replaceFunction(0x0023B5E0u, gowDiagCameraPipeline);
+        if(const char *v=std::getenv("GOW_SKIN_DIAG"); v && std::strcmp(v,"1")==0) {
+            runtime.replaceFunction(0x00137508u,gowDiagSkinPlain);
+            runtime.replaceFunction(0x00137AF8u,gowDiagSkinVisible);
+        }
         // GOW-Port: valor "0" desactiva fast boot y no debe instalar sus sondas de animación.
         const char *fastBootSetting = std::getenv("GOW_FAST_BOOT");
         const bool fastBootEnabled = fastBootSetting && std::strcmp(fastBootSetting, "1") == 0;

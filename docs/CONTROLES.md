@@ -761,3 +761,81 @@ de 6000 distinto: A–B–A finito confirmado en bytes, en modo de campos.
 No demuestra antigüedad del contenido ni equivalencia de cámara/escena.
 El tick de vídeo y el último estado del guion no alinean por sí solos dos
 pasadas; consultar identidades y límites en TRANSICION_COMPARTIDA.md.
+
+## Separar poses, cámara y rasterizado (2026-10-11)
+
+#60 ya está fusionada y su CI final/merge es correcto (ver ESTADO.md).
+El usuario también observa espasmos/deformaciones de modelos/animaciones de
+protagonista y enemigos. Revisar secuencias de movimiento, no solo imágenes
+aisladas, y localizar dónde aparecen: matrices finales de skinning, datos que
+llegan a VU/GS, rasterizado o presentación. La paleta leída al entrar en
+ProcessModel no equivale a la salida posterior de skinning; una matriz finita
+no certifica una pose correcta. No identificar personajes solo por número de
+articulaciones ni comparar por reloj anfitrión.
+
+Control dedicado de cámara: `GOW_CAMERA_DIAG=1`, `GOW_ANM_DIAG=1`, fast boot 0,
+FINISH síncrono/compartida/hilos 0. Muestreo finito/coherente del cliente, sin
+referencia de partida PCSX2 alineada; detalles y minimización tardía en ESTADO.
+La intro usa cámara articulada; las muestras principales de 11 usan matriz
+local. No trasladar automáticamente conclusiones entre ambas cámaras.
+
+Para aislar rasterizado se repite una única traza privada sin EE/IOP/VU ni
+lanzar otra partida. Ejemplo: `repetir_gs <traza> hardware <carpeta-nueva>
+--hasta-registro 12795 --repeticiones 3 --pausa-ms 250`; comparar también CPU
+y compute y registrar primitivas/tiles para distinguir ruta mixta de hardware.
+El número 12795 pertenece solo a esta traza; no reutilizarlo con otra.
+`--snapshot-feedback` es experimental, añade protección de fuente por Submit,
+no emula la caché PS2 y no se activa para declarar un arreglo o medir FPS.
+El prefijo no comprueba el End del archivo ni toda la transición. Conservar
+los códigos 1 debidos a discrepancia; no contarlos como éxito. Una repetición
+exacta GS mantiene fijas las poses que recibió: tampoco prueba que fueran
+correctas antes de capturar la traza.
+
+### Diagnóstico posterior del skinning
+
+`GOW_SKIN_DIAG=1` instala dos observadores de las llamadas retail 0x137508 y
+0x137AF8 desde 0x1590F0, solo bajo estado 11. El resto y todas las reanudaciones
+llaman al original. `[gow-skin]` y `[gow-skin:slot]` se emiten solo al retornar
+al caller esperado; una pausa emite `[gow-skin:paused]` y se descarta su salida,
+sin reconstruir argumentos al reanudar ni forzar que termine el cálculo.
+
+128 intentos totales, 16 combinaciones skeleton/vista/variante, hasta 32
+muestras por combinación y separación mínima de 100 ms del host. No es un
+muestreo exhaustivo ni un contador de cuadros simulados. Captura entrada a3,
+f12, disposición, selección dispersa, máscara, visibilidad y umbral; por slot,
+fuente previa +0x50, paleta mundo a1 y destino real a2 posterior. También
+conserva la matriz de definición mediante el ordinal de bits activos,
+no mediante el índice del slot; índice de record +4 y padre +8 se distinguen.
+El indicador
+changed compara destino previo/posterior; no demuestra que no se escribiera
+si los bytes siguen iguales. ownerCandidate es s1 del caller, sin identificación
+confirmada de personaje. Los datos crudos quedan en logs privados.
+
+El conteo de slots es u16 en skeleton+0x5C, limitado a 256 para el diagnóstico;
+definición+0x10 tiene otro significado. Selección/máscara/visibilidad no prueban
+que el slot se haya actualizado: intervienen umbral y reutilización. Cada
+lectura valida RAM EE de 32 MiB o scratchpad de 16 KiB, incluidos sus alias,
+sin normalizar direcciones inválidas mediante RAM_MASK. El observador no
+escribe memoria ni modifica cálculos. Añade lectura/E/S y no mide rendimiento.
+
+Preparado con pruebas procedurales de límites, selección no contigua, máscaras
+y retorno/pausa, y sintaxis C++20. Requiere recompilación rápida de src/ sobre
+la cadena completa 101 y control funcional antes de usar sus registros como
+evidencia; esos resultados todavía están pendientes.
+
+Validación posterior: src/ de `e0bf966` recompilado sobre 101 completo,
+runner SHA-256 `063ea7299ffb9bb5bc413432df63f555a605225198557fc5cd753983ad2780a0`;
+pruebas locales y CI correctos. Una pasada síncrona/compartida, hilos 0,
+hash 0, guion de menú hasta 68 s recoge 128 retornos completos de ambas
+variantes, cinco grupos y ninguna pausa. Destino/mundo/fuente válidos finitos;
+producto mundo por definición coherente para 5.629 slots seleccionados y
+cambiados. No identifica personajes ni certifica animaciones correctas.
+El primer intento que quedó en menú se conserva separado; ver ESTADO.md.
+
+La captura adquirida de 16 imágenes desde 1500 conserva sus metadatos exactos
+y bytes completos. Los hashes del log son desconocidos por configuración;
+comparar PNG explícitos. No correlacionar por coincidencia de reloj/tick
+con otra ejecución o con las muestras de skinning. El guion actual solo
+expresa direcciones digitales: `izquierda`/`derecha` no equivale a mover el
+stick. Los controles de desplazamiento requieren soporte analógico explícito
+y comprobación del paquete recibido, además de revisión de movimiento.
