@@ -106,8 +106,10 @@ namespace gow_skin_probe {
         struct Item { uint32_t skeleton=0,view=0,entry=0; unsigned count=0; Clock::time_point next{}; };
         std::array<Item,16> items{};
         unsigned total=0;
-        unsigned take(uint32_t skeleton,uint32_t view,uint32_t entry,Clock::time_point now) {
-            if(!skeleton || total>=128u) return 0;
+        unsigned take(uint32_t skeleton,uint32_t view,uint32_t entry,Clock::time_point now,
+                      uint64_t videoTick=0,uint64_t fromTick=0) {
+            // GOW-Port: esperar la ventana solicitada sin gastar el cupo en la intro.
+            if(videoTick<fromTick || !skeleton || total>=128u) return 0;
             Item *found=nullptr;
             for(auto &item:items) if(item.skeleton==skeleton && item.view==view && item.entry==entry) {
                 found=&item; break;

@@ -4,10 +4,12 @@
 #include "ps2_runtime_macros.h"
 #include "ps2_host_backend.h"
 #include "gow_pad2_packet.h"
+#include "gow_pad_script.h"
 #include "gow_gs_replay.h" // GOW-Port: captura opcional y acotada para comparar backends.
 #include "gow_camera_probe.h"
 #include "gow_model_probe.h"
 #include "gow_skin_probe.h"
+#include "runtime/gs/gs_host_present_diag.h" // GOW-Port: parser de tick uint64 del parche de ventana.
 #include <ps2_recompiled_functions.h>
 #include <cstdio>
 #include <cstdlib>
@@ -135,33 +137,11 @@ namespace
                              readGuest32(rdram, 0x29E5A0u), readGuest32(rdram, 0x29E584u),
                              readGuest32(rdram, 0x29CAB4u), readGuest32(rdram, 0x29C838u));
             }
-            // GOW_PAD_GUION="5:start,12:abajo,16:x": pulsaciones de 0,7 s en esos segundos (en lugar de la
-            // secuencia fija). Botones: start, select, arriba, abajo, izquierda, derecha, x, circulo, cuadrado,
-            // triangulo, l1, r1, l2, r2.
-            struct ScriptedPress { double seconds; uint8_t byte; uint8_t mask; };
-            static const std::vector<ScriptedPress> script = [] {
-                std::vector<ScriptedPress> presses;
+            // GOW-Port: segundo:acción[:duración], por defecto 0,7 s. mover_* usa
+            // stick izquierdo; izquierda/derecha/arriba/abajo conservan el D-pad.
+            static const auto script = [] {
                 const char *text = std::getenv("GOW_PAD_GUION");
-                if (!text)
-                    return presses;
-                static const std::pair<const char *, std::pair<uint8_t, uint8_t>> buttons[] = {
-                    {"select", {2, 0x01}}, {"start", {2, 0x08}}, {"arriba", {2, 0x10}}, {"derecha", {2, 0x20}},
-                    {"abajo", {2, 0x40}}, {"izquierda", {2, 0x80}}, {"l2", {3, 0x01}}, {"r2", {3, 0x02}},
-                    {"l1", {3, 0x04}}, {"r1", {3, 0x08}}, {"triangulo", {3, 0x10}}, {"circulo", {3, 0x20}},
-                    {"x", {3, 0x40}}, {"cuadrado", {3, 0x80}}};
-                std::string item;
-                std::istringstream stream(text);
-                while (std::getline(stream, item, ','))
-                {
-                    const size_t colon = item.find(':');
-                    if (colon == std::string::npos)
-                        continue;
-                    const std::string name = item.substr(colon + 1);
-                    for (const auto &[button, bit] : buttons)
-                        if (name == button)
-                            presses.push_back({std::strtod(item.c_str(), nullptr), bit.first, bit.second});
-                }
-                return presses;
+                return gow_pad_script::parse(text ? text : "");
             }();
             // GOW-Port: GOW_PAD_SOLO_GUION=1 ignora el mando y el teclado reales durante la prueba (solo cuenta el
             // guion): tocar el PC mientras se mide cambiaba el camino del menú y la escena medida.
@@ -177,9 +157,7 @@ namespace
             }
             if (!script.empty())
             {
-                for (const ScriptedPress &press : script)
-                    if (seconds >= press.seconds && seconds < press.seconds + 0.7)
-                        state[press.byte] &= static_cast<uint8_t>(~press.mask);
+                gow_pad_script::apply(script,seconds,state);
             }
             else
             {
@@ -277,6 +255,26 @@ namespace
         }
         const auto packet = gow_pad2::makePacket(state);
         std::memcpy(buffer, packet.data(), packet.size());
+        // GOW-Port: confirmar lo devuelto por libpad2, incluido el stick, cuando
+        // el log habitual de botones no cambia. Opcional y máximo 128 mensajes.
+        static const bool scriptDiag=[] {
+            const char *value=std::getenv("GOW_PAD_GUION_DIAG");
+            return value && std::strcmp(value,"1")==0;
+        }();
+        if(smokeTest && scriptDiag) {
+            static std::array<uint8_t,6> previous{};
+            static unsigned records=0;
+            bool changed=records==0;
+            for(size_t i=0;i<previous.size();++i) changed=changed || previous[i]!=packet[i];
+            if(changed && records<128u) {
+                for(size_t i=0;i<previous.size();++i) previous[i]=packet[i];
+                ++records;
+                const double seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-testStart).count();
+                std::fprintf(stderr,"[gow-pad2:guion] seconds=%.3f state=%u packetButtons=%02x%02x sticks=%u,%u,%u,%u\n",
+                    seconds,readGuest32(rdram,0x29E560u),unsigned(packet[0]),unsigned(packet[1]),
+                    unsigned(packet[2]),unsigned(packet[3]),unsigned(packet[4]),unsigned(packet[5]));
+            }
+        }
         const uint16_t buttons = static_cast<uint16_t>(state[2] | (state[3] << 8));
         static unsigned reads = 0;
         static uint16_t lastButtons = 0xffff;
@@ -762,9 +760,11 @@ namespace
         const uint32_t skeleton=GPR_U32(ctx,4), world=GPR_U32(ctx,5), destination=GPR_U32(ctx,6);
         const uint32_t input=GPR_U32(ctx,7), ownerCandidate=GPR_U32(ctx,17), view=readGuest32(rdram,0x33104Cu);
         static Timeline timeline;
+        const uint64_t videoTick=runtime->memory().gs().vsyncTick.load(std::memory_order_relaxed);
+        static const uint64_t fromTick=GSHostPresentDiag::parseFromTick(std::getenv("GOW_SKIN_DIAG_FROM_TICK"));
         const auto now=Timeline::Clock::now();
         static const auto started=now;
-        const unsigned sample=timeline.take(skeleton,view,entry,now);
+        const unsigned sample=timeline.take(skeleton,view,entry,now,videoTick,fromTick);
         if(!sample) { original(rdram,ctx,runtime); return; }
         const Memory memory{rdram,runtime->memory().getScratchpad(),0x02000000u,0x4000u};
         const Layout l=layout(memory,skeleton);
@@ -786,8 +786,8 @@ namespace
             }
         },[&]{
             completed=true;
-            std::fprintf(stderr,"[gow-skin] sample=%u state=11 entry=%x caller=%x stamp=%llu elapsed=%.3f view=%x ownerCandidate=%x skeleton=%x world=%x destination=%x input=%x scalar=%08x valid=%u slots=%u source=%x records=%x visibility=%x definition=%x selectedCount=%u selectionValid=%u inputValid=%u completed=1\n",
-                sample,entry,caller,(unsigned long long)stamp,std::chrono::duration<double>(now-started).count(),view,
+            std::fprintf(stderr,"[gow-skin] sample=%u state=11 entry=%x caller=%x stamp=%llu videoTick=%llu elapsed=%.3f view=%x ownerCandidate=%x skeleton=%x world=%x destination=%x input=%x scalar=%08x valid=%u slots=%u source=%x records=%x visibility=%x definition=%x selectedCount=%u selectionValid=%u inputValid=%u completed=1\n",
+                sample,entry,caller,(unsigned long long)stamp,(unsigned long long)videoTick,std::chrono::duration<double>(now-started).count(),view,
                 ownerCandidate,skeleton,world,destination,input,scalar,unsigned(l.valid),unsigned(l.count),l.source,l.records,
                 l.visibility,l.definition,l.selectedCount,unsigned(l.selectionValid),unsigned(inputValid));
             const auto format=[](const SkinMatrix &matrix,char (&bits)[144]) {

@@ -59,6 +59,11 @@ bool test() {
     if(!mem.matrix(0x70003FC0,0,read) || read!=expected || mem.matrix(0x70003FC0,1,read) ||
        mem.matrix(0x70003FC0,0xFFFFFFFFu,read) || ram!=beforeRam || scratch!=beforeScratch) return false;
     Timeline t; const auto now=Timeline::Clock::time_point{};
+    // No gastar muestras ni ocupar combinaciones antes de la ventana solicitada.
+    Timeline delayed;
+    for(uint32_t i=1;i<=200;++i) if(delayed.take(i,2,3,now,2999,3000)) return false;
+    if(delayed.total || delayed.items[0].skeleton ||
+       delayed.take(1,2,3,now,3000,3000)!=1 || delayed.take(1,2,3,now,3001,3000)) return false;
     if(t.take(0,1,2,now) || t.take(1,2,3,now)!=1 || t.take(1,2,3,now)!=0 ||
        t.take(1,2,3,now+std::chrono::milliseconds(99)) ||
        t.take(1,2,3,now+std::chrono::milliseconds(100))!=2) return false;

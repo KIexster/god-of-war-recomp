@@ -4405,3 +4405,42 @@ Se prepara otro guion con ataques explícitos; las direcciones actuales del
 guion son botones digitales, no stick analógico. No afirmar desplazamiento
 del protagonista a partir de ellas. Píxeles, matrices, binarios y tarjetas
 permanecen privados; controles con lecturas/E/S e intérprete no miden FPS.
+
+## Control de enemigos y preparación de movimiento analógico (2026-10-11)
+
+#61 fusionada en `b29e27e3f4efab6ca4b482392cd4ff56ab174f88`, tras revisión
+manual, controles anteriores y [CI del HEAD final `63f32f1` correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38179505671).
+Un negativo procedural en copia privada cambia el acceso a definición por
+índice de slot en lugar de ordinal: compila, falla la prueba (1); restaurado
+pasa (0). El header del repositorio permanece intacto. No hubo juego con
+esa copia ni cambios en el runtime.
+
+Otra pasada del runner `e0bf966` añade cuadrados/triángulos cada cuatro
+segundos entre 180 y 292 s; **cambia el guion**, hash 0, síncrona/compartida,
+hilos 0. 300,05 s por límite, informe 11 desde 121,86 s hasta 295,60 s,
+tarjeta intacta, sin las firmas buscadas de error ni minimización registrada.
+128 retornos completos de ambas variantes, cinco grupos, sin pausas:
+6.150 lecturas válidas finitas y 5.606 productos seleccionados/cambiados,
+residuo máximo descriptivo 0,0001457. Los 544 bind no leídos siguen siendo
+slots no seleccionados. No define una tolerancia PS2.
+
+16 PNG/JSON adquiridos en secuencias 1701..1716, ticks 1750..1765, con
+metadatos exactos, contenidos RGBA distintos y todos los pares de filas
+duplicados. Se revisan imágenes de varios enemigos con brazos/cuerpo en
+movimiento; no se confirma todavía una deformación anómala contra referencia.
+La escena parece corresponder a la introducción. Estado 11 no garantiza que
+el protagonista ya sea controlable; tampoco la entrega de botones confirma
+su efecto. No comparar las poses con la captura anterior por tiempo/tick.
+
+Se añade al guion opcional stick izquierdo y duración explícita, sin cambiar
+los botones digitales anteriores, más registro acotado del paquete devuelto.
+Se prepara también una ventana tardía de la sonda de poses para no gastar su
+cupo durante la introducción. Pruebas y siguiente pasada prolongada pendientes
+de documentar al completarlas; no se modifica ningún parche o matemática.
+
+Pruebas procedurales de guion/paquetes y ventana de skinning correctas en
+Windows/MSVC /W4 /WX; sintaxis C++20 del override correcta y configuración
+con 0 errores/4 avisos existentes. Compilación rápida y control analógico
+con el juego todavía pendientes. Se revisa también la referencia propuesta
+de Persona 4: [alcance y material útil](REFERENCIA_PERSONA4.md), sin importar
+su código ni atribuirle un arreglo.
