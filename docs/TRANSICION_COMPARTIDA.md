@@ -897,3 +897,37 @@ de 100 correcta, 17 pruebas del lanzador correctas, configuración 0 errores/
 4 avisos existentes y sintaxis PowerShell 0 errores. Pendientes compilación
 completa de 101, suite normal/GPU, negativo significativo/restauración, CI
 y control del juego antes de atribuirle capturas o conclusiones visuales.
+
+## Validación nativa de la captura adquirida de 101 (2026-10-11)
+
+Compilación Windows completa de `394779a6dca0fd8dcaf7415e06ad048fdd9ad7f8`,
+101 parches, salida 0 en 916,19 s; Release optimizado con símbolos privados,
+VU1 intérprete y tres procesos de compilación. Runner de 54.552.576 bytes,
+SHA-256 `63e6a576307675f34b70e4671a5b34de30219627a2ca2a3a362c182effd27040`.
+Flags `/O2 /Ob2 /DNDEBUG /Zi` y `/INCREMENTAL:NO /DEBUG /OPT:REF /OPT:ICF`;
+runner/símbolos congelados antes de incluir los controles privados.
+[CI del mismo código correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38161970774).
+[CI del merge de #51 en main también correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38161755251).
+
+Windows: 600/600 normal en 12,41 s, 636/636 GPU real en 30,98 s, sin fallos
+conocidos. Los cuatro contratos FINISH/lectura/textura adquirida pasan en
+procesos nuevos `default`/`async`; el segundo compara 16 texturas por modo,
+todas las filas y reutilización de ranuras. La nueva regresión verifica PNG
+RGBA completo de A después de cambiar VRAM a B, metadatos de esa reserva y
+posterior PNG de B, además de ventana/cupo/retenciones/no sobrescritura.
+La diferencia CPU/GPU en modo cuadro descrita en 100 permanece abierta.
+
+Negativo privado compatible: sustituir únicamente LoadImageFromTexture por
+una imagen sintética magenta del mismo tamaño en el exportador. Recompilar
+solo las pruebas; runner sin cambios y ninguna partida. Compila y ejecuta
+636 casos: **635 pasan y falla exactamente «Captura de reserva adquirida
+tras cambiar VRAM»**, por píxeles distintos. Restaurar el archivo positivo
+completo y recompilar: GPU vuelve a 636/636 en 31,84 s. Fuente restaurada
+idéntica al respaldo; runner actual y copia congelada conservan el mismo hash.
+
+Se inicia después una pasada aislada del juego asíncrona/compartida sin hilos,
+ventana desde 1500 y seis capturas; todavía no hay resultado funcional ni
+conclusión visual de 101. Esa ventana difiere de la anterior desde 0 para
+reservar las capturas para partida. Después comparar otra ventana con VU1
+en hilo desde 6000, sin solapar partidas/compilación/emulador. PNG/JSON y
+análisis de píxeles permanecen privados; no usar los tiempos como FPS.

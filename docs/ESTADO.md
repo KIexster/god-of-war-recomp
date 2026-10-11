@@ -4222,3 +4222,26 @@ Sintaxis C++20 y aplicación independiente correctas; lanzador 17/17,
 configuración 0 errores/4 avisos existentes, PowerShell 0 errores.
 Pendientes compilación completa de 101, nativas/negativo/restauración, CI y
 capturas del juego. No atribuirlas al runner de 100 ni cambiar matemáticas.
+
+## Captura de reserva validada con GPU real y negativo de píxeles (2026-10-11)
+
+Compilación completa de 101 desde `394779a6dca0fd8dcaf7415e06ad048fdd9ad7f8`,
+salida 0 en 916,19 s, runner SHA-256
+`63e6a576307675f34b70e4671a5b34de30219627a2ca2a3a362c182effd27040`,
+54.552.576 bytes, Release optimizado/símbolos privados/VU1 intérprete.
+[CI del mismo código verde](https://github.com/KIexster/god-of-war-recomp/actions/runs/38161970774).
+Windows 600/600 normal, 636/636 GPU y cuatro contratos FINISH correctos.
+El PNG de A conserva todos sus píxeles aunque la VRAM ya contenga B; la prueba
+también publica/exporta B y verifica metadatos, ventana/cupo/retenciones y
+rechazo de sobrescritura. La discrepancia de altura de modo cuadro sigue abierta.
+
+Negativo API-compatible: imagen magenta del mismo tamaño en vez de leer
+la textura; solo recompilar pruebas, sin tocar/ejecutar el runner. 635/636,
+fallo único del nuevo caso de captura por píxeles distintos. Archivo positivo
+entero restaurado y otra suite GPU: 636/636. Hash de fuente restaurada igual
+al respaldo; runner actual y copia congelada idénticos.
+
+Pasada del juego sin hilos, seis capturas desde 1500, en curso. Después VU1
+desde 6000; no atribuir todavía resultados ni resolver encuadre/alternancia.
+Registrar PNG/JSON privados contra las adquisiciones antes de comparar bytes;
+sin equivalencia PCSX2 ni FPS. Identidad y límites en TRANSICION_COMPARTIDA.md.
