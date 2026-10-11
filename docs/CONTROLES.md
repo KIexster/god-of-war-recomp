@@ -637,3 +637,12 @@ Windows integrado de 98 (`f36936e`, runner SHA-256
 y FINISH/textura adquirida en ambos modos, cada uno en proceso nuevo.
 La pasada del juego empieza después de terminar compilaciones y controles;
 estas pruebas procedurales no prueban solución de la espera o cámara.
+
+Primera pasada síncrona/compartida con ese runner: 360,08 s por límite,
+tarjeta intacta, sin firmas de error buscadas; alcanza informe 11 a 145,14 s.
+Supera la espera de 96/97 tras 4. Capturas externas muestran progresión de
+escena y posteriormente HUD/Kratos/enemigo, sin comparación alineada.
+1.910 adquisiciones, 25 A–B–A (ninguno en tramos 4/11), sin regresiones,
+inconsistencias ni hash desconocido; distancia máxima 34 antes del primer
+informe, 1 en los tramos 4/11. Asíncrona/compartida se repite después, sin
+solapar instancias. No presentar esto como benchmark o solución del encuadre.

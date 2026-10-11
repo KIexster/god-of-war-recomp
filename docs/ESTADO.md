@@ -3817,3 +3817,29 @@ Comienza una pasada nueva de 360 s síncrona/compartida con la misma tarjeta
 procedural, guion, variables y hilos apagados, después de terminar las
 compilaciones y pruebas. Debe comprobar si persiste la espera observada en
 96 y 97; los éxitos anteriores todavía no la dan por resuelta.
+
+## Primera transición compartida síncrona con Count (2026-10-11)
+
+El runner de 98 identificado arriba completa 360,08 s, salida deliberada
+por límite (proceso 1/lanzador 0), tarjeta procedural intacta y ninguna
+firma de error buscada. Informa 0 → 3 → 4 → 11; primer 11 a 145,14 s del
+guion y último 11. En 96/97 el mismo caso dejó de informar tras 4 a ~25 s;
+en este ensayo se supera esa espera. No se utiliza el tiempo como benchmark.
+La ventana nunca se observa minimizada; primer plano entre ~11 y ~40 s.
+
+1.910 adquisiciones: cero regresiones, metadatos contradictorios o hashes
+desconocidos; 25 retornos A–B–A, ninguno en los tramos del último estado 4/11.
+Hay 952 adquisiciones en el tramo 11. Solo fuente CRTC (`preferred=0`),
+un cambio inicial 1×1 → 512×448. Distancia de ticks 0..34; máximo en secuencia
+3 antes del primer informe del mando. Desde estado 0, máximo 3; en los tramos
+4 y 11, máximo 1. Esta clasificación no alinea cuadros ni demuestra latencia
+sostenida; el diagnóstico solo registra adquisiciones nuevas.
+
+Tres capturas externas privadas de la superficie propia muestran la intro,
+enemigos y después HUD/Kratos/enemigo en los muelles. Verificados PID, ruta,
+visibilidad y ausencia de minimización, sin activar la ventana. Sus peticiones
+pueden perturbar ese instante, y no están alineadas con PCSX2 o la secuencia GS.
+Estado 11/capturas no certifican jugabilidad, fidelidad de cámara ni ausencia
+de alternancia. Se inicia después una repetición asíncrona/compartida aislada,
+con el mismo runner y protocolo. Ambas PR conservan borrador hasta cerrar
+validación y CI del HEAD final; los cuelgues con hilos siguen sin probarse.
