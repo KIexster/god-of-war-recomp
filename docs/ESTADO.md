@@ -3216,3 +3216,24 @@ del PC. No se conoce si estos pares de bases aparecen en la transición real:
 los registros de 90 parches no tenían `preferred`. El fallo de unidades es
 independiente de probar que explique la alternancia o el encuadre; ambos
 siguen sin declararse resueltos. No hay medición nueva de rendimiento.
+
+## Control de unidades en la textura compartida (2026-10-11)
+
+El arreglo `e52527d1bf63b513facac380330b94bc2e998937` pasa ambos controles
+del CI ([38115778696](https://github.com/KIexster/god-of-war-recomp/actions/runs/38115778696)):
+593/593 pruebas, sin excepciones. Es validación remota sin el juego.
+
+El usuario libera ahora el ordenador y confirma que Claude no trabajará
+durante 24 horas. Se inicia primero una compilación completa de la referencia
+de #51, todavía sin este arreglo, para comparar después con la integración.
+Se amplía el control GPU de este parche a la ruta compartida: mismos pares
+32 páginas/32 bloques y 32 páginas/1.024 bloques con TBW cero, lectura de la
+textura realmente adquirida y comparación de sus filas y metadatos con CPU.
+Las aserciones explícitas de selección evitan que un fallo común CPU/GPU
+quede oculto por comparar solo ambos renderers. La descarga pertenece
+exclusivamente a la prueba procedural, no al juego ni al diagnóstico del host.
+
+Los 95 parches de main más este parche y el diagnóstico de #51 pasan
+comprobación y aplicación en orden en otro árbol privado: 97 en conjunto.
+Esta ampliación GPU todavía no se ha ejecutado; comprobar el CI del nuevo HEAD
+y completar la compilación Windows antes de atribuirle resultados nativos.

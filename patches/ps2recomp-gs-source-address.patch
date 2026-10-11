@@ -44,6 +44,27 @@ index 2e34354..96a92e8 100644
                               (alphaFix == 0x60u || alphaFix == 0x80u) &&
                               x0 <= 0 && y0 <= 0 && xEnd >= 639 && yEnd >= 447;
      if (displayCopy)
+diff --git a/ps2xTest/src/ps2_gpu_shared_present_gl_tests.cpp b/ps2xTest/src/ps2_gpu_shared_present_gl_tests.cpp
+index 3ebabad..4bb155f 100644
+--- a/ps2xTest/src/ps2_gpu_shared_present_gl_tests.cpp
++++ b/ps2xTest/src/ps2_gpu_shared_present_gl_tests.cpp
+@@ -254,6 +254,16 @@ namespace
+             t.IsTrue(fixture.current.usedPreferred, "El patrón sintético activa la fuente preferida");
+             t.Equals(fixture.current.sourceFbp, 1057u, "La fuente conserva el bloque no alineado a página");
+         }
++        // GOW-Port: comprobar estas direcciones también en la textura adquirida, sin forceReadback.
++        fixture.upload(32, 10, GS_PSM_CT32, 64, 96, 37);
++        request.preferredSource = {32, 0, GS_PSM_CT32, 0};
++        fixture.present(t, request, "TBW cero: números iguales, direcciones distintas");
++        t.IsTrue(fixture.current.usedPreferred, "32 bloques no son 32 páginas en la textura compartida");
++        t.Equals(fixture.current.sourceFbp, 32u, "Fuente adquirida en bloques sin TBW");
++        request.preferredSource = {1024, 0, GS_PSM_CT32, 0};
++        fixture.present(t, request, "TBW cero: dirección igual conserva el CRTC");
++        t.IsFalse(fixture.current.usedPreferred, "1024 bloques son 32 páginas en la textura compartida");
++        t.Equals(fixture.current.sourceFbp, 32u, "Fuente adquirida vuelve a páginas CRTC");
+         request.hasPreferredSource = false;
+         fixture.present(t, request, "Origen CRTC distinto de cero sin preferredSource");
+         const auto enabledRequest = request;
 diff --git a/ps2xTest/src/ps2_gs_backend_tests.cpp b/ps2xTest/src/ps2_gs_backend_tests.cpp
 index f5fae69..a90ccc0 100644
 --- a/ps2xTest/src/ps2_gs_backend_tests.cpp

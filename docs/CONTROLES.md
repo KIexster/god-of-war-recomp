@@ -483,3 +483,11 @@ binario nuevo antes del control; no atribuir este cambio al ejecutable anterior.
 La identificación de `preferred` del diagnóstico #51 permite observar después
 si estos casos ocurren en el juego. No se declara corregido el encuadre ni
 la alternancia por normalizar una comparación.
+
+El control GPU compartido comprueba también TBW cero y ambos pares de
+direcciones mediante `LoadImageFromTexture` sobre la textura adquirida,
+comparando todas las filas con CPU y la selección esperada explícitamente.
+No usa `copyLatchedHostPresentationFrame` como sustituto de esa textura.
+Este readback existe solo en la regresión procedural; su ejecución Windows
+con la cadena nueva sigue pendiente. El CI previo del arreglo `e52527d`
+pasa 593/593; no acredita por sí solo esta ampliación GPU exclusiva de Windows.
