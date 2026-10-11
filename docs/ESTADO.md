@@ -3237,3 +3237,10 @@ Los 95 parches de main más este parche y el diagnóstico de #51 pasan
 comprobación y aplicación en orden en otro árbol privado: 97 en conjunto.
 Esta ampliación GPU todavía no se ha ejecutado; comprobar el CI del nuevo HEAD
 y completar la compilación Windows antes de atribuirle resultados nativos.
+
+El mismo control añade 16 publicaciones consecutivas con contenido y tick
+distintos, alternando ambas selecciones. Reutiliza las ocho ranuras mientras
+comprueba los píxeles de cada textura nueva contra CPU; las esperas y lecturas
+solo existen en la prueba. La ampliación sigue aplicando antes del diagnóstico
+en la cadena privada conjunta de 97. Es cobertura procedural pendiente de
+ejecución GPU, no una reproducción del defecto visual ni un benchmark.
