@@ -4010,3 +4010,20 @@ El control de Windows por Computer Use falla al conectar su pipe nativo
 (archivo ausente); importación del módulo correcta, dos consultas ligeras
 fallidas, ninguna entrada enviada. CLI/compilación/pruebas disponibles.
 No se utiliza ese fallo como prueba visual ni se atribuye al juego.
+
+## Primer control 99 con FAST_BOOT=0 aislado (2026-10-11)
+
+Overrides recompilados sobre la cadena 99 completa desde `a37cd85`, salida 0;
+runner SHA-256 `a4ec4365273903d525ce19ecade3fb423fb871c5628a84e695b33ac777ca3598`,
+[CI del mismo HEAD verde](https://github.com/KIexster/god-of-war-recomp/actions/runs/38154314459).
+Asíncrona/compartida sin hilos, diagnóstico desde tick 0, completa 360,06 s por
+límite; informe 11 desde 154,02 s, último 11, tarjeta intacta, ninguna firma
+buscada de error. Se comprueba ausencia de sondas animación/flash-ready.
+Ventana visible/nunca minimizada, siempre sin primer plano; sin captura propia.
+
+2.046 adquisiciones, 27 A–B–A solo antes de informe 3, cero regresiones/
+inconsistencias/hash desconocido. Bajo último informe 11 hay 983 adquisiciones
+y ninguna A–B–A; fuente CRTC en todas. Distancia máxima de ticks 37 en arranque,
+5 en tramo 4 y 1 en 11. Detalles en TRANSICION_COMPARTIDA.md; no se comparan
+FPS ni se declara solución visual. Se inicia otro control privado VU1 en hilo
+con ventana tardía desde 6000; GS frontal se repetirá después, por separado.

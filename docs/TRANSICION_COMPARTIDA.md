@@ -577,3 +577,31 @@ Recompilar solo `src/` sobre la cadena 99 completa, registrar otra identidad,
 y verificar ausencia de esas etiquetas con `GOW_FAST_BOOT=0` durante la
 repetición funcional. Mantener #51 borrador hasta completar los controles
 requeridos y comprobar CI del HEAD final; cámara y alternancia siguen abiertas.
+
+## Primer control funcional de 99 sin sondas de animación (2026-10-11)
+
+Sobre el runtime completo anterior se recompilan solo overrides desde
+`a37cd856ccc884c03b7a8260957d56d9d7ac49cd`, salida 0 en 19,05 s, sin
+regenerar el C++ ni cambiar parches. Nuevo runner SHA-256:
+`a4ec4365273903d525ce19ecade3fb423fb871c5628a84e695b33ac777ca3598`.
+[CI del mismo HEAD correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38154314459).
+
+Asíncrona/compartida, hilos apagados, ventana por defecto (tick 0), guion
+exclusivo/hash y tarjeta procedural privada iguales: 360,06 s por límite
+(proceso 1/lanzador 0), primer informe 11 a 154,02 s, último 11. Tarjeta
+intacta, ninguna firma buscada de error ni etiquetas de animación/flash-ready.
+Ventana visible, nunca minimizada ni en primer plano durante esta pasada.
+Sin captura propia; el control de ventanas por Computer Use no está disponible.
+
+2.046 adquisiciones, 27 A–B–A solo antes de informe 3; cero regresiones,
+metadatos contradictorios o hashes desconocidos. Hay 983 adquisiciones bajo
+el último informe 11, ninguna A–B–A allí; fuente CRTC/`preferred=0` en todas.
+Solo cambia la dimensión inicial 1×1 → 512×448. Distancia máxima de ticks 37
+en arranque bajo informe 0; máximo 5 en tramo 4 y 1 en 11. Los informes del
+mando son muestras espaciadas, no una alineación de cuadro. No se diagnostica
+imagen antigua ni rendimiento a partir de esas distancias o tiempos.
+
+Se repite después VU1 en hilo solo con `--diag-from-tick 6000` en otra carpeta
+privada; luego VU1+frente GS. No solapar partidas, emulador o compilaciones.
+La ausencia de patrones en estas muestras no certifica presentación visual
+correcta, equivalencia de píxeles, cámara o estabilidad prolongada.
