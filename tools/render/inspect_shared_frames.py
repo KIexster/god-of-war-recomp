@@ -7,6 +7,7 @@ import re
 
 MARKER = '[gs-present:shared]'
 FIELDS = ('seq render hostTick frameTick displayFbp sourceFbp width height hashValid hash blank').split()
+OPTIONAL_FIELDS = {'preferred'}
 
 def inspect(text):
     previous = None
@@ -14,7 +15,8 @@ def inspect(text):
     metadata_by_sequence = {}
     result = dict(acquisitions=0, retained=0, unknown_hashes=0,
                   sequence_regressions=[], inconsistent_repeats=[], content_returns=[],
-                  tick_distance=dict(samples=0, min=None, max=None, max_sample=None))
+                  tick_distance=dict(samples=0, min=None, max=None, max_sample=None),
+                  source_units=dict(unknown=0, pages_8192=0, blocks_256=0))
     for number, line in enumerate(text.splitlines(), 1):
         if '[gs-present] host mode:' in line:
             previous = None
@@ -23,27 +25,32 @@ def inspect(text):
         if MARKER not in line:
             continue
         tokens = line.split(MARKER, 1)[1].strip().split()
-        if len(tokens) != len(FIELDS):
+        if len(tokens) not in (len(FIELDS), len(FIELDS)+len(OPTIONAL_FIELDS)):
             raise ValueError(f'línea {number}: registro truncado o intercalado')
         values = dict(token.split('=', 1) for token in tokens if '=' in token)
-        if set(values) != set(FIELDS) or not re.fullmatch(r'[0-9a-fA-F]{16}', values.get('hash', '')):
+        if (not set(FIELDS).issubset(values) or set(values)-set(FIELDS)-OPTIONAL_FIELDS or
+                len(values) != len(tokens) or not re.fullmatch(r'[0-9a-fA-F]{16}', values.get('hash', ''))):
             raise ValueError(f'línea {number}: campos inválidos')
-        for key in FIELDS:
+        for key in values:
             if key != 'hash' and not re.fullmatch(r'[0-9]+', values[key]):
                 raise ValueError(f'línea {number}: {key} inválido')
         row = {k: int(v, 16 if k == 'hash' else 10) for k, v in values.items()}
-        if row['hashValid'] > 1 or row['blank'] > 1 or not row['seq']:
+        if row['hashValid'] > 1 or row['blank'] > 1 or row.get('preferred', 0) > 1 or not row['seq']:
             raise ValueError(f'línea {number}: flags o secuencia inválidos')
         # Una secuencia conserva sus metadatos aunque reaparezca después de otra.
         # El tick actual del host puede avanzar mientras retiene la misma textura.
-        metadata = tuple(row[k] for k in FIELDS if k != 'hostTick')
-        inconsistent = (row['seq'] in metadata_by_sequence and
-                        metadata_by_sequence[row['seq']] != metadata)
+        metadata = {k: v for k, v in row.items() if k != 'hostTick'}
+        reference = metadata_by_sequence.get(row['seq'], {})
+        # La ausencia del campo opcional en un registro antiguo no contradice un dato conocido.
+        inconsistent = any(k in reference and reference[k] != v for k, v in metadata.items())
         if inconsistent:
             result['inconsistent_repeats'].append(number)
             history.clear()
         else:
-            metadata_by_sequence.setdefault(row['seq'], metadata)
+            metadata_by_sequence.setdefault(row['seq'], {}).update(metadata)
+            unit = ('unknown' if 'preferred' not in row else
+                    'blocks_256' if row['preferred'] else 'pages_8192')
+            result['source_units'][unit] += 1
             # Distancia firmada entre dos muestras del contador; no es tiempo ni FPS.
             # El request puede muestrear el tick después que el host, dando un negativo.
             distance = row['hostTick'] - row['frameTick']
@@ -54,6 +61,8 @@ def inspect(text):
                 ticks['max'] = distance
                 ticks['max_sample'] = dict(line=number, seq=row['seq'], render=row['render'],
                                           hostTick=row['hostTick'], frameTick=row['frameTick'])
+                if 'preferred' in row:
+                    ticks['max_sample']['preferred'] = row['preferred']
         if previous and row['seq'] == previous['seq']:
             result['retained'] += 1
             continue
@@ -69,13 +78,16 @@ def inspect(text):
         elif not inconsistent:
             signature = tuple(row[k] for k in ('hash', 'width', 'height', 'blank'))
             if len(history) == 2 and signature == history[0][0] and signature != history[1][0]:
-                result['content_returns'].append(dict(line=number, seq=row['seq'],
-                    prior_seq=history[0][1], sourceFbp=row['sourceFbp'], frameTick=row['frameTick']))
+                evidence = dict(line=number, seq=row['seq'], prior_seq=history[0][1],
+                                sourceFbp=row['sourceFbp'], frameTick=row['frameTick'])
+                if 'preferred' in row:
+                    evidence['preferred'] = row['preferred']
+                result['content_returns'].append(evidence)
             history.append((signature, row['seq']))
         previous = row
     if not result['acquisitions']:
         raise ValueError('no hay imágenes compartidas registradas')
-    result['limitation'] = 'Un patrón A-B-A de hashes puede ser legítimo; no prueba corrupción, igualdad de píxeles ni FPS. La distancia entre ticks no mide tiempo ni demuestra latencia sostenida. Solo cubre los registros capturados; cero filas retenidas no descarta retenciones sin registrar.'
+    result['limitation'] = 'Un patrón A-B-A de hashes puede ser legítimo; no prueba corrupción, igualdad de píxeles ni FPS. La distancia entre ticks no mide tiempo ni demuestra latencia sostenida. Sin preferred no se conocen las unidades de sourceFbp. Solo cubre los registros capturados; cero filas retenidas no descarta retenciones sin registrar.'
     return result
 
 def main():

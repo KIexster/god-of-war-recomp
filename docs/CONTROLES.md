@@ -470,6 +470,15 @@ de la imagen, framebuffer/fuente, dimensiones, hash/validez y blank. No añade
 readback, otra adquisición ni glFinish. El hash existente requiere
 `PS2X_FRAME_HASH=1`; su coste y el del registro impiden usar este control para FPS.
 
+Desde la ampliación de 2026-10-11 registra también `preferred` del frame
+adquirido. En esta ruta GPU, `displayFbp` usa páginas de 8.192 bytes;
+`sourceFbp` usa páginas con `preferred=0` o bloques de 256 bytes con
+`preferred=1`. El inspector conserva los registros antiguos y cuenta sus
+unidades como desconocidas, sin deducirlas por igualdad de valores crudos.
+`source_units` incluye solo filas consistentes. No cambia la selección de
+fuente ni verifica por sí solo que sea correcta. Quince pruebas Python pasan;
+compilación nativa y control del nuevo formato pendientes.
+
 Usar `GOW_PAD_TEST_NO_CAPTURE=1` con el guion automático mantiene entradas y
 registros de estado sin capturas periódicas de VRAM. Eliminar del entorno los
 otros diagnósticos: algunos se activan por presencia y siguen activos con

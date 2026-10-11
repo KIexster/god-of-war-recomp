@@ -7,8 +7,9 @@ spec = importlib.util.spec_from_file_location('shared_frames', path)
 frames = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(frames)
 
-def frame(seq, hash_value, valid=1, host=10, width=640):
-    return f'[gs-present:shared] seq={seq} render={seq} hostTick={host} frameTick=8 displayFbp=208 sourceFbp=208 width={width} height=448 hashValid={valid} hash={hash_value:016x} blank=0'
+def frame(seq, hash_value, valid=1, host=10, width=640, preferred=None):
+    text = f'[gs-present:shared] seq={seq} render={seq} hostTick={host} frameTick=8 displayFbp=208 sourceFbp=208 width={width} height=448 hashValid={valid} hash={hash_value:016x} blank=0'
+    return text if preferred is None else text+f' preferred={preferred}'
 
 class SharedFramesTest(unittest.TestCase):
     def test_content_return_with_increasing_sequence(self):
@@ -91,6 +92,35 @@ class SharedFramesTest(unittest.TestCase):
         self.assertEqual(result['inconsistent_repeats'], [3])
         self.assertEqual((ticks['samples'], ticks['min'], ticks['max']), (3, 2, 4))
         self.assertEqual(ticks['max_sample']['line'], 2)
+
+    def test_source_units_are_unknown_for_legacy_logs_and_explicit_for_new_ones(self):
+        text = '\n'.join([frame(1, 11), frame(2, 22, preferred=0),
+                          frame(3, 33, preferred=1, host=12)])
+        result = frames.inspect(text)
+        self.assertEqual(result['source_units'], dict(unknown=1, pages_8192=1, blocks_256=1))
+        self.assertEqual(result['tick_distance']['max_sample']['preferred'], 1)
+
+    def test_optional_source_selection_keeps_known_metadata_across_legacy_rows(self):
+        text = '\n'.join([frame(1, 11), frame(1, 11, preferred=0),
+                          frame(1, 11), frame(1, 11, preferred=1, host=1000)])
+        result = frames.inspect(text)
+        self.assertEqual(result['inconsistent_repeats'], [4])
+        self.assertEqual(result['source_units'], dict(unknown=2, pages_8192=1, blocks_256=0))
+        self.assertEqual(result['tick_distance']['max'], 2)
+
+    def test_content_return_preserves_source_selection_without_assuming_corruption(self):
+        text = '\n'.join([frame(1, 11, preferred=1), frame(2, 22, preferred=0),
+                          frame(3, 11, preferred=1)])
+        result = frames.inspect(text)
+        self.assertEqual(result['content_returns'], [
+            dict(line=3, seq=3, prior_seq=1, sourceFbp=208, frameTick=8, preferred=1)])
+        self.assertEqual(result['inconsistent_repeats'], [])
+
+    def test_invalid_optional_flags_and_unknown_fields_are_rejected(self):
+        for text in (frame(1, 11, preferred=2), frame(1, 11, preferred=-1),
+                     frame(1, 11)+' extra=0', frame(1, 11)+' preferred=0 preferred=1'):
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                frames.inspect(text)
 
 if __name__ == '__main__':
     unittest.main()

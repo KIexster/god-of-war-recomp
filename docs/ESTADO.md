@@ -3365,3 +3365,34 @@ era rechazado frente al digest Python en minúsculas. Se valida el formato de
 64 cifras y se normaliza solo el texto hexadecimal, manteniendo la comparación
 de identidad. Doce pruebas Windows pasan; la nueva comprueba aceptación de
 mayúsculas y rechazo de valores ausentes, no textuales, truncados o no hexadecimales.
+
+## Fuente preferida de la textura compartida (2026-10-11)
+
+La revisión estática del renderer GPU confirma que `sourceFbp` conserva dos
+unidades posibles: páginas DISPFB de 8.192 bytes para la fuente CRTC, o bloques
+TEX0 de 256 bytes cuando se usa `preferredSource`. `displayFbp` conserva
+páginas. El diagnóstico omitía el indicador que las ranuras ya transportaban:
+el mismo número crudo en ambos campos no demostraba igualdad de direcciones.
+
+Se amplía el parche del diagnóstico host con `preferred=%u` a partir del
+`frame.usedPreferred` realmente adquirido. Conserva la condición opcional,
+una sola adquisición y el límite de 4.096. No añade readback, hash, fence ni
+`glFinish`; no modifica selección de fuente, píxeles ni renderer CPU.
+El inspector acepta el formato anterior y el nuevo, informa unidades
+desconocidas/páginas/bloques y conserva el indicador en evidencia de máximos
+y retornos de contenido. Una omisión antigua no contradice ni borra un
+indicador conocido; un cambio explícito bajo la misma secuencia sí es conflicto.
+
+Quince pruebas Python correctas. Tres regresiones fallan con el inspector
+`60ce933`; flags inválidos, campos desconocidos y duplicados se rechazan.
+La cadena completa de 96 parches pasa check/aplicación sobre el upstream fijado
+en otro worktree privado nuevo, sin tocar el runtime construido ni a Opus.
+Los registros nativos de 90 parches conservan máximos 3/417 y tienen unidades
+desconocidas en todas sus 2.186/1.247 filas; no se reconstruye un dato ausente.
+
+CI de `60ce9338f9c27d312a474cab40498f1cf6fdcdd7` correcto en ambos controles.
+Ese resultado precede a este cambio y no lo valida. Modificar el parche exige
+otra compilación completa Windows y control funcional del HEAD final.
+Siguen pendientes la visualización compartida y el encuadre dentro del GS;
+#51 permanece borrador. Se realizan solo controles ligeros mientras continúa
+la reserva del ordenador por el usuario.

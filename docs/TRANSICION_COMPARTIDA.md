@@ -20,6 +20,13 @@ hash y validez, y estado blank. El tick del host puede avanzar mientras
 retiene la misma textura. Los ticks no acreditan alineación con PCSX2 ni
 con una matriz observada en otro momento del juego.
 
+La ampliación de 2026-10-11 añade `preferred=0/1`, procedente del
+`usedPreferred` de esa misma textura adquirida. En la ruta GPU compartida,
+`displayFbp` está en páginas de 8.192 bytes; `sourceFbp` está en esas páginas
+con `preferred=0`, o en bloques TEX0 de 256 bytes con `preferred=1`.
+Comparar ambos números crudos no acredita igualdad de direcciones.
+El indicador no añade readback, adquisición ni sincronización.
+
 Para la secuencia automática, usar `GOW_PAD_TEST=1` y
 `GOW_PAD_TEST_NO_CAPTURE=1`: conserva el mando y los registros de estado sin
 introducir las capturas periódicas que fuerzan readback. Mantener desactivada
@@ -285,3 +292,32 @@ Los hashes del manifiesto admiten mayúsculas y minúsculas, incluida la salida
 habitual de `Get-FileHash`; rechazan valores que no sean 64 cifras hexadecimales.
 Una regresión comprueba que un manifiesto equivalente en mayúsculas se acepta
 sin relajar la comparación del ejecutable o del ELF.
+
+## Unidades de la fuente adquirida (2026-10-11)
+
+El diagnóstico inicial omitía `usedPreferred`, aunque el renderer y las
+ranuras compartidas ya lo conservaban. Se registra ahora como `preferred`.
+Esto distingue las unidades de la fuente seleccionada; no cambia qué fuente
+elige el renderer, el contenido de las texturas ni el renderer CPU.
+
+El inspector acepta tanto los once campos antiguos como los doce nuevos.
+`source_units` cuenta filas consistentes en `unknown`, `pages_8192` y
+`blocks_256`, incluyendo retenciones registradas. Una fila antigua no permite
+deducir las unidades por igualdad numérica entre framebuffer y fuente.
+Los máximos y retornos A–B–A conservan `preferred` cuando está presente.
+Contradecir un indicador conocido bajo la misma secuencia es inconsistencia;
+omitirlo en una fila antigua no borra el valor previamente conocido.
+Rechaza flags fuera de 0/1, campos adicionales desconocidos y duplicados.
+
+Quince pruebas Python pasan. Tres regresiones fallan con el inspector de
+`60ce933`: unidades conocidas/desconocidas, conservación de metadatos entre
+formatos y evidencia de fuente en un retorno de hash. Los 96 parches se
+comprueban y aplican en un worktree privado nuevo sobre el upstream fijado.
+La revisión de los dos registros Windows antiguos reproduce los máximos
+3/417 y clasifica sus 2.186/1.247 filas como unidades desconocidas.
+
+El CI de `60ce9338f9c27d312a474cab40498f1cf6fdcdd7` terminó correctamente
+antes de esta ampliación. No valida su formato nuevo: comprobar el CI del
+HEAD final y recompilar completamente en Windows antes de ejecutar el juego.
+No hay compilación nativa ni control visual de `preferred` todavía;
+#51 continúa en borrador. La selección de fuente y el encuadre siguen pendientes.
