@@ -3128,3 +3128,77 @@ inconsistentes no alimentan los patrones de retorno. Ocho pruebas pasan; la
 nueva regresión falla con la versión anterior para hash, validez, dimensiones
 y secuencia de renderizado. No se cambia el parche del runtime ni se ejecuta
 el juego: es una mejora de análisis, no un arreglo visual demostrado.
+
+## Validación Windows de la cadena de 90 parches (2026-10-10)
+
+El usuario confirma que el PC está libre. Se vuelve a traer `origin` y la rama
+permanece sincronizada con `main` en `7800bc2`, mediante el merge existente.
+Se conserva un snapshot privado de los cambios anteriores del runtime y se
+comprueban los destinos de limpieza bajo nuestro `gow-gpu-work`; no se toca
+el checkout de Opus ni se detienen sus procesos.
+
+`scripts\2_compilar.cmd`, con `GOW_WORK=E:\gowgpuprof`, termina con código 0
+para `76a25bedac7842e0a35cbd5eb56ca5941ebae429`, con los 90 parches, Release,
+trazas desactivadas, tres tareas paralelas y VU1 en intérprete. El SHA-256
+del ELF coincide con el esperado. Ejecutable nuevo:
+`36e632cd39dfd73e3de3573c38b8c87715f9ef65b1eb6b2bba3ef776ed457c9f`.
+Manifiesto y registro privados: `E:\gowgpuprof\transition90\build.json` y
+`full_build.log`. Este binario sí incorpora la cadena actual; no se usa el
+ejecutable anterior para atribuirle estos cambios.
+
+La prueba Windows de paquetes libpad2 pasa. La suite nativa pasa **591/591**
+en modo normal y **625/625** con `GOW_GS_GPU_TEST=1`, incluyendo GPU real,
+compositor compartido y consumidor raylib. La primera ejecución desde una
+carpeta de registros falló porque una prueba busca `instructions.h` por rutas
+relativas; se repitió desde la raíz del runtime, sin modificar código ni
+pruebas. El diagnóstico opcional se activó durante el control GPU: seis
+adquisiciones analizadas, hashes conocidos y ningún retroceso, inconsistencia
+o retorno A–B–A en esas muestras procedurales. No acreditan imágenes del juego.
+
+La matriz funcional se ejecuta en carpetas privadas, con una copia por pasada
+de la misma tarjeta procedural sin formatear (8.650.752 bytes), sin guardados
+del usuario; no se escribe sobre su tarjeta original. Se eliminan del entorno
+los otros diagnósticos opcionales y las capturas periódicas; se mantienen
+`GOW_FAST_BOOT=0`, los wrappers que instala por presencia y el panel de depuración
+predeterminado. VU1/frente GS en hilos permanecen apagados. El hash/registro no
+se emplea para medir FPS.
+
+| FINISH / presentación | Duración de proceso | Primer estado 11 del guion | Adquisiciones compartidas |
+|---|---|---|---|
+| Síncrono / RAM | 360,06 s | 146,64 s | — |
+| Síncrono / compartida | 360,04 s | 121,16 s | 2.186 |
+| Asíncrono / RAM | 360,05 s | 116,32 s | — |
+| Asíncrono / compartida | 233,22 s | 111,31 s | 1.247 |
+
+Las tres primeras pasadas se terminan deliberadamente al límite de 360 s.
+La cuarta se interrumpe a petición del usuario, que necesita el ordenador:
+se valida y termina solo nuestro PID 11320. Su código de salida de terminación
+no se atribuye a un fallo espontáneo. Las cuatro llegan a estado 11 y sus
+últimos informes continúan en ese estado, sin las firmas buscadas de error
+VU1/GIF/excepción. Las tarjetas permanecen idénticas. El guion usa reloj del
+host: esos tiempos no alinean cuadros ni comparan rendimiento.
+
+Los dos registros compartidos tienen hashes conocidos, sin retrocesos de
+secuencia/render ni metadatos inconsistentes. Registran 105/109 retornos A–B–A,
+todos anteriores al primer informe de estado 3. Ninguno aparece en las
+1.094/342 adquisiciones posteriores al primer informe de estado 11; estos
+grupos siguen el último estado registrado, no una alineación exacta.
+El diagnóstico registra solo secuencias nuevas: su contador de retenciones
+igual a cero no demuestra que el host nunca retenga una textura.
+
+Hay una pista distinta del hash: en la pasada asíncrona se adquiere la secuencia
+906 con `hostTick=1365` y `frameTick=948`, distancia de 417 ticks; el máximo
+síncrono fue 3. La adquisición posterior vuelve a ticks cercanos. Investigar
+las esperas del host y la cola GS antes de atribuirlo a una ranura corrupta,
+a imágenes alternantes o a latencia sostenida. No convertir estos ticks en FPS.
+
+Una captura externa única de la ventana RAM muestra HUD, escena y Kratos,
+pero el panel cubre gran parte del encuadre; no acredita fidelidad de cámara.
+La captura compartida se rechaza al no estar nuestra ventana en primer plano,
+sin capturar otra aplicación. Falta revisión visual con el panel contraído,
+repetición de la combinación asíncrona y controles separados de los hilos.
+Registros, manifiestos, herramientas de ejecución y captura quedan privados en
+`logs/transition_review/` y `E:\gowgpuprof\transition90`.
+El PC vuelve a quedar reservado para el usuario; no lanzar nuevas cargas hasta
+su confirmación. #51 sigue en borrador y no se declara corregida la transición,
+el encuadre ni los cuelgues.

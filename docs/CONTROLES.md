@@ -453,6 +453,28 @@ puntero nulo y cruce de segmento; RAM intacta. Mismos cupos, intervalo y
 llamada original. No usar estas ejecuciones para medir FPS ni comparar cuadros
 distintos como si fueran una secuencia sincronizada.
 
+## Adquisiciones de presentación compartida (2026-10-10)
+
+`PS2X_GS_PRESENT_DIAG=1` registra `[gs-present:shared]` cuando el host adquiere
+una secuencia distinta de la anterior, hasta 4.096 por instancia. Usa los
+metadatos de esa textura: secuencia publicada/renderizada, ticks del host y
+de la imagen, framebuffer/fuente, dimensiones, hash/validez y blank. No añade
+readback, otra adquisición ni glFinish. El hash existente requiere
+`PS2X_FRAME_HASH=1`; su coste y el del registro impiden usar este control para FPS.
+
+Usar `GOW_PAD_TEST_NO_CAPTURE=1` con el guion automático mantiene entradas y
+registros de estado sin capturas periódicas de VRAM. Eliminar del entorno los
+otros diagnósticos: algunos se activan por presencia y siguen activos con
+valor `0`. La matriz FINISH síncrono/asíncrono y presentación RAM/compartida,
+las copias privadas de tarjetas y los límites de interpretación están en
+[TRANSICION_COMPARTIDA.md](TRANSICION_COMPARTIDA.md).
+
+El inspector `tools/render/inspect_shared_frames.py` detecta retrocesos,
+metadatos contradictorios para una secuencia, retención y retornos A–B–A.
+Un retorno de hash es una pista; no prueba corrupción, igualdad de píxeles
+ni contenido viejo. Las capturas posteriores de VRAM tampoco demuestran qué
+textura compartida adquirió el host.
+
 MSVC `/O2 /W4 /WX` pasa. Volver a limitar el lector completo a ocho matrices
 en una copia privada hace fallar la prueba. Recompilación rápida correcta sobre
 los mismos 79 parches; control nativo de 95,948 s: 84 lecturas completas,

@@ -122,3 +122,61 @@ También se comprueba que avanzar el tick del host es válido y que un cambio de
 modo permite reiniciar la numeración con otros metadatos. Son entradas
 procedurales, sin datos del juego. Este cambio al inspector no prueba que el
 runtime produzca tales inconsistencias ni corrige la presentación del juego.
+
+## Compilación y primera matriz Windows (2026-10-10)
+
+Con el PC liberado por el usuario se completa `scripts\2_compilar.cmd`, código 0,
+en el runtime privado `GOW_WORK=E:\gowgpuprof`, conservando sus fuentes previas
+en un snapshot y verificando el destino de la junction. Código del port:
+`76a25bedac7842e0a35cbd5eb56ca5941ebae429`, 90 parches, Release, VU1 intérprete.
+SHA-256 del ejecutable nuevo:
+`36e632cd39dfd73e3de3573c38b8c87715f9ef65b1eb6b2bba3ef776ed457c9f`.
+No se modifica el checkout de Opus. La suite Windows pasa 591/591 en modo normal
+y 625/625 con GPU real; libpad2 también pasa. El ensayo GPU del diagnóstico
+registra seis adquisiciones procedurales, sin anomalías detectadas.
+
+Las cuatro pasadas usan ese binario, el mismo ELF/ISO y guion de mando,
+tarjetas privadas inicialmente idénticas y las variables de la matriz anterior.
+Se eliminan otros diagnósticos opcionales; no hay replay ni capturas periódicas.
+`GOW_FAST_BOOT=0` conserva los wrappers instalados por presencia, sin activar
+el atajo. El panel de depuración está expandido en las cuatro pasadas.
+
+| FINISH / presentación | Duración real | Primer estado 11 del guion | Adquisiciones | Retornos A–B–A | Mayor distancia host/frame tick |
+|---|---|---|---|---|---|
+| Síncrono / RAM | 360,06 s | 146,64 s | — | — | — |
+| Síncrono / compartida | 360,04 s | 121,16 s | 2.186 | 105 | 3 |
+| Asíncrono / RAM | 360,05 s | 116,32 s | — | — | — |
+| Asíncrono / compartida | 233,22 s | 111,31 s | 1.247 | 109 | 417 |
+
+Las tres pasadas completas se terminan al límite; el usuario pide recuperar el
+PC durante la cuarta y se termina únicamente nuestro proceso identificado.
+No es un cierre espontáneo ni un control completo de 360 s. Los últimos informes
+de las cuatro mantienen estado 11; no se encuentran las firmas buscadas de
+error VU1/GIF/excepción y ninguna tarjeta cambia. Esto no prueba jugabilidad,
+equivalencia visual, cierre normal ni estabilidad prolongada.
+
+Los registros compartidos no presentan retrocesos de secuencia/render,
+hashes desconocidos ni metadatos inconsistentes. Todos los retornos A–B–A
+aparecen antes del primer informe de estado 3. No aparecen tras el primer
+informe de estado 11: 1.094 muestras síncronas y 342 asíncronas. Clasificar
+por el último informe de estado solo delimita tramos aproximados. Como el
+runtime registra únicamente adquisiciones nuevas, cero filas retenidas no
+significa cero retenciones en la ejecución.
+
+La secuencia asíncrona 906 tiene `hostTick=1365`, `frameTick=948` y distancia
+417; las adquisiciones posteriores vuelven a ticks cercanos. Es una pista para
+seguir esperas del host y trabajo pendiente del GS, sin asumir corrupción de
+una ranura, equivalencia de píxeles ni retraso sostenido. Una distancia de ticks
+no convierte esta ejecución con diagnósticos en una medición de FPS.
+
+La revisión visual permanece incompleta: una captura externa RAM permite ver
+HUD/escena/Kratos, pero el panel tapa gran parte de la imagen. No se usa
+`copyLatchedHostPresentationFrame` como prueba de la textura compartida.
+Reanudar con controles visuales separados y panel contraído, repetir la
+combinación asíncrona y después evaluar VU1/frente GS por separado. Conservar
+el encuadre dentro del framebuffer como investigación independiente.
+
+El usuario vuelve a reservar el ordenador. #51 permanece en borrador hasta
+completar el control funcional y comprobar el CI del HEAD final. Los datos del
+juego, registros y capturas permanecen privados; se publica esta descripción
+de los resultados y sus límites.
