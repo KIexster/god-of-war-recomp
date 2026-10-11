@@ -790,3 +790,32 @@ El prefijo no comprueba el End del archivo ni toda la transición. Conservar
 los códigos 1 debidos a discrepancia; no contarlos como éxito. Una repetición
 exacta GS mantiene fijas las poses que recibió: tampoco prueba que fueran
 correctas antes de capturar la traza.
+
+### Diagnóstico posterior del skinning
+
+`GOW_SKIN_DIAG=1` instala dos observadores de las llamadas retail 0x137508 y
+0x137AF8 desde 0x1590F0, solo bajo estado 11. El resto y todas las reanudaciones
+llaman al original. `[gow-skin]` y `[gow-skin:slot]` se emiten solo al retornar
+al caller esperado; una pausa emite `[gow-skin:paused]` y se descarta su salida,
+sin reconstruir argumentos al reanudar ni forzar que termine el cálculo.
+
+128 intentos totales, 16 combinaciones skeleton/vista/variante, hasta 32
+muestras por combinación y separación mínima de 100 ms del host. No es un
+muestreo exhaustivo ni un contador de cuadros simulados. Captura entrada a3,
+f12, disposición, selección dispersa, máscara, visibilidad y umbral; por slot,
+fuente previa +0x50, paleta mundo a1 y destino real a2 posterior. El indicador
+changed compara destino previo/posterior; no demuestra que no se escribiera
+si los bytes siguen iguales. ownerCandidate es s1 del caller, sin identificación
+confirmada de personaje. Los datos crudos quedan en logs privados.
+
+El conteo de slots es u16 en skeleton+0x5C, limitado a 256 para el diagnóstico;
+definición+0x10 tiene otro significado. Selección/máscara/visibilidad no prueban
+que el slot se haya actualizado: intervienen umbral y reutilización. Cada
+lectura valida RAM EE de 32 MiB o scratchpad de 16 KiB, incluidos sus alias,
+sin normalizar direcciones inválidas mediante RAM_MASK. El observador no
+escribe memoria ni modifica cálculos. Añade lectura/E/S y no mide rendimiento.
+
+Preparado con pruebas procedurales de límites, selección no contigua, máscaras
+y retorno/pausa, y sintaxis C++20. Requiere recompilación rápida de src/ sobre
+la cadena completa 101 y control funcional antes de usar sus registros como
+evidencia; esos resultados todavía están pendientes.

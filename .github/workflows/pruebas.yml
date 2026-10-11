@@ -52,6 +52,10 @@ jobs:
         run: |
           g++ -std=c++20 -Wall -Wextra -Werror tests/model_probe_test.cpp -o model_probe_test
           ./model_probe_test
+      - name: Probar lectura de salida skinning, scratchpad y retornos
+        run: |
+          g++ -std=c++20 -Wall -Wextra -Werror tests/skin_probe_test.cpp -o skin_probe_test
+          ./skin_probe_test
 
   runtime:
     name: Parches y suite del runtime (PS2Recomp)

@@ -4353,3 +4353,9 @@ no solo capturas aisladas. Priorizar entradas/salidas reales de skinning y sus
 al cálculo posterior: valores finitos allí no descartan este fallo. Leer
 RAM/scratchpad con límites separados, respetar checkpoints y observar solo
 retornos reales. No corregir matrices ni activar protecciones por intuición.
+
+Se prepara `GOW_SKIN_DIAG=1`, observación posterior de ambas variantes y lectura
+del destino a2 separado de la paleta a1. Límites, campos y descarte de pausas
+en CONTROLES.md. Pruebas procedurales Windows/MSVC con /W4 /WX y sintaxis
+C++20 del override correctas; todavía pendientes recompilación rápida de src/
+con nuevo hash y pasada funcional. No se modifica ningún parche o matemática.
