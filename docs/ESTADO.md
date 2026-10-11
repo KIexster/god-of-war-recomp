@@ -3931,3 +3931,23 @@ Count → direcciones GS → diagnóstico. Verificado: los 97 parches de #58
 coinciden en orden/contenido con el prefijo compilado de #51, y la cadena 98
 de #51 sigue idéntica al código del runner. No se modificó Opus. #51 sigue
 borrador por comparación visual y hilos pendientes; comprobar CI de cada HEAD.
+## Integración y revisión final de unidades GS (2026-10-11)
+
+La corrección Count #59 se fusionó en `cee659a` tras CI completo del HEAD
+`ab89804`. Esta rama integra main por merge, preservando ambas investigaciones
+y aplicando Count antes del parche de direcciones GS: 97 parches. La rama
+#51 ya compiló esa combinación más el diagnóstico del host (98) en Windows
+desde `f36936e`, runner SHA-256
+`4693c62c14919c5bd400aa55b8da50a0ab5f5d281d3d20e7b02624aeaa5c6663`.
+597/597 normal, 631/631 GPU real y los controles separados de ambas formas
+de FINISH/texturas adquiridas pasan. No se atribuye al ejecutable un cambio
+posterior de código: los parches de Count y direcciones siguen idénticos.
+
+La espera síncrona compartida se supera con Count; no la corrige este tema
+de unidades. La selección del juego continúa `preferred=0`, sin probar
+que el arreglo de bases sea causal de cámara/alternancia. La revisión comprueba
+las tres conversiones página/bloque, TBW explícito/cero, metadatos y los
+controles negativos/positivos CPU y GPU. La semántica física de ambos pares
+y la reutilización de ocho ranuras quedan cubiertas sin alterar las
+matemáticas del renderer CPU ni FINISH/fences. Falta verificar el CI del
+HEAD final tras este merge antes de fusionar #58.
