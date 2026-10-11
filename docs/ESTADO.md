@@ -3801,3 +3801,19 @@ debe repetirse y no se afirma que el defecto de Count explique el encuadre,
 alternancia o todos los FPS bajos. Las mediciones de Opus siguen siendo suyas:
 documenta 11,6 FPS por defecto y 25,2 con su configuración optimizada; estos
 controles con intérprete/hilos apagados/hash/diagnóstico no son comparables.
+
+## Suite nativa de Count y nuevo control del juego (2026-10-11)
+
+Con el runner identificado de 98 y sus fuentes `f36936e`, pasan **597/597
+normal y 631/631 GPU real** en Windows, cero fallos conocidos. Hash del
+ejecutable de pruebas:
+`8741cc50b8a5db8587dd989bd94b143bbda2a9f490bad9764ec84e62f2de4607`.
+Pasan los cuatro procesos separados: FINISH/CSR/orden/lectura `default|async`
+y FINISH/píxeles de la textura realmente adquirida `default|async`, cada
+uno con sus 16 publicaciones y reutilización de ranuras. No se repite la
+suite global bajo FINISH asíncrono ni se cambian contratos de los grabadores.
+
+Comienza una pasada nueva de 360 s síncrona/compartida con la misma tarjeta
+procedural, guion, variables y hilos apagados, después de terminar las
+compilaciones y pruebas. Debe comprobar si persiste la espera observada en
+96 y 97; los éxitos anteriores todavía no la dan por resuelta.

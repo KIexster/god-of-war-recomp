@@ -630,3 +630,10 @@ La integración positiva de 98 todavía debe completar compilación, suite,
 CI y transición. El hallazgo del bucle muestreado no prueba por sí solo su
 efecto funcional. Registrar otro commit/hash del runner y comparar primero
 la espera compartida síncrona, manteniendo los hilos opcionales apagados.
+
+Windows integrado de 98 (`f36936e`, runner SHA-256
+`4693c62c14919c5bd400aa55b8da50a0ab5f5d281d3d20e7b02624aeaa5c6663`):
+597/597 normal y 631/631 GPU real correctas. También pasan FINISH/lectura
+y FINISH/textura adquirida en ambos modos, cada uno en proceso nuevo.
+La pasada del juego empieza después de terminar compilaciones y controles;
+estas pruebas procedurales no prueban solución de la espera o cámara.
