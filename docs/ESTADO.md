@@ -3209,3 +3209,10 @@ de su base y emisión MFC0/MTC0 a través del runtime. MFC0 a $zero ejecuta
 explícitamente la lectura, porque SET_GPR_S32 omite evaluar el valor allí.
 Se mantiene la extensión de signo de MFC0. No usa reloj host ni añade
 interrupciones Compare. El CI positivo y control nativo siguen pendientes.
+
+El positivo `5c64a2248f52ffb09921d439137116901d638012` pasa
+[CI 38137693634](https://github.com/KIexster/god-of-war-recomp/actions/runs/38137693634):
+595/595, configuración, sintaxis, aplicación de los 96 parches y controles
+procedurales completos correctos. La integración de 98 en #51, `f36936e`,
+pasa también 597/597 en CI. Se mantiene borrador hasta comprobar Windows
+y la transición con el runner recién generado; no se declara resuelta la espera.
