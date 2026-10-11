@@ -761,3 +761,32 @@ de 6000 distinto: A–B–A finito confirmado en bytes, en modo de campos.
 No demuestra antigüedad del contenido ni equivalencia de cámara/escena.
 El tick de vídeo y el último estado del guion no alinean por sí solos dos
 pasadas; consultar identidades y límites en TRANSICION_COMPARTIDA.md.
+
+## Separar poses, cámara y rasterizado (2026-10-11)
+
+#60 ya está fusionada y su CI final/merge es correcto (ver ESTADO.md).
+El usuario también observa espasmos/deformaciones de modelos/animaciones de
+protagonista y enemigos. Revisar secuencias de movimiento, no solo imágenes
+aisladas, y localizar dónde aparecen: matrices finales de skinning, datos que
+llegan a VU/GS, rasterizado o presentación. La paleta leída al entrar en
+ProcessModel no equivale a la salida posterior de skinning; una matriz finita
+no certifica una pose correcta. No identificar personajes solo por número de
+articulaciones ni comparar por reloj anfitrión.
+
+Control dedicado de cámara: `GOW_CAMERA_DIAG=1`, `GOW_ANM_DIAG=1`, fast boot 0,
+FINISH síncrono/compartida/hilos 0. Muestreo finito/coherente del cliente, sin
+referencia de partida PCSX2 alineada; detalles y minimización tardía en ESTADO.
+La intro usa cámara articulada; las muestras principales de 11 usan matriz
+local. No trasladar automáticamente conclusiones entre ambas cámaras.
+
+Para aislar rasterizado se repite una única traza privada sin EE/IOP/VU ni
+lanzar otra partida. Ejemplo: `repetir_gs <traza> hardware <carpeta-nueva>
+--hasta-registro 12795 --repeticiones 3 --pausa-ms 250`; comparar también CPU
+y compute y registrar primitivas/tiles para distinguir ruta mixta de hardware.
+El número 12795 pertenece solo a esta traza; no reutilizarlo con otra.
+`--snapshot-feedback` es experimental, añade protección de fuente por Submit,
+no emula la caché PS2 y no se activa para declarar un arreglo o medir FPS.
+El prefijo no comprueba el End del archivo ni toda la transición. Conservar
+los códigos 1 debidos a discrepancia; no contarlos como éxito. Una repetición
+exacta GS mantiene fijas las poses que recibió: tampoco prueba que fueran
+correctas antes de capturar la traza.
