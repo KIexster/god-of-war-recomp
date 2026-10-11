@@ -3150,6 +3150,9 @@ sesiones; los A/B se hacen siempre alternando las dos versiones). **Juego** (mue
 | ronda 2 (#55) | 82,3 % | 24,0 | ~34 ms |
 | ronda 3 | 75,4 % | 25,2 | ~30 ms |
 
+Con la configuración por defecto (OpenGL, presentación por RAM, sin hilos opcionales ni FINISH asíncrono), la
+misma partida y el mismo guion van a 11,6 fps, sin errores de VU1. Son las dos cifras de los README (~12 y ~25).
+
 Para 30 fps estables el trabajo de VU1 de cada cuadro tiene que caber en dos VBLANK junto con la parte que
 espera al EE: faltan ~3 ms (~10 %).
 
