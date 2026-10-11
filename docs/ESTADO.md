@@ -4444,3 +4444,25 @@ con 0 errores/4 avisos existentes. Compilación rápida y control analógico
 con el juego todavía pendientes. Se revisa también la referencia propuesta
 de Persona 4: [alcance y material útil](REFERENCIA_PERSONA4.md), sin importar
 su código ni atribuirle un arreglo.
+
+La actualización de src/ desde `73588d2` termina con código 0 en 19,97 s
+sobre el mismo runtime 101 (runtime.lib intacta). Runner 54.561.792 bytes,
+SHA-256 `0df18c12eb20455c0440fa26f9799f3b85be3babd7e0c0062f62f7cf5708d1be`.
+[CI de ese código correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38180275266);
+[CI del merge de #61 correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38179912408).
+La primera ejecución se cierra con STOP a 65,45 s por una ruta privada de
+salida mal escrita; no cuenta como control completado. Se relanza en el
+directorio privado verificado con tarjeta procedural nueva.
+
+El usuario identifica como espasmo la pose del brazo elevado de Kratos en
+una captura aportada. Hay una pose visualmente semejante en la secuencia
+adquirida anterior; se conserva como ejemplo señalado, no como pose normal
+verificada. El cruce por orden del log muestra una limitación concreta:
+las 32 muestras iniciales del skeleton candidato de 111 slots terminan cerca
+del informe de host 140,56 s; la adquisición de tick 1500 queda entre los
+informes 186,02 y 191,06 s. **No corresponden a la misma ventana**. Son límites
+aproximados por orden de registros, no timestamps exactos de ejecución.
+No usar aquellos productos correctos para descartar el cálculo de la pose
+señalada. Además del control tardío en marcha, recoger otra ventana de sonda
+y captura desde 1500; todavía falta identificar el modelo y una referencia
+PCSX2 alineada para localizar la alteración.
