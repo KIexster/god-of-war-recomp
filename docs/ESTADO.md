@@ -3198,3 +3198,14 @@ Primer CI negativo `e7e8914`/38137005221: falla al compilar la nueva prueba
 por faltar `ps2recomp/types.h` (Instruction/Symbol/Section incompletos).
 Se añade la cabecera y se repite. Ese ensayo no acredita regresiones de
 comportamiento; el control negativo debe llegar a ejecutar la suite.
+
+El control negativo corregido `d496189` compila y ejecuta la suite en
+[CI 38137285316](https://github.com/KIexster/god-of-war-recomp/actions/runs/38137285316):
+591/595 pasan; fallan únicamente las cuatro regresiones nuevas de Count.
+No se añaden excepciones a `fallos_conocidos.txt`. Se publica después el
+arreglo: Count global actualizado perezosamente por ciclos EE, mínimo de uno
+en lecturas consecutivas del mismo bloque, wrap de 32 bits, escritura/reset
+de su base y emisión MFC0/MTC0 a través del runtime. MFC0 a $zero ejecuta
+explícitamente la lectura, porque SET_GPR_S32 omite evaluar el valor allí.
+Se mantiene la extensión de signo de MFC0. No usa reloj host ni añade
+interrupciones Compare. El CI positivo y control nativo siguen pendientes.

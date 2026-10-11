@@ -1,25 +1,29 @@
 diff --git a/ps2xRecomp/src/lib/cop0_translator.cpp b/ps2xRecomp/src/lib/cop0_translator.cpp
-index 1823a39..8c3bc68 100644
+index 1823a39..bb5b762 100644
 --- a/ps2xRecomp/src/lib/cop0_translator.cpp
 +++ b/ps2xRecomp/src/lib/cop0_translator.cpp
-@@ -44,6 +44,9 @@ namespace ps2recomp
+@@ -44,7 +44,10 @@ namespace ps2recomp
              case COP0_REG_BADVADDR:
                  return fmt::format("SET_GPR_S32(ctx, {}, (int32_t)ctx->cop0_badvaddr);", rt);
              case COP0_REG_COUNT:
+-                return fmt::format("SET_GPR_S32(ctx, {}, (int32_t)ctx->cop0_count);", rt);
 +                // GOW-Port: MFC0 Count actualiza el contador incluso con destino $zero.
 +                if (rt == 0u)
-+                    return "// GOW-Port: control negativo de MFC0 Count a $zero";
-                 return fmt::format("SET_GPR_S32(ctx, {}, (int32_t)ctx->cop0_count);", rt);
++                    return "(void)runtime->readCop0Count(ctx);";
++                return fmt::format("SET_GPR_S32(ctx, {}, (int32_t)runtime->readCop0Count(ctx));", rt);
              case COP0_REG_ENTRYHI:
                  return fmt::format("SET_GPR_S32(ctx, {}, (int32_t)ctx->cop0_entryhi);", rt);
-@@ -94,6 +97,7 @@ namespace ps2recomp
+             case COP0_REG_COMPARE:
+@@ -94,7 +97,8 @@ namespace ps2recomp
              case COP0_REG_BADVADDR:
                  return "// MTC0 to BADVADDR register ignored (read-only)";
              case COP0_REG_COUNT:
+-                return fmt::format("ctx->cop0_count = GPR_U32(ctx, {});", rt);
 +                // GOW-Port: una escritura cambia la base global, no solo este hilo.
-                 return fmt::format("ctx->cop0_count = GPR_U32(ctx, {});", rt);
++                return fmt::format("runtime->writeCop0Count(ctx, GPR_U32(ctx, {}));", rt);
              case COP0_REG_ENTRYHI:
                  return fmt::format("ctx->cop0_entryhi = GPR_U32(ctx, {}) & 0xC00000FF;", rt);
+             case COP0_REG_COMPARE:
 diff --git a/ps2xRuntime/include/ps2_runtime.h b/ps2xRuntime/include/ps2_runtime.h
 index 58e57de..2ebb64a 100644
 --- a/ps2xRuntime/include/ps2_runtime.h
@@ -70,10 +74,10 @@ index 5ef31c4..6bb6857 100644
      m_stopRequested.store(false, std::memory_order_release);
      m_checkpointPending.store(false, std::memory_order_release);
 diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
-index f5d72b6..c56778e 100644
+index f5d72b6..a455177 100644
 --- a/ps2xRuntime/src/lib/ps2_runtime.cpp
 +++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
-@@ -2324,6 +2324,22 @@ bool PS2Runtime::isStopRequested() const
+@@ -2324,6 +2324,24 @@ bool PS2Runtime::isStopRequested() const
      return m_stopRequested.load(std::memory_order_relaxed);
  }
  
@@ -81,15 +85,17 @@ index f5d72b6..c56778e 100644
 +// Las lecturas seguidas en un bloque avanzan al menos uno; no usar reloj de pared.
 +uint32_t PS2Runtime::readCop0Count(R5900Context *context) noexcept
 +{
-+    // GOW-Port: CONTROL NEGATIVO; lectura inmóvil como antes del arreglo.
-+    if (context) return context->cop0_count;
++    const uint64_t cycle = m_eeScheduler->currentEeCycle();
++    m_cop0Count += static_cast<uint32_t>(std::max<uint64_t>(1u, cycle - m_cop0CountCycle));
++    m_cop0CountCycle = cycle;
++    if (context) context->cop0_count = m_cop0Count;
 +    return m_cop0Count;
 +}
 +
 +void PS2Runtime::writeCop0Count(R5900Context *context, uint32_t value) noexcept
 +{
 +    m_cop0Count = value;
-+    m_cop0CountCycle = 0u; // GOW-Port: control negativo sin base EE.
++    m_cop0CountCycle = m_eeScheduler->currentEeCycle();
 +    if (context) context->cop0_count = value;
 +}
 +
