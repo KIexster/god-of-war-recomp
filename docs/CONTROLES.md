@@ -900,3 +900,23 @@ la muestra. No equivale a referencia de animación PS2. En esta pasada, las
 imágenes revisadas ya muestran el brazo bajo: no reproducen la postura elevada
 anterior ni se alinean por tener el mismo tick. Véase ESTADO.md para identidad,
 cantidades y límites; no modificar matrices a partir de esa comparación parcial.
+
+### Seleccionar la traza GS por vídeo
+
+`GOW_GS_REPLAY_FROM_TICK=<uint64 decimal>` pospone el inicio de una traza
+solicitada con `GOW_GS_REPLAY_TRACE`. Se combina con estado, segundos y
+TEXFLUSH: todos deben cumplirse. Para una ventana de vídeo sin espera adicional
+del host, usar `GOW_GS_REPLAY_AFTER=0`, estado 11 y TEXFLUSH 1. Ausente vale 0;
+valores inválidos desactivan la captura con un error, sin opciones parciales.
+No se omiten comandos anteriores al umbral: llegan al renderer sin grabarse.
+El inicio registra `videoTick` del runtime, no metadatos de una adquisición.
+No cambia formato, backend o límites ni alinea poses automáticamente con otra
+pasada/PCSX2. La captura serializa/sincroniza y no mide FPS; datos privados.
+Prueba procedural y replay CPU correctos; negativo al omitir el umbral falla
+y restaurado pasa. Src/ de `d5ab720` recompilado sobre 101 completa, CI correcto.
+Control con juego: inicio en tick 1500/estado 11/TEXFLUSH, ocho Present
+1500..1507 y End completo. Reproducción hasta el segundo Present con CPU
+repetible y hardware con diferencias entre pasadas de ruta constante; no
+certifica paridad. Ambas imágenes revisadas muestran la pose elevada de la
+introducción del barco. Véase ESTADO.md para identidad, cantidades y límites;
+las matrices finitas y esa semejanza no resuelven el espasmo ni miden FPS.

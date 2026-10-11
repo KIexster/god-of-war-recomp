@@ -57,7 +57,7 @@ static bool optionsTest()
     using namespace gow_gs_replay;
     CaptureOptions options; const char *error=nullptr;
     if(!captureOptions(nullptr,nullptr,nullptr,options,error) || error ||
-       options.after!=150 || options.seconds!=3 || options.atTextureFlush || options.state!=11) return false;
+       options.after!=150 || options.seconds!=3 || options.atTextureFlush || options.state!=11 || options.fromTick) return false;
     if(!captureOptions("470.5","2.25","1",options,error) || error ||
        options.after!=470.5 || options.seconds!=2.25 || !options.atTextureFlush) return false;
     if(!captureOptions("0","0.1","0",options,error) || options.after!=0 ||
@@ -82,6 +82,16 @@ static bool optionsTest()
         options={17,9,true,4};
         if(captureOptions("1","2","0",options,error,text) || !error ||
            options.after!=17 || options.seconds!=9 || !options.atTextureFlush || options.state!=4) return false;
+    }
+    for(const auto *text:{"0","1500","18446744073709551615"}) {
+        if(!captureOptions("0","1","1",options,error,"11",text) || error ||
+           options.fromTick!=std::strtoull(text,nullptr,10)) return false;
+    }
+    for(const auto *text:{"","-1","+4","4.0","4x"," 4","18446744073709551616"}) {
+        options={17,9,true,4,123};
+        if(captureOptions("0","1","0",options,error,"11",text) || !error ||
+           options.after!=17 || options.seconds!=9 || !options.atTextureFlush ||
+           options.state!=4 || options.fromTick!=123) return false;
     }
     return true;
 }
@@ -202,6 +212,49 @@ static bool textureFlushBoundaryTest(std::filesystem::path path,const GSPrimitiv
     return true;
 }
 
+// GOW-Port: antes del tick se dibuja, pero no se descarga/graba el estado.
+// Present no abre la captura aunque su request anuncie un contador posterior.
+static bool videoWindowBoundaryTest(std::filesystem::path path,const GSPrimitiveBatch &sprite)
+{
+    using namespace gow_gs_replay;
+    path += ".video";
+    PS2Memory memory; if(!memory.initialize()) return false;
+    const uint32_t gameState=11; std::memcpy(memory.getRDRAM()+0x29E560u,&gameState,4);
+    std::vector<uint8_t> vram(PS2_GS_VRAM_SIZE);
+    auto recorded=sprite; recorded.vertices[0].r=recorded.vertices[1].r=0x77;
+    std::vector<uint8_t> expectedInitial;
+    {
+        Backend capture(std::make_unique<GSCpuBackend>(),&memory,path,0,3600,true,11,1500);
+        capture.Initialize(vram.data(),uint32_t(vram.size()));
+        memory.gs().vsyncTick.store(1499,std::memory_order_relaxed);
+        capture.TextureFlush(); capture.Submit(sprite);
+        GSPresentationRequest request{}; request.vsyncTick=9999;
+        capture.Present(request);
+        if(capture.finish() || capture.ReadVram(0,0,1,1,1)!=0x80332211u) return false;
+        memory.gs().vsyncTick.store(1500,std::memory_order_relaxed);
+        capture.Submit(sprite); if(capture.finish()) return false;
+        expectedInitial=vram;
+        capture.TextureFlush(); capture.Submit(recorded);
+        if(!capture.finish()) return false;
+    }
+    {
+        Reader reader(path); Record record; unsigned initial=0,draws=0,end=0;
+        while(reader.next(record)) {
+            if(record.op==Op::Initial) {
+                Snapshot state; if(!decodeSnapshot(record,state) || state.vram!=expectedInitial) return false;
+                ++initial;
+            } else if(record.op==Op::Submit) {
+                GSPrimitiveBatch batch{};
+                if(!pod(record,batch) || batch.vertices[0].r!=0x77) return false;
+                ++draws;
+            } else if(record.op==Op::End) ++end;
+            else if(record.op!=Op::Mxcsr) return false;
+        }
+        if(!reader.error.empty() || initial!=1 || draws!=1 || end!=1) return false;
+    }
+    std::filesystem::remove(path); return true;
+}
+
 #ifdef _WIN32
 int wmain(int argc,wchar_t **argv)
 #else
@@ -251,6 +304,7 @@ int main(int argc,char **argv)
     std::filesystem::remove(truncated);
     if(!optionsTest()) { std::fprintf(stderr,"Opciones de captura: fallo\n"); return 1; }
     if(!textureFlushBoundaryTest(path,sprite)) { std::fprintf(stderr,"Frontera TEXFLUSH: fallo\n"); return 1; }
-    std::fprintf(stderr,"Captura sintética, parser, truncamiento, opciones y frontera TEXFLUSH: OK\n");
+    if(!videoWindowBoundaryTest(path,sprite)) { std::fprintf(stderr,"Ventana de vídeo: fallo\n"); return 1; }
+    std::fprintf(stderr,"Captura sintética, parser, truncamiento, opciones, TEXFLUSH y ventana de vídeo: OK\n");
     return 0;
 }
