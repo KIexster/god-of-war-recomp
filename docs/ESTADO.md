@@ -4480,3 +4480,43 @@ ese resultado y no se cuenta como validación visual de la ventana.
 Nueva pasada desde 1500 en curso, con el mismo runner y el guion de nueve
 pulsaciones de menú, sin movimientos/ataques añadidos, para observar matrices
 en la ventana de la pose señalada. Sigue sin referencia PCSX2 alineada.
+
+## Ventana de matrices junto a la postura señalada (2026-10-11)
+
+La pasada anterior desde 1500 termina a 300,04 s por límite, runner `73588d2`
+y SHA-256 `0df18c12eb20455c0440fa26f9799f3b85be3babd7e0c0062f62f7cf5708d1be`.
+FINISH síncrono, compartida, hilos 0, hash 0; tarjeta procedural intacta,
+sin firmas buscadas de error ni minimización registrada. No es una salida
+natural del juego ni un control de FPS.
+
+128 retornos completos, ambas variantes, cinco grupos y ninguna pausa.
+6.150 lecturas válidas de destino/mundo/fuente finitas; 5.606 productos finales
+seleccionados y cambiados, residuo máximo descriptivo 0,0001419. El grupo
+candidato de 111 slots aporta 32 muestras en videoTick 1500..1531 y 3.296
+productos, residuo máximo 0,000005588. Ahora la sonda sí alcanza la misma
+ventana de contador que las imágenes; no se demuestra todavía la identidad
+del skeleton ni una correspondencia uno a uno entre su cálculo y cada textura.
+
+16 PNG/JSON adquiridos, secuencias 1456..1471, frameTick 1500..1515, metadatos
+exactos contra su registro y RGBA completos distintos. Cada imagen duplica
+los 224 pares adyacentes de filas. Se revisan posiciones inicial, intermedia
+y final: Kratos en cubierta pasa del brazo/hoja elevado a una posición baja;
+la inicial se parece al ejemplo que el usuario identifica como espasmo.
+No se afirma equivalencia de píxeles con su captura ni pose correcta PS2.
+
+El producto final coherente acota esa operación observada, pero no certifica
+la animación de entrada, la jerarquía previa ni el envío posterior VIF/VU/GS.
+Una comprobación privada exploratoria de mundo padre por fuente local da
+diferencias en algunos slots. **No es todavía un fallo demostrado**: el
+record tiene flags `0x6000` que pueden transformar el resultado, y selección,
+umbral y reutilización deciden qué se actualiza. Registrar esos flags y el
+cambio de mundo antes de evaluar la jerarquía; no corregir matrices por ese
+producto incompleto. La referencia Persona 4 ayuda a revisar semántica, sin
+fuente externa incorporada. Encuadre y espasmos siguen abiertos.
+
+La compilación rápida, controles de paquete y ventana, pruebas procedurales,
+revisión manual y [CI de `7df7894` correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38181222772)
+validan el alcance de #63: soporte de guion y diagnóstico opcional. El control
+desde 3000 sin muestras se conserva como limitación; no se presenta como
+movimiento visible validado. Comprobar también CI del HEAD documental final
+antes de fusionar. No hay cambios de parches o matemática del juego.

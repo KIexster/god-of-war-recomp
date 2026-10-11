@@ -866,3 +866,15 @@ vídeo del runtime sin gastar el cupo en llamadas anteriores, y añade
 del parche de ventana GS; no modifica el reloj. Ese contador no es el stamp
 de jerarquía ni identifica automáticamente la textura adquirida o una pose
 PCSX2. Es una selección de ventana, no una prueba de alineación.
+
+Validación posterior de `73588d2`: recompilación rápida sobre 101 completa,
+runner SHA-256 `0df18c12eb20455c0440fa26f9799f3b85be3babd7e0c0062f62f7cf5708d1be`,
+pruebas locales y CI correctos. La pasada prolongada registra entrega por
+libpad2 de las cuatro direcciones del stick con ataques combinados; no recoge
+imágenes/muestras desde 3000 y no confirma desplazamiento visible. La pasada
+de ventana 1500 obtiene 128 retornos completos de ambas variantes y 16
+texturas adquiridas, con contador registrado junto a las muestras. Se revisa
+una postura semejante al espasmo señalado por el usuario. Producto final
+coherente no demuestra pose correcta ni identifica automáticamente el modelo;
+la jerarquía previa y VIF/VU/GS requieren más investigación. Resultados y
+límites completos en ESTADO.md; no son benchmarks.
