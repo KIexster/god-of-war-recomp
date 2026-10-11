@@ -3225,3 +3225,13 @@ de Count. Controles separados de FINISH y de píxeles de texturas adquiridas
 pasan ambos modos. Se comprueba la integración con dos parches GS adicionales,
 no un ejecutable independiente de esta rama. La transición nueva empieza
 después de terminar compilaciones y pruebas; el efecto funcional sigue pendiente.
+
+Primera pasada síncrona/compartida con aquel runner: 360,08 s, terminación
+deliberada por límite, tarjeta privada intacta y ninguna firma buscada de error.
+Informa estado 11 a 145,14 s; el mismo caso de las cadenas anteriores 96/97
+dejaba de informar tras 4 a ~25 s. Se supera la espera en este control.
+Capturas externas propias muestran intro, enemigos y finalmente HUD/Kratos
+en los muelles, sin alineación PCSX2/secuencia GS y con perturbación de captura.
+No se afirma jugabilidad, fidelidad de cámara, ausencia de alternancia o FPS.
+Se repite después asíncrona/compartida aislada; falta completar esa pasada y
+comprobar CI del HEAD final antes de cerrar la revisión de esta corrección.
