@@ -931,3 +931,60 @@ conclusión visual de 101. Esa ventana difiere de la anterior desde 0 para
 reservar las capturas para partida. Después comparar otra ventana con VU1
 en hilo desde 6000, sin solapar partidas/compilación/emulador. PNG/JSON y
 análisis de píxeles permanecen privados; no usar los tiempos como FPS.
+
+## Primeras capturas de 101: procedencia y limitación de ventana (2026-10-11)
+
+Runner `394779a`/SHA-256
+`63e6a576307675f34b70e4671a5b34de30219627a2ca2a3a362c182effd27040`,
+asíncrona/compartida sin hilos, seis capturas desde hostTick=1500. Completa
+360,07 s por límite (proceso 1/lanzador 0), primer informe 11 a 131,78 s,
+último 11; tarjeta intacta, ninguna firma buscada de error ni sondas antiguas.
+**El monitor registra minimización entre 44,22 y 156,01 s**, con primer plano
+antes/después; no se conoce su causa y no hubo entrada automatizada de Computer
+Use. No presentar la pasada como condición de ventana constante. Las capturas
+son posteriores a la restauración, bajo último informe 11; se repetirá el caso.
+
+643 adquisiciones desde 1500, todas SMODE2=2227921 (`&3=1`), 512×448/fuente
+CRTC/hash válido, sin regresiones/inconsistencias/A–B–A/cambios de dimensión,
+distancia de ticks 0. Se guardan seis PNG RGBA y seis JSON de secuencias
+486..491/ticks 1500..1505; cada campo coincide con su adquisición en el log.
+Los seis contenidos RGBA son distintos entre sí; los 224 pares adyacentes
+de filas son idénticos dentro de cada imagen, conforme al compositor de campos.
+La revisión de las primeras dos muestra Kratos/cubierta/lluvia, sin alternar
+menú y partida en esas muestras. No demuestra ausencia de contenido antiguo
+en otras ventanas, escena correcta, equivalencia PCSX2 o encuadre resuelto.
+
+## VU1 de 101: A–B–A confirmado en píxeles adquiridos (2026-10-11)
+
+Mismo runner, asíncrona/compartida, VU1 en hilo y frente GS 0, seis capturas
+desde hostTick=6000. Completa 360,05 s por límite, primer informe 11 a 80,83 s
+y último 11 a 358,22 s; tarjeta intacta, sin firmas buscadas de error ni sondas
+antiguas. Ventana visible/no minimizada/sin primer plano según el monitor.
+4.096 adquisiciones bajo último informe 11, todas SMODE2=2227921 (`&3=1`),
+512×448/fuente CRTC/hash válido; sin regresiones/inconsistencias/cambios de
+dimensión, distancia de ticks 0..2. Los 3.204 A–B–A alternan paridad y tienen
+modo de campos en las tres muestras. El cupo no cubre todo el intervalo.
+
+Seis PNG/JSON completos de secuencias 5806..5811, ticks de textura
+5999, 6000, 6001, 6003, 6005, 6006. Metadatos correlacionados exactamente
+contra los registros de esas adquisiciones; 224/224 pares de filas duplicados
+en cada PNG. Las texturas 5806 y 5808, de paridad impar, son **idénticas en
+todos sus bytes RGBA**, y 5807 (par) es distinta: A–B–A real en esta terna,
+no solo coincidencia del hash GPU. También 5809 y 5810 son idénticas entre sí,
+ambas impares. Las demás parejas son distintas; no extrapolar esa igualdad
+a otras texturas o al renderer CPU del juego.
+
+La revisión visual de 5806/5807 muestra la misma escena/cámara de Kratos en
+cubierta, con campos distintos. Esto sostiene la compatibilidad del retorno
+con composición por campos, **sin demostrar la frescura de VRAM ni la causa
+del síntoma original**. No se observa un menú alternante en estas imágenes;
+no se descarta fuera de las seis capturas. El encuadre no se compara con una
+referencia alineada. Las ventanas 1500 y 6000 de las dos pasadas tampoco
+representan automáticamente la misma pose/instante: no comparar sus cámaras
+como evidencia de diferencia causada por los hilos.
+
+[CI del resultado nativo `ce23d73` correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38163566080).
+Se inicia otra pasada sin hilos para repetir la condición de ventana. #60
+permanece borrador durante ese control y revisión del CI del HEAD final.
+Todos los píxeles, JSON y análisis permanecen privados; no se modifican las
+matemáticas de cámara ni se publican como benchmark o solución del fallo.

@@ -4245,3 +4245,29 @@ Pasada del juego sin hilos, seis capturas desde 1500, en curso. Después VU1
 desde 6000; no atribuir todavía resultados ni resolver encuadre/alternancia.
 Registrar PNG/JSON privados contra las adquisiciones antes de comparar bytes;
 sin equivalencia PCSX2 ni FPS. Identidad y límites en TRANSICION_COMPARTIDA.md.
+
+## Capturas reales: igualdad RGBA A–B–A en modo de campos (2026-10-11)
+
+Dos pasadas completas de 101, mismo runner `394779a`/SHA-256
+`63e6a576307675f34b70e4671a5b34de30219627a2ca2a3a362c182effd27040`,
+asíncrona/compartida, tarjetas intactas y sin firmas buscadas de error:
+sin hilos/desde 1500 (360,07 s, informe 11 desde 131,78 s) y VU1 solo/desde
+6000 (360,05 s, informe 11 desde 80,83 s). El primer caso estuvo minimizado
+entre 44,22 y 156,01 s; capturas posteriores, condición no constante, repetir.
+El segundo no se minimiza ni toma primer plano según el monitor.
+
+Ambos guardan seis PNG RGBA y seis JSON que coinciden con los metadatos de
+su adquisición en el log; cada imagen duplica sus 224 pares de filas. En el
+primero todos los contenidos son distintos, sin A–B–A en 643 registros de
+la ventana. En VU1 hay 4.096 registros/3.204 A–B–A, todos campos/paridad
+alterna, sin regresiones/inconsistencias; distancia de ticks 0..2. Los PNG
+de ticks 5999/6001 son idénticos byte a byte y el de 6000 es distinto:
+confirmación finita del A–B–A en píxeles, además del hash. Otro par impar
+6003/6005 es idéntico. Primeras imágenes revisadas muestran Kratos/cubierta
+en la misma cámara dentro de cada terna; no un menú alternante allí.
+
+No prueba frescura de VRAM, causa del síntoma original, ausencia fuera de la
+ventana, equivalencia CPU/PCSX2 o encuadre correcto. Tampoco son comparables
+las poses/cámaras de ventanas 1500 y 6000 entre pasadas. [CI `ce23d73` verde](https://github.com/KIexster/god-of-war-recomp/actions/runs/38163566080).
+Otra repetición sin hilos está en curso; #60 sigue borrador hasta cerrarla y
+comprobar el CI final. Píxeles/JSON privados, sin cambios matemáticos o FPS.
