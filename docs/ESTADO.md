@@ -3172,3 +3172,47 @@ espera al EE: faltan ~3 ms (~10 %).
   bloque) y cuidar los cortes por presupuesto entre los dos bloques, que dejarían visibles otros flags que el
   intérprete.
 - *Temporización estática* de los bloques (comprobar las esperas a la entrada en lugar de en cada par).
+
+## Comparación de bases de presentación GS (2026-10-11)
+
+La revisión del diagnóstico compartido revela tres comparaciones entre
+unidades distintas: `FRAME/DISPFB.FBP` en páginas de 8.192 bytes y
+`TEX0.TBP0` en bloques de 256 bytes. Por ejemplo, 32 páginas y 32 bloques
+son 262.144 y 8.192 bytes; 32 páginas y 1.024 bloques son la misma dirección.
+Comparar los valores crudos podía omitir una fuente distinta o aceptar una
+copia sobre su propia base.
+
+Se añade `ps2recomp-gs-source-address.patch`, tema independiente del
+diagnóstico #51. Normaliza la página multiplicando por 32 antes de comparar:
+en la identificación del sprite de copia completo, en la fuente CPU sin TBW
+y en la selección equivalente GPU. Conserva los metadatos en sus unidades
+originales, el criterio existente para ancho explícito y el renderer CPU
+como referencia. No cambia matemáticas de rasterizado, fences ni FINISH.
+
+Dos regresiones independientes del juego: el frontend usa un backend
+grabador para comprobar cuatro pares de bases sin rasterizar; la presentación
+CPU comprueba selección, metadatos y un píxel procedural con tres casos de
+TBW cero/explícito. El control GPU existente añade las dos colisiones de
+unidades y compara píxeles/metadatos contra CPU con readback explícito solo
+en la prueba. No se introduce ese readback en la ejecución del juego.
+
+Se publica primero `5f3d7dedeced864133eb1d9887d49f892a0458a9`, con las
+regresiones y sin corregir los comparadores, para control negativo en CI
+remoto. La [ejecución 38115429132](https://github.com/KIexster/god-of-war-recomp/actions/runs/38115429132)
+compila correctamente y pasa 591 de 593 pruebas: fallan exactamente
+`display copy compares FRAME pages with TEX0 blocks` y
+`presentation source without TBW compares physical addresses`. No se añaden
+excepciones a `fallos_conocidos.txt`. El CI del arreglo todavía está pendiente.
+
+La cadena propia contiene 96 parches: todos pasan check/aplicación desde el
+upstream fijado en un árbol privado nuevo. El diagnóstico de #51 también
+aplica después, como parche 97 en una comprobación privada conjunta.
+Configuración: 0 errores y 4 avisos existentes; sintaxis de 10 scripts:
+0 errores. No se modifica el checkout de Opus, comprobado limpio en
+`34cbe58`, ni sus parches VU1.
+
+Compilación completa Windows y control GPU/juego pendientes de disponibilidad
+del PC. No se conoce si estos pares de bases aparecen en la transición real:
+los registros de 90 parches no tenían `preferred`. El fallo de unidades es
+independiente de probar que explique la alternancia o el encuadre; ambos
+siguen sin declararse resueltos. No hay medición nueva de rendimiento.

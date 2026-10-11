@@ -460,3 +460,26 @@ en una copia privada hace fallar la prueba. Recompilación rápida correcta sobr
 los mismos 79 parches; control nativo de 95,948 s: 84 lecturas completas,
 9.598 matrices finitas y no totalmente nulas. En intro hay 32 muestras por
 articulación de las paletas 125/103. Resultados, binario y límites: ESTADO.
+
+## Bases de la fuente de presentación GS (2026-10-11)
+
+`ps2recomp-gs-source-address.patch` compara las bases físicas de FRAME/DISPFB
+y TEX0 en bloques de 256 bytes: convertir la página con un factor de 32.
+Los metadatos conservan sus unidades originales. Dos números crudos iguales
+pueden ser bases distintas; dos números distintos pueden ser la misma base.
+
+Las regresiones sin juego comprueban 32/32, 32/1.024, 32/1.057 y 0/0
+(página/bloque) mediante un backend grabador del frontend. El compositor CPU
+usa píxeles procedurales distintos en las direcciones 8.192 y 262.144,
+comprueba TBW cero y conserva el criterio existente cuando el ancho es explícito.
+La prueba GPU existente añade los casos 32/32 y 32/1.024 con lectura explícita
+y comparación CPU; esa lectura solo pertenece al control procedural.
+
+El control negativo se ejecuta en CI sobre las regresiones sin el arreglo;
+`5f3d7de` compila y falla únicamente las dos nuevas (591/593 correctas).
+Comprobar además el CI del HEAD corregido. Compilación Windows completa,
+suite GPU y transición con datos del usuario siguen pendientes. Registrar un
+binario nuevo antes del control; no atribuir este cambio al ejecutable anterior.
+La identificación de `preferred` del diagnóstico #51 permite observar después
+si estos casos ocurren en el juego. No se declara corregido el encuadre ni
+la alternancia por normalizar una comparación.

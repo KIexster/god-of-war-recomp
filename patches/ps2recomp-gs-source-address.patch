@@ -1,5 +1,51 @@
+diff --git a/ps2xRuntime/src/lib/gs/gpu/gs_gpu_backend.cpp b/ps2xRuntime/src/lib/gs/gpu/gs_gpu_backend.cpp
+index 69ce337..23cd5df 100644
+--- a/ps2xRuntime/src/lib/gs/gpu/gs_gpu_backend.cpp
++++ b/ps2xRuntime/src/lib/gs/gpu/gs_gpu_backend.cpp
+@@ -2824,9 +2824,10 @@ PresentationFrame GSGpuBackend::Present(const GSPresentationRequest &request)
+     const auto &source = request.preferredSource;
+     const bool sourceFormat = source.psm == GS_PSM_CT32 || source.psm == GS_PSM_CT24 ||
+                               source.psm == GS_PSM_CT16 || source.psm == GS_PSM_CT16S;
++    // GOW-Port: mismo criterio de dirección física que CPU cuando TEX0 no tiene TBW.
+     if (circuits[0].enabled != circuits[1].enabled && request.hasPreferredSource && sourceFormat &&
+         request.preferredDestFbp == result.displayFbp &&
+-        (source.fbw != 0u || source.fbp != result.displayFbp))
++        (source.fbw != 0u || source.fbp != result.displayFbp * 32u))
+     {
+         auto &c = circuits[0].enabled ? c1 : c2;
+         c[1] = source.fbp;
+diff --git a/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp b/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
+index eaf75c7..35ce26e 100644
+--- a/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
+@@ -2088,8 +2088,9 @@ PresentationFrame GSCpuBackend::PresentFromLocalMemory(const GSPresentationReque
+         selected = displayFrame;
+         pixels.clear();
+         usedPreferred = false;
++        // GOW-Port: normalizar DISPFB a bloques TEX0 antes de descartar una fuente sin TBW.
+         if (allowPreferred && request.hasPreferredSource && request.preferredDestFbp == displayFrame.fbp &&
+-            (request.preferredSource.fbw != 0u || request.preferredSource.fbp != displayFrame.fbp) &&
++            (request.preferredSource.fbw != 0u || request.preferredSource.fbp != displayFrame.fbp * 32u) &&
+             CopyFrameToHostRgba(request.preferredSource, width, height, pixels, preserveAlpha, true, false, 0u, 0u))
+         {
+             selected = request.preferredSource;
+diff --git a/ps2xRuntime/src/lib/gs/gs_frontend.cpp b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+index 2e34354..96a92e8 100644
+--- a/ps2xRuntime/src/lib/gs/gs_frontend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+@@ -1892,8 +1892,9 @@ void GS::updatePreferredDisplaySourceForDraw(const GSPrimitiveBatch &batch)
+     const int yEnd = y0 + std::max(1, y1 - y0) - 1;
+     const uint8_t alphaMode = static_cast<uint8_t>(ctx.alpha & 0xFFu);
+     const uint8_t alphaFix = static_cast<uint8_t>((ctx.alpha >> 32u) & 0xFFu);
++    // GOW-Port: FRAME usa páginas de 8 KiB y TEX0 bloques de 256 B; comparar direcciones.
+     const bool displayCopy = state.prim.tme && state.prim.abe && state.prim.fst && state.prim.ctxt &&
+-                             ctx.frame.fbp != ctx.tex0.tbp0 && alphaMode == 0x64u &&
++                             ctx.frame.fbp * 32u != ctx.tex0.tbp0 && alphaMode == 0x64u &&
+                              (alphaFix == 0x60u || alphaFix == 0x80u) &&
+                              x0 <= 0 && y0 <= 0 && xEnd >= 639 && yEnd >= 447;
+     if (displayCopy)
 diff --git a/ps2xTest/src/ps2_gs_backend_tests.cpp b/ps2xTest/src/ps2_gs_backend_tests.cpp
-index f5fae69..769d28b 100644
+index f5fae69..a90ccc0 100644
 --- a/ps2xTest/src/ps2_gs_backend_tests.cpp
 +++ b/ps2xTest/src/ps2_gs_backend_tests.cpp
 @@ -899,6 +899,76 @@ void gpuRegionEdges(TestCase &t,bool hardware)
@@ -79,7 +125,25 @@ index f5fae69..769d28b 100644
      // GOW-Port: un pixel de 24 bits puede atravesar el limite de un quadword IMAGE.
      void transfer24Fragments(TestCase &t, GSRasterBackend &backend)
      {
-@@ -1336,6 +1406,8 @@ void gpuRegionEdges(TestCase &t,bool hardware)
+@@ -1290,6 +1360,17 @@ void gpuRegionEdges(TestCase &t,bool hardware)
+             t.IsTrue(first.pixels!=next.pixels,"La presentación cambia con la fuente");
+         }
+         req.preferredSource.psm=GS_PSM_CT32;
++        // GOW-Port: números crudos iguales apuntan a direcciones diferentes; comprobar GPU real.
++        req.forceReadback=true; req.preferredSource={32,0,GS_PSM_CT32,0};
++        for(auto *backend : {static_cast<GSRasterBackend *>(&cpu),static_cast<GSRasterBackend *>(&threaded)})
++            backend->WriteVram(GS_PSM_CT32,32,10,0,0,0x80112233u);
++        const auto differentBase=comparePresentation("TBW cero conserva la fuente en otro bloque");
++        t.IsTrue(differentBase.usedPreferred,"32 páginas y 32 bloques son direcciones distintas");
++        if(!differentBase.pixels.empty())t.Equals(differentBase.pixels[0],uint8_t(0x33),"GPU lee el píxel de TEX0");
++        req.preferredSource={1024,0,GS_PSM_CT32,0};
++        const auto sameBase=comparePresentation("TBW cero y dirección igual conserva el origen CRTC");
++        t.IsFalse(sameBase.usedPreferred,"32 páginas y 1024 bloques son la misma dirección");
++        req.forceReadback=false; req.preferredSource={1057,2,GS_PSM_CT32,0};
+         req.preferredDestFbp=31; comparePresentation("Destino distinto mantiene CRTC");
+         req.preferredDestFbp=32; req.hasPreferredSource=false;
+         comparePresentation("Sin fuente preferida mantiene CRTC");
+@@ -1336,6 +1417,8 @@ void gpuRegionEdges(TestCase &t,bool hardware)
  void register_ps2_gs_backend_tests()
  {
      MiniTest::Case("GOW GS backends", [](TestCase &t) {
