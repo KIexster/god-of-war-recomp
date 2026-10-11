@@ -4271,3 +4271,28 @@ ventana, equivalencia CPU/PCSX2 o encuadre correcto. Tampoco son comparables
 las poses/cámaras de ventanas 1500 y 6000 entre pasadas. [CI `ce23d73` verde](https://github.com/KIexster/god-of-war-recomp/actions/runs/38163566080).
 Otra repetición sin hilos está en curso; #60 sigue borrador hasta cerrarla y
 comprobar el CI final. Píxeles/JSON privados, sin cambios matemáticos o FPS.
+
+## Repetición sin minimización: control funcional de #60 cerrado (2026-10-11)
+
+Tercera pasada de 101 con el mismo runner `394779a`/hash anterior,
+asíncrona/compartida sin hilos, desde 1500: 360,04 s por límite, primer
+informe 11 a 116,48 s y último 11; tarjeta intacta, sin firmas buscadas de
+error ni sondas antiguas. El monitor no registra minimización. 870
+adquisiciones de campos, sin regresiones/inconsistencias/A–B–A/cambios de
+dimensión, distancia de ticks 0. Seis PNG/JSON completos correlacionados
+contra sus adquisiciones (1462..1467, ticks 1500..1505), contenidos RGBA
+distintos y 224/224 pares de filas duplicados en cada imagen.
+
+Revisión visual de las primeras dos: misma vista de Kratos/cubierta dentro
+del par. Un tick coincidente entre pasadas no alinea cámara/animación,
+porque el guion depende del reloj anfitrión; no inferir causas por comparar
+esas poses. La minimización anterior se conserva como limitación separada.
+
+La compilación completa, nativas/negativo restaurado, contratos y tres
+pasadas cierran la validación de la captura opcional de #60. Revisión manual
+del uso de la reserva Acquire correcta; [CI `9332c1b` verde](https://github.com/KIexster/god-of-war-recomp/actions/runs/38164770068).
+Comprobar el CI del HEAD final antes de fusionar. No se declaran resueltos
+encuadre, contenido antiguo, modo cuadro o estabilidad prolongada. Próximo
+paso: relacionar cámara/animación con la escena realmente dibujada y una
+referencia alineada; evitar corregir matrices por observaciones de instantes
+distintos. Detalles y hash en TRANSICION_COMPARTIDA.md; píxeles privados.

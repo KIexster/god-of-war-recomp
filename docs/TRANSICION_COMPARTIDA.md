@@ -988,3 +988,32 @@ Se inicia otra pasada sin hilos para repetir la condición de ventana. #60
 permanece borrador durante ese control y revisión del CI del HEAD final.
 Todos los píxeles, JSON y análisis permanecen privados; no se modifican las
 matemáticas de cámara ni se publican como benchmark o solución del fallo.
+
+## Repetición sin hilos y cierre del control de captura (2026-10-11)
+
+Mismo runner `394779a` y hash anterior, asíncrona/compartida, VU1/frente GS
+desactivados, seis capturas desde 1500. Completa 360,04 s por límite (proceso
+1/lanzador 0), primer informe 11 a 116,48 s y último 11. Tarjeta intacta,
+ninguna firma buscada de error ni sondas antiguas. El monitor no registra
+minimización; pasa a primer plano al final. Esto no borra la minimización
+de la pasada anterior ni identifica su causa.
+
+870 adquisiciones bajo último informe 11, todas SMODE2=2227921 (`&3=1`),
+512×448/fuente CRTC/hash válido, distancia de ticks 0. Cero regresiones,
+inconsistencias, A–B–A o cambios de dimensión en esa ventana. Seis PNG RGBA
+y seis JSON de secuencias 1462..1467/ticks 1500..1505, todos sus metadatos
+coinciden con el registro adquirido. Los seis contenidos son distintos entre
+sí y cada imagen duplica 224/224 pares adyacentes de filas. Las primeras dos
+imágenes revisadas muestran Kratos en cubierta y la misma vista dentro del par.
+No compararlas con poses/cámaras de otra pasada por compartir el tick 1500:
+el guion usa tiempo anfitrión y ese tick no alinea el estado del juego.
+
+Las tres pasadas de 101, compilación completa, suite normal/GPU, negativo
+restaurado y contratos cierran la validación funcional de esta **captura
+opcional**. Revisión manual: la llamada usa el Frame de Acquire mientras
+su reserva sigue vigente; sin opción no hay readback ni E/S de captura.
+[CI de `9332c1b` correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38164770068).
+Antes de fusionar #60, comprobar también el CI del HEAD que incorpore este
+resultado. Encuadre, frescura del contenido, discrepancia en modo cuadro y
+estabilidad prolongada siguen abiertos; no se cambian matemáticas ni se
+declara solucionado el síntoma original. PNG/JSON/análisis quedan privados.

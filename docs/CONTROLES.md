@@ -750,3 +750,14 @@ se instalan variables de captura, incluso si estaban heredadas. Requiere
 compilación completa de 101 y validación nativa antes de usarla con el juego;
 regresión preparada, ejecución pendiente. Detalles y límites en
 `TRANSICION_COMPARTIDA.md`; no publicar PNG/JSON del juego.
+
+La captura de 101 ya completó compilación Windows, 600/600 normal,
+636/636 GPU real, cuatro contratos y un negativo compatible que falla
+exactamente por píxeles del PNG; fuente restaurada y GPU otra vez 636/636.
+Tres pasadas de seis minutos guardan seis PNG/JSON cada una, correlacionados
+contra las adquisiciones. La primera tuvo minimización; la repetición sin
+hilos no la registra. En VU1 los PNG de ticks 5999/6001 son idénticos y el
+de 6000 distinto: A–B–A finito confirmado en bytes, en modo de campos.
+No demuestra antigüedad del contenido ni equivalencia de cámara/escena.
+El tick de vídeo y el último estado del guion no alinean por sí solos dos
+pasadas; consultar identidades y límites en TRANSICION_COMPARTIDA.md.
