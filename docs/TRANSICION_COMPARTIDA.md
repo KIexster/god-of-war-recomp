@@ -2,8 +2,9 @@
 
 Estado actual, 2026-10-11: cadena 100 revisada compilada en Windows; 600/600
 normal, 635/635 GPU, cuatro contratos FINISH/texturas y negativo significativo
-con restauración correctos. Los controles del juego con este nuevo runner
-siguen pendientes. #51 continúa en borrador mientras se cierra su validación.
+con restauración correctos. El control del juego sin hilos completa seis
+minutos; repeticiones con VU1/frente GS pendientes. #51 continúa en borrador
+mientras se cierra su validación.
 
 Count #59 y unidades de framebuffer #58 están fusionadas en main. Se conservan
 la matriz aislada de cuatro controles de 98 y las tres pasadas de seis minutos
@@ -765,3 +766,32 @@ Pendientes controles funcionales aislados de este runner: primero hilos 0 y
 ventana desde 0, luego VU1 y VU1+frente GS por separado desde 6000. El diagnóstico
 no introduce readback, Acquire adicional, cálculo adicional de hash ni glFinish.
 Los patrones del juego y la comparación visual aún no están validados para 100.
+
+## Primer control funcional de 100: modo adquirido durante partida (2026-10-11)
+
+Runner completo `383c6b6`, SHA-256
+`5f3b9c29dad7797e7edaa17585254eccaadd14238a834d15b69101c28895c74f`,
+asíncrona/compartida, hilos 0, registro desde 0 y guion/tarjeta procedural
+privada iguales. Completa 360,06 s por límite (proceso 1/lanzador 0), primer
+informe 11 a 133,85 s, último 11. Tarjeta intacta; ninguna firma buscada de
+error ni sondas de animación/flash-ready. Ventana visible/nunca minimizada,
+en primer plano solo entre 17,12 y 41,29 s según el monitor; sin captura propia.
+El cambio de primer plano no fue una entrada automatizada de Computer Use.
+
+1.955 adquisiciones, sin regresiones de secuencia/render, metadatos contradictorios
+o hashes desconocidos; fuente CRTC/`preferred=0`. Dimensión inicial 1×1 →
+512×448. Seis A–B–A, todos antes de los tramos 4/11, con paridad alterna y
+tres modos de campos registrados. Distancia de ticks máxima 37 en arranque,
+6 en tramo 4 y 1 en 11; no mide tiempo ni demuestra latencia sostenida.
+
+Hay 1.063 adquisiciones bajo último informe 11: `smode2=2227921`, cuyo valor
+bajo es `(SMODE2 & 3) == 1`, modo de campos. Ninguna A–B–A allí. El caso de
+cuadro con altura CPU/GPU distinta (`&3 == 3`) no corresponde a estas muestras;
+no descarta otros problemas de composición ni demuestra la causa de la cámara.
+Los informes del mando son espaciados, no una alineación de cuadro con PCSX2.
+
+[CI de la validación nativa/documentación `6a53774` correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38159575279).
+Se inicia después VU1 en hilo solo, ventana desde 6000, en otra carpeta;
+VU1+frente GS se repetirá tras cerrar esa pasada. No solapar partidas, emulador
+o compilación, ni usar estos tiempos/hash/diagnóstico/intérprete como FPS.
+Sin comparación visual, no se declaran resueltos alternancia, encuadre o cuelgues.

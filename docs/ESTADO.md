@@ -4133,3 +4133,24 @@ esa diferencia ni se atribuye a la escena del juego sin registrar su modo.
 Siguiente paso: controles de 100 sin hilos, con VU1 y con ambos hilos, ventana
 tardía y tarjetas privadas. #51 sigue borrador hasta cerrar validación del
 nuevo diagnóstico y CI final. Cámara/alternancia no se declaran resueltas.
+
+## Primer control del juego de 100: campos en la textura adquirida (2026-10-11)
+
+Runner `383c6b6`/SHA-256
+`5f3b9c29dad7797e7edaa17585254eccaadd14238a834d15b69101c28895c74f`,
+asíncrona/compartida sin hilos, ventana desde 0: 360,06 s completos por límite,
+primer informe 11 a 133,85 s, último 11, tarjeta intacta. Ninguna firma buscada
+de error ni sondas de animación/flash-ready; nunca minimizada, primer plano
+entre 17,12 y 41,29 s, sin captura propia ni solapamientos. Detalles en
+TRANSICION_COMPARTIDA.md; no se afirma cierre normal o equivalencia visual.
+
+1.955 adquisiciones, sin regresiones/inconsistencias/hash desconocido; seis
+A–B–A solo antes de los tramos 4/11, todos alternan paridad y tienen modo de
+campos. Las 1.063 adquisiciones de tramo 11 registran SMODE2=2227921 (`&3=1`),
+512×448/fuente CRTC, ninguna A–B–A y distancia de ticks 0..1. El caso cuadro
+con altura distinta (`&3=3`) no corresponde a estas muestras. Esto no prueba
+la causa del encuadre ni excluye imágenes antiguas fuera del registro.
+
+[CI `6a53774` verde](https://github.com/KIexster/god-of-war-recomp/actions/runs/38159575279).
+Continúa otra pasada privada con VU1 solo y ventana desde 6000; después ambos
+hilos. Mantener #51 borrador durante la validación pendiente, sin declarar FPS.
