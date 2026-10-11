@@ -1027,7 +1027,10 @@ namespace
         runtime.replaceFunction(0x00279600u, gowIpuInit);
         if(const char *v=std::getenv("GOW_CAMERA_DIAG"); v && std::strcmp(v,"1")==0)
             runtime.replaceFunction(0x0023B5E0u, gowDiagCameraPipeline);
-        if (std::getenv("GOW_PATH_DIAG") || std::getenv("GOW_ANM_DIAG") || std::getenv("GOW_FAST_BOOT"))
+        // GOW-Port: valor "0" desactiva fast boot y no debe instalar sus sondas de animación.
+        const char *fastBootSetting = std::getenv("GOW_FAST_BOOT");
+        const bool fastBootEnabled = fastBootSetting && std::strcmp(fastBootSetting, "1") == 0;
+        if (std::getenv("GOW_PATH_DIAG") || std::getenv("GOW_ANM_DIAG") || fastBootEnabled)
         {
             runtime.replaceFunction(0x001B2390u, gowDiagFlashReady);
             runtime.replaceFunction(0x00100C50u, gowDiagAnimationTime);

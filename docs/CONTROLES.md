@@ -673,3 +673,16 @@ no existe en el runner de 98: requiere compilación completa de la cadena 99.
 VU1 solo completa 360 s; VU1+frente GS sale a 228,17 s con código 0 y causa
 desconocida, antes del límite. Registrar `process_exit` y conservarlo como
 incompleto, repetir aislado; llegar a estado 11 no acredita estabilidad.
+
+La cadena 99 completa (`3dbac1a`, SHA-256 del runner
+`cf063d2f03a1a78f455a9ff57a1378cd4a1ddaf71e6d279d305b34663b96fa07`)
+pasa 600/600 normal, 634/634 GPU real y los cuatro contratos independientes
+de FINISH/texturas; CI del mismo código verde. Repetición del juego pendiente.
+
+Los controles anteriores con `GOW_FAST_BOOT=0` incluían sondas antiguas de
+animación/flash-ready: el registro de overrides comprobaba presencia aunque
+el atajo exigía `1`. El ajuste posterior de `src/` exige `1` también para
+registrarlas. Recompilar rápidamente sobre el runtime completo de 99 y
+anotar otro hash; verificar que no aparezcan `[gow-animation]` ni
+`[gow-flash-ready]` cuando no hay diagnóstico explícito de animación/rutas.
+Conservar los resultados anteriores con esa limitación, sin usarlos como FPS.

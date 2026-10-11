@@ -7,9 +7,9 @@ La comparación visual alineada y los controles con hilos siguen pendientes:
 #51 continúa en borrador. Los apartados siguientes conservan la investigación;
 la matriz actual se registra al final.
 
-Se prepara después una cadena de 99 con ventana opcional del registro:
-la validación de 98 no acredita ese nuevo runner hasta terminar su
-compilación completa y controles propios.
+La cadena posterior de 99 con ventana opcional del registro ya completa
+compilación y controles nativos propios. Falta repetir el juego con la nueva
+ventana y comprobar visualmente la presentación; resultados al final.
 
 El cuadro viejo alternado con FINISH asíncrono y el encuadre incorrecto ya
 presente antes de la copia final del framebuffer requieren controles separados.
@@ -549,3 +549,31 @@ nativa completa. 14 pruebas del lanzador y 17 del inspector pasan; configuració
 0 errores/4 avisos, sintaxis 23 scripts/0 errores incluyendo los privados,
 cadena 98 aplicada en orden y nuevo parche aplicado en árbol independiente.
 La cadena 99 requiere compilación completa, suite/CI y repetición funcional.
+
+## Validación nativa de 99 y aislamiento de las sondas (2026-10-11)
+
+Compilación completa desde `3dbac1a442add16518b0504975bfa715f1b32dc4`,
+99 parches, salida 0, 1.005,59 s. VU1 intérprete, Release optimizado con
+símbolos privados y tres tareas. Runner congelado SHA-256:
+`cf063d2f03a1a78f455a9ff57a1378cd4a1ddaf71e6d279d305b34663b96fa07`.
+[CI del mismo código correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38152876084).
+Windows: 600/600 normal y 634/634 GPU real; comparador sin fallos conocidos.
+FINISH/lectura y FINISH/textura adquirida pasan `default` y `async`, cada
+modo en proceso nuevo. El último compara 16 texturas por modo, todas sus
+filas y metadatos contra CPU, incluyendo reutilización de las ocho ranuras.
+Estas pruebas no acreditan los píxeles ni la estabilidad del juego.
+
+Se detecta además que la condición de instalación de los overrides de
+animación comprobaba presencia de `GOW_FAST_BOOT`, aunque el atajo propiamente
+dicho ya exigía valor `1`. Por ello las pasadas anteriores con valor `0`
+incluían `[gow-animation]` y `[gow-flash-ready]`, aun sin activar el atajo.
+Se conserva esa limitación en sus resultados. El cambio en `src/` exige
+valor exacto `1` para instalar esas sondas por fast boot; los diagnósticos
+explícitos `GOW_PATH_DIAG`/`GOW_ANM_DIAG` conservan su activación existente.
+No cambia las funciones originales cuando las sondas están desactivadas.
+
+El runner congelado anterior no contiene este último ajuste de overrides.
+Recompilar solo `src/` sobre la cadena 99 completa, registrar otra identidad,
+y verificar ausencia de esas etiquetas con `GOW_FAST_BOOT=0` durante la
+repetición funcional. Mantener #51 borrador hasta completar los controles
+requeridos y comprobar CI del HEAD final; cámara y alternancia siguen abiertas.

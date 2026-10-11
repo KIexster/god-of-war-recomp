@@ -3985,3 +3985,28 @@ configuración/sintaxis correctas, nueva aplicación independiente sobre los
 98 anteriores. Cadena 99 pendiente de compilación Windows completa,
 suite nativa/CI y repetición del juego con ventana. No se atribuye el nuevo
 parche al ejecutable existente ni se declara resuelto encuadre/alternancia.
+
+## Cadena 99 nativa completa y fast boot desactivado (2026-10-11)
+
+Código `3dbac1a442add16518b0504975bfa715f1b32dc4`: compilación Windows
+completa, 99 parches, salida 0 en 1.005,59 s; VU1 intérprete, Release
+optimizado/símbolos privados/tres tareas. Runner SHA-256
+`cf063d2f03a1a78f455a9ff57a1378cd4a1ddaf71e6d279d305b34663b96fa07`.
+600/600 normal y 634/634 GPU real correctas; cuatro controles separados
+FINISH/lectura y FINISH/textura adquirida `default|async`, todos salida 0.
+[CI del mismo HEAD correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38152876084).
+La ventana diagnóstica ya está en este ejecutable; falta repetir el juego.
+
+Revisión de overrides: `GOW_FAST_BOOT=0` no activa el atajo, pero instalaba
+las sondas por mera presencia y emitía animación/flash-ready en los controles
+anteriores. Se corrige solo su condición de instalación para exigir `1`,
+manteniendo los diagnósticos explícitos y llamadas originales. No es una
+corrección de cámara ni una medición de FPS. El runner anterior no incluye
+este cambio de `src/`: necesita recompilación rápida privada, nuevo commit/hash
+y control que compruebe la ausencia de aquellas etiquetas. Opus continúa
+limpio y no se modifica su checkout; main integrado por merge.
+
+El control de Windows por Computer Use falla al conectar su pipe nativo
+(archivo ausente); importación del módulo correcta, dos consultas ligeras
+fallidas, ninguna entrada enviada. CLI/compilación/pruebas disponibles.
+No se utiliza ese fallo como prueba visual ni se atribuye al juego.
