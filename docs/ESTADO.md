@@ -4466,3 +4466,17 @@ No usar aquellos productos correctos para descartar el cálculo de la pose
 señalada. Además del control tardío en marcha, recoger otra ventana de sonda
 y captura desde 1500; todavía falta identificar el modelo y una referencia
 PCSX2 alineada para localizar la alteración.
+
+El control analógico prolongado termina a 540,05 s por límite, estado 11
+desde 132,06 s hasta 536,28 s, tarjeta procedural intacta y sin firmas
+buscadas de error. 78 registros de paquete, 43 con stick no neutral: las
+cuatro direcciones se devuelven por libpad2, con botones de ataque combinados.
+No hay minimización; el primer plano cambia seis veces y las entradas reales
+están excluidas por el modo solo guion. **No se obtienen muestras de skinning,
+adquisiciones registradas ni PNG desde 3000**: no prueba movimiento visible,
+una pose tardía correcta ni la causa de la ausencia de registros. Se conserva
+ese resultado y no se cuenta como validación visual de la ventana.
+
+Nueva pasada desde 1500 en curso, con el mismo runner y el guion de nueve
+pulsaciones de menú, sin movimientos/ataques añadidos, para observar matrices
+en la ventana de la pose señalada. Sigue sin referencia PCSX2 alineada.
