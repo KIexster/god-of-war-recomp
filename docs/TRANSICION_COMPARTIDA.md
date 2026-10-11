@@ -1,5 +1,12 @@
 # Diagnóstico de la transición con presentación compartida
 
+Estado actual, 2026-10-11: compilación completa de 98 parches, suite Windows
+normal/GPU y matriz aislada de cuatro controles terminadas. Count #59 está
+fusionada en main; se supera la espera síncrona compartida en la nueva pasada.
+La comparación visual alineada y los controles con hilos siguen pendientes:
+#51 continúa en borrador. Los apartados siguientes conservan la investigación;
+la matriz actual se registra al final.
+
 El cuadro viejo alternado con FINISH asíncrono y el encuadre incorrecto ya
 presente antes de la copia final del framebuffer requieren controles separados.
 Este diagnóstico observa la textura que adquiere el host; no reconstruye una
@@ -464,3 +471,40 @@ tarjeta inicial, hilos apagados y diagnósticos del protocolo. Solo una
 partida a la vez y sin compilación; registrar también minimización y capturas.
 La suite nativa y ambos controles FINISH deben completar antes. No trasladar
 el éxito de CI/compilación a la transición, cámara, píxeles del juego o FPS.
+
+## Matriz aislada completa con Count (2026-10-11)
+
+Mismo runner de 98, código `f36936e067aa283e4567e3b16700cfe4e546b629`,
+SHA-256 `4693c62c14919c5bd400aa55b8da50a0ab5f5d281d3d20e7b02624aeaa5c6663`.
+Guion exclusivo, tarjetas procedurales privadas iguales, VU1 intérprete,
+hilos VU1/frente GS apagados y hash/diagnóstico del protocolo. Ninguna
+compilación, otra partida o emulador simultáneos en estas cuatro pasadas.
+
+| FINISH / presentación | Duración real | Primer informe 11 | Último estado | Adquisiciones | A–B–A |
+|---|---|---|---|---|---|
+| Síncrono / compartida | 360,08 s | 145,14 s | 11 | 1.910 | 25 |
+| Asíncrono / compartida | 360,04 s | 116,40 s | 11 | 2.325 | 140 |
+| Síncrono / RAM | 360,04 s | 126,41 s | 11 | — | — |
+| Asíncrono / RAM | 360,05 s | 121,31 s | 11 | — | — |
+
+Todas terminan deliberadamente por límite (proceso 1/lanzador 0), tarjetas
+intactas, sin firmas buscadas de error. Ventanas visibles y nunca observadas
+minimizadas. RAM síncrona gana primer plano desde ~21 s; RAM asíncrona desde
+~41 s. Una captura propia de cada RAM permite revisar enemigos o HUD/Kratos;
+no identifica por sí sola un cuadro GS ni lo alinea con PCSX2, y perturba
+el instante capturado. No utilizar los tiempos como FPS.
+
+En las dos compartidas, cero regresiones de secuencia/render, metadatos
+contradictorios o hashes desconocidos; ninguno de los A–B–A en los tramos
+del último estado 4/11. Todas las fuentes son CRTC, `preferred=0`, y solo
+cambia la dimensión inicial 1×1 → 512×448. Máxima distancia de ticks 34
+(síncrona, antes del primer informe del mando) y 3 (asíncrona); máximo 1
+en sus tramos 11. El registro omite retenciones y tiene cupo; ausencia de
+patrones no certifica ausencia de imagen antigua o igualdad de píxeles.
+
+#59 se fusiona en `cee659a` tras [CI del HEAD final `ab89804` correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38139636066).
+#51 integra main mediante merge, conservando el código del runner: comprobado
+diff vacío de parches/script/src/config frente a `f36936e`. La espera concreta
+de 96/97 se supera; cámara, alternancia visible y estabilidad con hilos siguen
+abiertas. Se inicia después, aislada, asíncrona/compartida con solo VU1 en hilo;
+el frente GS requiere VU1 en hilo y se evalúa en otra pasada posterior.

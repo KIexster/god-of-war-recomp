@@ -3903,3 +3903,31 @@ global EE, wrap, escritura/reset de base, extensión de signo y efecto con
 destino $zero; sin modificar FINISH/fences ni el checkout de Opus.
 El CI del último HEAD documental debe pasar antes de fusionar este tema.
 La validación de cámara/alternancia y los hilos permanecen en #51.
+
+## Cierre de la matriz aislada de 98 y publicación Count (2026-10-11)
+
+Se completan las dos RAM con el mismo runner `f36936e`, SHA-256
+`4693c62c14919c5bd400aa55b8da50a0ab5f5d281d3d20e7b02624aeaa5c6663`:
+síncrona 360,04 s, primer informe 11 a 126,41 s; asíncrona 360,05 s,
+primer 11 a 121,31 s. Último estado 11 en ambas, salida deliberada por
+límite (proceso 1/lanzador 0), tarjetas intactas y ninguna firma buscada
+de error. No minimizadas; primer plano desde ~21/~41 s respectivamente.
+Una captura propia de cada RAM muestra escena/enemigos o HUD/Kratos en
+los muelles, sin alineación PCSX2/cuadro GS y con perturbación de captura.
+
+La matriz nueva de cuatro casos termina sin solapar juegos/compilación;
+las dos compartidas alcanzaron 11 a 145,14/116,40 s. Se supera la espera
+síncrona compartida de las cadenas 96/97 con el contador actualizado. Esto
+no equivale a declarar cámara correcta, ausencia de alternancia o FPS mejores.
+Matriz y límites en `TRANSICION_COMPARTIDA.md`; los hashes no certifican
+píxeles iguales y no registran retenciones. Se inicia VU1 en hilo por separado,
+todavía con intérprete y hash/diagnóstico: control funcional, no benchmark.
+
+[PR #59](https://github.com/KIexster/god-of-war-recomp/pull/59) revisada y
+fusionada por merge en `cee659a733be0ae9db4764ad99b4e570e9af7849`, tras
+[CI completo del HEAD final `ab89804`](https://github.com/KIexster/god-of-war-recomp/actions/runs/38139636066).
+#51 y #58 integran ese main por merge conservando ambos registros; orden
+Count → direcciones GS → diagnóstico. Verificado: los 97 parches de #58
+coinciden en orden/contenido con el prefijo compilado de #51, y la cadena 98
+de #51 sigue idéntica al código del runner. No se modificó Opus. #51 sigue
+borrador por comparación visual y hilos pendientes; comprobar CI de cada HEAD.

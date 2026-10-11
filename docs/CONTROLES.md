@@ -646,3 +646,18 @@ escena y posteriormente HUD/Kratos/enemigo, sin comparación alineada.
 inconsistencias ni hash desconocido; distancia máxima 34 antes del primer
 informe, 1 en los tramos 4/11. Asíncrona/compartida se repite después, sin
 solapar instancias. No presentar esto como benchmark o solución del encuadre.
+
+La matriz aislada de 98 queda completa: las cuatro combinaciones llegan al
+informe 11, incluidos ambos controles RAM (126,41/121,31 s) y la compartida
+asíncrona (116,40 s). Cada control dura 360 s y termina por límite, tarjetas
+intactas y sin firmas buscadas de error; ninguno minimizado o solapado. #59
+fusionada con CI final verde. Los tiempos y capturas privadas no prueban FPS,
+fidelidad de cámara ni ausencia de alternancia; detalles de cada caso en
+`TRANSICION_COMPARTIDA.md` y `ESTADO.md`.
+
+Tras la matriz, evaluar `--vu1-thread 1 --gs-front 0` en una pasada nueva
+con etiqueta distinta. El frente GS requiere VU1 en hilo: su control posterior
+usa `--vu1-thread 1 --gs-front 1`. No atribuir a GS aislado lo observado en
+esa combinación ni usar estos controles con hash/diagnóstico como benchmarks.
+Conservar runner/manifiesto/entradas/tarjeta y verificar que la pasada anterior
+terminó antes de iniciar otra; no detener procesos de otros colaboradores.
