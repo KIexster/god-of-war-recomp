@@ -3193,3 +3193,8 @@ las lecturas y repetición con el juego. No se modifica FINISH ni fences, no se
 afirma fidelidad de cámara, estabilidad general o FPS, ni se implementa aquí
 la interrupción de COP0.Compare. Referencia semántica del contador:
 [PCSX2 COP0.cpp](https://github.com/PCSX2/pcsx2/blob/master/pcsx2/COP0.cpp).
+
+Primer CI negativo `e7e8914`/38137005221: falla al compilar la nueva prueba
+por faltar `ps2recomp/types.h` (Instruction/Symbol/Section incompletos).
+Se añade la cabecera y se repite. Ese ensayo no acredita regresiones de
+comportamiento; el control negativo debe llegar a ejecutar la suite.

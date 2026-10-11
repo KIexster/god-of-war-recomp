@@ -70,7 +70,7 @@ index 5ef31c4..6bb6857 100644
      m_stopRequested.store(false, std::memory_order_release);
      m_checkpointPending.store(false, std::memory_order_release);
 diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
-index f5d72b6..1f8157f 100644
+index f5d72b6..c56778e 100644
 --- a/ps2xRuntime/src/lib/ps2_runtime.cpp
 +++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
 @@ -2324,6 +2324,22 @@ bool PS2Runtime::isStopRequested() const
@@ -81,7 +81,7 @@ index f5d72b6..1f8157f 100644
 +// Las lecturas seguidas en un bloque avanzan al menos uno; no usar reloj de pared.
 +uint32_t PS2Runtime::readCop0Count(R5900Context *context) noexcept
 +{
-+    // GOW-Port: CONTROL NEGATIVO; reproducir la lectura inmóvil previa.
++    // GOW-Port: CONTROL NEGATIVO; lectura inmóvil como antes del arreglo.
 +    if (context) return context->cop0_count;
 +    return m_cop0Count;
 +}
@@ -130,16 +130,17 @@ index 239042e..4aedbae 100644
      register_ps2_vu1_tests();
 diff --git a/ps2xTest/src/ps2_cop0_count_tests.cpp b/ps2xTest/src/ps2_cop0_count_tests.cpp
 new file mode 100644
-index 0000000..d25e6e2
+index 0000000..95e67eb
 --- /dev/null
 +++ b/ps2xTest/src/ps2_cop0_count_tests.cpp
-@@ -0,0 +1,85 @@
+@@ -0,0 +1,86 @@
 +// GOW-Port: Count avanza sin esperas host y es compartido entre contextos EE.
 +#include "MiniTest.h"
 +#include "ps2_runtime.h"
 +#include "runtime/ee_scheduler.h"
 +#include "ps2recomp/code_generator.h"
 +#include "ps2recomp/instructions.h"
++#include "ps2recomp/types.h"
 +#include <string>
 +#include <vector>
 +
