@@ -4174,3 +4174,28 @@ no cubre toda la pasada. Encuadre/FPS/equivalencia con PCSX2 no acreditados.
 [CI `e3678cb` verde](https://github.com/KIexster/god-of-war-recomp/actions/runs/38160245742).
 Otra pasada aislada con ambos hilos está en curso; no usarla aún como validación.
 Se conservan las salidas anticipadas anteriores y sus causas pendientes.
+
+## Ambos hilos de 100 completos; diagnóstico listo para revisión final (2026-10-11)
+
+Mismo runner `383c6b6`/SHA-256
+`5f3b9c29dad7797e7edaa17585254eccaadd14238a834d15b69101c28895c74f`,
+asíncrona/compartida, VU1+frente GS en hilo, ventana desde 6000: 360,05 s
+completos por límite, primer informe 11 a 80,92 s y último 11 a 357,49 s.
+Tarjeta intacta, sin firmas buscadas de error ni sondas antiguas; ventana
+visible/no minimizada/sin primer plano según monitor, sin captura propia.
+
+4.096 adquisiciones de tramo 11, todas SMODE2=2227921 (`&3=1`, campos),
+512×448/fuente CRTC/hash válido. 3.542 A–B–A: todos alternan paridad y tienen
+modo de campos en las tres texturas. Sin regresiones/inconsistencias/cambios
+de dimensión; distancia de ticks 0..1. La salida anticipada de 98 no se
+reproduce aquí, pero su causa y la estabilidad prolongada siguen pendientes.
+
+Las tres pasadas de 100, compilación completa, suite normal/GPU, negativo
+significativo restaurado y cuatro contratos cierran la validación funcional
+de la instrumentación de #51. [CI `bae5d74` verde](https://github.com/KIexster/god-of-war-recomp/actions/runs/38160854972).
+Revisión manual del cambio y CI del HEAD final preceden a marcarla lista y
+fusionarla. Las referencias anteriores a borrador por comparación visual no
+se convierten en una afirmación de fidelidad: #51 solo diagnostica; no corrige
+el encuadre ni demuestra ausencia de contenido antiguo. Detalles en
+TRANSICION_COMPARTIDA.md. Siguiente tema: captura explícita y acotada de la
+textura adquirida para comparar campos; conservar privados los píxeles.

@@ -728,3 +728,14 @@ la fuente positiva y recompilar, GPU vuelve a 635/635. La prueba de cuadro
 registra CPU 64×128/shared 64×64; conserva explícitamente esa diferencia abierta.
 Controles del juego con este runner y modo adquirido aún pendientes; detalles
 e identidad del ejecutable en `TRANSICION_COMPARTIDA.md`.
+
+Las tres pasadas de 100 ya completaron 360 s por límite con tarjeta intacta:
+sin hilos, VU1 solo y VU1+frente GS. Las ventanas tardías tienen 4.096
+adquisiciones cada una, todas con SMODE2=2227921 (`&3=1`). Sus 3.562 y 3.542
+A–B–A alternan paridad y conservan modo de campos; sin regresiones de
+secuencia/render ni metadatos inconsistentes. Validan que el diagnóstico
+acotado funciona durante partida, no la causa visual, estabilidad prolongada,
+equivalencia con PCSX2 o FPS. Identidad del runner, tiempos y límites en
+`TRANSICION_COMPARTIDA.md`. Para comparar píxeles debe usarse una captura
+explícita de la reserva adquirida en otra ejecución; no dar por equivalente
+una captura de VRAM latched ni introducir su coste en el registro de metadatos.

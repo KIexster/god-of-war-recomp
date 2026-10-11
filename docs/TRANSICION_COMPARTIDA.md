@@ -821,3 +821,39 @@ intervalo de seis minutos. No se usa como benchmark ni comparación con Opus.
 [CI del HEAD documental `e3678cb` correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38160245742).
 Se inicia después otra pasada aislada VU1+frente GS, ventana desde 6000;
 su resultado queda pendiente. Encuadre y comparación visual siguen abiertos.
+
+## Control de 100 con ambos hilos y cierre del diagnóstico (2026-10-11)
+
+Mismo runner `383c6b6`/SHA-256
+`5f3b9c29dad7797e7edaa17585254eccaadd14238a834d15b69101c28895c74f`,
+asíncrona/compartida, VU1 y frente GS en hilo, ventana desde 6000. Completa
+360,05 s por límite (proceso 1/lanzador 0), primer informe 11 a 80,92 s y
+último 11 a 357,49 s. Tarjeta intacta; ninguna firma buscada de error ni
+sondas de animación/flash-ready. Ventana visible, nunca minimizada/sin primer
+plano según el monitor. No hay captura propia ni solapamientos.
+
+4.096 adquisiciones bajo último informe 11, todas SMODE2=2227921 (`&3=1`),
+512×448, fuente CRTC/hash válido. Primera secuencia/render 5958,
+hostTick=6000/frameTick=5999; última 10053, hostTick=10119/frameTick=10118.
+Distancia de ticks 0..1; cero regresiones/inconsistencias/cambios de dimensión.
+3.542 A–B–A: todos alternan paridad y registran campos en las tres muestras.
+No se reproduce la salida anticipada de 98, pero su causa permanece abierta;
+dos repeticiones de seis minutos no prueban estabilidad prolongada.
+
+Las tres pasadas de 100 completan el control funcional **del diagnóstico**:
+sin hilos/ventana 0, VU1 solo/ventana 6000 y ambos/ventana 6000. El registro
+queda acotado, conserva metadatos de la textura adquirida y funciona en partida.
+La compilación completa y suite nativa/negativo/contratos constan arriba.
+[CI del resultado VU1 `bae5d74` correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38160854972).
+Revisar también el CI del HEAD final antes de publicar #51 como lista/fusionarla.
+
+Se precisa el criterio de cierre: #51 incorpora instrumentación opcional,
+no una corrección visual. Las entradas anteriores que mantenían borrador por
+comparación visual describían el trabajo pendiente entonces; la ausencia de
+esa comparación sigue limitando las conclusiones sobre el juego y no invalida
+el metadato probado con GPU real. Encuadre, contenido antiguo y equivalencia
+con PCSX2 permanecen pendientes, sin declararlos resueltos por este cierre.
+La siguiente comprobación requiere unos pocos píxeles de la textura realmente
+adquirida, con metadatos de esa reserva, en una captura explícita separada:
+la VRAM latched no basta y añadirla no debe cambiar silenciosamente el coste
+del diagnóstico de #51. No convertir estas pasadas en mediciones de FPS.
