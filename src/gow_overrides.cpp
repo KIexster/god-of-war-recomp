@@ -162,6 +162,18 @@ namespace
                 }
                 return presses;
             }();
+            // GOW-Port: GOW_PAD_SOLO_GUION=1 ignora el mando y el teclado reales durante la prueba (solo cuenta el
+            // guion): tocar el PC mientras se mide cambiaba el camino del menú y la escena medida.
+            static const bool scriptOnly = [] {
+                const char *value = std::getenv("GOW_PAD_SOLO_GUION");
+                return value && std::strcmp(value, "1") == 0;
+            }();
+            if (scriptOnly)
+            {
+                state[2] = state[3] = 0xFFu;
+                state[4] = state[5] = state[6] = state[7] = 128u;
+                std::memset(state + 8, 0, sizeof(state) - 8u);
+            }
             if (!script.empty())
             {
                 for (const ScriptedPress &press : script)

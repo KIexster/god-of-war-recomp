@@ -3096,3 +3096,76 @@ se quedaba en un bucle de espera infinito al arrancar. `compilar.ps1` los borra 
 
 Siguiente: bloques con temporización estática (comprobar las esperas una vez a la entrada del bloque en lugar
 de en cada par), vida de los flags MAC entre bloques y la copia de PATH1 por tramos.
+
+## VU1, ronda 3: escrituras por par fijas, especiales con SSE y más (2026-10-11)
+
+El muestreador tiene un modo `linea` (sexto argumento): línea de tiempo por hilo de las primeras 1500 muestras
+(`#` ocupado, `.` esperando, una letra por función elegida). En los muelles muestra que el EE y el hilo de VU1
+esperan **a la vez** al VBLANK: el juego va sincronizado con la vertical y los fps salen cuantizados (60/30/20).
+Un cuadro cuyo trabajo de VU1 no cabe en dos VBLANK (33,3 ms) se va a tres; la mezcla de cuadros de 2 y 3 da
+los 24–25 fps. Un diagnóstico temporal en `syncVu1Worker` confirmó que el EE nunca espera allí a la VU1 en los
+muelles: la cadena EE → VU1 se serializa a través del VBLANK, no de esa sincronización.
+
+`GOW_PAD_SOLO_GUION=1` (lo pone `probar_rendimiento.ps1`) ignora el mando y el teclado reales: tocar el ratón o
+un mando durante una medición movía a Kratos o cambiaba la partida del menú, y la escena medida no era la misma.
+
+Cambios, todos exactos (huellas por lanzamiento e imágenes idénticas en compilado e intérprete):
+
+- **Escrituras fijas por par** (`ps2recomp-vu1-static-stores.patch` y el generador). Cada par restablecía
+  VF0 y VI0 y borraba la copia de VI para saltos. Ahora se decide al compilar: VF0 solo si la instrucción
+  superior o la inferior pueden escribirlo (FMAC con fd = 0, ITOF/FTOI/ABS con ft = 0, LQ/MOVE/MR32/LQI/MFIR
+  con ft = 0 o una inferior que va a `execLower`), VI0 solo tras `execLower` (las inferiores en línea
+  comprueban `it != 0`), y la copia de VI solo en el primer par del bloque o tras un par que la active
+  (`clearBranchBackup` en el struct R). Banco: −5 % / −3,4 %.
+- **ITOF/FTOI/ABS con SSE y SQ con DEST parcial en registros** (`ps2recomp-vu1-simd-specials.patch`). Los dos
+  puntos calientes de los bucles de transformación eran reenvíos store→load fallidos: FTOI se calculaba carril
+  a carril en la pila (en doble) y luego se leía en 16 bytes, y SQ.xyz copiaba a la pila, cambiaba carriles y
+  volvía a leer. FTOI con `cvttps2dq`: x·2ⁿ en float es exacto salvo desbordamiento y todo valor ≥ 2³¹ satura
+  a INT32_MAX (los float cerca de 2³¹ son múltiplos de 128, así que "≥ INT32_MAX" equivale a "≥ 2³¹"); por
+  debajo de −2³¹ da INT32_MIN como `floatToInt`. Banco: −2,9 % / −1,9 %.
+- **Más inferiores en línea** (`ps2recomp-vu1-lower-specials.patch`): FCAND, FMEQ, FMAND, FCGET, BAL, JR y
+  JALR iban a `execLower` (el 85 % de las llamadas que quedaban).
+- **`advanceTo` por eventos** (`ps2recomp-vu1-advance-events.patch`): las esperas largas (DIV, XGKICK)
+  avanzaban ciclo a ciclo; ahora saltan al siguiente evento (confirmación de una cola o de PATH1).
+- **Copia de PATH1 por tramos** (`ps2recomp-vu1-xgkick-bulk.patch`): con crédito de ciclos de sobra, los qwords
+  de datos de un paquete se copian con un `memcpy` (respetando la vuelta al principio de la memoria de datos).
+- **UNPACK enmascarado de VIF1 con SSE4.1** (`ps2recomp-vif1-unpack-mask-sse.patch`): la máscara, STMOD y
+  ROW/COL se aplican a los cuatro carriles a la vez en lugar de palabra a palabra.
+- **Despacho**: cada dirección recuerda el último bloque que coincidió (`g_hot`) y `run` lo llama sin pasar
+  por la función de despacho.
+
+**Comprobado:** huellas e imágenes de `vif_pcsx2_inicio2` y `vif_port_480s` idénticas (compilado e
+intérprete), suite 591/591, `probar_vu1_fmac` (100.800 + 2.016 casos) y `probar_vu1_compilada`, que tiene un
+programa procedural nuevo con ITOF/FTOI/ABS, SQ con DEST parcial, FCAND/FCGET/FMAND/FMEQ y BAL/JR/JALR con
+valores límite (±0, subnormales, ±2³¹ y vecinos, máximos, Inf/NaN, enteros límite), FTZ/DAZ y cortes por
+presupuesto: 936 casos exactos.
+
+**Banco:** ~−15 % por cuadro respecto a la ronda 2 en las dos grabaciones (las cifras absolutas varían entre
+sesiones; los A/B se hacen siempre alternando las dos versiones). **Juego** (muelles, mismas condiciones):
+
+| | Hilo de VU1 ocupado | fps | VU1 por cuadro |
+|---|---|---|---|
+| main | 90,8 % | 20,0 | ~45 ms |
+| ronda 1 (#54) | 78,3 % | 20,5 | ~38 ms |
+| ronda 2 (#55) | 82,3 % | 24,0 | ~34 ms |
+| ronda 3 | 75,4 % | 25,2 | ~30 ms |
+
+Para 30 fps estables el trabajo de VU1 de cada cuadro tiene que caber en dos VBLANK junto con la parte que
+espera al EE: faltan ~3 ms (~10 %).
+
+**Descartados:**
+- *Tabla para los bits pegajosos de las FMAC con flags muertos*: sin ganancia medible.
+- *Agrupar los ciclos del IOP*: sin ganancia y con tirones en las cargas (ver la ronda 2).
+
+**Siguiente (analizado, sin hacer):**
+- *Operandos ya normalizados.* Toda FMAC (también MAX/MINI), ITOF y ABS deja un valor normalizado, y para esos
+  valores `normalize4` no cambia nada: dentro de un bloque se puede saber qué carriles de cada VF/ACC los
+  escribió una de esas instrucciones y saltarse la normalización. Pero los bucles de transformación están
+  segmentados (cada iteración usa lo que calculó la anterior, en otro bloque), así que dentro del bloque solo
+  se ahorra el ACC de las cadenas MADDA (2 de ~11 normalizaciones en el bucle más caliente).
+- *Flags MAC muertos entre bloques.* En el bucle más caliente (dos bloques de 9 pares que saltan uno al otro),
+  las 3 FMAC del final de cada bloque guardan flags que la primera FMAC del otro bloque pisa sin que nadie los
+  lea. Hace falta comprobar en tiempo de ejecución el código de los sucesores (no está en las palabras del
+  bloque) y cuidar los cortes por presupuesto entre los dos bloques, que dejarían visibles otros flags que el
+  intérprete.
+- *Temporización estática* de los bloques (comprobar las esperas a la entrada en lugar de en cada par).

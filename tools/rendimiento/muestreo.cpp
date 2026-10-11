@@ -10,6 +10,9 @@
 //   muestreo.exe ps2EntryRunner.exe <espera_s> <duracion_s> [intervalo_ms [funcion [pilas]]] > perfil.txt
 // Con "pilas", cada muestra guarda también la pila de llamadas (StackWalk64, más lento) y, para las muestras
 // dentro de <funcion>, se imprimen las cadenas de llamadores más frecuentes.
+// Con "linea", se imprime además una línea de tiempo de los hilos más ocupados durante las primeras 1500
+// muestras: '#' ocupado, '.' esperando y una letra si la muestra cae en una función de <funcion> (A, B, C... por
+// orden de los textos separados por '|').
 #define NOMINMAX
 #include <windows.h>
 #include <dbghelp.h>
@@ -113,6 +116,8 @@ int wmain(int argc, wchar_t **argv)
             detail.push_back(static_cast<char>(*c));
     const int interval = argc > 4 ? std::max(1, _wtoi(argv[4])) : 1;
     const bool withStacks = argc > 6 && _wcsicmp(argv[6], L"pilas") == 0;
+    const bool timeline = argc > 6 && _wcsicmp(argv[6], L"linea") == 0;
+    std::vector<std::vector<std::pair<DWORD, uint64_t>>> lineSamples;
     DWORD pid = 0;
     for (int i = 0; i < 600 && !pid; ++i)
     {
@@ -143,6 +148,8 @@ int wmain(int argc, wchar_t **argv)
                 if (!threads.count(tid))
                     threads[tid].handle =
                         OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, tid);
+        if (timeline && lineSamples.size() < 1500u)
+            lineSamples.emplace_back();
         for (auto &[tid, t] : threads)
         {
             if (!t.handle || SuspendThread(t.handle) == DWORD(-1))
@@ -153,6 +160,8 @@ int wmain(int argc, wchar_t **argv)
             {
                 ++t.samples;
                 ++t.rips[ctx.Rip];
+                if (timeline && !lineSamples.empty() && lineSamples.size() <= 1500u && ticks < 1500u)
+                    lineSamples.back().push_back({tid, ctx.Rip});
                 if (withStacks)
                 {
                     std::vector<uint64_t> stack{ctx.Rip};
@@ -323,6 +332,43 @@ int wmain(int argc, wchar_t **argv)
         }
     }
     std::sort(busyByThread.begin(), busyByThread.end(), [](const auto &a, const auto &b) { return a.second > b.second; });
+    if (timeline)
+    {
+        // Patrones de <funcion> en orden: A, B, C...
+        std::vector<std::string> patterns;
+        for (size_t start = 0; start <= detail.size();)
+        {
+            const size_t bar = detail.find('|', start);
+            patterns.push_back(detail.substr(start, bar == std::string::npos ? std::string::npos : bar - start));
+            if (bar == std::string::npos)
+                break;
+            start = bar + 1;
+        }
+        std::printf("\nLinea de tiempo (1 caracter = 1 muestra):\n");
+        for (size_t k = 0; k < busyByThread.size() && k < 4u; ++k)
+        {
+            const DWORD tid = static_cast<DWORD>(std::strtoul(busyByThread[k].first.c_str(), nullptr, 10));
+            std::string line;
+            for (const auto &tick : lineSamples)
+            {
+                char c = ' ';
+                for (const auto &[sampleTid, rip] : tick)
+                {
+                    if (sampleTid != tid)
+                        continue;
+                    const std::string &fn = name(rip);
+                    c = isWait(fn) ? '.' : '#';
+                    for (size_t pi = 0; pi < patterns.size(); ++pi)
+                        if (!patterns[pi].empty() && fn.find(patterns[pi]) != std::string::npos)
+                            c = static_cast<char>('A' + pi);
+                }
+                line.push_back(c);
+            }
+            std::printf("%-24s ", busyByThread[k].first.c_str());
+            for (size_t i = 0; i < line.size(); i += 150)
+                std::printf("%s%s\n", i ? "                         " : "", line.substr(i, 150).c_str());
+        }
+    }
     std::printf("\nOcupacion por hilo:\n");
     for (const auto &[label, busy] : busyByThread)
         std::printf("  %5.1f %%  %s\n", busy, label.c_str());
