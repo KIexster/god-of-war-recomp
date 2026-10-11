@@ -3359,3 +3359,9 @@ El CI de `e412a1f9b0579ed3dced7083ac3d7aaab140583e` pasa ambos controles,
 con los 96 parches y las once pruebas del inspector. La ejecución anterior
 del merge `cce2d68` fue cancelada por el nuevo push; no se declara un resultado
 propio para ella. El control Windows del juego con esta cadena sigue pendiente.
+
+La revisión del lanzador detecta que un SHA-256 válido escrito en mayúsculas
+era rechazado frente al digest Python en minúsculas. Se valida el formato de
+64 cifras y se normaliza solo el texto hexadecimal, manteniendo la comparación
+de identidad. Doce pruebas Windows pasan; la nueva comprueba aceptación de
+mayúsculas y rechazo de valores ausentes, no textuales, truncados o no hexadecimales.

@@ -148,6 +148,19 @@ class TransitionControlTest(unittest.TestCase):
                 control.prepare_case(args)
             self.assertFalse(args.output_root.exists())
 
+    def test_manifest_accepts_uppercase_hashes_and_rejects_malformed_values(self):
+        with tempfile.TemporaryDirectory(prefix='gow_transition_test_') as name:
+            args = self.fixture(Path(name))
+            build = json.loads(args.build_manifest.read_text(encoding='utf-8'))
+            build['exe_sha256'] = build['exe_sha256'].upper()
+            build['elf_sha256'] = build['elf_sha256'].upper()
+            args.build_manifest.write_text(json.dumps(build), encoding='utf-8')
+            with patch.object(control, 'EXPECTED_ELF_SHA256', control.digest(args.elf)):
+                control.prepare_case(args)
+        for invalid in (None, 12, 'a'*63, 'g'*64):
+            with self.assertRaises(ValueError):
+                control.manifest_digest({'exe_sha256': invalid}, 'exe_sha256')
+
     def test_invalid_label_and_recursive_module_copy_are_rejected_before_writes(self):
         with tempfile.TemporaryDirectory(prefix='gow_transition_test_') as name:
             args = self.fixture(Path(name))

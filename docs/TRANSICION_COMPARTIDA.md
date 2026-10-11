@@ -273,10 +273,15 @@ distingue límite, solicitud de parada, interrupción y salida espontánea;
 conserva código de salida, tiempo y hashes de la tarjeta. Un cierre por límite
 o por el usuario no es una prueba de crash ni de cierre normal del juego.
 
-Once pruebas locales Windows pasan, incluida una ejecución de Python como
-hijo procedural que termina sin juego ni ventana. Las otras diez prueban
+Doce pruebas locales Windows pasan, incluida una ejecución de Python como
+hijo procedural que termina sin juego ni ventana. Las otras once prueban
 entorno, matriz, propiedad de ventana, copia de tarjetas, rechazos antes de
 escribir y parada del hijo. Se añade el control a CI; el ensayo completo
 Win32 se omite en Linux. La consulta real Win32 también se comprueba sobre
 nuestro proceso Python sin ventana. Esto valida la herramienta, no la escena.
 Su nueva matriz con el juego y la cadena de 96 parches sigue pendiente.
+
+Los hashes del manifiesto admiten mayúsculas y minúsculas, incluida la salida
+habitual de `Get-FileHash`; rechazan valores que no sean 64 cifras hexadecimales.
+Una regresión comprueba que un manifiesto equivalente en mayúsculas se acepta
+sin relajar la comparación del ejecutable o del ELF.

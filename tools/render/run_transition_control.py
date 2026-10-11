@@ -47,6 +47,13 @@ def isolated_environment(inherited, settings):
     return env
 
 
+def manifest_digest(build, field):
+    value = build.get(field)
+    if not isinstance(value, str) or not re.fullmatch('[0-9a-fA-F]{64}', value):
+        raise ValueError(f'El manifiesto requiere {field} con 64 cifras hexadecimales')
+    return value.lower()
+
+
 class WindowsApi:
     """Solo lectura; no activa ventanas, manda entradas ni captura imágenes."""
     def __init__(self):
@@ -174,9 +181,9 @@ def prepare_case(args):
     commit = build.get('commit')
     if not isinstance(commit, str) or not re.fullmatch('[0-9a-fA-F]{40}', commit):
         raise ValueError('El manifiesto debe registrar el commit completo de la compilación')
-    if digest(runner) != build.get('exe_sha256'):
+    if digest(runner) != manifest_digest(build, 'exe_sha256'):
         raise ValueError('El ejecutable no coincide con el manifiesto de compilación')
-    if digest(elf) != EXPECTED_ELF_SHA256 or build.get('elf_sha256') != EXPECTED_ELF_SHA256:
+    if digest(elf) != EXPECTED_ELF_SHA256 or manifest_digest(build, 'elf_sha256') != EXPECTED_ELF_SHA256:
         raise ValueError('El ELF no corresponde a SCUS_973.99 o al manifiesto')
     card_source = Path(args.initial_card).resolve(strict=True) if args.initial_card else None
     if card_source is not None and not card_source.is_file():
