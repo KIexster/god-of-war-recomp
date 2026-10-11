@@ -423,3 +423,28 @@ privados para localizar la espera si se repite. Mantener Release optimizado:
 `CMAKE_EXE_LINKER_FLAGS_RELEASE=/INCREMENTAL:NO /DEBUG /OPT:REF /OPT:ICF`.
 Registrar estos ajustes en el manifiesto; esa compilación no es un benchmark
 ni el mismo binario de referencia. No publicar PDB ni código/datos del juego.
+
+## Compilación y controles procedurales integrados (2026-10-11)
+
+Cadena completa de 97, código `f51cc2cb7ee981c1cb6419926d46acc217de1f86`,
+terminada con código 0. Runner SHA-256
+`ba80364535c22d728058ad98bf8182937f36c2db9ada5a11063f684c1a57add0`.
+Release/VU1 intérprete/tres tareas, con los flags optimizados y símbolos
+privados indicados arriba. Manifiesto y copia congelada en `transition97`.
+Duración aproximada del registro: 902 s; se recupera el manifiesto tras un
+error del helper posterior a la compilación, explicado en `ESTADO.md`.
+
+593/593 normal y 627/627 GPU real pasan en Windows. Los controles
+`gow_gs_finish_async_test default|async` pasan ambos contratos por separado.
+El nuevo `gow_gs_shared_finish_test default|async` adquiere y descarga
+16 texturas nuevas en cada modo; compara todas sus filas y metadatos con
+CPU, comprueba un píxel conocido independiente, alterna fuente preferida/CRTC
+y cambia 64×64 → 64×96 al reutilizar las ocho ranuras. Exige GPU y sharing
+reales; no admite fallback ni una secuencia retenida como validación.
+
+El primer ensayo con altura 48 no era comparable con el CPU, que considera
+inválidas dimensiones menores de 64. Se conserva su fallo y se corrige
+el control, sin tocar la referencia. Este target necesita Windows/WGL y
+no se ejecuta en CI Linux; no reemplaza la matriz del juego ni prueba ausencia
+de imágenes antiguas, cámara correcta o estabilidad prolongada. Tampoco
+añade readback al diagnóstico del host o calcula FPS.

@@ -3626,3 +3626,36 @@ con /O2 y PDB privados para investigar la espera. Debe registrar otro
 commit/hash/configuración; las pruebas GPU de fuente adquirida/ranuras y el
 control Windows específico de FINISH de ambos contratos siguen pendientes.
 #51 conserva borrador; no se declara corregida la transición o el encuadre.
+
+## Cadena integrada Windows y contratos FINISH con GPU (2026-10-11)
+
+Compilación completa de 97 parches terminada con código 0: código
+`f51cc2cb7ee981c1cb6419926d46acc217de1f86`, runner de 54.542.336 bytes,
+SHA-256 `ba80364535c22d728058ad98bf8182937f36c2db9ada5a11063f684c1a57add0`.
+Release optimizado con /Zi y /DEBUG, VU1 intérprete, tres tareas; unos 902 s
+entre las marcas 07:58:20 y 08:13:22 del registro. El helper privado falla
+después al guardar metadatos por ocultar sus argumentos; se conserva ese
+fallo, se corrige el helper y se recupera el manifiesto desde el registro,
+sin repetir ni atribuirle un fallo a la compilación. Flags y PDB se verifican
+y guardan solo en `E:\gowgpuprof\transition97`; no se publica el PDB.
+
+Suite nativa: **593/593 normal y 627/627 GPU real**, cero fallos conocidos.
+Incluye las regresiones nuevas de #58: selección de dirección física y
+comparación de píxeles de la textura compartida al reutilizar las ranuras.
+El control separado `gow_gs_finish_async_test` pasa `default` y `async`
+en procesos Windows nuevos: retorno, CSR, orden y lectura sincronizada.
+
+Se añade `tests/gs_shared_finish_test.cpp`: GPU/contexto compartido real,
+sin admitir fallback CPU como éxito; ambos modos pasan 16 publicaciones
+con FINISH, secuencias/ticks, fuente esperada, todas las filas comparadas
+con CPU y tamaños 64×64 → 64×96 al reutilizar las ocho ranuras. El readback
+existe solo en este control sin juego. Primer ensayo conservado: solicitaba
+64×48, que el decodificador CPU considera inválido y sustituye por su tamaño
+por defecto, mientras GPU usa 64×48. Se ajusta la premisa a alturas válidas;
+no se modifica la referencia CPU ni se presenta aquel ensayo como equivalente.
+Esa diferencia de tamaño pequeño no explica por sí sola la escena 512×448.
+
+Comienza la matriz del juego con el runner identificado de 97, inicialmente
+sin hilo VU1/frente GS. La validación procedural no acredita fidelidad de
+la escena, solución de la espera síncrona, alternancia visible ni cámara.
+#51 sigue en borrador; su revisión visual y CI del próximo HEAD siguen pendientes.

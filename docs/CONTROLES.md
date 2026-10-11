@@ -565,3 +565,30 @@ espere siempre. El CI valida ambos. Reproducir ese control específico en
 Windows, además de la suite normal/GPU, antes de informar validación asíncrona.
 El ensayo Windows adicional de toda la suite GPU asíncrona de 96 parches se
 conserva como 623/625, sin declarar éxito ni modificar las expectativas del runtime.
+
+## FINISH y píxeles compartidos en Windows (2026-10-11)
+
+Con la cadena completa de 97 parches (`f51cc2c`), pasan 593/593 normal,
+627/627 GPU real y `gow_gs_finish_async_test default|async` en procesos nuevos.
+Se añade un control con GPU/contexto WGL reales y referencia CPU:
+
+```text
+cmake --build <build-del-runtime> --target gow_gs_shared_finish_test
+<build-del-runtime>\gow_gs_shared_finish_test.exe default
+<build-del-runtime>\gow_gs_shared_finish_test.exe async
+```
+
+El build debe incluir `tools/ci/pruebas_gs.cmake`, como hace CI para los
+controles procedurales. Este target se define solo en Windows; necesita
+OpenGL 3.3 y compartir texturas, y falla si hay fallback o no llega una
+secuencia nueva. Fija FINISH y presentación directa antes de crear el backend;
+ejecutar cada modo en un proceso separado, con el entorno GOW/PS2X limpio.
+
+Ambos modos pasan: 16 FINISH/publicaciones, selección preferida/CRTC alterna,
+píxel conocido y todas las filas comparadas con CPU, ticks/secuencias y cambio
+64×64 → 64×96 al reutilizar las ocho ranuras. Solo este control descarga la
+textura adquirida; no cambia el camino normal del host. No solicitar aquí
+alturas menores de 64: el CPU las interpreta como configuración inválida.
+La comparación inicial con altura 48 se conserva como fallida y no equivalente,
+sin modificar el renderer CPU. No afirmar FPS, fidelidad del juego, cámara
+correcta o ausencia de alternancia por estas pruebas procedurales.
