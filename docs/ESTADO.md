@@ -3216,3 +3216,12 @@ El positivo `5c64a2248f52ffb09921d439137116901d638012` pasa
 procedurales completos correctos. La integración de 98 en #51, `f36936e`,
 pasa también 597/597 en CI. Se mantiene borrador hasta comprobar Windows
 y la transición con el runner recién generado; no se declara resuelta la espera.
+
+Control nativo de la integración de 98 en #51, código `f36936e`: build Windows
+completo, 898,79 s, salida 0, runner SHA-256
+`4693c62c14919c5bd400aa55b8da50a0ab5f5d281d3d20e7b02624aeaa5c6663`.
+597/597 normal y 631/631 GPU real correctas, incluidas las cuatro regresiones
+de Count. Controles separados de FINISH y de píxeles de texturas adquiridas
+pasan ambos modos. Se comprueba la integración con dos parches GS adicionales,
+no un ejecutable independiente de esta rama. La transición nueva empieza
+después de terminar compilaciones y pruebas; el efecto funcional sigue pendiente.
