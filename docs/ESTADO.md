@@ -3568,3 +3568,33 @@ Kratos y, en la posterior, HUD/enemigos. No están alineadas con PCSX2 ni
 acreditan fidelidad de cámara, jugabilidad o FPS. Capturas y registros privados.
 La matriz compartida/asíncrona está en curso; no se trasladan estos resultados
 al ejecutable de 97 parches pendiente de construcción.
+
+## Espera en la referencia compartida síncrona (2026-10-11)
+
+La segunda pasada de la referencia `de5a89a` (96 parches), FINISH síncrono y
+textura compartida, completa 360,05 s y termina deliberadamente por límite.
+El último informe del mando es estado 4 a 25,36 s del guion, con
+`levelReady=0` y `flashReady=0`; no registra estado 9 ni 11 ni nuevos informes
+del mando después. Esto acredita una espera sin progreso observado, no el
+estado exacto de RAM al terminar ni una causa demostrada en GS/VU1/IOP.
+No hay firmas buscadas de error y la tarjeta permanece intacta.
+
+El host continúa respondiendo. La ventana está visible desde ~1 s, nunca se
+observa minimizada y no recibe primer plano en esta pasada. Hasta el cupo
+de 4.096: cero retrocesos, hashes desconocidos o metadatos contradictorios;
+ticks 0..3 de distancia; todas las fuentes son CRTC en páginas
+(`preferred=0`). Un único cambio de dimensiones inicial 1×1 → 512×448.
+Hay 3.895 retornos A–B–A; 3.792 corresponden al tramo del último estado 4,
+con dos hashes alternados. Podrían ser campos par/impar de contenido estático;
+no constituyen por sí solos prueba de ranura antigua o corrupción.
+El cupo se agota alrededor de 116 s reales: no cubre el resto del control
+ni las retenciones que nunca se registran.
+
+Tras observar la espera durante varios minutos se realiza un muestreo externo
+de 5 s exclusivamente al PID propio 13840, usando `tools/perfil/muestrear.cpp`,
+que selecciona por PID. No se usa el muestreador por nombre de Opus. Las muestras
+carecen de símbolos del ejecutable y no identifican una función responsable;
+no se publican como medida de rendimiento. El muestreo suspende brevemente
+hilos y puede perturbar la ejecución; se conserva ese límite junto al registro.
+La siguiente pasada asíncrona/RAM está en curso. La espera debe repetirse con
+símbolos antes de modificar sincronización o atribuirla al arreglo de fuentes.
