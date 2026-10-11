@@ -803,7 +803,10 @@ sin reconstruir argumentos al reanudar ni forzar que termine el cálculo.
 muestras por combinación y separación mínima de 100 ms del host. No es un
 muestreo exhaustivo ni un contador de cuadros simulados. Captura entrada a3,
 f12, disposición, selección dispersa, máscara, visibilidad y umbral; por slot,
-fuente previa +0x50, paleta mundo a1 y destino real a2 posterior. El indicador
+fuente previa +0x50, paleta mundo a1 y destino real a2 posterior. También
+conserva la matriz de definición mediante el ordinal de bits activos,
+no mediante el índice del slot; índice de record +4 y padre +8 se distinguen.
+El indicador
 changed compara destino previo/posterior; no demuestra que no se escribiera
 si los bytes siguen iguales. ownerCandidate es s1 del caller, sin identificación
 confirmada de personaje. Los datos crudos quedan en logs privados.

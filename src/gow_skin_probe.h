@@ -46,7 +46,7 @@ namespace gow_skin_probe {
     struct Layout {
         bool valid=false, selectionValid=false;
         uint16_t count=0;
-        uint32_t records=0, source=0, visibility=0, definition=0, selectedCount=0;
+        uint32_t records=0, source=0, visibility=0, definition=0, selectedCount=0, matrixOffset=0;
         std::array<uint32_t,8> selection{};
     };
     inline Layout layout(const Memory &memory,uint32_t skeleton) {
@@ -57,17 +57,16 @@ namespace gow_skin_probe {
            !memory.read(skeleton,0x50u,l.source) || !memory.read(skeleton,0x54u,l.visibility) ||
            !memory.read(skeleton,0x58u,l.records) || !memory.read(skeleton,0x60u,l.definition)) return l;
         l.valid=true;
-        uint32_t offset=0;
         if(memory.read(l.definition,0x10u,l.selectedCount) &&
-           memory.read(l.definition,0xCu,offset) && offset>=32u) {
-            const auto *p=memory.at(l.definition,uint64_t(offset)-32u,32u);
+           memory.read(l.definition,0xCu,l.matrixOffset) && l.matrixOffset>=32u) {
+            const auto *p=memory.at(l.definition,uint64_t(l.matrixOffset)-32u,32u);
             if(p) { std::memcpy(l.selection.data(),p,32u); l.selectionValid=true; }
         }
         return l;
     }
     struct Slot {
         bool recordValid=false, maskValid=false, visibilityValid=false;
-        int16_t parent=0, maskIndex=0;
+        int16_t indexField=0, parent=0;
         uint32_t threshold=0, visibility=0;
         bool masked=false;
     };
@@ -77,14 +76,14 @@ namespace gow_skin_probe {
         const auto *p=memory.at(l.records,uint64_t(index)*16u,16u);
         if(p) {
             s.recordValid=true;
-            std::memcpy(&s.parent,p+4,2); std::memcpy(&s.maskIndex,p+8,2);
+            std::memcpy(&s.indexField,p+4,2); std::memcpy(&s.parent,p+8,2);
             std::memcpy(&s.threshold,p+12,4);
             // El juego indexa la máscara por signed lh; un índice negativo no se
             // convierte en lectura gigantesca o alias. Se informa como desconocido.
-            if(s.maskIndex>=0 && s.maskIndex<int(maxSlots)) {
+            if(s.parent>=0 && s.parent<int(maxSlots)) {
                 uint32_t word=0;
-                s.maskValid=memory.read(skeleton,0x64u+uint32_t(s.maskIndex/32)*4u,word);
-                s.masked=s.maskValid && ((word>>uint32_t(s.maskIndex%32)) & 1u);
+                s.maskValid=memory.read(skeleton,0x64u+uint32_t(s.parent/32)*4u,word);
+                s.masked=s.maskValid && ((word>>uint32_t(s.parent%32)) & 1u);
             }
         }
         if(l.visibility) s.visibilityValid=memory.read(l.visibility,uint64_t(index)*4u,s.visibility);
@@ -93,6 +92,14 @@ namespace gow_skin_probe {
     inline bool selected(const Layout &l,uint32_t index) {
         return l.valid && l.selectionValid && index<l.count &&
                ((l.selection[index/32u]>>(index%32u)) & 1u);
+    }
+    // Las matrices de definición siguen el orden de bits activos, no index*64.
+    // MIPS 0x137738/740 y 0x1377A8/B4 avanza el ordinal solo por selección.
+    inline bool bind(const Memory &memory,const Layout &l,uint32_t index,Matrix &matrix,uint32_t &ordinal) {
+        if(!selected(l,index) || !l.selectedCount || l.selectedCount>maxSlots) return false;
+        ordinal=0;
+        for(uint32_t i=0;i<index;++i) ordinal+=selected(l,i) ? 1u : 0u;
+        return ordinal<l.selectedCount && memory.read(l.definition,uint64_t(l.matrixOffset)+uint64_t(ordinal)*64u,matrix);
     }
     struct Timeline {
         using Clock=std::chrono::steady_clock;

@@ -38,11 +38,17 @@ bool test() {
     if(!l.valid || !l.selectionValid || l.count!=3 || l.selectedCount!=2 ||
        !selected(l,0) || selected(l,1) || !selected(l,2) || selected(l,3)) return false;
     const auto s=slot(mem,sk,l,1);
-    if(!s.recordValid || s.parent!=0 || s.maskIndex!=33 || !s.maskValid || !s.masked ||
+    if(!s.recordValid || s.indexField!=0 || s.parent!=33 || !s.maskValid || !s.masked ||
        !s.visibilityValid || s.visibility!=1 || s.threshold!=0x3F800001u) return false;
     if(slot(mem,sk,l,3).recordValid || slot(mem,sk,l,2).masked) return false;
     put<int16_t>(ram,records+8,-1); if(slot(mem,sk,l,0).maskValid) return false;
     put<int16_t>(ram,records+8,256); if(slot(mem,sk,l,0).maskValid) return false;
+    Matrix packed{},packedRead{}; uint32_t ordinal=1000;
+    for(size_t i=0;i<16;++i) { packed[i]=0x40000000u+uint32_t(i); put<uint32_t>(ram,def+128+i*4,packed[i]); }
+    if(!bind(mem,l,2,packedRead,ordinal) || ordinal!=1 || packedRead!=packed || bind(mem,l,1,packedRead,ordinal)) return false;
+    auto tooFew=l; tooFew.selectedCount=1; if(bind(mem,tooFew,2,packedRead,ordinal)) return false;
+    auto badBind=l; badBind.matrixOffset=0xFFFFFFFFu; if(bind(mem,badBind,2,packedRead,ordinal)) return false;
+    put<uint16_t>(ram,sk+0x5C,256); if(!layout(mem,sk).valid) return false;
     put<uint16_t>(ram,sk+0x5C,257); if(layout(mem,sk).valid) return false;
     put<uint16_t>(ram,sk+0x5C,3); put<uint32_t>(ram,def+0xC,31);
     if(layout(mem,sk).selectionValid) return false;
