@@ -3951,3 +3951,37 @@ controles negativos/positivos CPU y GPU. La semántica física de ambos pares
 y la reutilización de ocho ranuras quedan cubiertas sin alterar las
 matemáticas del renderer CPU ni FINISH/fences. Falta verificar el CI del
 HEAD final tras este merge antes de fusionar #58.
+
+## Publicación GS, controles con hilos y nueva ventana (2026-10-11)
+
+#58 se fusiona por merge en `fac216674e9d763ad418d9c1a9c9ce05088955d1`,
+tras [CI completo del HEAD final `957f9da`](https://github.com/KIexster/god-of-war-recomp/actions/runs/38140210658).
+#51 integra el main nuevo mediante merge (`a64ed52`), preservando registros
+y la cadena de 98 ya compilada. Ambas correcciones (#58/#59) están publicadas
+en main; #51 conserva borrador por investigación visual/estabilidad pendiente.
+
+Control 98 asíncrono/compartido con VU1 en hilo, frente GS apagado:
+360,04 s por límite, primer informe 11 a 80,90 s, último 11, tarjeta intacta,
+sin firmas buscadas de error o minimización; captura privada HUD/Kratos/enemigos
+sin alineación. El cupo de 4.096 se agota antes del informe 11 (`hostTick=4136`):
+3.064 A–B–A, cero regresiones/inconsistencias/hash desconocido, todos anteriores
+a partida. No utilizar ese registro para certificar la presentación de estado 11.
+
+VU1+frente GS alcanza 11 a 80,83 s pero cierra antes: 228,17 s, salida 0,
+`process_exit`, sin causa determinada. Último 11, tarjeta intacta, sin firmas
+buscadas de error/minimización o captura válida propia; no completa los 360 s
+ni prueba estabilidad. Cupo agotado también antes de 11, 3.045 A–B–A. Se conserva
+como incompleto y debe repetirse. Los dos controles usan intérprete y hash;
+sus tiempos no son FPS ni equivalencia con las mediciones optimizadas de Opus.
+
+Se implementa un parche nuevo de ventana diagnóstica, sin variar Acquire,
+FINISH/fences/readback ni el límite 4.096: permite empezar desde un hostTick
+explícito para observar partida con hilos. `PS2X_GS_PRESENT_DIAG_FROM_TICK`,
+ausente/inválido → 0; lanzador `--diag-from-tick`, rango uint64 validado antes
+de escrituras. Tres regresiones MiniTest/MSVC reducidas pasan; negativo con
+la semántica previa compatible falla exactamente dos (1/3), sin afirmar
+suite completa. 14 pruebas Python del lanzador y 17 del inspector correctas,
+configuración/sintaxis correctas, nueva aplicación independiente sobre los
+98 anteriores. Cadena 99 pendiente de compilación Windows completa,
+suite nativa/CI y repetición del juego con ventana. No se atribuye el nuevo
+parche al ejecutable existente ni se declara resuelto encuadre/alternancia.

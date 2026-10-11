@@ -7,6 +7,10 @@ La comparación visual alineada y los controles con hilos siguen pendientes:
 #51 continúa en borrador. Los apartados siguientes conservan la investigación;
 la matriz actual se registra al final.
 
+Se prepara después una cadena de 99 con ventana opcional del registro:
+la validación de 98 no acredita ese nuevo runner hasta terminar su
+compilación completa y controles propios.
+
 El cuadro viejo alternado con FINISH asíncrono y el encuadre incorrecto ya
 presente antes de la copia final del framebuffer requieren controles separados.
 Este diagnóstico observa la textura que adquiere el host; no reconstruye una
@@ -508,3 +512,40 @@ diff vacío de parches/script/src/config frente a `f36936e`. La espera concreta
 de 96/97 se supera; cámara, alternancia visible y estabilidad con hilos siguen
 abiertas. Se inicia después, aislada, asíncrona/compartida con solo VU1 en hilo;
 el frente GS requiere VU1 en hilo y se evalúa en otra pasada posterior.
+
+## Cupo con hilos y ventana diferida (2026-10-11)
+
+Con el runner validado de 98, asíncrona/compartida y VU1 en hilo solo:
+360,04 s por límite, informe 11 desde 80,90 s y último 11, tarjeta intacta,
+sin firmas buscadas de error ni minimización. Captura propia privada muestra
+HUD/Kratos/enemigos, sin alineación de cuadro. El diagnóstico agota 4.096
+adquisiciones en estado 4, última en `hostTick=4136`; no cubre ninguna bajo
+el último informe 11. Sus 3.064 A–B–A y cero regresiones/inconsistencias/hash
+desconocido solo describen aquel tramo inicial.
+
+La combinación posterior VU1+frente GS informa 11 desde 80,83 s, pero termina
+a 228,17 s con `process_exit`, salida 0, antes del límite 360 s. El registro
+no determina la causa del cierre. Tarjeta intacta, ninguna firma buscada
+de error ni minimización; sin captura propia de esa pasada. No es un control
+completo ni prueba estabilidad. También agota el cupo en estado 4, 3.045
+A–B–A y ningún registro de adquisición bajo el último informe 11. Repetir.
+
+Nuevo parche por tema `ps2recomp-gs-host-diag-window.patch`, aplicado después
+del diagnóstico: `PS2X_GS_PRESENT_DIAG_FROM_TICK=<uint64 decimal>` permite
+registrar desde ese `hostTick`, inclusivo. Ausente/inválido conserva inicio
+0. Mantiene máximo 4.096 registros por instancia, solo adquisiciones nuevas,
+los mismos metadatos y hash existente; no cambia Acquire, render, FINISH,
+fences o readback. Los ticks son los del registro, no segundos ni alineación.
+El lanzador acepta `--diag-from-tick 6000`, registra la variable en el
+manifiesto y rechaza rangos inválidos antes de crear la pasada. Desplazar
+la ventana omite explícitamente el arranque; conservar ambas ejecuciones.
+
+Regresiones nuevas sin juego: no gastar cupo antes del tick inclusivo,
+mismo límite 4.096 desde cero o diferido, parse decimal/límites de uint64.
+Las tres pasan con MiniTest/MSVC en un ejecutable reducido. El control
+negativo usa APIs compatibles con la semántica previa (sin ventana):
+1/3 pasa y fallan exactamente las dos de aplazamiento/parser; no es la suite
+nativa completa. 14 pruebas del lanzador y 17 del inspector pasan; configuración
+0 errores/4 avisos, sintaxis 23 scripts/0 errores incluyendo los privados,
+cadena 98 aplicada en orden y nuevo parche aplicado en árbol independiente.
+La cadena 99 requiere compilación completa, suite/CI y repetición funcional.

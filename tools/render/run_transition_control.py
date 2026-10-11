@@ -22,16 +22,19 @@ def digest(path):
     return result.hexdigest()
 
 
-def settings_for(case, folder, iso, shader_cache, vu1_thread='0', gs_front='0'):
+def settings_for(case, folder, iso, shader_cache, vu1_thread='0', gs_front='0', diag_from_tick=0):
     if case not in CASES or vu1_thread not in ('0', '1') or gs_front not in ('0', '1'):
         raise ValueError('Caso o modo de hilos inválido')
     if gs_front == '1' and vu1_thread != '1':
         raise ValueError('El frente GS requiere el hilo VU1')
+    if type(diag_from_tick) is not int or not 0 <= diag_from_tick <= 0xffffffffffffffff:
+        raise ValueError('El inicio del diagnóstico debe ser un tick uint64')
     return {
         'GOW_ISO': str(iso), 'GOW_MC0': str(folder / 'Mcd001.ps2'), 'GOW_MC1': '0',
         'GOW_GS_FINISH_ASINCRONO': '1' if case.startswith('async') else '0',
         'PS2X_GS_DIRECT_PRESENT': '1' if case.endswith('shared') else '0',
         'PS2X_GS_GPU': '1', 'PS2X_GS_PRESENT_DIAG': '1', 'PS2X_FRAME_HASH': '1',
+        'PS2X_GS_PRESENT_DIAG_FROM_TICK': str(diag_from_tick),
         'PS2X_VU1_HILO': vu1_thread, 'PS2X_GS_FRENTE': gs_front,
         'GOW_PAD_TEST': '1', 'GOW_PAD_TEST_NO_CAPTURE': '1', 'GOW_PAD_SOLO_GUION': '1',
         'GOW_FAST_BOOT': '0', 'GOW_SKIP_FMV': '1',
@@ -201,7 +204,7 @@ def prepare_case(args):
     if folder.is_relative_to(modules):
         raise ValueError('La salida no puede estar dentro del IOP_MOD de origen')
     settings = settings_for(args.case, folder, iso, root/'shader_cache',
-                            args.vu1_thread, args.gs_front)
+                            args.vu1_thread, args.gs_front, args.diag_from_tick)
     # No reutilizar una carpeta: evita sobrescribir una pasada o una tarjeta original.
     folder.mkdir(parents=True, exist_ok=False)
     shutil.copy2(elf, folder/'SCUS_973.99')
@@ -234,6 +237,8 @@ def main():
     parser.add_argument('--collapsed-ui', action='store_true')
     parser.add_argument('--vu1-thread', choices=('0', '1'), default='0')
     parser.add_argument('--gs-front', choices=('0', '1'), default='0')
+    parser.add_argument('--diag-from-tick', type=int, default=0,
+                        help='Primer tick host registrado; no modifica la presentación ni su cupo')
     args = parser.parse_args()
     if os.name != 'nt':
         parser.error('La ejecución del juego y el monitor de ventana requieren Windows')

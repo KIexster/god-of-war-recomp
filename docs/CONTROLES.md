@@ -661,3 +661,15 @@ usa `--vu1-thread 1 --gs-front 1`. No atribuir a GS aislado lo observado en
 esa combinación ni usar estos controles con hash/diagnóstico como benchmarks.
 Conservar runner/manifiesto/entradas/tarjeta y verificar que la pasada anterior
 terminó antes de iniciar otra; no detener procesos de otros colaboradores.
+
+Con hilos se observa que el cupo del diagnóstico acaba antes de partida.
+La cadena 99 añade `PS2X_GS_PRESENT_DIAG_FROM_TICK` y el lanzador
+`--diag-from-tick <uint64>`: inicio inclusivo según `hostTick`, cupo inalterado
+de 4.096 por instancia, sin adquirir/leer/sincronizar más texturas. Usar una
+pasada diferente para la ventana tardía y conservar el control de arranque;
+los ticks no son segundos ni un mecanismo de alineación con PCSX2. La opción
+no existe en el runner de 98: requiere compilación completa de la cadena 99.
+
+VU1 solo completa 360 s; VU1+frente GS sale a 228,17 s con código 0 y causa
+desconocida, antes del límite. Registrar `process_exit` y conservarlo como
+incompleto, repetir aislado; llegar a estado 11 no acredita estabilidad.

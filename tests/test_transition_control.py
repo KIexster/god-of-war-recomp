@@ -81,7 +81,7 @@ class TransitionControlTest(unittest.TestCase):
         return argparse.Namespace(case='sync_ram', label=None, seconds=360, runner=runner,
                                   elf=elf, iso=iso, iop_mod=modules, build_manifest=manifest,
                                   output_root=root/'output', initial_card=card, collapsed_ui=False,
-                                  vu1_thread='0', gs_front='0')
+                                  vu1_thread='0', gs_front='0', diag_from_tick=0)
 
     def test_environment_drops_presence_diagnostics_and_preserves_os_variables(self):
         settings = control.settings_for('async_shared', Path('/case'), Path('/iso'), Path('/cache'))
@@ -113,6 +113,22 @@ class TransitionControlTest(unittest.TestCase):
         self.assertTrue(state['minimized'])
         self.assertTrue(state['foreground'])
         self.assertNotIn(('minimized', 2), api.detail_reads)
+
+    def test_deferred_window_is_recorded_and_invalid_ticks_do_not_create_a_pass(self):
+        with tempfile.TemporaryDirectory(prefix='gow_transition_test_') as name:
+            args = self.fixture(Path(name))
+            args.diag_from_tick = 6000
+            with patch.object(control, 'EXPECTED_ELF_SHA256', control.digest(args.elf)):
+                _, _, _, result = control.prepare_case(args)
+            self.assertEqual(result['settings']['PS2X_GS_PRESENT_DIAG_FROM_TICK'], '6000')
+        for invalid in (-1, 1 << 64, '6000', True):
+            with tempfile.TemporaryDirectory(prefix='gow_transition_test_') as name:
+                args = self.fixture(Path(name))
+                args.diag_from_tick = invalid
+                with patch.object(control, 'EXPECTED_ELF_SHA256', control.digest(args.elf)):
+                    with self.assertRaises(ValueError):
+                        control.prepare_case(args)
+                self.assertFalse(args.output_root.exists())
 
     def test_missing_owned_window_is_unknown_not_minimized(self):
         api = FakeWindows()
@@ -225,12 +241,13 @@ class TransitionControlTest(unittest.TestCase):
             args.runner = Path(sys.executable)
             args.elf.write_text('import os\nassert "GOW_GS_REPLAY_TRACE" not in os.environ\n'
                                 'assert os.environ["GOW_PAD_SOLO_GUION"] == "1"\n'
+                                'assert os.environ["PS2X_GS_PRESENT_DIAG_FROM_TICK"] == "6000"\n'
                                 'print("procedural child: OK")\n', encoding='utf-8')
             expected = control.digest(args.elf)
             args.build_manifest.write_text(json.dumps(dict(
                 commit='a'*40, exe_sha256=control.digest(args.runner), elf_sha256=expected)),
                 encoding='utf-8')
-            argv = [str(path), args.case, '--seconds', '1']
+            argv = [str(path), args.case, '--seconds', '1', '--diag-from-tick', '6000']
             for option in ('runner', 'elf', 'iso', 'iop_mod', 'build_manifest', 'output_root', 'initial_card'):
                 argv += ['--'+option.replace('_', '-'), str(getattr(args, option))]
             with patch.object(control, 'EXPECTED_ELF_SHA256', expected), patch.object(sys, 'argv', argv):
