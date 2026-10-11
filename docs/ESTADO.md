@@ -4575,3 +4575,42 @@ confirma identidad de personaje ni convierte esa intro en referencia de
 partida**. Todos esos datos y análisis siguen privados. El siguiente control
 debe seguir la geometría recibida por GS durante la postura señalada y separar
 esa entrada del rasterizado/presentación; la animación fuente sigue abierta.
+
+## Traza fija antes de la postura y ventana de vídeo preparada (2026-10-11)
+
+#64 fusionada en `76f60218eabe2584ffe454de7bd986d349f49ff8`, tras revisión,
+control anterior y [CI del HEAD final `17cd878` correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38182260148).
+Una nueva pasada del mismo runner `e73e844` usa FINISH síncrono/presentación
+RAM/GPU/hilos 0, sin sonda de skinning o hash, y el mismo guion de menú.
+Captura GS tras TEXFLUSH desde 175 s: inicio 175,023 s, End completo,
+54.535.097 bytes, 145.442 Submit y siete Present en ticks 1434..1440.
+Se cierra con STOP privado a 188,28 s después de terminar la traza, para
+liberar CPU antes de repetirla; tarjeta intacta, sin firmas buscadas de error
+ni minimización. No es un control de cinco minutos completado ni salida natural.
+
+Se repite el prefijo hasta **su segundo Present**, registro 22360, 22.207
+Submit/tick 1435; no se reutiliza el índice 12795 de la traza antigua. Dos
+pasadas CPU: VRAM de 4 MiB, estado y dos frames iguales. Hardware, tres
+pasadas: la primera mezcla tiles compute y no cuenta como comparación de
+ruta constante. La segunda/tercera tienen 17.362 primitivas y cero tiles,
+pero difieren en 1.081 bytes de VRAM y 1.288 bytes RGBA del segundo frame;
+estado semántico igual. Código 1 por diferencia, **no resultado correcto**.
+El End original y resto de comandos no se comprueban con este prefijo.
+La revisión de imágenes muestra Kratos aún más distante en cubierta; no
+es la postura exacta señalada, ni demuestra que esta variación cause espasmos.
+
+El plazo en segundos del host eligió un tramo anterior al 1500 buscado.
+Se añade `GOW_GS_REPLAY_FROM_TICK`, umbral opcional del contador de vídeo del
+runtime, junto a estado/plazo/TEXFLUSH ya existentes. Ausente equivale a 0;
+un valor decimal inválido desactiva la captura sin aplicar opciones parciales.
+Antes del umbral se siguen enviando comandos al backend, sin comenzar snapshot
+o registro; Present no abre captura por anunciar un tick diferente. Mantiene
+el formato de traza, límites, backend y reglas de sincronización anteriores.
+Ese umbral **no alinea poses entre ejecuciones o con PCSX2**.
+
+Control procedural Windows correcto: comandos previos llegan a CPU sin
+grabarse, inicio en TEXFLUSH al alcanzar 1500, snapshot preservado, una sola
+primitiva posterior registrada, End válido; parser de uint64 y opciones
+inválidas sin cambios parciales. Replay CPU del fixture y layout de píxeles
+correctos. Pendientes recompilación de src/, control de ventana con el juego
+y CI del nuevo código. No se modifica ningún parche o matemática del juego.
