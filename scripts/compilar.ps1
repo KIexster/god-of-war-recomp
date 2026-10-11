@@ -108,6 +108,7 @@ $vu1AdvanceEventsPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-advance-even
 $vu1LowerSpecialsPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-lower-specials.patch'
 $vu1StaticStoresPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-static-stores.patch'
 $vu1SimdSpecialsPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-simd-specials.patch'
+$gsSourceAddressPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-source-address.patch'
 $gsHostFrameDiagPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-host-frame-diag.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
@@ -241,6 +242,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1AdvanceEventsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1LowerSpecialsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1StaticStoresPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1SimdSpecialsPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsSourceAddressPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsHostFrameDiagPatch)
 Pop-Location
 

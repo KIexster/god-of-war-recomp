@@ -517,3 +517,34 @@ distinguir minimización de pérdida de foco. Solo detiene el proceso que
 inicia; crear `STOP` en la carpeta de la pasada conserva una parada deliberada
 en `result.json`. Variables, argumentos, protocolo y límites:
 [TRANSICION_COMPARTIDA.md](TRANSICION_COMPARTIDA.md).
+
+## Bases de la fuente de presentación GS (2026-10-11)
+
+`ps2recomp-gs-source-address.patch` compara las bases físicas de FRAME/DISPFB
+y TEX0 en bloques de 256 bytes: convertir la página con un factor de 32.
+Los metadatos conservan sus unidades originales. Dos números crudos iguales
+pueden ser bases distintas; dos números distintos pueden ser la misma base.
+
+Las regresiones sin juego comprueban 32/32, 32/1.024, 32/1.057 y 0/0
+(página/bloque) mediante un backend grabador del frontend. El compositor CPU
+usa píxeles procedurales distintos en las direcciones 8.192 y 262.144,
+comprueba TBW cero y conserva el criterio existente cuando el ancho es explícito.
+La prueba GPU existente añade los casos 32/32 y 32/1.024 con lectura explícita
+y comparación CPU; esa lectura solo pertenece al control procedural.
+
+El control negativo se ejecuta en CI sobre las regresiones sin el arreglo;
+`5f3d7de` compila y falla únicamente las dos nuevas (591/593 correctas).
+Comprobar además el CI del HEAD corregido. Compilación Windows completa,
+suite GPU y transición con datos del usuario siguen pendientes. Registrar un
+binario nuevo antes del control; no atribuir este cambio al ejecutable anterior.
+La identificación de `preferred` del diagnóstico #51 permite observar después
+si estos casos ocurren en el juego. No se declara corregido el encuadre ni
+la alternancia por normalizar una comparación.
+
+El control GPU compartido comprueba también TBW cero y ambos pares de
+direcciones mediante `LoadImageFromTexture` sobre la textura adquirida,
+comparando todas las filas con CPU y la selección esperada explícitamente.
+No usa `copyLatchedHostPresentationFrame` como sustituto de esa textura.
+Este readback existe solo en la regresión procedural; su ejecución Windows
+con la cadena nueva sigue pendiente. El CI previo del arreglo `e52527d`
+pasa 593/593; no acredita por sí solo esta ampliación GPU exclusiva de Windows.

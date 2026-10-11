@@ -3445,3 +3445,75 @@ la aplicación conjunta privada de los 97 pasa, sin compilación conjunta.
 Windows GPU y transición real pendientes. Los registros antiguos no indican
 `preferred` y no permiten atribuir el fallo visual a estas comparaciones.
 Ambas PR siguen en borrador; los problemas de alternancia y encuadre continúan abiertos.
+
+## Comparación de bases de presentación GS (2026-10-11)
+
+La revisión del diagnóstico compartido revela tres comparaciones entre
+unidades distintas: `FRAME/DISPFB.FBP` en páginas de 8.192 bytes y
+`TEX0.TBP0` en bloques de 256 bytes. Por ejemplo, 32 páginas y 32 bloques
+son 262.144 y 8.192 bytes; 32 páginas y 1.024 bloques son la misma dirección.
+Comparar los valores crudos podía omitir una fuente distinta o aceptar una
+copia sobre su propia base.
+
+Se añade `ps2recomp-gs-source-address.patch`, tema independiente del
+diagnóstico #51. Normaliza la página multiplicando por 32 antes de comparar:
+en la identificación del sprite de copia completo, en la fuente CPU sin TBW
+y en la selección equivalente GPU. Conserva los metadatos en sus unidades
+originales, el criterio existente para ancho explícito y el renderer CPU
+como referencia. No cambia matemáticas de rasterizado, fences ni FINISH.
+
+Dos regresiones independientes del juego: el frontend usa un backend
+grabador para comprobar cuatro pares de bases sin rasterizar; la presentación
+CPU comprueba selección, metadatos y un píxel procedural con tres casos de
+TBW cero/explícito. El control GPU existente añade las dos colisiones de
+unidades y compara píxeles/metadatos contra CPU con readback explícito solo
+en la prueba. No se introduce ese readback en la ejecución del juego.
+
+Se publica primero `5f3d7dedeced864133eb1d9887d49f892a0458a9`, con las
+regresiones y sin corregir los comparadores, para control negativo en CI
+remoto. La [ejecución 38115429132](https://github.com/KIexster/god-of-war-recomp/actions/runs/38115429132)
+compila correctamente y pasa 591 de 593 pruebas: fallan exactamente
+`display copy compares FRAME pages with TEX0 blocks` y
+`presentation source without TBW compares physical addresses`. No se añaden
+excepciones a `fallos_conocidos.txt`. El CI del arreglo todavía está pendiente.
+
+La cadena propia contiene 96 parches: todos pasan check/aplicación desde el
+upstream fijado en un árbol privado nuevo. El diagnóstico de #51 también
+aplica después, como parche 97 en una comprobación privada conjunta.
+Configuración: 0 errores y 4 avisos existentes; sintaxis de 10 scripts:
+0 errores. No se modifica el checkout de Opus, comprobado limpio en
+`34cbe58`, ni sus parches VU1.
+
+Compilación completa Windows y control GPU/juego pendientes de disponibilidad
+del PC. No se conoce si estos pares de bases aparecen en la transición real:
+los registros de 90 parches no tenían `preferred`. El fallo de unidades es
+independiente de probar que explique la alternancia o el encuadre; ambos
+siguen sin declararse resueltos. No hay medición nueva de rendimiento.
+
+## Control de unidades en la textura compartida (2026-10-11)
+
+El arreglo `e52527d1bf63b513facac380330b94bc2e998937` pasa ambos controles
+del CI ([38115778696](https://github.com/KIexster/god-of-war-recomp/actions/runs/38115778696)):
+593/593 pruebas, sin excepciones. Es validación remota sin el juego.
+
+El usuario libera ahora el ordenador y confirma que Claude no trabajará
+durante 24 horas. Se inicia primero una compilación completa de la referencia
+de #51, todavía sin este arreglo, para comparar después con la integración.
+Se amplía el control GPU de este parche a la ruta compartida: mismos pares
+32 páginas/32 bloques y 32 páginas/1.024 bloques con TBW cero, lectura de la
+textura realmente adquirida y comparación de sus filas y metadatos con CPU.
+Las aserciones explícitas de selección evitan que un fallo común CPU/GPU
+quede oculto por comparar solo ambos renderers. La descarga pertenece
+exclusivamente a la prueba procedural, no al juego ni al diagnóstico del host.
+
+Los 95 parches de main más este parche y el diagnóstico de #51 pasan
+comprobación y aplicación en orden en otro árbol privado: 97 en conjunto.
+Esta ampliación GPU todavía no se ha ejecutado; comprobar el CI del nuevo HEAD
+y completar la compilación Windows antes de atribuirle resultados nativos.
+
+El mismo control añade 16 publicaciones consecutivas con contenido y tick
+distintos, alternando ambas selecciones. Reutiliza las ocho ranuras mientras
+comprueba los píxeles de cada textura nueva contra CPU; las esperas y lecturas
+solo existen en la prueba. La ampliación sigue aplicando antes del diagnóstico
+en la cadena privada conjunta de 97. Es cobertura procedural pendiente de
+ejecución GPU, no una reproducción del defecto visual ni un benchmark.
