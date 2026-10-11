@@ -3,13 +3,13 @@
 Estado actual, 2026-10-11: compilación completa de 98 parches, suite Windows
 normal/GPU y matriz aislada de cuatro controles terminadas. Count #59 está
 fusionada en main; se supera la espera síncrona compartida en la nueva pasada.
-La comparación visual alineada y los controles con hilos siguen pendientes:
+La comparación visual alineada y la estabilidad prolongada siguen pendientes:
 #51 continúa en borrador. Los apartados siguientes conservan la investigación;
 la matriz actual se registra al final.
 
 La cadena posterior de 99 con ventana opcional del registro ya completa
-compilación y controles nativos propios. Falta repetir el juego con la nueva
-ventana y comprobar visualmente la presentación; resultados al final.
+compilación y controles nativos propios, además de tres pasadas funcionales
+de seis minutos. Falta comprobar visualmente la presentación; resultados al final.
 
 El cuadro viejo alternado con FINISH asíncrono y el encuadre incorrecto ya
 presente antes de la copia final del framebuffer requieren controles separados.
@@ -636,3 +636,30 @@ de campos, pero el registro del juego no incluye SMODE2: no prueba ese modo,
 su causa ni ausencia de contenido antiguo. No se declaran píxeles iguales,
 cámara correcta o FPS. El cupo sigue siendo finito y deja sin registro el
 resto de la pasada. Se inicia después la repetición VU1+frente GS desde 6000.
+
+## Repetición completa con VU1 y frente GS (2026-10-11)
+
+Mismo runner `a37cd85`/SHA-256
+`a4ec4365273903d525ce19ecade3fb423fb871c5628a84e695b33ac777ca3598`,
+asíncrona/compartida, VU1+frente GS en hilos, ventana desde 6000: completa
+360,04 s por límite (proceso 1/lanzador 0), informe 11 desde 80,97 s, último
+11. Tarjeta intacta, ninguna firma buscada de error ni sondas de animación/
+flash-ready; ventana visible/nunca minimizada, sin primer plano ni captura
+propia, sin solapamientos. Esta pasada no reproduce el cierre anticipado de
+98 a 228,17 s: su causa sigue desconocida, no se declara corregida por ello.
+
+Primer registro hostTick=6000, frameTick=5999, seq/render=5933. Las 4.096
+adquisiciones están bajo el último informe 11, 512×448/fuente CRTC/hash válido,
+sin regresiones de secuencia/render ni metadatos contradictorios o cambios
+de dimensión. Distancia de ticks 0..1. 3.506 A–B–A, todos con paridad alterna
+de frameTick; no demuestran imágenes antiguas ni entrelazado por sí solos.
+
+La cadena 99 supera así tres controles finitos: sin hilos/ventana 0, VU1
+solo/ventana 6000 y VU1+frente GS/ventana 6000. No se repite aquí la matriz
+RAM/síncrona completa de 98 ni se trasladan sus resultados al nuevo runner.
+[CI del inspector y documentación `6f30f5c` correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38155362566);
+comprobar el nuevo HEAD documental después de publicar este resultado.
+Mantener #51 borrador por comparación visual pendiente. Para distinguir
+campos de otros retornos, el siguiente diagnóstico debe conservar SMODE2
+del request usado para producir la textura, no leer el CRTC actual después.
+Las pruebas y adquisiciones nuevas no resuelven el encuadre dentro del GS.

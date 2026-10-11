@@ -4046,3 +4046,22 @@ procedural compara campos distintos con VRAM invariable contra CPU), pero
 no identifica SMODE2 ni demuestra causa/corrupción o ausencia de imágenes
 antiguas. Mantener límites de hash/cupo y cámara separada. Se inicia aislada
 la repetición VU1+GS frontal de 360 s con ventana desde 6000; aún pendiente.
+
+## Control 99 completo con ambos hilos (2026-10-11)
+
+Repetición asíncrona/compartida con VU1+frente GS y ventana desde 6000,
+mismo runner `a37cd85`: completa 360,04 s por límite, informe 11 desde 80,97 s,
+último 11, tarjeta intacta. No hay firmas buscadas de error ni sondas animación/
+flash-ready; no minimizada, sin primer plano/captura propia y sin solapamiento.
+No se reproduce en esta pasada el cierre de 98 a 228,17 s. Una repetición
+correcta no determina su causa ni prueba estabilidad prolongada.
+
+4.096 adquisiciones en tramo 11, primera hostTick=6000/frameTick=5999,
+seq/render=5933. Cero regresiones/inconsistencias/hash desconocido o cambios
+de dimensión; 512×448/fuente CRTC, distancia de ticks 0..1. Los 3.506 A–B–A
+alternan paridad, compatible con campos pero sin SMODE2 registrado ni prueba
+de causa. El CI de `6f30f5c` está verde. Las tres pasadas finitas de 99 ya
+terminaron; siguen pendientes comparación visual alineada/encuadre y duración
+mayor. #51 conserva borrador. Siguiente control: SMODE2 de la textura adquirida,
+con regresión que descarte confundirlo con el CRTC actual. Detalles y límites
+en TRANSICION_COMPARTIDA.md. No se publican datos del juego ni FPS.
