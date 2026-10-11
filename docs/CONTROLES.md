@@ -615,3 +615,18 @@ permite revisar la superficie aunque no esté en primer plano. Comprobar
 siempre PID, ruta y propiedad de la ventana; rechazar la captura minimizada
 o posterior al cierre. Sigue sin identificar por sí sola la secuencia GS
 adquirida ni sustituye una comparación alineada con PCSX2. Imágenes privadas.
+
+## Contador COP0.Count (2026-10-11)
+
+`ps2recomp-ee-cop0-count.patch` añade el reloj del contador al runtime y cambia
+la emisión MFC0/MTC0. Requiere `scripts\2_compilar.cmd`: el ejecutable generado
+anterior sigue leyendo el campo inmóvil aunque se recompilen overrides.
+Las cuatro regresiones sin juego comprueban avance/sondeo acotado, estado global
+y wrap entre contextos, reset y emisión con destino $zero. El control negativo
+de #59 mantiene la semántica anterior mediante APIs compatibles para poder
+comprobar fallos de comportamiento; no se usa con el juego ni como HEAD final.
+
+La integración positiva de 98 todavía debe completar compilación, suite,
+CI y transición. El hallazgo del bucle muestreado no prueba por sí solo su
+efecto funcional. Registrar otro commit/hash del runner y comparar primero
+la espera compartida síncrona, manteniendo los hilos opcionales apagados.

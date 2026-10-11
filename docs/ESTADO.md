@@ -3716,3 +3716,35 @@ y regenerar completamente el runner antes de atribuirle cualquier efecto.
 No modifica archivos ni procesos de Opus; su checkout se comprobó limpio.
 El CI del HEAD publicado `10a7bec` está verde. #51 continúa en borrador: siguen
 pendientes resolver la espera y comparar la escena/cámara de forma alineada.
+
+## Regresiones de COP0.Count para investigar una espera (2026-10-11)
+
+En la rama de diagnóstico GS, dos controles completos con presentación
+compartida síncrona dejan de informar progreso tras estado 4. El muestreo
+privado con símbolos encuentra trabajo EE en un bucle que consulta Count.
+La traducción actual lee `ctx->cop0_count`, pero los ciclos EE no lo actualizan.
+Este problema es anterior a los cambios recientes de VU1: no se atribuye a Opus.
+
+Se añade un parche separado con cuatro regresiones sin juego: avance y sondeo
+acotado, wrap/escrituras entre contextos, reset y emisión MFC0/MTC0.
+El primer commit es un control negativo deliberado, con interfaces compatibles
+y la lectura inmóvil anterior; debe compilar y fallar esas expectativas.
+La implementación por ciclos se publicará después conservando este historial.
+
+Todavía no se ha demostrado el efecto sobre la transición. La validación
+requiere CI del HEAD corregido, compilación Windows completa para regenerar
+las lecturas y repetición con el juego. No se modifica FINISH ni fences, no se
+afirma fidelidad de cámara, estabilidad general o FPS, ni se implementa aquí
+la interrupción de COP0.Compare. Referencia semántica del contador:
+[PCSX2 COP0.cpp](https://github.com/PCSX2/pcsx2/blob/master/pcsx2/COP0.cpp).
+
+La rama compartida integra después la implementación positiva de #59:
+Count global del runtime actualizado perezosamente por ciclos EE, lecturas
+consecutivas con avance mínimo de uno, wrap de 32 bits, escritura que cambia
+la base y reset conjunto con el reloj. MFC0 conserva extensión de signo y
+ejecuta la lectura incluso con destino $zero, fuera de la macro que descarta
+ese registro. No usa reloj de pared ni altera temporizadores, VU1, FINISH o
+fences. La cadena de 98 parches aplica en un árbol privado nuevo; configuración
+y sintaxis PowerShell pasan (cuatro avisos existentes). Compilación, suite y
+control funcional de este código siguen pendientes. Se inicia un build
+completo privado, regenerando C++; el runner congelado de 97 permanece aparte.
