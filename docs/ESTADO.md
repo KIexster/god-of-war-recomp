@@ -3598,3 +3598,31 @@ no se publican como medida de rendimiento. El muestreo suspende brevemente
 hilos y puede perturbar la ejecución; se conserva ese límite junto al registro.
 La siguiente pasada asíncrona/RAM está en curso. La espera debe repetirse con
 símbolos antes de modificar sincronización o atribuirla al arreglo de fuentes.
+
+## Cierre de la matriz de referencia actual (2026-10-11)
+
+Las cuatro pasadas de `de5a89a` (96 parches) completan 360 s y terminan por
+límite deliberado; las tarjetas privadas quedan intactas y no aparecen las
+firmas de error buscadas. Síncrona/RAM llega a 11 a 149,78 s del guion;
+asíncrona/RAM a 116,44 s y asíncrona/compartida a 116,39 s. La síncrona
+compartida sigue siendo una espera sin nuevos informes tras estado 4 a 25,36 s.
+
+La asíncrona compartida registra 2.310 adquisiciones, ticks de distancia
+0..3, cero retrocesos, metadatos contradictorios o hashes desconocidos.
+113 retornos A–B–A anteriores al primer informe de estado 3; ninguno en
+las 1.205 adquisiciones del tramo del último estado 11. Ambas compartidas
+registran únicamente fuentes CRTC (`preferred=0`) y un cambio inicial
+1×1 → 512×448. No se reproduce el máximo antiguo de 417 ticks ni se observa
+la selección de fuente que corrige #58; no atribuirle todavía un efecto real.
+
+La ventana no se observa minimizada en ningún caso. Solo síncrona/RAM está
+en primer plano y tiene capturas externas válidas: el resto conserva pendiente
+revisión visual. Estado 11/hash y una captura no acreditan fidelidad ni ausencia
+de imágenes antiguas. No hay medición de FPS ni comparación alineada con PCSX2.
+Tabla, protocolo y límites completos en `TRANSICION_COMPARTIDA.md`.
+
+Se inicia después otra compilación completa del código integrado (97 parches),
+con /O2 y PDB privados para investigar la espera. Debe registrar otro
+commit/hash/configuración; las pruebas GPU de fuente adquirida/ranuras y el
+control Windows específico de FINISH de ambos contratos siguen pendientes.
+#51 conserva borrador; no se declara corregida la transición o el encuadre.

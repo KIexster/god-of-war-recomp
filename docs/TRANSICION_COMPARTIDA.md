@@ -380,3 +380,46 @@ fuente antes del diagnóstico del host. Requiere una segunda compilación comple
 y un manifiesto diferente para comparar contra la referencia anterior. Los
 resultados se publicarán con el commit/hash de cada binario, conservando
 los dos problemas visuales y las retenciones no registradas como límites abiertos.
+
+## Matriz completa de referencia de 96 parches (2026-10-11)
+
+Binario `de5a89a` y SHA-256 `e5aae46440de86b0eeb97da91f742330ce0e95d22bbf70b368e83c44f082f0bd`,
+sin el arreglo #58. Mismas entradas exclusivas, tarjetas procedurales privadas,
+panel contraído, hash/diagnóstico activos, VU1/frente GS apagados:
+
+| FINISH / presentación | Duración real | Primer informe 11 | Último estado del mando | Adquisiciones | Retornos A–B–A | Máxima distancia de ticks |
+|---|---|---|---|---|---|---|
+| Síncrono / RAM | 360,06 s | 149,78 s | 11 | — | — | — |
+| Síncrono / compartida | 360,05 s | no registrado | 4 a 25,36 s | 4.096 (cupo) | 3.895 | 3 |
+| Asíncrono / RAM | 360,05 s | 116,44 s | 11 | — | — | — |
+| Asíncrono / compartida | 360,04 s | 116,39 s | 11 | 2.310 | 113 | 3 |
+
+Las cuatro terminan deliberadamente por límite, con código de proceso 1 y
+lanzador 0. Tarjetas intactas, ninguna firma de error buscada. La pasada
+síncrona compartida deja de informar el mando en estado 4 y no registra
+entrada en partida; host responsive y ticks/acquisiciones continúan hasta
+el cupo de ~116 s reales. Su tramo de estado 4 contiene dos hashes alternados,
+posiblemente campos de imagen estática: no prueba corrupción. Se muestrea
+solo nuestro PID después de varios minutos de espera, 5 s con suspensión
+breve de hilos; sin PDB, no identifica una función ni mide rendimiento.
+
+La asíncrona compartida tiene cero retrocesos de secuencia/render, metadatos
+contradictorios y hashes desconocidos. Sus 113 retornos ocurren antes del
+primer estado 3; ninguno en las 1.205 adquisiciones del tramo del último
+informe 11. Clasificación por informes separados ~5 s: no alinea cuadros.
+Ambas compartidas usan `preferred=0` en todas las filas y cambian 1×1 → 512×448
+solo al inicio. No se observa en ellas la selección corregida por #58 ni se
+reproduce la distancia antigua de 417 ticks; eso no prueba solución global.
+
+Ventanas visibles, nunca observadas minimizadas. Solo la síncrona/RAM gana
+primer plano y permite dos capturas externas privadas; las otras no tienen
+revisión visual válida en este control. Por tanto no se declara equivalencia
+de cámara, ausencia de alternancia visible, jugabilidad ni estabilidad prolongada.
+El fallo interno de encuadre sigue separado.
+
+Se prepara la compilación completa de 97 parches integrados, con símbolos
+privados para localizar la espera si se repite. Mantener Release optimizado:
+`CMAKE_CXX_FLAGS_RELEASE=/O2 /Ob2 /DNDEBUG /Zi` y
+`CMAKE_EXE_LINKER_FLAGS_RELEASE=/INCREMENTAL:NO /DEBUG /OPT:REF /OPT:ICF`.
+Registrar estos ajustes en el manifiesto; esa compilación no es un benchmark
+ni el mismo binario de referencia. No publicar PDB ni código/datos del juego.
