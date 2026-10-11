@@ -1,0 +1,36 @@
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+index c8689ca..da7f426 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+@@ -1090,6 +1090,31 @@ void VU1Interpreter::xgkickCopy()
+ 
+     while (m_xgkick.active && m_xgkick.cycleCredit >= 2u)
+     {
++        // GOW-Port: dentro de la carga útil de una GIFtag no hay nada que interpretar: los qwords que alcance el
++        // crédito, menos el último de la etiqueta (que cierra la etiqueta o el paquete en el bucle normal), se
++        // copian de una vez. currentTagEnd <= kBufferSize (se comprobó al leer la etiqueta).
++        if (m_xgkick.currentTagEnd != 0u && m_xgkick.currentTagEnd > m_xgkick.copiedBytes + 16u)
++        {
++            const uint32_t run = std::min<uint32_t>(m_xgkick.cycleCredit / 2u,
++                                                    (m_xgkick.currentTagEnd - m_xgkick.copiedBytes) / 16u - 1u);
++            if (run >= 2u)
++            {
++                uint32_t bytes = run * 16u;
++                uint32_t to = m_xgkick.copiedBytes;
++                uint32_t from = (m_xgkick.sourceAddress + to) % m_activeVuDataSize;
++                while (bytes != 0u)
++                {
++                    const uint32_t chunk = std::min(bytes, m_activeVuDataSize - from);
++                    std::memcpy(m_xgkick.packet.data() + to, m_activeVuData + from, chunk);
++                    to += chunk;
++                    bytes -= chunk;
++                    from = 0u;
++                }
++                m_xgkick.copiedBytes += run * 16u;
++                m_xgkick.cycleCredit -= run * 2u;
++                continue;
++            }
++        }
+         m_xgkick.cycleCredit -= 2u;
+         if (m_xgkick.copiedBytes > XgkickPipeline::kBufferSize - 16u)
+         {

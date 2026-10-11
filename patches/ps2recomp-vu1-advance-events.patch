@@ -1,0 +1,28 @@
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+index da7f426..af9ee2e 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+@@ -1246,8 +1246,22 @@ void VU1Interpreter::advanceOneCycle()
+ 
+ void VU1Interpreter::advanceTo(uint64_t targetCycle)
+ {
++    // GOW-Port: en una espera no se ejecuta nada; solo cuentan los ciclos en que algo cambia: un resultado listo
++    // (m_nextCommitCycle) o un evento de PATH1 (GIFtag o fin del paquete, el único momento en que deja de estar
++    // activo). Se salta de uno a otro con el mismo orden que ciclo a ciclo (primero el commit y después PATH1);
++    // entre eventos PATH1 solo acumula crédito, que xgkickAdvanceTo cuenta de una vez.
+     while (m_cycle < targetCycle)
+-        advanceOneCycle();
++    {
++        uint64_t next = std::min(targetCycle, std::max(m_nextCommitCycle, m_cycle + 1u));
++        if (m_xgkick.active)
++            next = std::min(next, std::max(m_xgkickEvent, m_cycle + 1u));
++        m_cycle = next;
++        m_state.cycles = m_cycle;
++        if (m_cycle >= m_nextCommitCycle)
++            commitReadyPipelines();
++        if (m_xgkick.active && m_cycle >= m_xgkickEvent)
++            xgkickAdvanceTo(m_cycle);
++    }
+ }
+ 
+ bool VU1Interpreter::pipelinesPending() const

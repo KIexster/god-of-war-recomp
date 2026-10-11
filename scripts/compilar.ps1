@@ -102,6 +102,12 @@ $vu1FastPairsPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-fast-pairs.patch
 $vu1Path1EventsPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-path1-events.patch'
 $vu1LazyDecodePatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-lazy-decode.patch'
 $gifArbiterBuffersPatch = Join-Path $RepoRoot 'patches\ps2recomp-gif-arbiter-buffers.patch'
+$vif1UnpackMaskSsePatch = Join-Path $RepoRoot 'patches\ps2recomp-vif1-unpack-mask-sse.patch'
+$vu1XgkickBulkPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-xgkick-bulk.patch'
+$vu1AdvanceEventsPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-advance-events.patch'
+$vu1LowerSpecialsPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-lower-specials.patch'
+$vu1StaticStoresPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-static-stores.patch'
+$vu1SimdSpecialsPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-simd-specials.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -228,6 +234,12 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1FastPairsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1Path1EventsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1LazyDecodePatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gifArbiterBuffersPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vif1UnpackMaskSsePatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1XgkickBulkPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1AdvanceEventsPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1LowerSpecialsPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1StaticStoresPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1SimdSpecialsPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner

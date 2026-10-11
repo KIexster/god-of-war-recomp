@@ -449,13 +449,24 @@ int main(int argc, char **argv)
                 const Pair &p = code.pairs[pcs[i] / 8u];
                 const bool plain = i + 1u < length && !VU1CompiledGenerator::isBranch(p) && !p.eBit && !p.dBit && !p.tBit;
                 const std::string k = kStruct(code, pcs[i], part);
+                // GOW-Port: la copia de VI para saltos solo la puede haber dejado activa el par anterior (o un par
+                // de fuera del bloque, antes del primero).
+                bool clearBackup = i == 0u;
+                if (i > 0u)
+                {
+                    const Pair &prev = code.pairs[pcs[i - 1u] / 8u];
+                    clearBackup = (prev.lowerUsage.viWrite & 0xFFFEu) != 0u && prev.lowerUsage.delaysNextBranchRead;
+                }
                 // GOW-Port: struct R con las lecturas que pueden esperar (ver "esperas imposibles").
                 std::string r = k;
-                if (pruned[i])
+                if (pruned[i] || !clearBackup)
                 {
                     r = "R" + name.substr(1) + "_" + std::to_string(i);
                     parts[part] << "    struct " << r << "\n    {\n        static constexpr P value = "
-                                << VU1CompiledGenerator::pairInitializer(reads[i]) << ";\n    };\n";
+                                << VU1CompiledGenerator::pairInitializer(reads[i]) << ";\n";
+                    if (!clearBackup)
+                        parts[part] << "        static constexpr bool clearBranchBackup = false;\n";
+                    parts[part] << "    };\n";
                     ++prunedPairs;
                 }
                 // GOW-Port: los pares que no abren el bloque se saltan las comprobaciones de entrada (Chained).
@@ -523,6 +534,10 @@ int main(int argc, char **argv)
         allPcs.insert(pc);
     for (const auto &[pc, v] : blockCases)
         allPcs.insert(pc);
+    // GOW-Port: último bloque que coincidió en cada dirección. run lo llama directamente y solo pasa por la
+    // función de despacho si no hay ninguno o ya no coincide (devuelve 0: otro microcódigo, salto pendiente...).
+    out << "    using BlockFn = int (*)(VU1Interpreter &, C &);\n"
+        << "    static std::atomic<BlockFn> g_hot[" << PS2_VU1_CODE_SIZE / 8u << "];\n\n";
     for (const uint32_t pc : allPcs)
     {
         out << "    static int d" << hex4(pc) << "(VU1Interpreter &vu, C &c, uint32_t pc, uint32_t lower, uint32_t upper)\n    {\n"
@@ -535,22 +550,30 @@ int main(int argc, char **argv)
             const std::vector<std::string> &blocks = it->second;
             out << "        if (g_range.blocks && inRange(pc))\n        {\n";
             if (blocks.size() == 1u)
-                out << "            if (const int r = " << blocks[0] << "(vu, c); r != 0)\n                return r;\n";
+                out << "            if (const int r = " << blocks[0] << "(vu, c); r != 0)\n"
+                    << "            {\n"
+                    << "                g_hot[pc >> 3].store(" << blocks[0] << ", std::memory_order_relaxed);\n"
+                    << "                return r;\n"
+                    << "            }\n";
             else
             {
-                out << "            using BlockFn = int (*)(VU1Interpreter &, C &);\n"
-                    << "            static constexpr BlockFn kBlocks[" << blocks.size() << "] = {";
+                out << "            static constexpr BlockFn kBlocks[" << blocks.size() << "] = {";
                 for (size_t b = 0; b < blocks.size(); ++b)
                     out << (b ? ", " : "") << blocks[b];
                 out << "};\n"
                     << "            static std::atomic<uint32_t> last{0};\n"
                     << "            const uint32_t first = last.load(std::memory_order_relaxed);\n"
-                    << "            if (const int r = kBlocks[first](vu, c); r != 0)\n                return r;\n"
+                    << "            if (const int r = kBlocks[first](vu, c); r != 0)\n"
+                    << "            {\n"
+                    << "                g_hot[pc >> 3].store(kBlocks[first], std::memory_order_relaxed);\n"
+                    << "                return r;\n"
+                    << "            }\n"
                     << "            for (uint32_t b = 0; b < " << blocks.size() << "u; ++b)\n"
                     << "                if (b != first)\n"
                     << "                    if (const int r = kBlocks[b](vu, c); r != 0)\n"
                     << "                    {\n"
                     << "                        last.store(b, std::memory_order_relaxed);\n"
+                    << "                        g_hot[pc >> 3].store(kBlocks[b], std::memory_order_relaxed);\n"
                     << "                        return r;\n"
                     << "                    }\n";
             }
@@ -569,6 +592,11 @@ int main(int argc, char **argv)
         << "    void run(VU1Interpreter &vu, C &c)\n    {\n        for (;;)\n        {\n"
         << "            const uint32_t pc = VU1CompiledAccess::pc(vu);\n"
         << "            if (pc + 8u <= c.codeSize && pc < " << PS2_VU1_CODE_SIZE << "u && (pc & 7u) == 0u)\n            {\n"
+        << "                if (const BlockFn hot = g_hot[pc >> 3].load(std::memory_order_relaxed))\n                {\n"
+        << "                    const int r = hot(vu, c);\n"
+        << "                    if (r == 1)\n                        continue;\n"
+        << "                    if (r == 2)\n                        return;\n"
+        << "                }\n"
         << "                if (const DispatchFn fn = kDispatch[pc >> 3])\n                {\n"
         << "                    uint32_t lower, upper;\n"
         << "                    std::memcpy(&lower, c.vuCode + pc, 4);\n                    std::memcpy(&upper, c.vuCode + pc + 4, 4);\n"

@@ -55,6 +55,8 @@ equipo (el tiempo emulado avanza con el tiempo real en las esperas). Con un arra
 `5:start` cae ya en el menú y elige New Game. Para cargar la primera partida de la tarjeta sea cual sea el
 tiempo de arranque: `13:abajo,20:x,62:x` (bajar a Load, abrirlo y elegir la partida). Las mediciones de
 rendimiento en los muelles usan ese guion sin más pulsaciones, para que Kratos quede quieto.
+`GOW_PAD_SOLO_GUION=1` (lo activa `scripts\probar_rendimiento.ps1`) ignora además el mando y el teclado
+reales: tocarlos durante una medición llevaba el menú a otra partida.
 
 Para investigar búsquedas de nodos durante las transiciones:
 

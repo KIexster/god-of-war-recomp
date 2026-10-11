@@ -1,0 +1,78 @@
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+index 54ccd57..db9168f 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+@@ -171,6 +171,17 @@ namespace vu1c
+     {
+         if constexpr (Dest == 0xFu)
+             std::memcpy(target, words, 16u);
++#if defined(_MSC_VER) || defined(__SSE4_1__)
++        // GOW-Port: DEST parcial con una mezcla en registros. Copiar a la pila, cambiar carriles de 4 bytes y
++        // volver a leer 16 bytes impedía el reenvío store->load (unos 15 ciclos por SQ).
++        else if constexpr (Dest != 0u)
++        {
++            constexpr int lanes = ((Dest & 8u) ? 1 : 0) | ((Dest & 4u) ? 2 : 0) | ((Dest & 2u) ? 4 : 0) | ((Dest & 1u) ? 8 : 0);
++            const __m128 old = _mm_loadu_ps(reinterpret_cast<const float *>(target));
++            const __m128 value = _mm_loadu_ps(reinterpret_cast<const float *>(words));
++            _mm_storeu_ps(reinterpret_cast<float *>(target), _mm_blend_ps(old, value, lanes));
++        }
++#else
+         else if constexpr (Dest != 0u)
+         {
+             uint32_t merged[4];
+@@ -181,6 +192,7 @@ namespace vu1c
+             if constexpr ((Dest & 1u) != 0u) merged[3] = words[3];
+             std::memcpy(target, merged, 16u);
+         }
++#endif
+     }
+     // Especiales de la unidad superior sin flags MAC: ITOF0..15 (0x10-0x13), FTOI0..15 (0x14-0x17), ABS
+     // (0x1D) y CLIP (0x1F). Devuelve la especial o 0 si es otra instrucción.
+@@ -456,6 +468,47 @@ VU1_STEP_INLINE void VU1Interpreter::upperT()
+             if (exceeds(m_state.vf[fs][2], 0x80000000u)) flags |= 0x20u;
+             queueClip(flags);
+         }
++#if VU1C_SIMD
++        // GOW-Port: ITOF, FTOI y ABS en los cuatro carriles a la vez. Calculados carril a carril en la pila,
++        // la lectura de 16 bytes de applyDestT no podía reenviarse desde los cuatro stores de 4 bytes.
++        // ITOF: int -> float con el redondeo del MXCSR (como static_cast) y la escala 1/2^n es exacta.
++        // FTOI: x * 2^n en float es exacto salvo desbordamiento (infinito o el máximo, según el redondeo), y
++        // cualquier valor >= 2^31 satura a INT32_MAX; por debajo de -2^31, cvttps2dq da INT32_MIN, como
++        // floatToInt (los float cerca de 2^31 son múltiplos de 128: ">= INT32_MAX" equivale a ">= 2^31").
++        else if constexpr (special <= 0x17u || special == 0x1Du)
++        {
++            const __m128 vs = _mm_loadu_ps(m_state.vf[fs]);
++            __m128 result;
++            if constexpr (special <= 0x13u)
++            {
++                constexpr float scale = special == 0x10u ? 1.0f : special == 0x11u ? 1.0f / 16.0f : special == 0x12u ? 1.0f / 4096.0f : 1.0f / 32768.0f;
++                result = _mm_cvtepi32_ps(_mm_castps_si128(vs));
++                if constexpr (special != 0x10u)
++                    result = _mm_mul_ps(result, _mm_set1_ps(scale));
++            }
++            else if constexpr (special <= 0x17u)
++            {
++                constexpr float scale = special == 0x14u ? 1.0f : special == 0x15u ? 16.0f : special == 0x16u ? 4096.0f : 32768.0f;
++                __m128 scaled = vu1c::normalize4(vs);
++                if constexpr (special != 0x14u)
++                    scaled = _mm_mul_ps(scaled, _mm_set1_ps(scale));
++                const __m128i truncated = _mm_cvttps_epi32(scaled);
++                const __m128 saturate = _mm_cmpge_ps(scaled, _mm_set1_ps(2147483648.0f));
++                result = _mm_blendv_ps(_mm_castsi128_ps(truncated), _mm_castsi128_ps(_mm_set1_epi32(0x7FFFFFFF)), saturate);
++            }
++            else
++            {
++                result = _mm_and_ps(vu1c::normalize4(vs), _mm_castsi128_ps(_mm_set1_epi32(0x7FFFFFFF)));
++            }
++            if constexpr (dest == 0xFu)
++                _mm_storeu_ps(m_state.vf[ft], result);
++            else if constexpr (dest != 0u)
++            {
++                constexpr int lanes = vu1c::laneBits(dest);
++                _mm_storeu_ps(m_state.vf[ft], _mm_blend_ps(_mm_loadu_ps(m_state.vf[ft]), result, lanes));
++            }
++        }
++#endif
+         else
+         {
+             float result[4];
