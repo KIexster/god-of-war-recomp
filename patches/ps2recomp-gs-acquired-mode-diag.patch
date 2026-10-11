@@ -1,0 +1,137 @@
+diff --git a/ps2xRuntime/include/runtime/gs/gs_shared_present.h b/ps2xRuntime/include/runtime/gs/gs_shared_present.h
+index 12aba1d..3c8130f 100644
+--- a/ps2xRuntime/include/runtime/gs/gs_shared_present.h
++++ b/ps2xRuntime/include/runtime/gs/gs_shared_present.h
+@@ -23,6 +23,8 @@ namespace GSSharedPresent
+         uint64_t vsyncTick = 0;
+         // GOW-Port: PMODE apagado equivale a PresentationFrame vacío para el host.
+         bool blank = false;
++        // GOW-Port: modo del request que produjo esta textura, no del CRTC posterior.
++        uint64_t smode2 = 0;
+     };
+ 
+     void CaptureHostContext();
+diff --git a/ps2xRuntime/src/lib/gs/gpu/gs_gl.cpp b/ps2xRuntime/src/lib/gs/gpu/gs_gl.cpp
+index e56d903..a9c115c 100644
+--- a/ps2xRuntime/src/lib/gs/gpu/gs_gl.cpp
++++ b/ps2xRuntime/src/lib/gs/gpu/gs_gl.cpp
+@@ -202,7 +202,7 @@ namespace GSGL
+ 
+     bool PublishShared(const Api &gl, GLuint buffer, uint32_t width, uint32_t height, uint64_t renderSequence,
+                        uint32_t displayFbp, uint32_t sourceFbp, bool usedPreferred, bool blank,
+-                       uint64_t vsyncTick, GLuint hashProgram, GLint hashLocation)
++                       uint64_t vsyncTick, GLuint hashProgram, GLint hashLocation, uint64_t smode2)
+     {
+         std::lock_guard<std::mutex> lock(s_sharedMutex);
+         if (!s_sharedActive.load(std::memory_order_relaxed))
+@@ -295,6 +295,7 @@ namespace GSGL
+         slot.frame.usedPreferred = usedPreferred;
+         slot.frame.blank = blank;
+         slot.frame.vsyncTick = vsyncTick;
++        slot.frame.smode2 = smode2; // GOW-Port: conservar el modo de esta publicación.
+         slot.produced = gl.FenceSync(kSyncGpuCommandsComplete, 0u);
+         gl.Flush();
+         return true;
+@@ -533,7 +534,7 @@ namespace GSGL
+ namespace GSGL
+ {
+     bool PublishShared(const Api &, GLuint, uint32_t, uint32_t, uint64_t,
+-                       uint32_t, uint32_t, bool, bool, uint64_t, GLuint, GLint) { return false; }
++                       uint32_t, uint32_t, bool, bool, uint64_t, GLuint, GLint, uint64_t) { return false; }
+     bool SharedAvailable(const Api &) { return false; }
+     void DestroyShared(const Api &) {}
+     Context::~Context() = default;
+diff --git a/ps2xRuntime/src/lib/gs/gpu/gs_gl.h b/ps2xRuntime/src/lib/gs/gpu/gs_gl.h
+index 43e36c6..61e5acf 100644
+--- a/ps2xRuntime/src/lib/gs/gpu/gs_gl.h
++++ b/ps2xRuntime/src/lib/gs/gpu/gs_gl.h
+@@ -176,7 +176,7 @@ namespace GSGL
+ 
+     bool PublishShared(const Api &gl, GLuint buffer, uint32_t width, uint32_t height, uint64_t renderSequence,
+                        uint32_t displayFbp, uint32_t sourceFbp, bool usedPreferred, bool blank,
+-                       uint64_t vsyncTick, GLuint hashProgram, GLint hashLocation);
++                       uint64_t vsyncTick, GLuint hashProgram, GLint hashLocation, uint64_t smode2);
+     bool SharedAvailable(const Api &gl);
+     void DestroyShared(const Api &gl);
+ }
+diff --git a/ps2xRuntime/src/lib/gs/gpu/gs_gpu_backend.cpp b/ps2xRuntime/src/lib/gs/gpu/gs_gpu_backend.cpp
+index 23cd5df..60f04cc 100644
+--- a/ps2xRuntime/src/lib/gs/gpu/gs_gpu_backend.cpp
++++ b/ps2xRuntime/src/lib/gs/gpu/gs_gpu_backend.cpp
+@@ -2854,7 +2854,7 @@ PresentationFrame GSGpuBackend::Present(const GSPresentationRequest &request)
+     {
+         if (PublishShared(gl, d.dataBuffer, width, height, d.renderedSequence + 1u,
+                           result.displayFbp, result.sourceFbp, result.usedPreferred, blank,
+-                          request.vsyncTick, d.presentHash.id, d.presentHash.loc[0]))
++                          request.vsyncTick, d.presentHash.id, d.presentHash.loc[0], request.smode2))
+         {
+             ++d.renderedSequence;
+             d.presentedRevision = d.contentRevision;
+diff --git a/ps2xRuntime/src/lib/gs/gs_host_present.cpp b/ps2xRuntime/src/lib/gs/gs_host_present.cpp
+index f8bc6c6..ccca219 100644
+--- a/ps2xRuntime/src/lib/gs/gs_host_present.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_host_present.cpp
+@@ -111,10 +111,11 @@ GSHostPresentation::View GSHostPresentation::prepare(GS &gs, uint64_t vsyncTick)
+                 if (diagnostic && GSHostPresentDiag::consume(vsyncTick, diagnosticFromTick, diagnosticSharedFrames))
+                 {
+                     // GOW-Port: sourceFbp son páginas DISPFB o bloques TEX0 según la fuente adquirida.
+-                    std::fprintf(stderr, "[gs-present:shared] seq=%llu render=%llu hostTick=%llu frameTick=%llu displayFbp=%u sourceFbp=%u preferred=%u width=%u height=%u hashValid=%u hash=%016llx blank=%u\n",
++                    std::fprintf(stderr, "[gs-present:shared] seq=%llu render=%llu hostTick=%llu frameTick=%llu displayFbp=%u sourceFbp=%u preferred=%u smode2=%llu width=%u height=%u hashValid=%u hash=%016llx blank=%u\n",
+                         (unsigned long long)frame.sequence, (unsigned long long)frame.renderSequence,
+                         (unsigned long long)vsyncTick, (unsigned long long)frame.vsyncTick,
+-                        frame.displayFbp, frame.sourceFbp, unsigned(frame.usedPreferred), frame.width, frame.height,
++                        frame.displayFbp, frame.sourceFbp, unsigned(frame.usedPreferred), (unsigned long long)frame.smode2,
++                        frame.width, frame.height,
+                         unsigned(frame.hashValid), (unsigned long long)frame.contentHash, unsigned(frame.blank));
+                 }
+                 gs.recordAcquiredSharedFrame(frame);
+diff --git a/ps2xTest/src/ps2_gpu_shared_present_gl_tests.cpp b/ps2xTest/src/ps2_gpu_shared_present_gl_tests.cpp
+index 0062d92..bd4c260 100644
+--- a/ps2xTest/src/ps2_gpu_shared_present_gl_tests.cpp
++++ b/ps2xTest/src/ps2_gpu_shared_present_gl_tests.cpp
+@@ -350,6 +350,37 @@ namespace
+                  "Temporización GoW alterna los campos con salida CPU exacta");
+     }
+ 
++    // GOW-Port: comprobar el modo en la textura real y en una adquisición retenida.
++    void sharedAcquiredMode(TestCase &t)
++    {
++        RaylibSharedHost host;
++        if (!host.initialize(t)) return;
++        SharedFixture fixture;
++        if (!fixture.initialize(t)) return;
++        fixture.upload(32u * 32u, 1, GS_PSM_CT32, 64, 128);
++        GSPresentationRequest request{};
++        request.pmode = 1u;
++        request.dispfb1 = 32ull | (1ull << 9u);
++        // GOW-Port: altura lógica >=64 también cuando SMODE2 divide el buffer por dos.
++        request.display1 = (63ull << 32u) | (127ull << 44u);
++        uint64_t tick = 20u;
++        for (const uint64_t mode : {0x401ull, 0x401ull, 0x403ull, 0x100000000400ull})
++        {
++            request.smode2 = mode;
++            request.vsyncTick = tick++;
++            const auto pixels = fixture.present(t, request, "Modo de textura adquirida");
++            t.IsTrue(!pixels.empty(), "Composición real comparada contra CPU");
++            t.Equals(fixture.current.smode2, mode, "Conservar SMODE2 completo de esta secuencia");
++            const uint64_t sequence = fixture.current.sequence;
++            // Mutar el request del llamador no debe contaminar una textura ya publicada.
++            request.smode2 ^= 3u;
++            GSSharedPresent::Frame retained{};
++            t.IsTrue(GSSharedPresent::Acquire(retained), "Adquisición real sin una publicación nueva");
++            t.Equals(retained.sequence, sequence, "Se conserva la secuencia anterior");
++            t.Equals(retained.smode2, mode, "El modo retenido no procede del request posterior");
++        }
++    }
++
+     void sharedForcedReadback(TestCase &t)
+     {
+         RaylibSharedHost host;
+@@ -402,6 +433,7 @@ void runGpuSharedPresentGlTests()
+     {
+         suite.Run("Fuente, dimensiones, unidades y transición PMODE", sharedSourcesAndBlank);
+         suite.Run("Dos circuitos, ALP, filas y campos GoW", sharedCrtcFields);
++        suite.Run("SMODE2 de textura adquirida y retenida", sharedAcquiredMode); // GOW-Port
+         suite.Run("Captura diagnóstica síncrona mientras shared y async están activos", sharedForcedReadback);
+     });
+ #endif

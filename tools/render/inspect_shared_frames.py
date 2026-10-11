@@ -7,7 +7,7 @@ import re
 
 MARKER = '[gs-present:shared]'
 FIELDS = ('seq render hostTick frameTick displayFbp sourceFbp width height hashValid hash blank').split()
-OPTIONAL_FIELDS = {'preferred'}
+OPTIONAL_FIELDS = {'preferred', 'smode2'}
 
 def inspect(text):
     previous = None
@@ -17,6 +17,7 @@ def inspect(text):
     result = dict(acquisitions=0, retained=0, unknown_hashes=0,
                   sequence_regressions=[], inconsistent_repeats=[], content_returns=[], dimension_changes=[],
                   content_return_parity=dict(alternating=0, same=0, other=0),
+                  content_return_modes=dict(unknown=0, all_field=0, other=0),
                   tick_distance=dict(samples=0, min=None, max=None, max_sample=None),
                   source_units=dict(unknown=0, pages_8192=0, blocks_256=0))
     for number, line in enumerate(text.splitlines(), 1):
@@ -28,7 +29,7 @@ def inspect(text):
         if MARKER not in line:
             continue
         tokens = line.split(MARKER, 1)[1].strip().split()
-        if len(tokens) not in (len(FIELDS), len(FIELDS)+len(OPTIONAL_FIELDS)):
+        if not len(FIELDS) <= len(tokens) <= len(FIELDS)+len(OPTIONAL_FIELDS):
             raise ValueError(f'línea {number}: registro truncado o intercalado')
         values = dict(token.split('=', 1) for token in tokens if '=' in token)
         if (not set(FIELDS).issubset(values) or set(values)-set(FIELDS)-OPTIONAL_FIELDS or
@@ -40,6 +41,8 @@ def inspect(text):
         row = {k: int(v, 16 if k == 'hash' else 10) for k, v in values.items()}
         if row['hashValid'] > 1 or row['blank'] > 1 or row.get('preferred', 0) > 1 or not row['seq']:
             raise ValueError(f'línea {number}: flags o secuencia inválidos')
+        if row.get('smode2', 0) > 0xffffffffffffffff:
+            raise ValueError(f'línea {number}: smode2 fuera de uint64')
         # Una secuencia conserva sus metadatos aunque reaparezca después de otra.
         # El tick actual del host puede avanzar mientras retiene la misma textura.
         metadata = {k: v for k, v in row.items() if k != 'hostTick'}
@@ -95,14 +98,20 @@ def inspect(text):
                 parity = ('same' if parities[0] == parities[1] == parities[2] else
                           'alternating' if parities[0] == parities[2] else 'other')
                 result['content_return_parity'][parity] += 1
+                modes = [history[0][3], history[1][3], row.get('smode2')]
+                mode_class = ('unknown' if any(mode is None for mode in modes) else
+                              'all_field' if all(mode & 3 == 1 for mode in modes) else 'other')
+                result['content_return_modes'][mode_class] += 1
+                if any(mode is not None for mode in modes):
+                    evidence['smode2_values'] = modes
                 if 'preferred' in row:
                     evidence['preferred'] = row['preferred']
                 result['content_returns'].append(evidence)
-            history.append((signature, row['seq'], row['frameTick']))
+            history.append((signature, row['seq'], row['frameTick'], row.get('smode2')))
         previous = row
     if not result['acquisitions']:
         raise ValueError('no hay imágenes compartidas registradas')
-    result['limitation'] = 'Un patrón A-B-A de hashes puede ser legítimo; no prueba corrupción, igualdad de píxeles ni FPS. La paridad de frameTick no acredita SMODE2, entrelazado ni la causa del retorno. La distancia entre ticks no mide tiempo ni demuestra latencia sostenida. Sin preferred no se conocen las unidades de sourceFbp. Solo cubre los registros capturados; cero filas retenidas no descarta retenciones sin registrar.'
+    result['limitation'] = 'Un patrón A-B-A de hashes puede ser legítimo; no prueba corrupción, igualdad de píxeles ni FPS. La paridad de frameTick no acredita SMODE2; aun con modo de campos registrado, no demuestra la causa del retorno ni ausencia de imagen antigua. La distancia entre ticks no mide tiempo ni demuestra latencia sostenida. Sin preferred no se conocen las unidades de sourceFbp. Solo cubre los registros capturados; cero filas retenidas no descarta retenciones sin registrar.'
     return result
 
 def main():

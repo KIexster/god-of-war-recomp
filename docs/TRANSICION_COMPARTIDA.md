@@ -11,6 +11,9 @@ La cadena posterior de 99 con ventana opcional del registro ya completa
 compilación y controles nativos propios, además de tres pasadas funcionales
 de seis minutos. Falta comprobar visualmente la presentación; resultados al final.
 
+Se prepara después una cadena de 100 para registrar SMODE2 de la textura
+adquirida. La validación de 99 no acredita ese nuevo runtime.
+
 El cuadro viejo alternado con FINISH asíncrono y el encuadre incorrecto ya
 presente antes de la copia final del framebuffer requieren controles separados.
 Este diagnóstico observa la textura que adquiere el host; no reconstruye una
@@ -663,3 +666,34 @@ Mantener #51 borrador por comparación visual pendiente. Para distinguir
 campos de otros retornos, el siguiente diagnóstico debe conservar SMODE2
 del request usado para producir la textura, no leer el CRTC actual después.
 Las pruebas y adquisiciones nuevas no resuelven el encuadre dentro del GS.
+
+## Modo del request realmente compuesto: cadena 100 en preparación (2026-10-11)
+
+Nuevo parche separado `ps2recomp-gs-acquired-mode-diag.patch`, después de la
+ventana: conserva `request.smode2` completo en la ranura al publicar, junto
+con su tick. El host registra `smode2=<uint64 decimal>` del mismo Frame
+devuelto por Acquire. No lee el CRTC actual, adquiere otra textura, descarga
+píxeles, calcula otro hash o cambia FINISH/fences/filtrado/composición.
+
+Regresión Windows/WGL con textura real: VRAM fija, campos par/impar, modo de
+cuadro y progresivo, comparar filas contra CPU y comprobar SMODE2 completo
+en cada secuencia nueva y retenida. Cambiar después el request del llamador
+no altera el modo de la textura anterior. La altura del patrón es 128 para
+mantener al menos 64 filas lógicas incluso en el modo que divide el buffer.
+No dar por correcta esta nueva regresión antes de ejecutarla; requiere GPU
+real en Windows, no se ejecuta como éxito vacío en CI Linux.
+
+El inspector acepta 11..13 campos, incluidos los dos opcionales `preferred`
+y `smode2`; rango uint64, coherencia por secuencia y registros antiguos.
+Conserva todos los A–B–A: `smode2_values` guarda los tres modos cuando alguno
+es conocido; `content_return_modes` cuenta `unknown` si falta alguno,
+`all_field` si en los tres `(SMODE2 & 3) == 1`, y `other` para el resto.
+Modo registrado y paridad compatibles no prueban la causa del retorno,
+píxeles iguales ni ausencia de imagen antigua. Los logs de 99 siguen sin
+SMODE2 y deben clasificarse como desconocidos, sin inventarlo por la paridad.
+
+24 pruebas Python del inspector correctas, sintaxis 23 scripts/0 errores,
+aplicación independiente del nuevo parche sobre una base de 99 correcta.
+Pendientes CI del HEAD final, compilación completa Windows de 100, prueba
+nativa nueva/negativo significativo y otra ventana de partida. El runner
+de 99 no contiene el campo. Conservar su identidad y resultados anteriores.

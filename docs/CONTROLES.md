@@ -703,3 +703,11 @@ comparados contra CPU, también con temporización GoW. Sin embargo, este regist
 no contiene SMODE2 ni demuestra que el juego esté en ese modo. La paridad
 observada no confirma entrelazado, causa del retorno, igualdad de píxeles o
 ausencia de imagen antigua; sirve para seleccionar el siguiente control.
+
+La cadena posterior de 100 conserva SMODE2 del request en la textura publicada
+y añade `smode2` opcional al mismo registro adquirido. Requiere compilación
+completa; el runner de 99 no tiene ese metadato. `smode2_values` del inspector
+conserva los modos del A–B–A y `content_return_modes` separa desconocidos,
+tres modos de campos (`(SMODE2 & 3) == 1`) y otros. Se aceptan logs antiguos
+sin inventar su modo a partir de la paridad. 24 pruebas Python correctas;
+regresión de texturas reales Windows/GPU y control funcional pendientes.

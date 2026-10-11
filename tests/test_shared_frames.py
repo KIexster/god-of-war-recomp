@@ -168,5 +168,40 @@ class SharedFramesTest(unittest.TestCase):
             self.assertEqual(result['content_returns'], [])
             self.assertEqual(result['content_return_parity'], dict(alternating=0, same=0, other=0))
 
+    def test_recorded_modes_keep_raw_uint64_and_identify_field_flags(self):
+        mode = 0x100000000401
+        text = '\n'.join(frame(seq, value)+f' smode2={mode}'
+                         for seq, value in zip((1, 2, 3), (11, 22, 11)))
+        result = frames.inspect(text)
+        self.assertEqual(result['content_return_modes'], dict(unknown=0, all_field=1, other=0))
+        self.assertEqual(result['content_returns'][0]['smode2_values'], [mode, mode, mode])
+        self.assertEqual(result['source_units']['unknown'], 3)
+
+    def test_missing_or_mixed_smode2_does_not_certify_field_modes(self):
+        for middle, category in ((' smode2=1027', 'other'), ('', 'unknown')):
+            result = frames.inspect('\n'.join([frame(1, 11)+' smode2=1025',
+                                              frame(2, 22)+middle,
+                                              frame(3, 11)+' smode2=1025']))
+            expected = dict(unknown=0, all_field=0, other=0)
+            expected[category] = 1
+            self.assertEqual(result['content_return_modes'], expected)
+            self.assertEqual(len(result['content_returns']), 1)
+        legacy = frames.inspect('\n'.join([frame(1, 11), frame(2, 22), frame(3, 11)]))
+        self.assertEqual(legacy['content_return_modes'], dict(unknown=1, all_field=0, other=0))
+        self.assertNotIn('smode2_values', legacy['content_returns'][0])
+
+    def test_smode2_metadata_cannot_change_for_a_retained_sequence(self):
+        result = frames.inspect('\n'.join([frame(1, 11, preferred=0)+' smode2=1025',
+                                          frame(1, 11, host=20)+' smode2=1027']))
+        self.assertEqual(result['inconsistent_repeats'], [2])
+        self.assertEqual(result['tick_distance']['samples'], 1)
+
+    def test_smode2_rejects_overflow_signs_and_duplicate_fields(self):
+        for value in ('18446744073709551616', '-1', '+1', '0x401', '1 smode2=2'):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                frames.inspect(frame(1, 11)+' smode2='+value)
+        accepted = frames.inspect(frame(1, 11, preferred=0)+' smode2=18446744073709551615')
+        self.assertEqual(accepted['acquisitions'], 1)
+
 if __name__ == '__main__':
     unittest.main()

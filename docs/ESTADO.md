@@ -4065,3 +4065,19 @@ terminaron; siguen pendientes comparación visual alineada/encuadre y duración
 mayor. #51 conserva borrador. Siguiente control: SMODE2 de la textura adquirida,
 con regresión que descarte confundirlo con el CRTC actual. Detalles y límites
 en TRANSICION_COMPARTIDA.md. No se publican datos del juego ni FPS.
+
+## Preparación de SMODE2 adquirido, sin cambiar la presentación (2026-10-11)
+
+Los miles de retornos A–B–A de partida en 99 alternan paridad, pero faltaba el
+modo del request. Parche nuevo por tema `ps2recomp-gs-acquired-mode-diag.patch`:
+guardar SMODE2 completo en la ranura publicada y registrarlo desde el Frame
+adquirido. No inferirlo del CRTC actual ni añadir readback/Acquire/hash/barreras.
+Una regresión GPU real comprueba campos/cuadro/progresivo, píxeles contra CPU
+y metadatos nuevos/retenidos; ejecución pendiente. La rama pasa a 100 parches,
+con aplicación independiente del nuevo correcta y sintaxis sin errores.
+
+Inspector 24/24 pruebas: campo opcional decimal uint64, metadatos consistentes,
+compatibilidad con logs previos y tres modos por retorno, sin ocultar A–B–A.
+Las adquisiciones de 99 no acreditan este runtime; necesitan otra compilación
+completa, suite/GPU/negativo y control con el juego. #51 sigue borrador.
+Se mantiene separada la investigación de encuadre y no se modifican matemáticas.
