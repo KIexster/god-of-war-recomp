@@ -3244,3 +3244,98 @@ comprueba los píxeles de cada textura nueva contra CPU; las esperas y lecturas
 solo existen en la prueba. La ampliación sigue aplicando antes del diagnóstico
 en la cadena privada conjunta de 97. Es cobertura procedural pendiente de
 ejecución GPU, no una reproducción del defecto visual ni un benchmark.
+## Regresiones de COP0.Count para investigar una espera (2026-10-11)
+
+En la rama de diagnóstico GS, dos controles completos con presentación
+compartida síncrona dejan de informar progreso tras estado 4. El muestreo
+privado con símbolos encuentra trabajo EE en un bucle que consulta Count.
+La traducción actual lee `ctx->cop0_count`, pero los ciclos EE no lo actualizan.
+Este problema es anterior a los cambios recientes de VU1: no se atribuye a Opus.
+
+Se añade un parche separado con cuatro regresiones sin juego: avance y sondeo
+acotado, wrap/escrituras entre contextos, reset y emisión MFC0/MTC0.
+El primer commit es un control negativo deliberado, con interfaces compatibles
+y la lectura inmóvil anterior; debe compilar y fallar esas expectativas.
+La implementación por ciclos se publicará después conservando este historial.
+
+Todavía no se ha demostrado el efecto sobre la transición. La validación
+requiere CI del HEAD corregido, compilación Windows completa para regenerar
+las lecturas y repetición con el juego. No se modifica FINISH ni fences, no se
+afirma fidelidad de cámara, estabilidad general o FPS, ni se implementa aquí
+la interrupción de COP0.Compare. Referencia semántica del contador:
+[PCSX2 COP0.cpp](https://github.com/PCSX2/pcsx2/blob/master/pcsx2/COP0.cpp).
+
+Primer CI negativo `e7e8914`/38137005221: falla al compilar la nueva prueba
+por faltar `ps2recomp/types.h` (Instruction/Symbol/Section incompletos).
+Se añade la cabecera y se repite. Ese ensayo no acredita regresiones de
+comportamiento; el control negativo debe llegar a ejecutar la suite.
+
+El control negativo corregido `d496189` compila y ejecuta la suite en
+[CI 38137285316](https://github.com/KIexster/god-of-war-recomp/actions/runs/38137285316):
+591/595 pasan; fallan únicamente las cuatro regresiones nuevas de Count.
+No se añaden excepciones a `fallos_conocidos.txt`. Se publica después el
+arreglo: Count global actualizado perezosamente por ciclos EE, mínimo de uno
+en lecturas consecutivas del mismo bloque, wrap de 32 bits, escritura/reset
+de su base y emisión MFC0/MTC0 a través del runtime. MFC0 a $zero ejecuta
+explícitamente la lectura, porque SET_GPR_S32 omite evaluar el valor allí.
+Se mantiene la extensión de signo de MFC0. No usa reloj host ni añade
+interrupciones Compare. El CI positivo y control nativo siguen pendientes.
+
+El positivo `5c64a2248f52ffb09921d439137116901d638012` pasa
+[CI 38137693634](https://github.com/KIexster/god-of-war-recomp/actions/runs/38137693634):
+595/595, configuración, sintaxis, aplicación de los 96 parches y controles
+procedurales completos correctos. La integración de 98 en #51, `f36936e`,
+pasa también 597/597 en CI. Se mantiene borrador hasta comprobar Windows
+y la transición con el runner recién generado; no se declara resuelta la espera.
+
+Control nativo de la integración de 98 en #51, código `f36936e`: build Windows
+completo, 898,79 s, salida 0, runner SHA-256
+`4693c62c14919c5bd400aa55b8da50a0ab5f5d281d3d20e7b02624aeaa5c6663`.
+597/597 normal y 631/631 GPU real correctas, incluidas las cuatro regresiones
+de Count. Controles separados de FINISH y de píxeles de texturas adquiridas
+pasan ambos modos. Se comprueba la integración con dos parches GS adicionales,
+no un ejecutable independiente de esta rama. La transición nueva empieza
+después de terminar compilaciones y pruebas; el efecto funcional sigue pendiente.
+
+Primera pasada síncrona/compartida con aquel runner: 360,08 s, terminación
+deliberada por límite, tarjeta privada intacta y ninguna firma buscada de error.
+Informa estado 11 a 145,14 s; el mismo caso de las cadenas anteriores 96/97
+dejaba de informar tras 4 a ~25 s. Se supera la espera en este control.
+Capturas externas propias muestran intro, enemigos y finalmente HUD/Kratos
+en los muelles, sin alineación PCSX2/secuencia GS y con perturbación de captura.
+No se afirma jugabilidad, fidelidad de cámara, ausencia de alternancia o FPS.
+Se repite después asíncrona/compartida aislada; falta completar esa pasada y
+comprobar CI del HEAD final antes de cerrar la revisión de esta corrección.
+
+La repetición asíncrona/compartida con el mismo runner termina 360,04 s:
+primer informe 11 a 116,40 s, último 11, tarjeta intacta y sin firmas buscadas
+de error; salida deliberada por límite. Dos capturas propias muestran escena
+y después HUD/Kratos/combate, sin comparación alineada ni medida de FPS.
+2.325 adquisiciones, cero regresiones/inconsistencias/hash desconocido,
+140 A–B–A y ninguno en tramos 4/11. La pasada síncrona también completó 360 s
+y superó la espera de las cadenas anteriores. Revisión del cambio: estado
+global EE, wrap, escritura/reset de base, extensión de signo y efecto con
+destino $zero; sin modificar FINISH/fences ni el checkout de Opus.
+El CI del último HEAD documental debe pasar antes de fusionar este tema.
+La validación de cámara/alternancia y los hilos permanecen en #51.
+
+## Integración y revisión final de unidades GS (2026-10-11)
+
+La corrección Count #59 se fusionó en `cee659a` tras CI completo del HEAD
+`ab89804`. Esta rama integra main por merge, preservando ambas investigaciones
+y aplicando Count antes del parche de direcciones GS: 97 parches. La rama
+#51 ya compiló esa combinación más el diagnóstico del host (98) en Windows
+desde `f36936e`, runner SHA-256
+`4693c62c14919c5bd400aa55b8da50a0ab5f5d281d3d20e7b02624aeaa5c6663`.
+597/597 normal, 631/631 GPU real y los controles separados de ambas formas
+de FINISH/texturas adquiridas pasan. No se atribuye al ejecutable un cambio
+posterior de código: los parches de Count y direcciones siguen idénticos.
+
+La espera síncrona compartida se supera con Count; no la corrige este tema
+de unidades. La selección del juego continúa `preferred=0`, sin probar
+que el arreglo de bases sea causal de cámara/alternancia. La revisión comprueba
+las tres conversiones página/bloque, TBW explícito/cero, metadatos y los
+controles negativos/positivos CPU y GPU. La semántica física de ambos pares
+y la reutilización de ocho ranuras quedan cubiertas sin alterar las
+matemáticas del renderer CPU ni FINISH/fences. Falta verificar el CI del
+HEAD final tras este merge antes de fusionar #58.

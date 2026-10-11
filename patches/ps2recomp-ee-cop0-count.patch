@@ -1,0 +1,228 @@
+diff --git a/ps2xRecomp/src/lib/cop0_translator.cpp b/ps2xRecomp/src/lib/cop0_translator.cpp
+index 1823a39..bb5b762 100644
+--- a/ps2xRecomp/src/lib/cop0_translator.cpp
++++ b/ps2xRecomp/src/lib/cop0_translator.cpp
+@@ -44,7 +44,10 @@ namespace ps2recomp
+             case COP0_REG_BADVADDR:
+                 return fmt::format("SET_GPR_S32(ctx, {}, (int32_t)ctx->cop0_badvaddr);", rt);
+             case COP0_REG_COUNT:
+-                return fmt::format("SET_GPR_S32(ctx, {}, (int32_t)ctx->cop0_count);", rt);
++                // GOW-Port: MFC0 Count actualiza el contador incluso con destino $zero.
++                if (rt == 0u)
++                    return "(void)runtime->readCop0Count(ctx);";
++                return fmt::format("SET_GPR_S32(ctx, {}, (int32_t)runtime->readCop0Count(ctx));", rt);
+             case COP0_REG_ENTRYHI:
+                 return fmt::format("SET_GPR_S32(ctx, {}, (int32_t)ctx->cop0_entryhi);", rt);
+             case COP0_REG_COMPARE:
+@@ -94,7 +97,8 @@ namespace ps2recomp
+             case COP0_REG_BADVADDR:
+                 return "// MTC0 to BADVADDR register ignored (read-only)";
+             case COP0_REG_COUNT:
+-                return fmt::format("ctx->cop0_count = GPR_U32(ctx, {});", rt);
++                // GOW-Port: una escritura cambia la base global, no solo este hilo.
++                return fmt::format("runtime->writeCop0Count(ctx, GPR_U32(ctx, {}));", rt);
+             case COP0_REG_ENTRYHI:
+                 return fmt::format("ctx->cop0_entryhi = GPR_U32(ctx, {}) & 0xC00000FF;", rt);
+             case COP0_REG_COMPARE:
+diff --git a/ps2xRuntime/include/ps2_runtime.h b/ps2xRuntime/include/ps2_runtime.h
+index 58e57de..2ebb64a 100644
+--- a/ps2xRuntime/include/ps2_runtime.h
++++ b/ps2xRuntime/include/ps2_runtime.h
+@@ -399,6 +399,9 @@ public:
+ 
+     EeScheduler &eeScheduler();
+     const EeScheduler &eeScheduler() const;
++    // GOW-Port: Count pertenece al CPU, no a una copia de contexto por hilo.
++    uint32_t readCop0Count(R5900Context *context) noexcept;
++    void writeCop0Count(R5900Context *context, uint32_t value) noexcept;
+     void postEeEvent(EeEvent event);
+     bool eeCheckpointDue(uint32_t cycles = 32u) noexcept;
+     [[noreturn]] void eeWaitVSyncTicks(uint32_t ticks, uint32_t resumePc);
+@@ -510,6 +513,8 @@ private:
+     VU1Interpreter m_vu0{VU1Interpreter::Unit::VU0};
+     VU1Interpreter m_vu1{VU1Interpreter::Unit::VU1};
+     R5900Context m_cpuContext;
++    uint32_t m_cop0Count = 0u; // GOW-Port: estado global del contador EE.
++    uint64_t m_cop0CountCycle = 0u;
+     std::unique_ptr<EeScheduler> m_eeScheduler;
+     mutable std::mutex m_eeKernelStateMutex;
+     std::unordered_map<int, std::vector<EeExitHandlerRegistration>> m_eeExitHandlers;
+diff --git a/ps2xRuntime/include/runtime/ee_scheduler.h b/ps2xRuntime/include/runtime/ee_scheduler.h
+index 8bf01ca..9a980e5 100644
+--- a/ps2xRuntime/include/runtime/ee_scheduler.h
++++ b/ps2xRuntime/include/runtime/ee_scheduler.h
+@@ -280,6 +280,8 @@ public:
+     void postEvent(EeEvent event);
+     [[nodiscard]] bool checkpointDue(uint32_t cycles = kGeneratedCheckpointCycles) noexcept;
+     void accountCycles(uint32_t cycles) noexcept;
++    // GOW-Port: reloj EE del ejecutor para los registros COP0 compartidos.
++    [[nodiscard]] uint64_t currentEeCycle() const noexcept { return m_eeCycle; }
+     [[nodiscard]] bool isExecutingGuest() const noexcept;
+ 
+     // Kernel object API. All calls except postEvent/requestStop execute on the
+diff --git a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+index 5ef31c4..6bb6857 100644
+--- a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
++++ b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+@@ -115,6 +115,8 @@ void EeScheduler::reset(uint8_t *rdram, const R5900Context &mainContext)
+     m_insideInterrupt = false;
+     m_pendingEeTimerInterrupts = 0u;
+     m_eeCycle = 0u;
++    // GOW-Port: reiniciar base y valor juntos, sin heredar el reloj de otra ejecución.
++    m_runtime.writeCop0Count(nullptr, mainContext.cop0_count);
+     m_sliceEndCycle = kDefaultTimeSliceCycles;
+     m_stopRequested.store(false, std::memory_order_release);
+     m_checkpointPending.store(false, std::memory_order_release);
+diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
+index f5d72b6..a455177 100644
+--- a/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -2324,6 +2324,24 @@ bool PS2Runtime::isStopRequested() const
+     return m_stopRequested.load(std::memory_order_relaxed);
+ }
+ 
++// GOW-Port: actualización perezosa por ciclos EE, como COP0.cpp de PCSX2.
++// Las lecturas seguidas en un bloque avanzan al menos uno; no usar reloj de pared.
++uint32_t PS2Runtime::readCop0Count(R5900Context *context) noexcept
++{
++    const uint64_t cycle = m_eeScheduler->currentEeCycle();
++    m_cop0Count += static_cast<uint32_t>(std::max<uint64_t>(1u, cycle - m_cop0CountCycle));
++    m_cop0CountCycle = cycle;
++    if (context) context->cop0_count = m_cop0Count;
++    return m_cop0Count;
++}
++
++void PS2Runtime::writeCop0Count(R5900Context *context, uint32_t value) noexcept
++{
++    m_cop0Count = value;
++    m_cop0CountCycle = m_eeScheduler->currentEeCycle();
++    if (context) context->cop0_count = value;
++}
++
+ EeScheduler &PS2Runtime::eeScheduler()
+ {
+     return *m_eeScheduler;
+diff --git a/ps2xTest/CMakeLists.txt b/ps2xTest/CMakeLists.txt
+index 31e2458..9781688 100644
+--- a/ps2xTest/CMakeLists.txt
++++ b/ps2xTest/CMakeLists.txt
+@@ -27,6 +27,7 @@ add_library(ps2_test_lib STATIC
+     src/pad_input_tests.cpp
+     src/ps2_runtime_io_tests.cpp
+     src/ps2_runtime_kernel_tests.cpp
++    src/ps2_cop0_count_tests.cpp # GOW-Port: ciclos, wrap, contextos y sondeo acotado.
+     src/ps2_runtime_interrupt_tests.cpp
+     src/ps2_memory_tests.cpp
+     src/ps2_vu1_tests.cpp
+diff --git a/ps2xTest/src/main.cpp b/ps2xTest/src/main.cpp
+index 239042e..4aedbae 100644
+--- a/ps2xTest/src/main.cpp
++++ b/ps2xTest/src/main.cpp
+@@ -8,6 +8,7 @@ void register_elf_analyzer_tests();
+ void register_pad_input_tests();
+ void register_ps2_runtime_io_tests();
+ void register_ps2_runtime_kernel_tests();
++void register_cop0_count_tests(); // GOW-Port
+ void register_ps2_runtime_interrupt_tests();
+ void register_ps2_memory_tests();
+ void register_ps2_vu1_tests();
+@@ -41,6 +42,7 @@ int main()
+     register_pad_input_tests();
+     register_ps2_runtime_io_tests();
+     register_ps2_runtime_kernel_tests();
++    register_cop0_count_tests(); // GOW-Port
+     register_ps2_runtime_interrupt_tests();
+     register_ps2_memory_tests();
+     register_ps2_vu1_tests();
+diff --git a/ps2xTest/src/ps2_cop0_count_tests.cpp b/ps2xTest/src/ps2_cop0_count_tests.cpp
+new file mode 100644
+index 0000000..95e67eb
+--- /dev/null
++++ b/ps2xTest/src/ps2_cop0_count_tests.cpp
+@@ -0,0 +1,86 @@
++// GOW-Port: Count avanza sin esperas host y es compartido entre contextos EE.
++#include "MiniTest.h"
++#include "ps2_runtime.h"
++#include "runtime/ee_scheduler.h"
++#include "ps2recomp/code_generator.h"
++#include "ps2recomp/instructions.h"
++#include "ps2recomp/types.h"
++#include <string>
++#include <vector>
++
++void register_cop0_count_tests()
++{
++    MiniTest::Case("GOW COP0 Count", [](TestCase &tc)
++    {
++        tc.Run("Count shares writes across contexts and wraps at 32 bits", [](TestCase &t)
++        {
++            PS2Runtime runtime;
++            R5900Context first{}, second{};
++            runtime.writeCop0Count(&first, 0xfffffffeu);
++            t.Equals(runtime.readCop0Count(&first), 0xffffffffu, "Lectura consecutiva avanza");
++            t.Equals(runtime.readCop0Count(&second), 0u, "Wrap y estado global en otro contexto");
++            t.Equals(runtime.readCop0Count(&first), 1u, "Una copia antigua no rebobina Count");
++            runtime.eeScheduler().accountCycles(19u);
++            t.Equals(runtime.readCop0Count(&second), 20u, "Avanza por los ciclos EE contabilizados");
++            runtime.writeCop0Count(&second, 50u);
++            t.Equals(runtime.readCop0Count(&first), 51u, "MTC0 de otro contexto cambia la base");
++            t.Equals(first.cop0_count, 51u, "Espejo del contexto que leyó el registro");
++        });
++        tc.Run("Count ends a bounded guest polling loop without host time", [](TestCase &t)
++        {
++            PS2Runtime runtime;
++            R5900Context context{};
++            runtime.writeCop0Count(&context, 0u);
++            const uint32_t start = runtime.readCop0Count(&context);
++            bool expired = false;
++            for (uint32_t i = 0; i < 32; ++i)
++            {
++                runtime.eeScheduler().accountCycles(32u);
++                if (uint32_t(runtime.readCop0Count(&context) - start) >= 512u)
++                {
++                    expired = true;
++                    break;
++                }
++            }
++            t.IsTrue(expired, "Un deadline EE termina aunque no haya avance de reloj host");
++        });
++        tc.Run("scheduler reset seeds Count and its cycle baseline together", [](TestCase &t)
++        {
++            PS2Runtime runtime;
++            R5900Context seed{}, reader{};
++            std::vector<uint8_t> ram(PS2_RAM_SIZE);
++            runtime.eeScheduler().accountCycles(1000u);
++            runtime.writeCop0Count(&reader, 9999u);
++            seed.cop0_count = 123u;
++            runtime.eeScheduler().reset(ram.data(), seed);
++            t.Equals(runtime.readCop0Count(&reader), 124u, "Reset no hereda ni contador ni reloj anterior");
++            runtime.eeScheduler().accountCycles(32u);
++            t.Equals(runtime.readCop0Count(&reader), 156u, "La nueva ejecución contabiliza sus ciclos");
++        });
++        tc.Run("MFC0 and MTC0 Count use the runtime including the zero destination", [](TestCase &t)
++        {
++            ps2recomp::CodeGenerator generator({}, {});
++            ps2recomp::Instruction instruction{};
++            instruction.opcode = ps2recomp::OPCODE_COP0;
++            instruction.rd = ps2recomp::COP0_REG_COUNT;
++            instruction.rs = ps2recomp::COP0_MF;
++            for (uint32_t rt : {0u, 5u})
++            {
++                instruction.rt = rt;
++                const auto code = generator.translateInstruction(instruction);
++                t.IsTrue(code.find("runtime->readCop0Count(ctx)") != std::string::npos,
++                         "MFC0 actualiza Count incluso cuando se descarta el resultado");
++                if (rt == 0u)
++                    t.Equals(code, std::string("(void)runtime->readCop0Count(ctx);"),
++                             "No ocultar el efecto dentro de SET_GPR_S32 que omite $zero");
++                else
++                    t.IsTrue(code.find("(int32_t)") != std::string::npos, "MFC0 conserva extensión de signo");
++            }
++            instruction.rs = ps2recomp::COP0_MT;
++            instruction.rt = 7;
++            t.IsTrue(generator.translateInstruction(instruction).find(
++                         "runtime->writeCop0Count(ctx, GPR_U32(ctx, 7))") != std::string::npos,
++                     "MTC0 escribe el valor global y su base de ciclos");
++        });
++    });
++}
