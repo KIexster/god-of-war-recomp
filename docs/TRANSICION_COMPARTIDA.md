@@ -697,3 +697,39 @@ aplicación independiente del nuevo parche sobre una base de 99 correcta.
 Pendientes CI del HEAD final, compilación completa Windows de 100, prueba
 nativa nueva/negativo significativo y otra ventana de partida. El runner
 de 99 no contiene el campo. Conservar su identidad y resultados anteriores.
+
+## Control inicial de 100 y alcance de la regresión de modo (2026-10-11)
+
+La compilación completa de `4a000c48e2d111637a77318eb509dd88f35d653d` termina
+con salida 0 en 943,29 s; 100 parches, Release `/O2 /Ob2 /DNDEBUG /Zi`, link
+`/INCREMENTAL:NO /DEBUG /OPT:REF /OPT:ICF`, VU1 intérprete y símbolos privados.
+Runner de 54.542.848 bytes, SHA-256
+`fb46a87ac6d80a600f8662ae3ee6b74bbb5b37b84f1cc10fa0eb0b0f3d4367b5`.
+[CI de ese código correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38156407391).
+Después de congelarlo se recompilan también los objetos de los controles
+procedurales privados: el campo nuevo cambia el layout de Frame.
+
+Suite Windows: 600/600 normal en 13,42 s; GPU real 634/635 en 31,35 s. Falla
+solo «SMODE2 de textura adquirida y retenida», con razones «alto lógico» y
+«Composición real comparada contra CPU». Los contratos siguientes quedan sin
+ejecutar por esa salida; ninguna partida usa este runner. Mantener el fallo
+como resultado, sin confundir compilación correcta con validación funcional.
+
+Para `SMODE2=0x403` y DISPLAY de 64×128, la fórmula GPU divide la altura por
+dos y CPU no la divide. El diagnóstico no modificó esas fórmulas. Investigar
+por separado qué interpretación corresponde y si ese modo aparece realmente
+en el juego; la diferencia no prueba la causa del encuadre ni de la alternancia.
+
+La nueva prueba se ajusta al propósito de conservar el metadato: mantiene
+campos par/impar, cuadro y progresivo con bits altos, todas las adquisiciones
+nuevas y retenidas. Campos/progresivo siguen comparando todas las filas contra
+CPU. En cuadro se adquiere una textura real no vacía y se imprimen las
+dimensiones de ambos renderers mediante `[gs-test:mode-frame]`, sin afirmar
+equivalencia allí. No se suprime el modo ni se cambia composición, FINISH o
+fences. Esta decisión reduce expresamente el alcance de la comparación CPU
+del test nuevo; no cambia las pruebas anteriores ni tapa el primer fallo.
+
+Pendientes otra compilación completa, suite normal/GPU, control negativo
+compatible que fuerce el metadato a cero y restauración positiva, contratos
+independientes y ventana del juego. No usar el runner anterior para acreditar
+la prueba ajustada. PR #51 permanece borrador y el encuadre sigue separado.

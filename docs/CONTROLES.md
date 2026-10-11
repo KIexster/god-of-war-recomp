@@ -711,3 +711,12 @@ conserva los modos del A–B–A y `content_return_modes` separa desconocidos,
 tres modos de campos (`(SMODE2 & 3) == 1`) y otros. Se aceptan logs antiguos
 sin inventar su modo a partir de la paridad. 24 pruebas Python correctas;
 regresión de texturas reales Windows/GPU y control funcional pendientes.
+
+La primera suite nativa de 100 obtiene 600/600 normal y 634/635 GPU: el test
+nuevo detecta altura CPU/GPU distinta en modo cuadro (`SMODE2 & 3 == 3`).
+Se conserva el resultado inicial en ESTADO/TRANSICION_COMPARTIDA. Su ajuste
+valida todos los modos como metadatos de texturas nuevas/retenidas y conserva
+comparación de píxeles CPU en campos/progresivo. Para cuadro imprime las
+dimensiones mediante `[gs-test:mode-frame]`; **no certifica equivalencia CPU
+en ese modo**. El runtime de composición no cambia y su discrepancia sigue
+pendiente. La revisión del test exige nueva compilación completa y validación.

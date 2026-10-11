@@ -4081,3 +4081,31 @@ compatibilidad con logs previos y tres modos por retorno, sin ocultar A–B–A.
 Las adquisiciones de 99 no acreditan este runtime; necesitan otra compilación
 completa, suite/GPU/negativo y control con el juego. #51 sigue borrador.
 Se mantiene separada la investigación de encuadre y no se modifican matemáticas.
+
+## Primer control nativo de 100: diferencia de altura en modo cuadro (2026-10-11)
+
+Compilación Windows completa desde `4a000c48e2d111637a77318eb509dd88f35d653d`,
+100 parches, salida 0 en 943,29 s. Runner congelado SHA-256
+`fb46a87ac6d80a600f8662ae3ee6b74bbb5b37b84f1cc10fa0eb0b0f3d4367b5`,
+Release optimizado con símbolos privados, VU1 intérprete. [CI del mismo HEAD
+correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38156407391).
+600/600 normal; **634/635 GPU real: falla la nueva prueba de SMODE2**, por
+altura lógica distinta y comparación CPU vacía. No se ejecutan los contratos
+posteriores ni el juego con este runner; no se presenta como validación completa.
+
+La revisión localiza la diferencia en el caso `SMODE2=0x403`: con DISPLAY de
+64×128, GPU divide la altura por dos y CPU conserva la altura completa. Es
+código de composición previo, sin cambios en el parche del metadato; todavía
+no se determina qué salida debe usarse ni si el juego utiliza ese modo en la
+transición. No se atribuye al encuadre ni se cambia el renderer para hacer
+pasar una prueba del diagnóstico.
+
+Se precisa el alcance de la nueva regresión: todos los modos conservan
+SMODE2 completo en una textura realmente adquirida y retenida; campos y
+progresivo mantienen comparación de todas las filas contra CPU. En modo
+cuadro se registra la dimensión CPU/GPU y se valida solo textura/metadatos,
+conservando explícitamente pendiente su equivalencia. Se mantiene el caso,
+sin añadir excepciones a `fallos_conocidos.txt` ni ocultar el resultado inicial.
+El parche corregido aplica sobre una base independiente de 99. Requiere otra
+compilación completa, suite/negativo significativo y controles del juego;
+#51 sigue borrador. La diferencia de altura es una investigación separada.
