@@ -3235,3 +3235,15 @@ en los muelles, sin alineación PCSX2/secuencia GS y con perturbación de captur
 No se afirma jugabilidad, fidelidad de cámara, ausencia de alternancia o FPS.
 Se repite después asíncrona/compartida aislada; falta completar esa pasada y
 comprobar CI del HEAD final antes de cerrar la revisión de esta corrección.
+
+La repetición asíncrona/compartida con el mismo runner termina 360,04 s:
+primer informe 11 a 116,40 s, último 11, tarjeta intacta y sin firmas buscadas
+de error; salida deliberada por límite. Dos capturas propias muestran escena
+y después HUD/Kratos/combate, sin comparación alineada ni medida de FPS.
+2.325 adquisiciones, cero regresiones/inconsistencias/hash desconocido,
+140 A–B–A y ninguno en tramos 4/11. La pasada síncrona también completó 360 s
+y superó la espera de las cadenas anteriores. Revisión del cambio: estado
+global EE, wrap, escritura/reset de base, extensión de signo y efecto con
+destino $zero; sin modificar FINISH/fences ni el checkout de Opus.
+El CI del último HEAD documental debe pasar antes de fusionar este tema.
+La validación de cámara/alternancia y los hilos permanecen en #51.
