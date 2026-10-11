@@ -448,3 +448,19 @@ el control, sin tocar la referencia. Este target necesita Windows/WGL y
 no se ejecuta en CI Linux; no reemplaza la matriz del juego ni prueba ausencia
 de imágenes antiguas, cámara correcta o estabilidad prolongada. Tampoco
 añade readback al diagnóstico del host o calcula FPS.
+
+## Runner con COP0.Count por ciclos (2026-10-11)
+
+Cadena completa de 98: código `f36936e067aa283e4567e3b16700cfe4e546b629`,
+898,79 s, salida 0, VU1 intérprete/tres tareas y símbolos privados.
+SHA-256 del runner congelado:
+`4693c62c14919c5bd400aa55b8da50a0ab5f5d281d3d20e7b02624aeaa5c6663`.
+El CI pasa 597/597. Se han regenerado las lecturas de Count del bucle EE;
+el runner de 97 no contiene esa corrección.
+
+Repetir primero síncrona/compartida, que esperó tras estado 4 en las dos
+cadenas anteriores, y después asíncrona/compartida. Conservar guion,
+tarjeta inicial, hilos apagados y diagnósticos del protocolo. Solo una
+partida a la vez y sin compilación; registrar también minimización y capturas.
+La suite nativa y ambos controles FINISH deben completar antes. No trasladar
+el éxito de CI/compilación a la transición, cámara, píxeles del juego o FPS.

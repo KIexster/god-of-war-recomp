@@ -3757,3 +3757,47 @@ sus descendientes; se conservan manifiesto de salida 1 y fuentes parciales.
 No hay runner nuevo validado de ese intento. Se reinicia la compilación
 completa con el parche corregido, en otra carpeta de artefactos. No se detienen
 procesos de otros colaboradores ni se modifican sus archivos.
+
+Primer CI negativo `e7e8914`/38137005221: falla al compilar la nueva prueba
+por faltar `ps2recomp/types.h` (Instruction/Symbol/Section incompletos).
+Se añade la cabecera y se repite. Ese ensayo no acredita regresiones de
+comportamiento; el control negativo debe llegar a ejecutar la suite.
+
+El control negativo corregido `d496189` compila y ejecuta la suite en
+[CI 38137285316](https://github.com/KIexster/god-of-war-recomp/actions/runs/38137285316):
+591/595 pasan; fallan únicamente las cuatro regresiones nuevas de Count.
+No se añaden excepciones a `fallos_conocidos.txt`. Se publica después el
+arreglo: Count global actualizado perezosamente por ciclos EE, mínimo de uno
+en lecturas consecutivas del mismo bloque, wrap de 32 bits, escritura/reset
+de su base y emisión MFC0/MTC0 a través del runtime. MFC0 a $zero ejecuta
+explícitamente la lectura, porque SET_GPR_S32 omite evaluar el valor allí.
+Se mantiene la extensión de signo de MFC0. No usa reloj host ni añade
+interrupciones Compare. El CI positivo y control nativo siguen pendientes.
+
+El positivo `5c64a2248f52ffb09921d439137116901d638012` pasa
+[CI 38137693634](https://github.com/KIexster/god-of-war-recomp/actions/runs/38137693634):
+595/595, configuración, sintaxis, aplicación de los 96 parches y controles
+procedurales completos correctos. La integración de 98 en #51, `f36936e`,
+pasa también 597/597 en CI. Se mantiene borrador hasta comprobar Windows
+y la transición con el runner recién generado; no se declara resuelta la espera.
+
+## Runner Windows de 98 parches con Count (2026-10-11)
+
+Compilación completa terminada con código 0 a partir de
+`f36936e067aa283e4567e3b16700cfe4e546b629`: 898,79 s, 98 parches,
+VU1 intérprete y tres tareas. Runner de 54.542.848 bytes, SHA-256
+`4693c62c14919c5bd400aa55b8da50a0ab5f5d281d3d20e7b02624aeaa5c6663`.
+Se verifican /O2 /Ob2 /DNDEBUG /Zi y enlace /DEBUG /OPT:REF /OPT:ICF;
+PDB privado de 177.598.464 bytes. Manifiesto/binario congelado en
+`E:\gowgpuprof\transition98_validating`. Las lecturas de Count en el bucle
+muestreado se han regenerado con la API del runtime; no se reutiliza el runner 97.
+
+El CI de ese HEAD pasa 597/597. El HEAD documental final de #59, `00d5575`,
+pasa también CI completo (38138091541). Se integra mediante merge en #51,
+conservando ambos registros en el conflicto de documentación; el parche
+positivo es idéntico al usado en la compilación y no cambia la cadena.
+La compilación de las pruebas nativas está en curso. La transición todavía
+debe repetirse y no se afirma que el defecto de Count explique el encuadre,
+alternancia o todos los FPS bajos. Las mediciones de Opus siguen siendo suyas:
+documenta 11,6 FPS por defecto y 25,2 con su configuración optimizada; estos
+controles con intérprete/hilos apagados/hash/diagnóstico no son comparables.
