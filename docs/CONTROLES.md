@@ -912,4 +912,11 @@ No se omiten comandos anteriores al umbral: llegan al renderer sin grabarse.
 El inicio registra `videoTick` del runtime, no metadatos de una adquisición.
 No cambia formato, backend o límites ni alinea poses automáticamente con otra
 pasada/PCSX2. La captura serializa/sincroniza y no mide FPS; datos privados.
-Prueba procedural y replay CPU correctos; control nativo con juego pendiente.
+Prueba procedural y replay CPU correctos; negativo al omitir el umbral falla
+y restaurado pasa. Src/ de `d5ab720` recompilado sobre 101 completa, CI correcto.
+Control con juego: inicio en tick 1500/estado 11/TEXFLUSH, ocho Present
+1500..1507 y End completo. Reproducción hasta el segundo Present con CPU
+repetible y hardware con diferencias entre pasadas de ruta constante; no
+certifica paridad. Ambas imágenes revisadas muestran la pose elevada de la
+introducción del barco. Véase ESTADO.md para identidad, cantidades y límites;
+las matrices finitas y esa semejanza no resuelven el espasmo ni miden FPS.

@@ -4614,3 +4614,49 @@ primitiva posterior registrada, End válido; parser de uint64 y opciones
 inválidas sin cambios parciales. Replay CPU del fixture y layout de píxeles
 correctos. Pendientes recompilación de src/, control de ventana con el juego
 y CI del nuevo código. No se modifica ningún parche o matemática del juego.
+
+## Ventana de la introducción y reproducción de la pose (2026-10-11)
+
+El usuario precisa que el ejemplo de espasmo corresponde a la introducción
+del barco. Se centra esta comprobación en ese tramo; los avisos anteriores
+sobre NPCs y los controles con HUD siguen siendo casos separados.
+
+Src/ de `d5ab720` recompilado sobre la cadena completa 101: código 0 en
+19,47 s, runtime.lib y parches intactos. Runner 54.562.816 bytes, SHA-256
+`6c7a3119476351602683e81f8ad0a890059b83c4cf1f0d068c3f83c9e0b7f436`.
+[CI del código correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38182940840).
+Negativo procedural en copia privada: omitir solo el umbral compila y hace
+fallar la prueba de ventana; restaurarlo pasa. No se altera el header público.
+
+Control FINISH síncrono/RAM/GPU/hilos 0, mismo guion de menú hasta 68 s,
+sin hash o diagnóstico de presentación: 300,06 s, cierre por límite del
+control, tarjeta procedural intacta, sin firmas buscadas de error o
+minimización registrada. Captura desde tick 1500, estado 11 y TEXFLUSH:
+inicio 177,069 s/tick 1500, End completo, 54.535.181 bytes, 145.436 Submit y
+ocho Present en 1500..1507. El formato y límites anteriores se conservan.
+
+Se repite hasta **el segundo Present de esta traza**, registro 22797,
+22.619 Submit/tick 1501. Dos pasadas CPU: VRAM de 4 MiB, estado y dos frames
+idénticos. Hardware, tres pasadas: primera con ruta mixta, excluida de la
+comparación constante; segunda/tercera con 17.605 primitivas y cero tiles,
+estado semántico igual, pero 1.408 bytes de VRAM y 1.512 bytes RGBA del segundo
+frame distintos. Código 1 por diferencia: no paridad ni estabilidad validada.
+El prefijo no comprueba el End original ni el resto de la traza.
+
+Se revisa **el mismo segundo Present** exportado por CPU y hardware: ambos
+muestran la pose de brazo elevado y hoja cruzando la cabeza, muy semejante a
+la señalada por el usuario. Es evidencia para seguir la geometría de entrada
+al GS y su producción EE/VU; no una equivalencia exacta con la captura del
+usuario, una referencia PAL/PCSX2 alineada, ni una prueba de que la variación
+de raster cause el espasmo. Tampoco demuestra animación correcta una imagen
+fija. Los PPM y su conversión PNG con RGB intacto siguen privados.
+
+La sonda completa 128 retornos, cinco grupos, ambas variantes, ninguna pausa:
+6.173 lecturas válidas finitas y 5.629 productos finales, residuo descriptivo
+máximo 0,0001441. El candidato de 111 slots aporta 32 muestras en 1490..1520,
+3.296 productos finales y máximo 0,000005563. Sus bases fuente seleccionadas
+tienen determinantes 0,6558639..1,0000008 y longitudes de eje desde 0,8098543;
+sin determinantes cero/negativos en esa muestra. Son magnitudes observadas,
+no tolerancias de fidelidad: escala o mezcla de animación pueden producir
+bases no unitarias. No normalizar ni corregir matrices sin identificar su
+productor y contrastar una pose de referencia. La causa del espasmo sigue abierta.
