@@ -57,7 +57,7 @@ This repository holds everything that is specific to God of War:
 
 Per-library and per-component breakdown: [`docs/estado/detalle.en.md`](docs/estado/detalle.en.md). Regenerated from `docs/estado/datos.toml` by `tools/estado/generar.py` (and automatically on push to `main`).
 
-Native Windows build (OpenGL renderer) on an RX 5700 XT, currently at about 10–13 frames per second:
+Native Windows build (OpenGL renderer) on a Ryzen 7 5800XT with an RX 5700 XT:
 
 <p align="center">
   <img src="docs/capturas/menu.jpg" alt="Main menu" width="49%">
@@ -76,7 +76,7 @@ Native Windows build (OpenGL renderer) on an RX 5700 XT, currently at about 10�
 | Video output: legal screen and title logo | ✅ |
 | Ship, Kratos, enemies and HUD have correct shapes; further rendering checks remain | 🔧 in progress |
 | Controller/keyboard through libpad2 HLE; menu and difficulty selection | ✅ |
-| Gameplay reached; performance still ~2–3 fps | 🔧 in progress |
+| Gameplay reached; Athens docks at ~12 fps by default and ~25 fps with the optional VU1/GS threads (goal: 30) | 🔧 in progress |
 | FMV video: intro decoded and displayed without skipping; other videos unverified | 🔧 in progress |
 | Audio: banks and continuous emulated sound verified; playback stutters at the current speed | 🔧 in progress |
 | Memory card: listing, loading, saving and reloading verified on a PCSX2 copy; formatting unverified | 🔧 in progress |
@@ -85,8 +85,11 @@ The game boots, loads its data from the ISO and reaches the menu and gameplay wi
 input. After fixing scratchpad DMA chains, captures show the ship, Kratos, enemies and HUD with correct
 shapes. The FMV intro also decodes without `GOW_SKIP_FMV`. Loading, saving and reloading a game have been
 verified on a copied 8 MB PCSX2 card with ECC; formatting and reopening it in PCSX2 remain unverified.
-The port is still experimental: gameplay runs at ~2–3 fps, audio playback stutters, and CPU/OpenGL
-differences and graphics coverage need further checks. See [rendering](docs/COMPARACION_PCSX2.md),
+The port is still experimental. In the Athens docks it runs at ~12 fps with the default settings and at
+~25 fps with the optional VU1 and GS front-end threads and asynchronous GS FINISH (`PS2X_VU1_HILO=1`,
+`PS2X_GS_FRENTE=1`, `GOW_GS_FINISH_ASINCRONO=1`), which can still hang occasionally; the compiled VU1
+microcode is the main bottleneck. Audio playback stutters, and CPU/OpenGL differences and graphics coverage
+need further checks. See [performance](docs/RENDIMIENTO.md), [rendering](docs/COMPARACION_PCSX2.md),
 [FMV and audio](docs/FMV_Y_AUDIO.md), [memory card](docs/MEMORY_CARD.md) and
 [`docs/ESTADO.md`](docs/ESTADO.md) for the checks and their limits.
 
@@ -205,6 +208,7 @@ The technical documentation is currently written in Spanish:
 - [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) — pipeline, overrides, runtime patches and CI
 - [`docs/CONTROLES.md`](docs/CONTROLES.md) — controls and menu/input tests
 - [`docs/RENDERIZADO.md`](docs/RENDERIZADO.md) — optional CPU/threaded CPU/OpenGL renderers and comparisons
+- [`docs/RENDIMIENTO.md`](docs/RENDIMIENTO.md) — performance measurements, optional threads and VU1 optimizations
 - [`AGENTS.md`](AGENTS.md) — project conventions for contributors and coding agents
 - [`docs/ESTADO.md`](docs/ESTADO.md) — current status, investigation log, known issues and next steps
 

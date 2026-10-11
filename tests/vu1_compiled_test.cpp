@@ -20,8 +20,19 @@
 namespace {
 constexpr uint32_t nop = 0x2ffu, lowerNop = 0x8000033cu, e = 0x40000000u;
 constexpr uint32_t divStart = 128u, divPairs = 14u, divBytes = divPairs * 8u;
+constexpr uint32_t specialStart = 0x1000u;
 constexpr uint32_t upper(uint32_t op, uint32_t dest, uint32_t ft, uint32_t fs, uint32_t fd) {
     return op | (dest<<21) | (ft<<16) | (fs<<11) | (fd<<6);
+}
+// Especiales de la unidad superior (ITOF/FTOI 0x10-0x17, ABS 0x1D, CLIP 0x1F).
+constexpr uint32_t special(uint32_t code, uint32_t dest, uint32_t ft, uint32_t fs) {
+    return (code&3u) | 0x3cu | ((code>>2)<<6) | (fs<<11) | (ft<<16) | (dest<<21);
+}
+constexpr uint32_t iaddiu(uint32_t it, uint32_t imm) {
+    return (0x08u<<25) | (it<<16) | (imm&0x7ffu) | (((imm>>11)&0xfu)<<21);
+}
+constexpr uint32_t sq(uint32_t dest, uint32_t fs, uint32_t imm) {
+    return (1u<<25) | (dest<<21) | (fs<<11) | (imm&0x7ffu); // SQ.dest vfs, imm(vi0)
 }
 std::vector<uint8_t> program() {
     std::vector<uint8_t> code(PS2_VU1_CODE_SIZE);
@@ -50,6 +61,40 @@ std::vector<uint8_t> program() {
         div[12]={lowerNop,nop|e};
         std::memcpy(code.data()+divStart+selector*divBytes,div.data(),sizeof(div));
     }
+    // GOW-Port: ITOF/FTOI/ABS (con SSE en el código compilado), SQ con DEST parcial, lectores de flags que el
+    // código compilado trata en línea (FCAND, FCGET, FMAND, FMEQ) y BAL, JR y JALR.
+    constexpr uint32_t base = specialStart/8u;
+    const std::array<std::array<uint32_t,2>,30> sp{{
+        {iaddiu(4u,0x7fffu),special(0x15u,0xfu,6u,1u)},  // FTOI4 vf6,vf1
+        {iaddiu(8u,base+25u),special(0x17u,0xeu,7u,2u)}, // FTOI15.xyz vf7,vf2
+        {iaddiu(11u,base+28u),special(0x12u,0xdu,8u,3u)},// ITOF12.xyw vf8,vf3
+        {lowerNop,special(0x1du,0xau,9u,1u)},            // ABS.xz vf9,vf1
+        {sq(0xeu,6u,2u),special(0x14u,0xfu,10u,2u)},     // FTOI0 vf10,vf2 | SQ.xyz vf6
+        {sq(0x5u,7u,3u),special(0x10u,0xfu,11u,3u)},     // ITOF0 vf11,vf3 | SQ.yw vf7
+        {sq(0xfu,8u,4u),special(0x13u,0x2u,12u,3u)},     // ITOF15.z vf12,vf3 | SQ vf8
+        {sq(0x9u,9u,5u),special(0x11u,0xfu,13u,3u)},     // ITOF4 vf13,vf3 | SQ.xw vf9
+        {sq(0xfu,10u,6u),special(0x16u,0x6u,14u,1u)},    // FTOI12.yz vf14,vf1 | SQ vf10
+        {sq(0x6u,11u,7u),special(0x1fu,0xeu,2u,1u)},     // CLIPw.xyz vf1,vf2 | SQ.yz vf11
+        {(0x12u<<25)|0x3fu,nop},                         // FCAND vi1,0x3f: el CLIP aún no es visible
+        {(0x1cu<<25)|(2u<<16),upper(0x2au,0xfu,2u,1u,15u)}, // FCGET vi2 | MUL vf15,vf1,vf2
+        {lowerNop,nop},{lowerNop,nop},{lowerNop,nop},
+        {(0x1au<<25)|(3u<<16)|(4u<<11),nop},             // FMAND vi3,vi4
+        {(0x18u<<25)|(5u<<16)|(4u<<11),nop},             // FMEQ vi5,vi4
+        {(0x12u<<25)|0xffffffu,nop},                     // FCAND vi1,0xffffff
+        {(0x1cu<<25)|(13u<<16),nop},                     // FCGET vi13
+        {(0x21u<<25)|(6u<<16)|2u,nop},                   // BAL vi6,+2: al par 22
+        {iaddiu(7u,11u),nop},                            // ranura de retardo
+        {iaddiu(7u,99u),nop},                            // se omite
+        {(0x24u<<25)|(8u<<11),nop},                      // JR vi8: al par 25
+        {iaddiu(9u,5u),nop},                             // ranura de retardo
+        {iaddiu(9u,77u),nop},                            // se omite
+        {(0x25u<<25)|(10u<<16)|(11u<<11),nop},           // JALR vi10,vi11: al par 28
+        {iaddiu(12u,3u),nop},                            // ranura de retardo
+        {iaddiu(12u,88u),nop},                           // se omite
+        {lowerNop,nop|e},
+        {lowerNop,nop},
+    }};
+    std::memcpy(code.data()+specialStart,sp.data(),sizeof(sp));
     return code;
 }
 struct Result {
@@ -179,6 +224,85 @@ bool divCases() {
     std::printf("VU1 DIV: %u casos exactos (16 selectores, limites, D/I, WAITQ, FTZ/DAZ y presupuesto/reanudacion)\n",cases);
     return true;
 }
+Result runSpecial(PS2Memory &mem,GS &gs,bool compiled,bool queues,const uint32_t (&v)[12],uint32_t budget,bool resume) {
+    std::memset(mem.getVU1Data(),0,PS2_VU1_DATA_SIZE);
+    VU1Interpreter vu;
+    vu.setDirectRegisterWrites(!queues);
+    vu.setCompiledProgramsEnabled(compiled);
+    auto &s=vu.state();
+    for(unsigned c=0;c<4u;++c) {
+        s.vf[1][c]=fromBits(v[c]);
+        s.vf[2][c]=fromBits(v[4u+c]);
+        s.vf[3][c]=fromBits(v[8u+c]);
+    }
+    vu.execute(mem.getVU1Code(),PS2_VU1_CODE_SIZE,mem.getVU1Data(),PS2_VU1_DATA_SIZE,gs,&mem,specialStart,0,0,budget);
+    if(resume) for(unsigned i=0;i<64u && vu.lastRunHitBudget();++i)
+        vu.resume(mem.getVU1Code(),PS2_VU1_CODE_SIZE,mem.getVU1Data(),PS2_VU1_DATA_SIZE,gs,&mem,0,0,64u);
+    return {vu.state(),{mem.getVU1Data(),mem.getVU1Data()+PS2_VU1_DATA_SIZE},vu.lastRunHitBudget()};
+}
+bool specialCases() {
+    PS2Memory mem;
+    if(!mem.initialize()) return false;
+    GS gs; gs.init(mem.getGSVRAM(),4u*1024u*1024u,&mem.gs());
+    const auto code=program();
+    std::memcpy(mem.getVU1Code(),code.data(),code.size());
+#if GOW_DIV_MXCSR
+    struct Restore { unsigned value=_mm_getcsr(); ~Restore() { _mm_setcsr(value); } } restore;
+    constexpr unsigned modes=2u;
+#else
+    constexpr unsigned modes=1u;
+#endif
+    // Cero con signo, subnormales, 1, ±2^31 y vecinos (saturación de FTOI), máximos, Inf, NaN y enteros límite.
+    const uint32_t limits[]={0u,0x80000000u,0x00000001u,0x807fffffu,0x00800000u,0x3f800000u,0xbfc00000u,
+        0x4effffffu,0x4f000000u,0xceffffffu,0xcf000000u,0xcf000001u,0x46fffe00u,0x7f7fffffu,0xff7fffffu,
+        0x7f800000u,0xff800000u,0x7fc00000u,0xffffffffu,0x7fffffffu,0x01000001u,0x00ffffffu};
+    constexpr unsigned count=sizeof(limits)/sizeof(limits[0]);
+    unsigned cases=0u;
+    const auto check=[&](bool queues,const uint32_t (&v)[12],uint32_t budget,bool resume) {
+        const auto ref=runSpecial(mem,gs,false,queues,v,budget,resume);
+        const auto got=runSpecial(mem,gs,true,queues,v,budget,resume);
+        if(!same(ref,got)) {
+            std::fprintf(stderr,"Especiales distintos: colas=%d presupuesto=%u resume=%d vf1=%08x vf2=%08x vf3=%08x "
+                "mac=%x/%x clip=%x/%x ciclos=%llu/%llu\n",queues,budget,resume,v[0],v[4],v[8],ref.state.mac,got.state.mac,
+                ref.state.clip,got.state.clip,static_cast<unsigned long long>(ref.state.cycles),
+                static_cast<unsigned long long>(got.state.cycles));
+            return false;
+        }
+        constexpr int link=static_cast<int>(specialStart/8u);
+        if(budget==65536u && (got.budget || got.state.vi[7]!=11 || got.state.vi[9]!=5 || got.state.vi[12]!=3 ||
+           got.state.vi[6]!=link+21 || got.state.vi[10]!=link+27)) {
+            std::fprintf(stderr,"BAL/JR/JALR: vi7=%d vi9=%d vi12=%d vi6=%d vi10=%d\n",got.state.vi[7],got.state.vi[9],
+                got.state.vi[12],got.state.vi[6],got.state.vi[10]);
+            return false;
+        }
+        ++cases; return true;
+    };
+    for(unsigned mode=0;mode<modes;++mode) {
+#if GOW_DIV_MXCSR
+        _mm_setcsr((restore.value&~0x8040u)|(mode?0x8040u:0u));
+#endif
+        for(bool queues:{false,true}) {
+            for(unsigned i=0;i<count;++i) {
+                uint32_t v[12];
+                for(unsigned l=0;l<12u;++l) v[l]=limits[(i+l*5u)%count];
+                if(!check(queues,v,65536u,false)) return false;
+            }
+            std::mt19937 rng(777u);
+            for(unsigned trial=0;trial<200u;++trial) {
+                uint32_t v[12];
+                for(unsigned l=0;l<12u;++l) v[l]=trial%2u ? static_cast<uint32_t>(rng()) : limits[rng()%count];
+                if(!check(queues,v,65536u,false)) return false;
+            }
+            for(uint32_t budget:{0u,1u,3u,7u,12u,20u}) for(bool resume:{false,true}) {
+                uint32_t v[12];
+                for(unsigned l=0;l<12u;++l) v[l]=limits[(budget+l*3u)%count];
+                if(!check(queues,v,budget,resume)) return false;
+            }
+        }
+    }
+    std::printf("VU1 especiales: %u casos exactos (ITOF/FTOI/ABS, SQ parcial, FCAND/FCGET/FMAND/FMEQ, BAL/JR/JALR)\n",cases);
+    return true;
+}
 }
 int main(int argc,char **argv) {
     if(argc==3 && std::strcmp(argv[1],"--write")==0) {
@@ -208,5 +332,6 @@ int main(int argc,char **argv) {
         }
     std::printf("VU1 compilada: %u casos exactos (bloques, palabras modificadas, reservada, colas y presupuesto/reanudacion)\n",cases);
     if(!divCases()) return 1;
+    if(!specialCases()) return 1;
     return 0;
 }

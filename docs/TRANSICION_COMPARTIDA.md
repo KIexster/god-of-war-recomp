@@ -180,3 +180,16 @@ El usuario vuelve a reservar el ordenador. #51 permanece en borrador hasta
 completar el control funcional y comprobar el CI del HEAD final. Los datos del
 juego, registros y capturas permanecen privados; se publica esta descripción
 de los resultados y sus límites.
+
+## Actualización de la cadena (2026-10-11)
+
+Se integra `main` con #56/#57 mediante merge, conservando los seis parches de
+VU1 nuevos antes del diagnóstico GS. Los 96 parches únicos pasan comprobación
+y aplicación en un worktree privado limpio. Configuración: 0 errores,
+4 avisos existentes; sintaxis de 21 scripts PowerShell: 0 errores.
+
+El ejecutable y las cuatro pasadas anteriores corresponden a 90 parches,
+no a esta integración. Recompilar completamente con el workspace privado
+cuando el usuario confirme que el PC está disponible y registrar el nuevo
+commit/hash antes de repetir el control. No trasladar los resultados nativos
+anteriores al nuevo código VU1 ni a los hilos que no se probaron.

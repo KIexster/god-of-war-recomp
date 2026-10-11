@@ -1,0 +1,100 @@
+diff --git a/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp b/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
+index 30d437b..68a796c 100644
+--- a/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
++++ b/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
+@@ -1,4 +1,7 @@
+ // Based on Blackline Interactive implementation
++#if defined(_MSC_VER) || defined(__SSE4_1__)
++#include <immintrin.h>
++#endif
+ #include "runtime/ps2_memory.h"
+ #include <cstring>
+ #include <vector>
+@@ -667,6 +670,87 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
+                         unpackAll([&](uint8_t *dst, const uint8_t *src) { const uint32_t x = ext8(src[0]); store4(dst, x, x, x, x); });
+                 }
+             }
++#if defined(_MSC_VER) || defined(__SSE4_1__)
++            // GOW-Port: UNPACK con máscara o sumando la fila (STMOD 1/2) y CL >= WL: lo mismo que el bucle general
++            // por componente de abajo, con SSE. Cada escritura descomprime su vector (las componentes que faltan,
++            // de la memoria; V2 escribe XYXY y V1 repite X), suma ROW a los campos que toman el dato (no en V4-5),
++            // actualiza ROW en STMOD 2 solo en esos campos y mezcla dato, ROW, COL o memoria según la máscara de
++            // su posición en el ciclo (como mucho la 3).
++            else if (cl >= wl && fastFormat && m_vu1Data && totalBytes > 0 && pos + totalBytes <= sizeBytes)
++            {
++                const uint8_t *srcBase = data + pos;
++                const uint32_t mode = vif1_regs.mode & 3u;
++                const bool canAdd = (vl != 3u || vn != 3u);
++                const bool addRow = canAdd && (mode == 1u || mode == 2u);
++                const uint32_t limit = static_cast<uint32_t>(components);
++                __m128i specMask[4][4]; // [posición en el ciclo][especificación 0..3]
++                __m128i colv[4];
++                for (uint32_t cyc = 0; cyc < 4u; ++cyc)
++                {
++                    alignas(16) int32_t m[4][4] = {};
++                    for (uint32_t field = 0; field < 4u; ++field)
++                    {
++                        const uint32_t spec = maskEnable ? (vif1_regs.mask >> (((cyc * 4u) + field) * 2u)) & 0x3u : 0u;
++                        m[spec][field] = -1;
++                    }
++                    for (uint32_t spec = 0; spec < 4u; ++spec)
++                        specMask[cyc][spec] = _mm_load_si128(reinterpret_cast<const __m128i *>(m[spec]));
++                    colv[cyc] = _mm_set1_epi32(static_cast<int32_t>(vif1_regs.col[cyc]));
++                }
++                const auto decode = [&](const uint8_t *src, __m128i mem) -> __m128i
++                {
++                    __m128i v;
++                    if (vl == 3u) // V4-5
++                    {
++                        uint16_t packed = 0;
++                        std::memcpy(&packed, src, sizeof(packed));
++                        return _mm_setr_epi32(static_cast<int32_t>((packed & 0x001Fu) << 3u), static_cast<int32_t>((packed & 0x03E0u) >> 2u),
++                                              static_cast<int32_t>((packed & 0x7C00u) >> 7u), static_cast<int32_t>((packed & 0x8000u) >> 8u));
++                    }
++                    const uint32_t bytes = limit * (vl == 0u ? 4u : vl == 1u ? 2u : 1u);
++                    alignas(16) uint8_t raw[16] = {};
++                    std::memcpy(raw, src, bytes);
++                    if (vl == 0u)
++                        v = _mm_load_si128(reinterpret_cast<const __m128i *>(raw));
++                    else if (vl == 1u)
++                        v = zeroExtend ? _mm_cvtepu16_epi32(_mm_load_si128(reinterpret_cast<const __m128i *>(raw)))
++                                       : _mm_cvtepi16_epi32(_mm_load_si128(reinterpret_cast<const __m128i *>(raw)));
++                    else
++                        v = zeroExtend ? _mm_cvtepu8_epi32(_mm_load_si128(reinterpret_cast<const __m128i *>(raw)))
++                                       : _mm_cvtepi8_epi32(_mm_load_si128(reinterpret_cast<const __m128i *>(raw)));
++                    if (limit == 1u)
++                        return _mm_shuffle_epi32(v, _MM_SHUFFLE(0, 0, 0, 0));
++                    if (limit == 2u)
++                        return _mm_shuffle_epi32(v, _MM_SHUFFLE(1, 0, 1, 0));
++                    if (limit == 3u)
++                        return _mm_blend_epi16(v, mem, 0xC0); // W de la memoria
++                    return v;
++                };
++                __m128i rowv = _mm_loadu_si128(reinterpret_cast<const __m128i *>(vif1_regs.row));
++                for (uint32_t writeIndex = 0; writeIndex < writeVectorCount; ++writeIndex)
++                {
++                    const uint32_t cyclePos = writeIndex % wl;
++                    const uint32_t destVec = (vuAddr + (writeIndex / wl) * cl + cyclePos) & 0x3FFu;
++                    uint8_t *dst = m_vu1Data + destVec * 16u;
++                    const uint32_t cyc = cyclePos > 3u ? 3u : cyclePos;
++                    const __m128i mem = _mm_loadu_si128(reinterpret_cast<const __m128i *>(dst));
++                    __m128i dec = decode(srcBase + writeIndex * bytesPerVector, mem);
++                    const __m128i rowOld = rowv;
++                    if (addRow)
++                    {
++                        dec = _mm_add_epi32(dec, rowv);
++                        if (mode == 2u)
++                            rowv = _mm_blendv_epi8(rowv, dec, specMask[cyc][0]);
++                    }
++                    const __m128i out = _mm_or_si128(
++                        _mm_or_si128(_mm_and_si128(dec, specMask[cyc][0]), _mm_and_si128(rowOld, specMask[cyc][1])),
++                        _mm_or_si128(_mm_and_si128(colv[cyc], specMask[cyc][2]), _mm_and_si128(mem, specMask[cyc][3])));
++                    _mm_storeu_si128(reinterpret_cast<__m128i *>(dst), out);
++                }
++                if (addRow && mode == 2u)
++                    _mm_storeu_si128(reinterpret_cast<__m128i *>(vif1_regs.row), rowv);
++            }
++#endif
+             else if (m_vu1Data && totalBytes > 0 && pos + totalBytes <= sizeBytes)
+             {
+                 const uint8_t *srcBase = data + pos;

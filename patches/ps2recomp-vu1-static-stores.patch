@@ -1,0 +1,99 @@
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+index 6f35dcb..54ccd57 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+@@ -249,6 +249,67 @@ namespace vu1c
+         return t;
+     }
+     inline constexpr MacStatusTable kMacStatus = makeMacStatusTable();
++
++    // GOW-Port: instrucciones inferiores que lowerT trata en línea: la misma lista que su cadena de if constexpr
++    // (si se añade un caso allí, hay que añadirlo aquí). Las demás llaman a execLower.
++    constexpr bool lowerInline(uint32_t instr)
++    {
++        const uint32_t opHi = (instr >> 25) & 0x7Fu;
++        const uint32_t funct = instr & 0x3Fu;
++        const uint32_t funct2 = (instr & 0x3u) | ((instr >> 4) & 0x7Cu);
++        if (instr == 0x00000000u || instr == 0x8000033Cu)
++            return true;
++        switch (opHi)
++        {
++        case 0x00u: case 0x01u: case 0x04u: case 0x05u: case 0x08u: case 0x09u: // LQ SQ ILW ISW IADDIU ISUBIU
++        case 0x12u: case 0x18u: case 0x1Au: case 0x1Cu:                         // FCAND FMEQ FMAND FCGET
++        case 0x20u: case 0x21u: case 0x24u: case 0x25u:                         // B BAL JR JALR
++        case 0x28u: case 0x29u: case 0x2Cu: case 0x2Du: case 0x2Eu: case 0x2Fu: // IBxx
++            return true;
++        default:
++            break;
++        }
++        if (opHi != 0x40u)
++            return false;
++        if (funct == 0x30u || funct == 0x31u || funct == 0x32u || funct == 0x34u || funct == 0x35u) // IADD ... IOR
++            return true;
++        return funct >= 0x3Cu && (funct2 == 0x30u || funct2 == 0x31u || funct2 == 0x34u || funct2 == 0x35u ||
++                                  funct2 == 0x3Bu || funct2 == 0x38u || funct2 == 0x3Cu || funct2 == 0x3Du);
++    }
++    // Inferiores en línea que escriben VF[ft]: LQ, MOVE, MR32, LQI y MFIR. ¿Lo hacen en VF0?
++    constexpr bool lowerInlineWritesVf0(uint32_t instr)
++    {
++        const uint32_t opHi = (instr >> 25) & 0x7Fu;
++        const uint32_t funct = instr & 0x3Fu;
++        const uint32_t funct2 = (instr & 0x3u) | ((instr >> 4) & 0x7Cu);
++        if (((instr >> 16) & 0x1Fu) != 0u || instr == 0x00000000u || instr == 0x8000033Cu)
++            return false;
++        if (opHi == 0x00u)
++            return true;
++        return opHi == 0x40u && funct >= 0x3Cu && (funct2 == 0x30u || funct2 == 0x31u || funct2 == 0x34u || funct2 == 0x3Du);
++    }
++    // ¿Puede la instrucción superior escribir VF0? (FMAC con fd = 0, ITOF/FTOI/ABS con ft = 0 o execUpper.)
++    constexpr bool upperMayWriteVf0(uint32_t upper)
++    {
++        const UpperInfo info = classify(upper);
++        if (info.kind == Kind::Nop)
++            return false;
++        if (const uint32_t special = simpleSpecial(upper); special != 0u)
++            return special != 0x1Fu && ((upper >> 16) & 0x1Fu) == 0u; // CLIP no escribe VF
++        if (info.kind == Kind::Other)
++            return true;
++        return !info.toAcc && ((upper >> 6) & 0x1Fu) == 0u;
++    }
++    // El generador indica con T::clearBranchBackup = false que el par anterior del bloque no guardó un VI para
++    // un salto (m_viBranchBackupValid ya es falso).
++    template <class T>
++    constexpr bool clearBranchBackup()
++    {
++        if constexpr (requires { T::clearBranchBackup; })
++            return T::clearBranchBackup;
++        else
++            return true;
++    }
+ }
+ 
+ // Una componente de una operación FMAC: calcula como execUpper (operandos normalizados, mismas expresiones
+@@ -1082,7 +1143,8 @@ VU1_STEP_INLINE bool VU1Interpreter::stepPairT(StepContext &context)
+             lowerT<k.lower>(context, k.upper);
+     }
+ 
+-    m_viBranchBackupValid = false;
++    if constexpr (vu1c::clearBranchBackup<T>())
++        m_viBranchBackupValid = false;
+     if constexpr (writtenVi != 0u)
+         m_state.vi[writtenVi] = static_cast<int16_t>(m_state.vi[writtenVi]);
+ 
+@@ -1129,8 +1191,14 @@ VU1_STEP_INLINE bool VU1Interpreter::stepPairT(StepContext &context)
+ 
+     // GOW-Port: VF0 con un solo store de 16 bytes: la lectura de 16 bytes de VF0 en el par siguiente
+     // (vf00w = 1.0 es muy frecuente) no puede reenviarse desde cuatro stores de 4 bytes.
+-    vu1StoreVf0(m_state.vf[0]);
+-    m_state.vi[0] = 0;
++    // GOW-Port: solo si el par puede haber escrito VF0 o VI0 (las inferiores en línea nunca escriben VI0).
++    constexpr bool mayWriteVf0 = vu1c::upperMayWriteVf0(k.upper) ||
++                                 (!k.iBit && (!vu1c::lowerInline(k.lower) || vu1c::lowerInlineWritesVf0(k.lower)));
++    constexpr bool mayWriteVi0 = !k.iBit && !vu1c::lowerInline(k.lower);
++    if constexpr (mayWriteVf0)
++        vu1StoreVf0(m_state.vf[0]);
++    if constexpr (mayWriteVi0)
++        m_state.vi[0] = 0;
+ 
+     // Plain: par intermedio de un bloque que no salta ni termina. blockPreconditions garantiza que al
+     // entrar no había salto, bit E ni final pendientes, y solo el último par del bloque puede crearlos, así

@@ -23,6 +23,8 @@ $set = @{
     GOW_PERF_FRAME_PC = '0x001837B8' # vid::Flip de SCUS-97399; sus reanudaciones no cuentan.
     GOW_PAD_TEST = '1'
     GOW_PAD_TEST_NO_CAPTURE = '1'
+    # GOW-Port: solo el guion; el mando o el teclado reales cambiarian la escena medida.
+    GOW_PAD_SOLO_GUION = '1'
     GOW_SKIP_FMV = '1'
     GOW_FAST_BOOT = '1'
     PS2X_GS_GPU = $(if ($Renderer -eq 'opengl') { '1' } else { '0' })

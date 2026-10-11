@@ -1,0 +1,56 @@
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+index 57f1d0f..6f35dcb 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+@@ -704,6 +704,51 @@ VU1_STEP_INLINE void VU1Interpreter::lowerT(StepContext &context, uint32_t upper
+                 m_state.vi[viT] = static_cast<int16_t>(m_state.vi[viS] - imm);
+         }
+     }
++    // GOW-Port: lectores de flags, BAL, JR y JALR, copias de execLower (ps2_vu1_lower.cpp). Eran el 85 % de las
++    // llamadas a execLower desde el código compilado.
++    else if constexpr (opHi == 0x12u) // FCAND
++    {
++        commitReadyFlags(); // GOW-Port: flags listos en este ciclo
++        constexpr uint32_t imm24 = instr & 0xFFFFFFu;
++        m_state.vi[1] = ((m_state.clip & imm24) != 0u) ? 1 : 0;
++    }
++    else if constexpr (opHi == 0x18u) // FMEQ
++    {
++        commitReadyFlags();
++        if constexpr (viT != 0)
++            m_state.vi[viT] = ((m_state.mac & 0xFFFFu) == static_cast<uint32_t>(static_cast<uint16_t>(m_state.vi[viS]))) ? 1 : 0;
++    }
++    else if constexpr (opHi == 0x1Au) // FMAND
++    {
++        commitReadyFlags();
++        if constexpr (viT != 0)
++            m_state.vi[viT] = static_cast<int32_t>(m_state.mac & static_cast<uint32_t>(static_cast<uint16_t>(m_state.vi[viS])));
++    }
++    else if constexpr (opHi == 0x1Cu) // FCGET
++    {
++        commitReadyFlags();
++        if constexpr (viT != 0)
++            m_state.vi[viT] = static_cast<int32_t>(m_state.clip & 0x0FFFu);
++    }
++    else if constexpr (opHi == 0x21u) // BAL
++    {
++        const uint32_t target = (m_state.pc + 8 + imm11 * 8) & microAddressMask();
++        if constexpr (viT != 0)
++            m_state.vi[viT] = static_cast<int32_t>((m_state.pc + 16) / 8);
++        m_state.branchPending = true;
++        m_state.branchTarget = target;
++        m_state.branchDelay = 1;
++    }
++    else if constexpr (opHi == 0x24u || opHi == 0x25u) // JR / JALR
++    {
++        // JR/JALR leen el VI actual; el valor retrasado se usa solo en las ramas condicionales.
++        const uint32_t target = (static_cast<uint32_t>(static_cast<uint16_t>(m_state.vi[viS])) * 8u) & microAddressMask();
++        if constexpr (opHi == 0x25u && viT != 0)
++            m_state.vi[viT] = static_cast<int32_t>((m_state.pc + 16) / 8);
++        m_state.branchPending = true;
++        m_state.branchTarget = target;
++        m_state.branchDelay = 1;
++    }
+     else if constexpr (opHi == 0x20u) // B
+     {
+         const uint32_t target = (m_state.pc + 8 + imm11 * 8) & microAddressMask();
