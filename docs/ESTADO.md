@@ -4109,3 +4109,27 @@ sin añadir excepciones a `fallos_conocidos.txt` ni ocultar el resultado inicial
 El parche corregido aplica sobre una base independiente de 99. Requiere otra
 compilación completa, suite/negativo significativo y controles del juego;
 #51 sigue borrador. La diferencia de altura es una investigación separada.
+
+## Diagnóstico SMODE2 de 100 validado nativamente (2026-10-11)
+
+Compilación completa revisada de `383c6b65986ffe2cddebaed987d9132ea791d100`,
+salida 0 en 928,11 s, runner SHA-256
+`5f3b9c29dad7797e7edaa17585254eccaadd14238a834d15b69101c28895c74f`.
+[CI del mismo código verde](https://github.com/KIexster/god-of-war-recomp/actions/runs/38157988334).
+Windows: 600/600 normal, 635/635 GPU y cuatro contratos independientes
+FINISH/lectura/textura adquirida correctos, sin fallos conocidos. Se renuevan
+los objetos de los controles privados para el nuevo layout de Frame.
+
+El negativo privado fuerza solo el metadato a cero, conserva la API y compila:
+634/635, falla exactamente el caso nuevo de SMODE2. Restauración del archivo
+positivo y otra suite GPU: 635/635. El runner permanece positivo y congelado
+durante ese control; no se ejecuta el juego sobre la variante negativa.
+La prueba distingue modo de textura adquirida/retenida del request posterior.
+
+Se mide además la discrepancia del caso cuadro: CPU 64×128, textura GPU 64×64
+con SMODE2=1027. Su equivalencia permanece pendiente; campos/progresivo sí
+mantienen comparación de todas las filas. No se cambia el renderer para cerrar
+esa diferencia ni se atribuye a la escena del juego sin registrar su modo.
+Siguiente paso: controles de 100 sin hilos, con VU1 y con ambos hilos, ventana
+tardía y tarjetas privadas. #51 sigue borrador hasta cerrar validación del
+nuevo diagnóstico y CI final. Cámara/alternancia no se declaran resueltas.

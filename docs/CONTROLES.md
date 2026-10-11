@@ -720,3 +720,11 @@ comparación de píxeles CPU en campos/progresivo. Para cuadro imprime las
 dimensiones mediante `[gs-test:mode-frame]`; **no certifica equivalencia CPU
 en ese modo**. El runtime de composición no cambia y su discrepancia sigue
 pendiente. La revisión del test exige nueva compilación completa y validación.
+
+La revisión `383c6b6` ya completa compilación Windows de 100, 600/600 normal,
+635/635 GPU y cuatro contratos FINISH. El negativo API-compatible fuerza solo
+el modo almacenado a cero: 634/635 con fallo único del caso nuevo. Al restaurar
+la fuente positiva y recompilar, GPU vuelve a 635/635. La prueba de cuadro
+registra CPU 64×128/shared 64×64; conserva explícitamente esa diferencia abierta.
+Controles del juego con este runner y modo adquirido aún pendientes; detalles
+e identidad del ejecutable en `TRANSICION_COMPARTIDA.md`.

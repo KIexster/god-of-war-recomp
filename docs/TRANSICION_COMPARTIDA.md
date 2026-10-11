@@ -1,18 +1,15 @@
 # Diagnóstico de la transición con presentación compartida
 
-Estado actual, 2026-10-11: compilación completa de 98 parches, suite Windows
-normal/GPU y matriz aislada de cuatro controles terminadas. Count #59 está
-fusionada en main; se supera la espera síncrona compartida en la nueva pasada.
-La comparación visual alineada y la estabilidad prolongada siguen pendientes:
-#51 continúa en borrador. Los apartados siguientes conservan la investigación;
-la matriz actual se registra al final.
+Estado actual, 2026-10-11: cadena 100 revisada compilada en Windows; 600/600
+normal, 635/635 GPU, cuatro contratos FINISH/texturas y negativo significativo
+con restauración correctos. Los controles del juego con este nuevo runner
+siguen pendientes. #51 continúa en borrador mientras se cierra su validación.
 
-La cadena posterior de 99 con ventana opcional del registro ya completa
-compilación y controles nativos propios, además de tres pasadas funcionales
-de seis minutos. Falta comprobar visualmente la presentación; resultados al final.
-
-Se prepara después una cadena de 100 para registrar SMODE2 de la textura
-adquirida. La validación de 99 no acredita ese nuevo runtime.
+Count #59 y unidades de framebuffer #58 están fusionadas en main. Se conservan
+la matriz aislada de cuatro controles de 98 y las tres pasadas de seis minutos
+de 99; no acreditan el nuevo campo SMODE2 de 100. La comparación visual
+alineada, el encuadre y la estabilidad prolongada siguen abiertos. Los apartados
+siguientes conservan los resultados y las limitaciones de cada ejecutable.
 
 El cuadro viejo alternado con FINISH asíncrono y el encuadre incorrecto ya
 presente antes de la copia final del framebuffer requieren controles separados.
@@ -733,3 +730,38 @@ Pendientes otra compilación completa, suite normal/GPU, control negativo
 compatible que fuerce el metadato a cero y restauración positiva, contratos
 independientes y ventana del juego. No usar el runner anterior para acreditar
 la prueba ajustada. PR #51 permanece borrador y el encuadre sigue separado.
+
+## Validación nativa de 100 revisada y negativo del metadato (2026-10-11)
+
+Nueva compilación completa desde `383c6b65986ffe2cddebaed987d9132ea791d100`,
+100 parches, salida 0 en 928,11 s. Release optimizado con símbolos privados,
+VU1 intérprete y flags iguales a la anterior. Runner de 54.542.848 bytes,
+SHA-256 `5f3b9c29dad7797e7edaa17585254eccaadd14238a834d15b69101c28895c74f`.
+[CI de ese código correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38157988334).
+Se congelan runner/símbolos antes de incluir los controles privados y se
+recompilan sus objetos por el cambio de layout de Frame.
+
+Windows: 600/600 normal en 13,39 s y 635/635 GPU real en 30,87 s; ambos
+comparadores devuelven 0, sin fallos conocidos. Los cuatro controles pasan en
+procesos nuevos: FINISH/CSR/orden/lectura y FINISH/textura adquirida, cada uno
+con `default` y `async`. El segundo compara 16 texturas por modo, todas las
+filas contra CPU, fuentes, dimensiones y reutilización de ocho ranuras.
+
+El caso nuevo confirma SMODE2 completo en texturas nuevas y retenidas para
+campos/cuadro/progresivo; campos/progresivo comparan píxeles contra CPU. En
+cuadro registra realmente `smode2=1027 cpu=64x128 shared=64x64`. Ese caso
+solo valida textura/metadatos: la equivalencia de composición sigue pendiente
+y no se declara corregida por el éxito de la suite ajustada.
+
+Negativo privado compatible con la API: cambiar únicamente el almacenamiento
+de `slot.frame.smode2` por cero y recompilar **solo las pruebas**, sin alterar
+ni ejecutar el runner. Compila y ejecuta 635 casos: 634 pasan, falla exactamente
+«SMODE2 de textura adquirida y retenida». El comparador denuncia esa regresión;
+no es un fallo de compilación ni una excepción en `fallos_conocidos.txt`.
+Después se restaura el archivo positivo completo, se recompilan las pruebas
+y GPU vuelve a 635/635 en 31,33 s. Fuente restaurada y runner congelado verificados.
+
+Pendientes controles funcionales aislados de este runner: primero hilos 0 y
+ventana desde 0, luego VU1 y VU1+frente GS por separado desde 6000. El diagnóstico
+no introduce readback, Acquire adicional, cálculo adicional de hash ni glFinish.
+Los patrones del juego y la comparación visual aún no están validados para 100.

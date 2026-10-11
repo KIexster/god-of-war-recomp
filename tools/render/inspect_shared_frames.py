@@ -93,7 +93,7 @@ def inspect(text):
                                 sourceFbp=row['sourceFbp'], frameTick=row['frameTick'],
                                 frame_ticks=[history[0][2], history[1][2], row['frameTick']])
                 # Paridad del tick de la textura, no del host que la adquiere.
-                # No conocemos SMODE2: este patrón no acredita modo de campos ni su causa.
+                # La paridad sola no acredita el modo registrado ni la causa del retorno.
                 parities = [tick & 1 for tick in evidence['frame_ticks']]
                 parity = ('same' if parities[0] == parities[1] == parities[2] else
                           'alternating' if parities[0] == parities[2] else 'other')
