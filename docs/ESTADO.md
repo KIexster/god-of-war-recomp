@@ -4660,3 +4660,34 @@ sin determinantes cero/negativos en esa muestra. Son magnitudes observadas,
 no tolerancias de fidelidad: escala o mezcla de animación pueden producir
 bases no unitarias. No normalizar ni corregir matrices sin identificar su
 productor y contrastar una pose de referencia. La causa del espasmo sigue abierta.
+
+## Pista de PMULTH del port de Waffle565 (2026-10-11)
+
+El usuario aporta [God-Of-War-Native-Port](https://github.com/Waffle565/God-Of-War-Native-Port),
+revisado en `811313597514940a4d6020fefc1ce5b83f5b4fe4`. Su
+[entrada de corrección `50b591d`](https://github.com/Waffle565/God-Of-War-Native-Port/commit/50b591d2bc679cc705b55764588716410df10d92)
+identifica PMULTH mal traducida en decodificadores de animación; relata
+comparación diferencial y mejora visual en su port. Son comprobaciones de
+ese colaborador, no una reproducción independiente nuestra. El commit público
+documenta el arreglo, pero no incluye su implementación del runtime.
+
+Se comprueba independientemente en nuestro código regenerado NTSC que cuatro
+PMULTH, en tres decodificadores, siguen emitiendo `_mm_madd_epi16` y sumando
+sus resultados en un escalar. Es un fallo de semántica: PMULTH produce ocho
+productos signed de 16 por 16 bits, LO={p0,p1,p4,p5}, HI={p2,p3,p6,p7} y
+rd={p0,p2,p4,p6}. Se contrasta el orden con
+[PCSX2 MMI.cpp fijado](https://github.com/PCSX2/pcsx2/blob/2954ebe6965669219f1bbd256e958fbd8f83a85d/pcsx2/MMI.cpp#L1292).
+
+Se prepara `ps2recomp-ee-pmulth.patch`, tema separado al final de la cadena
+(102), con implementación propia de esa semántica en el header del runtime
+y emisión por el recompilador. Conserva los ocho resultados en ambos pares
+HI/LO, el registro cero y los operandos cuando rd coincide con rs/rt. No cambia
+la estructura del contexto, direcciones o funciones del juego. Regresiones con
+valores distintos por lane, negativos/extremos, ambos pares HI/LO, alias y cero;
+la prueba de emisión cubre rd=0 con sus efectos secundarios. No se incorpora
+código generado o del otro port, ni se modifica el checkout de Opus.
+
+Pendientes compilación completa que regenere las cuatro instrucciones,
+suite/negativo, CI y control de la introducción con el nuevo ejecutable. La
+evidencia confirma el error de instrucción, **todavía no que corrija todos los
+espasmos, el encuadre o la presentación asíncrona/compartida**.
