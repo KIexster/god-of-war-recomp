@@ -13,7 +13,8 @@ def inspect(text):
     history = deque(maxlen=2)
     metadata_by_sequence = {}
     result = dict(acquisitions=0, retained=0, unknown_hashes=0,
-                  sequence_regressions=[], inconsistent_repeats=[], content_returns=[])
+                  sequence_regressions=[], inconsistent_repeats=[], content_returns=[],
+                  tick_distance=dict(samples=0, min=None, max=None, max_sample=None))
     for number, line in enumerate(text.splitlines(), 1):
         if '[gs-present] host mode:' in line:
             previous = None
@@ -43,6 +44,16 @@ def inspect(text):
             history.clear()
         else:
             metadata_by_sequence.setdefault(row['seq'], metadata)
+            # Distancia firmada entre dos muestras del contador; no es tiempo ni FPS.
+            # El request puede muestrear el tick después que el host, dando un negativo.
+            distance = row['hostTick'] - row['frameTick']
+            ticks = result['tick_distance']
+            ticks['samples'] += 1
+            ticks['min'] = distance if ticks['min'] is None else min(ticks['min'], distance)
+            if ticks['max'] is None or distance > ticks['max']:
+                ticks['max'] = distance
+                ticks['max_sample'] = dict(line=number, seq=row['seq'], render=row['render'],
+                                          hostTick=row['hostTick'], frameTick=row['frameTick'])
         if previous and row['seq'] == previous['seq']:
             result['retained'] += 1
             continue
@@ -64,7 +75,7 @@ def inspect(text):
         previous = row
     if not result['acquisitions']:
         raise ValueError('no hay imágenes compartidas registradas')
-    result['limitation'] = 'Un patrón A-B-A de hashes puede ser legítimo; no prueba corrupción, igualdad de píxeles ni FPS. Solo cubre los registros capturados.'
+    result['limitation'] = 'Un patrón A-B-A de hashes puede ser legítimo; no prueba corrupción, igualdad de píxeles ni FPS. La distancia entre ticks no mide tiempo ni demuestra latencia sostenida. Solo cubre los registros capturados; cero filas retenidas no descarta retenciones sin registrar.'
     return result
 
 def main():

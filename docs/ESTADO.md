@@ -3282,7 +3282,7 @@ espera al EE: faltan ~3 ms (~10 %).
 ## Integración del diagnóstico GS con #56 y #57 (2026-10-11)
 
 Se traen referencias remotas y se integra mediante merge `origin/main` en
-`34cbe584` (ver el SHA completo en el historial del merge), con #56 y #57.
+`34cbe58a9a47e33d1a2ed70b34a9937f72293d43`, con #56 y #57.
 Se conservan sin modificaciones los seis parches nuevos, el generador VU1,
 sus regresiones, el muestreador y los overrides de Opus. Los conflictos de
 inserción en `scripts/compilar.ps1` se resuelven dejando los seis parches en
@@ -3306,3 +3306,24 @@ La disponibilidad del ordenador sigue pendiente de confirmación: se continúa
 con revisión y controles ligeros, sin compilaciones, juegos ni benchmarks.
 #51 permanece en borrador; se conserva la pista de distancia entre ticks y
 el encuadre como problemas que todavía requieren control visual.
+
+## Distancia entre ticks en el inspector compartido (2026-10-11)
+
+El hallazgo de 417 ticks requería hasta ahora un análisis privado adicional.
+`inspect_shared_frames.py` informa ahora `tick_distance`: número de muestras
+consistentes, mínimo/máximo firmado de `hostTick - frameTick` y línea, secuencia,
+render y ticks del primer máximo. Incluye retenciones consistentes y registros
+sin hash; descarta metadatos contradictorios. No compara ticks entre imágenes
+de épocas distintas ni convierte el resultado en tiempo/FPS. Un valor negativo
+puede ser válido porque el request muestrea el contador después que el host.
+
+Once pruebas Python pasan. Las tres nuevas fallan con el inspector de
+`cce2d68`: máximo con evidencia, distancia negativa/hash desconocido/cambio de
+modo y retención con una fila contradictoria que no debe alterar el máximo.
+El inspector nuevo reproduce 0..3 / 0..417 y las líneas originales en los dos
+registros Windows conservados de **90 parches**, sin volver a ejecutar el juego.
+Se aclara que cero retenciones registradas no descarta las que no emite el
+diagnóstico. No se modifica el runtime ni se declara corregido un fallo visual.
+
+También se reubica el párrafo de validación de paletas bajo su sección original
+en `CONTROLES.md`; no pertenece al control de presentación compartida.

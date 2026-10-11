@@ -193,3 +193,11 @@ no a esta integración. Recompilar completamente con el workspace privado
 cuando el usuario confirme que el PC está disponible y registrar el nuevo
 commit/hash antes de repetir el control. No trasladar los resultados nativos
 anteriores al nuevo código VU1 ni a los hilos que no se probaron.
+
+El inspector añade `tick_distance` para obtener directamente la distancia
+firmada host/imagen y los metadatos de su máximo. Once pruebas correctas;
+las tres nuevas fallan con la versión anterior. Incluye filas retenidas
+consistentes y hash desconocido, excluye metadatos contradictorios y admite
+distancia negativa cuando el request lee el contador después que el host.
+El resumen reproduce los máximos 3/417 en los registros anteriores sin
+ejecutar el juego. No demuestra latencia sostenida ni contenido antiguo.

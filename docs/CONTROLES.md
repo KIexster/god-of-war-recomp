@@ -455,6 +455,12 @@ puntero nulo y cruce de segmento; RAM intacta. Mismos cupos, intervalo y
 llamada original. No usar estas ejecuciones para medir FPS ni comparar cuadros
 distintos como si fueran una secuencia sincronizada.
 
+MSVC `/O2 /W4 /WX` pasa. Volver a limitar el lector completo a ocho matrices
+en una copia privada hace fallar la prueba. Recompilación rápida correcta sobre
+los mismos 79 parches; control nativo de 95,948 s: 84 lecturas completas,
+9.598 matrices finitas y no totalmente nulas. En intro hay 32 muestras por
+articulación de las paletas 125/103. Resultados, binario y límites: ESTADO.
+
 ## Adquisiciones de presentación compartida (2026-10-10)
 
 `PS2X_GS_PRESENT_DIAG=1` registra `[gs-present:shared]` cuando el host adquiere
@@ -477,8 +483,9 @@ Un retorno de hash es una pista; no prueba corrupción, igualdad de píxeles
 ni contenido viejo. Las capturas posteriores de VRAM tampoco demuestran qué
 textura compartida adquirió el host.
 
-MSVC `/O2 /W4 /WX` pasa. Volver a limitar el lector completo a ocho matrices
-en una copia privada hace fallar la prueba. Recompilación rápida correcta sobre
-los mismos 79 parches; control nativo de 95,948 s: 84 lecturas completas,
-9.598 matrices finitas y no totalmente nulas. En intro hay 32 muestras por
-articulación de las paletas 125/103. Resultados, binario y límites: ESTADO.
+Desde el control de 2026-10-11, `tick_distance` informa el mínimo y máximo de
+`hostTick - frameTick` y la línea/metadatos del primer máximo. Incluye filas
+retenidas consistentes y muestras sin hash; excluye metadatos contradictorios.
+La distancia puede ser negativa si el request muestrea el tick después que el
+host. No es tiempo, no mide FPS ni prueba latencia sostenida. Cero retenciones
+en el resumen no descarta retenciones que el diagnóstico no haya registrado.

@@ -64,5 +64,33 @@ class SharedFramesTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 frames.inspect(text)
 
+    def test_tick_distance_preserves_the_record_with_the_largest_gap(self):
+        text = '\n'.join([frame(1, 11, host=10),
+                          frame(2, 22, host=1365).replace('frameTick=8', 'frameTick=948'),
+                          frame(3, 33, host=1366).replace('frameTick=8', 'frameTick=1365')])
+        ticks = frames.inspect(text)['tick_distance']
+        self.assertEqual((ticks['samples'], ticks['min'], ticks['max']), (3, 1, 417))
+        self.assertEqual(ticks['max_sample'], dict(line=2, seq=2, render=2,
+                                                 hostTick=1365, frameTick=948))
+
+    def test_tick_distance_is_signed_and_independent_of_hash_and_mode(self):
+        text = '\n'.join([frame(1, 11, valid=0, host=7),
+                          '[gs-present] host mode: RAM frames',
+                          frame(1, 22, host=2).replace('frameTick=8', 'frameTick=3')])
+        result = frames.inspect(text)
+        ticks = result['tick_distance']
+        self.assertEqual((ticks['samples'], ticks['min'], ticks['max']), (2, -1, -1))
+        self.assertEqual(ticks['max_sample']['line'], 1)
+        self.assertEqual(result['sequence_regressions'], [])
+
+    def test_tick_distance_includes_retention_but_excludes_conflicting_metadata(self):
+        text = '\n'.join([frame(1, 11), frame(1, 11, host=12),
+                          frame(1, 22, host=1000), frame(2, 33, host=11)])
+        result = frames.inspect(text)
+        ticks = result['tick_distance']
+        self.assertEqual(result['inconsistent_repeats'], [3])
+        self.assertEqual((ticks['samples'], ticks['min'], ticks['max']), (3, 2, 4))
+        self.assertEqual(ticks['max_sample']['line'], 2)
+
 if __name__ == '__main__':
     unittest.main()
