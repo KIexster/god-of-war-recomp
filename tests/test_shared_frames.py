@@ -122,5 +122,20 @@ class SharedFramesTest(unittest.TestCase):
             with self.subTest(text=text), self.assertRaises(ValueError):
                 frames.inspect(text)
 
+    def test_dimension_changes_keep_evidence_even_without_hash(self):
+        result = frames.inspect('\n'.join([frame(1, 11), frame(2, 22, width=512, valid=0),
+                                          frame(3, 33, width=512), frame(4, 44)]))
+        self.assertEqual(result['dimension_changes'], [
+            dict(line=2, seq=2, render=2, from_size=[640, 448], to_size=[512, 448]),
+            dict(line=4, seq=4, render=4, from_size=[512, 448], to_size=[640, 448])])
+        self.assertEqual(result['unknown_hashes'], 1)
+
+    def test_conflicting_dimensions_and_separate_modes_do_not_create_false_changes(self):
+        result = frames.inspect('\n'.join([frame(1, 11), frame(1, 11, width=512), frame(2, 22),
+            '[gs-present] host mode: RAM frames', frame(1, 33, width=512), frame(2, 44, width=480)]))
+        self.assertEqual(result['inconsistent_repeats'], [2])
+        self.assertEqual(result['dimension_changes'], [
+            dict(line=6, seq=2, render=2, from_size=[512, 448], to_size=[480, 448])])
+
 if __name__ == '__main__':
     unittest.main()

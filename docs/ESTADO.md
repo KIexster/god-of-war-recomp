@@ -3396,3 +3396,22 @@ otra compilación completa Windows y control funcional del HEAD final.
 Siguen pendientes la visualización compartida y el encuadre dentro del GS;
 #51 permanece borrador. Se realizan solo controles ligeros mientras continúa
 la reserva del ordenador por el usuario.
+
+## Evidencia de dimensiones en el inspector (2026-10-11)
+
+`inspect_shared_frames.py` añade `dimension_changes`: línea, secuencia/render
+y tamaño anterior/nuevo. Antes solo cortaba el patrón de retornos al cambiar
+el tamaño; ahora el dato queda explícito en el resumen. Incluye muestras sin
+hash, excluye contradicciones de la misma secuencia y no enlaza épocas
+separadas por un cambio de modo.
+
+Diecisiete pruebas correctas, con dos regresiones que fallan contra `715e216`.
+Reanalizar los registros Windows conservados de 90 parches muestra en ambos
+un único cambio 1×1 → 512×448 en la secuencia 2, al inicio. No hay cambios
+posteriores entre las muestras capturadas; no prueba aspecto ni cámara correctos.
+
+El CI de `715e216fa72cec85e4112eb20b3fdcbba090a910` termina en verde,
+incluida compilación del nuevo formato `preferred` y suite de los 96 parches.
+([CI](https://github.com/KIexster/god-of-war-recomp/actions/runs/38114877209)).
+No sustituye el control Windows pendiente. Este ajuste solo cambia Python
+y documentación; no se recompila ni ejecuta el juego en el PC reservado.

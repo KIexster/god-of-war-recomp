@@ -479,6 +479,12 @@ unidades como desconocidas, sin deducirlas por igualdad de valores crudos.
 fuente ni verifica por sí solo que sea correcta. Quince pruebas Python pasan;
 compilación nativa y control del nuevo formato pendientes.
 
+`dimension_changes` informa línea, secuencia/render y tamaño anterior/nuevo
+de las filas consistentes. No transforma una contradicción de metadatos en
+un cambio de resolución válido ni enlaza tamaños entre modos separados.
+El inspector tiene ahora 17 pruebas correctas; las dos nuevas regresiones
+fallan con la versión anterior. Las dimensiones no acreditan encuadre ni aspecto.
+
 Usar `GOW_PAD_TEST_NO_CAPTURE=1` con el guion automático mantiene entradas y
 registros de estado sin capturas periódicas de VRAM. Eliminar del entorno los
 otros diagnósticos: algunos se activan por presencia y siguen activos con

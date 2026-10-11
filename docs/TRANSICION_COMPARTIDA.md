@@ -321,3 +321,22 @@ antes de esta ampliación. No valida su formato nuevo: comprobar el CI del
 HEAD final y recompilar completamente en Windows antes de ejecutar el juego.
 No hay compilación nativa ni control visual de `preferred` todavía;
 #51 continúa en borrador. La selección de fuente y el encuadre siguen pendientes.
+
+## Cambios de dimensiones en el resumen (2026-10-11)
+
+Hasta ahora un cambio de tamaño interrumpía el patrón A–B–A, pero no quedaba
+identificado en el JSON. `dimension_changes` informa línea, secuencia/render
+y tamaño anterior/nuevo para las filas consistentes, incluso sin hash válido.
+Excluye metadatos contradictorios de una misma secuencia y reinicia la
+referencia al cambiar de modo del host.
+
+Diecisiete pruebas Python pasan; las dos nuevas fallan con `715e216`.
+Los dos registros Windows privados de 90 parches muestran un único cambio,
+de 1×1 a 512×448 en la secuencia 2, al inicio. No se observa otro cambio en
+las muestras registradas; esto no verifica el aspecto ni el encuadre de la escena.
+
+El CI de `715e216fa72cec85e4112eb20b3fdcbba090a910` pasa ambos controles
+([ejecución 38114877209](https://github.com/KIexster/god-of-war-recomp/actions/runs/38114877209)).
+Compila la ampliación de `preferred` y valida la cadena integrada sin el juego.
+La compilación Windows y la comprobación funcional del código actual siguen
+pendientes. Este ajuste del resumen Python no cambia el parche del runtime.

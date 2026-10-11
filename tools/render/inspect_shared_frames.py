@@ -13,8 +13,9 @@ def inspect(text):
     previous = None
     history = deque(maxlen=2)
     metadata_by_sequence = {}
+    last_dimensions = None
     result = dict(acquisitions=0, retained=0, unknown_hashes=0,
-                  sequence_regressions=[], inconsistent_repeats=[], content_returns=[],
+                  sequence_regressions=[], inconsistent_repeats=[], content_returns=[], dimension_changes=[],
                   tick_distance=dict(samples=0, min=None, max=None, max_sample=None),
                   source_units=dict(unknown=0, pages_8192=0, blocks_256=0))
     for number, line in enumerate(text.splitlines(), 1):
@@ -22,6 +23,7 @@ def inspect(text):
             previous = None
             history.clear()
             metadata_by_sequence.clear()
+            last_dimensions = None
         if MARKER not in line:
             continue
         tokens = line.split(MARKER, 1)[1].strip().split()
@@ -48,6 +50,11 @@ def inspect(text):
             history.clear()
         else:
             metadata_by_sequence.setdefault(row['seq'], {}).update(metadata)
+            dimensions = (row['width'], row['height'])
+            if last_dimensions is not None and dimensions != last_dimensions:
+                result['dimension_changes'].append(dict(line=number, seq=row['seq'], render=row['render'],
+                    from_size=list(last_dimensions), to_size=list(dimensions)))
+            last_dimensions = dimensions
             unit = ('unknown' if 'preferred' not in row else
                     'blocks_256' if row['preferred'] else 'pages_8192')
             result['source_units'][unit] += 1
