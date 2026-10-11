@@ -4520,3 +4520,15 @@ validan el alcance de #63: soporte de guion y diagnóstico opcional. El control
 desde 3000 sin muestras se conserva como limitación; no se presenta como
 movimiento visible validado. Comprobar también CI del HEAD documental final
 antes de fusionar. No hay cambios de parches o matemática del juego.
+
+## Condiciones de la jerarquía: diagnóstico preparado (2026-10-11)
+
+La comprobación exploratoria anterior motiva registrar flags del record y
+cambio de la matriz mundo. `recordFlags` conserva todos los bits de record+0;
+`worldBeforeValid`/`worldChanged` separan lecturas inválidas de bytes retenidos,
+sin afirmar ejecución por slot. Se añade lectura previa de mundo a la sonda
+opcional, sin modificar cálculo, argumentos, buffers, checkpoints o parches.
+La prueba procedural distingue flags/índice/umbral y rechaza records truncados;
+Windows/MSVC /W4 /WX y sintaxis C++20 del override correctos. Pendientes
+recompilación rápida, control y CI del nuevo código. No se declara que las
+diferencias exploratorias sean corrupción.

@@ -67,7 +67,7 @@ namespace gow_skin_probe {
     struct Slot {
         bool recordValid=false, maskValid=false, visibilityValid=false;
         int16_t indexField=0, parent=0;
-        uint32_t threshold=0, visibility=0;
+        uint32_t flags=0, threshold=0, visibility=0;
         bool masked=false;
     };
     inline Slot slot(const Memory &memory,uint32_t skeleton,const Layout &l,uint32_t index) {
@@ -76,6 +76,9 @@ namespace gow_skin_probe {
         const auto *p=memory.at(l.records,uint64_t(index)*16u,16u);
         if(p) {
             s.recordValid=true;
+            // GOW-Port: 0x1378AC/0x137EBC; bits 0x6000 llaman a la
+            // transformación adicional de 0x136870 después del producto.
+            std::memcpy(&s.flags,p,4);
             std::memcpy(&s.indexField,p+4,2); std::memcpy(&s.parent,p+8,2);
             std::memcpy(&s.threshold,p+12,4);
             // El juego indexa la máscara por signed lh; un índice negativo no se
