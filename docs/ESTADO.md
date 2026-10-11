@@ -3538,3 +3538,33 @@ privada de aplicación es correcta y el CI de #58 pasa ambos controles
 Esta integración aún no está compilada en Windows; el ejecutable de referencia
 anterior no incluye el arreglo ni las nuevas comprobaciones de fuente compartida.
 No se modifica el checkout de Opus, que continúa limpio. Ambas PR siguen borrador.
+
+## Suite GPU de referencia y contrato de FINISH (2026-10-11)
+
+Sobre el mismo binario/fuentes de referencia `de5a89a`, 96 parches, la suite
+Windows con GPU real y FINISH síncrono pasa 625/625. El nuevo diagnóstico
+registra `preferred` y hashes válidos en sus adquisiciones procedurales.
+Un ensayo adicional de toda la suite con `GOW_GS_FINISH_ASINCRONO=1` pasa
+623/625: fallan `FINISH and readback wait for the last compact draw state`
+y `shared FINISH and reads retain barriers after held draws`. Se conserva
+el registro completo y no se añade ninguna excepción.
+
+Ambas pruebas exigen explícitamente efectos visibles al retorno de FINISH,
+una garantía del modo síncrono. El modo opcional encola FINISH y retorna antes,
+mientras las lecturas conservan su barrera; el proyecto comprueba ambos
+contratos por separado con `tests/gs_finish_async_test.cpp` en CI. Ejecutar
+toda la suite bajo la opción asíncrona no hace válidas esas aserciones y
+puede leer sus grabadores mientras el worker los modifica. No se declara
+verde ese ensayo ni se usa para probar estabilidad del juego. El control
+específico todavía debe reproducirse en Windows con la integración nueva.
+
+Primera pasada de referencia síncrona/RAM: 360,06 s, terminación deliberada
+por límite (código de proceso 1, código del lanzador 0), estados
+0 → 3 → 4 → 9 → 11; primer informe 11 a 149,78 s del guion y último 11.
+Tarjeta procedural intacta, sin las firmas de error VU1/GIF/excepción buscadas.
+Ventana visible desde ~1 s, nunca observada minimizada; primer plano desde
+113,78 s. Dos capturas externas propias con panel contraído muestran escena,
+Kratos y, en la posterior, HUD/enemigos. No están alineadas con PCSX2 ni
+acreditan fidelidad de cámara, jugabilidad o FPS. Capturas y registros privados.
+La matriz compartida/asíncrona está en curso; no se trasladan estos resultados
+al ejecutable de 97 parches pendiente de construcción.

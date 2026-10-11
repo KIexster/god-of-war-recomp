@@ -548,3 +548,20 @@ No usa `copyLatchedHostPresentationFrame` como sustituto de esa textura.
 Este readback existe solo en la regresión procedural; su ejecución Windows
 con la cadena nueva sigue pendiente. El CI previo del arreglo `e52527d`
 pasa 593/593; no acredita por sí solo esta ampliación GPU exclusiva de Windows.
+
+## Configuración de las pruebas de FINISH (2026-10-11)
+
+La suite completa normal y GPU se ejecuta con entorno de diagnósticos limpio
+y FINISH síncrono (`GOW_GS_FINISH_ASINCRONO=0` o ausente). Dos grabadores
+exigen que los draws y FINISH estén terminados al retornar. Bajo la opción
+asíncrona esas aserciones no representan su contrato y los grabadores pueden
+consultarse mientras el worker los modifica. No saltar pruebas ni añadir
+excepciones para conseguir una suite verde en esa configuración.
+
+`tests/gs_finish_async_test.cpp` ejecuta procesos separados `default` y
+`async`: verifica retorno y CSR según el modo, retiene el backend mediante
+un gate procedural y exige orden dibujos → FINISH → lectura y que la lectura
+espere siempre. El CI valida ambos. Reproducir ese control específico en
+Windows, además de la suite normal/GPU, antes de informar validación asíncrona.
+El ensayo Windows adicional de toda la suite GPU asíncrona de 96 parches se
+conserva como 623/625, sin declarar éxito ni modificar las expectativas del runtime.
