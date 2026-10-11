@@ -3517,3 +3517,24 @@ comprueba los píxeles de cada textura nueva contra CPU; las esperas y lecturas
 solo existen en la prueba. La ampliación sigue aplicando antes del diagnóstico
 en la cadena privada conjunta de 97. Es cobertura procedural pendiente de
 ejecución GPU, no una reproducción del defecto visual ni un benchmark.
+
+## Compilación de referencia actual y merge de fuente (2026-10-11)
+
+Con el PC libre se completa `scripts\2_compilar.cmd` en nuestro runtime privado,
+verificando la junction y conservando las fuentes anteriores. Referencia:
+`de5a89ad437c952a6ae384025ed602e4e62a9c1b`, 96 parches, Release, VU1 intérprete,
+tres tareas paralelas, código final 0 y 886,33 s. El ejecutable de 54.542.336 bytes
+tiene SHA-256 `e5aae46440de86b0eeb97da91f742330ce0e95d22bbf70b368e83c44f082f0bd`.
+Se congela una copia privada con DLL, manifiesto y registro de compilación.
+La suite Windows normal pasa 591/591; libpad2 también pasa. El control GPU y
+la nueva matriz con el juego todavía están en curso/pedientes: la compilación
+y la suite sin juego no acreditan la transición ni la cámara.
+
+Después se integra por merge #58, `fb8782525ed5b9ee7ac806675f4d58b1dfa5ac0d`,
+conservando los documentos de ambas ramas y ordenando fuente de presentación
+antes del diagnóstico. La cadena integrada tiene 97 parches. Su comprobación
+privada de aplicación es correcta y el CI de #58 pasa ambos controles
+([38131689081](https://github.com/KIexster/god-of-war-recomp/actions/runs/38131689081)).
+Esta integración aún no está compilada en Windows; el ejecutable de referencia
+anterior no incluye el arreglo ni las nuevas comprobaciones de fuente compartida.
+No se modifica el checkout de Opus, que continúa limpio. Ambas PR siguen borrador.

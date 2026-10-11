@@ -365,3 +365,18 @@ Su control negativo `5f3d7de` compila y falla solo las dos regresiones nuevas;
 el arreglo `e52527d` pasa 593/593 y CI completo. Ambos ensayos son remotos,
 sin el juego. El control GPU Windows y la escena real siguen pendientes;
 no demuestra la causa de la alternancia o cámara. Las dos PR permanecen en borrador.
+
+## Referencia Windows de 96 parches y siguiente integración (2026-10-11)
+
+El usuario libera el PC. Compilación completa terminada con código 0 en 886,33 s:
+`de5a89ad437c952a6ae384025ed602e4e62a9c1b`, Release, VU1 intérprete, tres tareas.
+SHA-256 del runner: `e5aae46440de86b0eeb97da91f742330ce0e95d22bbf70b368e83c44f082f0bd`.
+591/591 pruebas Windows normales y libpad2 pasan. Copia del ejecutable, DLL,
+manifiesto y registro en la carpeta privada `E:\gowgpuprof\transition96`.
+GPU y matriz nueva todavía pendientes; no se atribuye a este binario el arreglo #58.
+
+La rama integra después #58 por merge y pasa a 97 parches, con corrección de
+fuente antes del diagnóstico del host. Requiere una segunda compilación completa
+y un manifiesto diferente para comparar contra la referencia anterior. Los
+resultados se publicarán con el commit/hash de cada binario, conservando
+los dos problemas visuales y las retenciones no registradas como límites abiertos.
