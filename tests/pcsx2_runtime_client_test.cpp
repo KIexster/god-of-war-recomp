@@ -16,6 +16,7 @@ int wmain(int argc,wchar_t** argv){
     _wputenv_s(L"GOW_PCSX2_GS_DIAG",L"1");_wputenv_s(L"GOW_PCSX2_GS_DLL",dll.c_str());
     _wputenv_s(L"GOW_PCSX2_GS_OUTPUT",captures.c_str());
     _wputenv_s(L"GOW_PCSX2_GS_CAPTURE_COUNT",L"2");_wputenv_s(L"GOW_PCSX2_GS_CAPTURE_FROM_TICK",L"0");
+    _wputenv_s(L"GOW_PCSX2_GS_CAPTURE_EVERY_TICKS",L"1");
     _wputenv_s(L"PS2X_VU1_HILO",L"0");_wputenv_s(L"PS2X_GS_FRENTE",L"0");
     gow_pcsx2_client::configure(gs);if(!gs.hasExternalObserver())return 1;
     std::vector<uint64_t> words{10|(uint64_t(1)<<15)|(uint64_t(1)<<60),0x0e};
@@ -36,7 +37,7 @@ int wmain(int argc,wchar_t** argv){
     regs.smode1=uint64_t(2)<<13;regs.smode2=0;regs.dispfb1=uint64_t(1)<<9;
     regs.display1=(uint64_t(25)<<12)|(uint64_t(3)<<23)|(uint64_t(255)<<32)|(uint64_t(31)<<44);
     draw();gs.notifyExternalVSync(1,0);
-    gs.reset();++words[16];draw();gs.notifyExternalVSync(121,0);
+    gs.reset();++words[16];draw();gs.notifyExternalVSync(2,0);
     gs.setExternalObserver({}); // Drenar y cerrar la DLL antes de examinar sus archivos.
     unsigned files=0;
     for(const auto& entry:std::filesystem::directory_iterator(captures)){
@@ -44,7 +45,7 @@ int wmain(int argc,wchar_t** argv){
         std::ifstream file(entry.path(),std::ios::binary);
         std::vector<uint8_t> bytes(std::istreambuf_iterator<char>(file),std::istreambuf_iterator<char>{});
         if(bytes.size()!=54+8192)return 1;
-        const uint8_t red=entry.path().filename().string().find("_121_")!=std::string::npos?0x57:0x56;
+        const uint8_t red=entry.path().filename().string().find("tick_2_")!=std::string::npos?0x57:0x56;
         for(size_t p=54;p<bytes.size();p+=4)
             if(bytes[p]!=0x12 || bytes[p+1]!=0x34 || bytes[p+2]!=red || bytes[p+3]!=0xff)return 1;
         ++files;

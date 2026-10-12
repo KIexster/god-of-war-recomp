@@ -83,16 +83,20 @@ def pcsx2_settings(args, folder):
     if args.vu1_thread != '0' or args.gs_front != '0':
         raise ValueError('El espejo PCSX2 requiere VU1 y frente GS sin hilos')
     count, tick = args.pcsx2_capture_count, args.pcsx2_from_tick
+    interval = getattr(args, 'pcsx2_capture_interval', 120)
     if type(count) is not int or not 0 <= count <= 16:
         raise ValueError('Capturas PCSX2: entero 0..16')
     if type(tick) is not int or not 0 <= tick <= 0xffffffffffffffff:
         raise ValueError('Inicio PCSX2: tick uint64')
+    if type(interval) is not int or not 1 <= interval <= 600:
+        raise ValueError('Intervalo PCSX2: entero 1..600 ticks')
     module = Path(module).resolve(strict=True)
     if not module.is_file():
         raise ValueError('Se requiere una DLL PCSX2 local')
     settings = dict(GOW_PCSX2_GS_DIAG='1', GOW_PCSX2_GS_DLL=str(module),
                     GOW_PCSX2_GS_CAPTURE_COUNT=str(count),
-                    GOW_PCSX2_GS_CAPTURE_FROM_TICK=str(tick))
+                    GOW_PCSX2_GS_CAPTURE_FROM_TICK=str(tick),
+                    GOW_PCSX2_GS_CAPTURE_EVERY_TICKS=str(interval))
     if count:
         settings['GOW_PCSX2_GS_OUTPUT'] = str(folder/'pcsx2_frames')
     resources = getattr(args, 'pcsx2_resources', None)
@@ -292,6 +296,8 @@ def main():
     parser.add_argument('--pcsx2-resources', type=Path, help='Recursos/shaders de la revisión PCSX2 fijada')
     parser.add_argument('--pcsx2-capture-count', type=int, choices=range(17), default=8)
     parser.add_argument('--pcsx2-from-tick', type=int, default=900)
+    parser.add_argument('--pcsx2-capture-interval', type=int, default=120,
+                        help='Ticks entre capturas PCRTC: 1..600; 1 permite una ráfaga limitada')
     args = parser.parse_args()
     if os.name != 'nt':
         parser.error('La ejecución del juego y el monitor de ventana requieren Windows')

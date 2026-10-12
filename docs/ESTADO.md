@@ -5024,3 +5024,20 @@ Se revisan cambios recientes de Tobiichi-Port por petición del usuario:
 [comparación, candidatos y límites](REVISION_TOBIICHI.md). No se copian el
 buzón global o el control de fences sin sus regresiones. Control asíncrono
 compartido equivalente en curso; no se cambia la compilación durante la partida.
+
+Control FINISH asíncrono/compartido sobre el mismo runner e4cf8c1: 360,06 s,
+final al límite sin salida anticipada, 12 capturas PCRTC 900..2220 y ocho
+texturas adquiridas. Se observa HUD, Kratos y enemigos en la salida DX11 del
+tick 2100; no se afirma fidelidad de animación o control manual por esa imagen.
+Inspector: 918 adquisiciones, sin regresiones, metadatos inconsistentes,
+cambios de dimensiones o A-B-A registrados. Mismos ELF/tarjeta inicial y
+opciones de aislamiento. Ambos controles del espejo usan rutas DMA genéricas:
+no extrapolar estabilidad a los atajos habituales, los hilos o una partida larga.
+
+Se prepara captura por intervalo configurable para estudiar poses consecutivas:
+`GOW_PCSX2_GS_CAPTURE_EVERY_TICKS=1..600`, predeterminado 120, cupo máximo 16
+conservado. Controlador actualizado y 19 pruebas Python correctas. Fixture
+runtime/DLL captura dos colores exactos en ticks 1 y 2 con reset; negativo que
+ignora el intervalo y fuerza 120 compila/falla, restaurado correcto. Cambio
+solo de src/ y control, sin nuevo parche del runtime. Recompilación del runner
+y ráfaga con el juego pendientes; el ejecutable e4cf8c1 no contiene esta opción.

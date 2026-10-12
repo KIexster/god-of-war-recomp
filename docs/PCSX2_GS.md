@@ -307,6 +307,13 @@ nueva; `GOW_PCSX2_GS_CAPTURE_COUNT=0..16` (8 si hay carpeta, 0 sin ella) y
 PCRTC con tick/secuencia; mínimo 120 ticks entre capturas. No representa la
 textura adquirida de OpenGL ni un fotograma alineado con PCSX2 externo.
 
+Ampliación posterior: `GOW_PCSX2_GS_CAPTURE_EVERY_TICKS=1..600` conserva 120
+por defecto y permite una ráfaga de hasta 16 ticks consecutivos con valor 1.
+El controlador admite `--pcsx2-capture-interval`. Es readback explícito y no
+se usa para medir FPS. Fixture con dos colores/reset/ticks 1 y 2 correcto;
+negativo que fuerza de nuevo 120 pierde la segunda captura y falla. Restaurado
+correcto. Las 19 pruebas Python de preparación/rechazo de opciones pasan.
+
 ABI 1 amplía exports con escritura directa y reset. El adaptador usa el índice
 legado 0 solo para A+D completo y conserva Q; PATH1/2/3 del juego usan 3/1/2.
 Parser y DLL GPU pasan con escritura directa durante un tag incompleto. Cola

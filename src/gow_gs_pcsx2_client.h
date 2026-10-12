@@ -43,7 +43,7 @@ class Client final:public GSExternalObserver {
     std::thread worker;
     std::filesystem::path dll,output;
     std::string resources;
-    uint64_t fromTick=0,captureCount=0;
+    uint64_t fromTick=0,captureCount=0,everyTicks=120;
     std::atomic<bool> failed{false};
     bool ready=false;
     void fail(const char* operation,uint32_t status=GOW_GS_FAILED) noexcept {
@@ -97,14 +97,14 @@ class Client final:public GSExternalObserver {
                 else if(event.kind==Event::Reset){status=reset(handle);}
                 else {
                     status=vsync(handle,event.field,event.bytes.data(),uint32_t(event.bytes.size()));++frames;
-                    if(status==GOW_GS_OK && (frames<=4 || (frames%120)==0 || (captures<captureCount && event.tick>=fromTick && (!captures || event.tick-lastCapture>=120)))){
+                    if(status==GOW_GS_OK && (frames<=4 || (frames%120)==0 || (captures<captureCount && event.tick>=fromTick && (!captures || event.tick-lastCapture>=everyTicks)))){
                         GowGsFrameInfo info{sizeof(info),0,0,0,0,0};
                         const auto query=read_output(handle,nullptr,0,&info);
                         if(query!=GOW_GS_NO_FRAME && query!=GOW_GS_BUFFER_SMALL){fail("consulta",query);break;}
                         if(frames<=4 || (frames%120)==0)std::fprintf(stderr,"[gow-pcsx2-gs] tick=%llu frame=%llu field=%u width=%u height=%u gif=%llu bytes=%llu direct=%llu\n",
                             (unsigned long long)event.tick,(unsigned long long)frames,event.field,info.width,info.height,
                             (unsigned long long)gifs,(unsigned long long)totalBytes,(unsigned long long)registers);
-                        if(query==GOW_GS_BUFFER_SMALL && captures<captureCount && event.tick>=fromTick && (!captures || event.tick-lastCapture>=120)){
+                        if(query==GOW_GS_BUFFER_SMALL && captures<captureCount && event.tick>=fromTick && (!captures || event.tick-lastCapture>=everyTicks)){
                             if(info.required_bytes>(64u<<20)){fail("tamano-imagen");break;}
                             std::vector<uint8_t> pixels(size_t(info.required_bytes));
                             const auto read=read_output(handle,pixels.data(),pixels.size(),&info);
@@ -126,8 +126,8 @@ class Client final:public GSExternalObserver {
         std::fprintf(stderr,"[gow-pcsx2-gs] cierre failed=%u gif=%llu bytes=%llu frames=%llu direct=%llu capturas=%llu\n",unsigned(failed.load()),(unsigned long long)gifs,(unsigned long long)totalBytes,(unsigned long long)frames,(unsigned long long)registers,(unsigned long long)captures);
     }
 public:
-    Client(std::filesystem::path path,std::string resourcePath,std::filesystem::path capturePath,uint64_t from,uint64_t count)
-        :dll(std::move(path)),output(std::move(capturePath)),resources(std::move(resourcePath)),fromTick(from),captureCount(count){
+    Client(std::filesystem::path path,std::string resourcePath,std::filesystem::path capturePath,uint64_t from,uint64_t count,uint64_t interval=120)
+        :dll(std::move(path)),output(std::move(capturePath)),resources(std::move(resourcePath)),fromTick(from),captureCount(count),everyTicks(interval){
         std::promise<bool> startup;auto signal=startup.get_future();
         worker=std::thread([this,p=std::move(startup)]() mutable {run(std::move(p));});ready=signal.get();
     }
@@ -158,8 +158,10 @@ inline void configure(GS& gs){
     try{
         const wchar_t* dll=_wgetenv(L"GOW_PCSX2_GS_DLL");const wchar_t* folder=_wgetenv(L"GOW_PCSX2_GS_OUTPUT");
         const wchar_t* resources=_wgetenv(L"GOW_PCSX2_GS_RESOURCES");
-        uint64_t from=0,count=0;
+        uint64_t from=0,count=0,interval=120;
         if(!dll || !number("GOW_PCSX2_GS_CAPTURE_FROM_TICK",900,UINT64_MAX,from) || !number("GOW_PCSX2_GS_CAPTURE_COUNT",folder?8:0,16,count))throw std::runtime_error("opciones");
+        // GOW-Port: ráfaga de ticks para observar animación; límite total de 16 sigue vigente.
+        if(!number("GOW_PCSX2_GS_CAPTURE_EVERY_TICKS",120,600,interval) || !interval)throw std::runtime_error("intervalo de captura: 1..600 ticks");
         // GOW-Port: el entorno Windows es UTF-16; no interpretar bytes ACP como UTF-8.
         const auto path=std::filesystem::path(dll);
         if(!path.is_absolute() || !std::filesystem::is_regular_file(path))throw std::runtime_error("DLL absoluta requerida");
@@ -168,7 +170,7 @@ inline void configure(GS& gs){
             if(!output.is_absolute() || std::filesystem::exists(output) || !std::filesystem::create_directories(output))throw std::runtime_error("carpeta nueva absoluta requerida");}
         std::string resourceUtf8;
         if(resources){const auto u8=std::filesystem::path(resources).u8string();resourceUtf8.assign(reinterpret_cast<const char*>(u8.data()),u8.size());}
-        auto client=std::make_shared<Client>(path,resourceUtf8,output,from,count);
+        auto client=std::make_shared<Client>(path,resourceUtf8,output,from,count,interval);
         if(client->initialized()){gs.setExternalObserver(std::move(client));std::fprintf(stderr,"[gow-pcsx2-gs] enlace activo desde arranque; atajos DMA desactivados\n");}
     }catch(const std::exception& e){std::fprintf(stderr,"[gow-pcsx2-gs] configuracion rechazada: %s\n",e.what());}
 #else

@@ -102,16 +102,19 @@ class TransitionControlTest(unittest.TestCase):
             args.pcsx2_gs_module = Path(name)/'procedural.dll'
             args.pcsx2_gs_module.write_bytes(b'fixture, no DLL ejecutable')
             args.pcsx2_capture_count, args.pcsx2_from_tick = 2, 123
+            args.pcsx2_capture_interval = 1
             with patch.object(control, 'EXPECTED_ELF_SHA256', control.digest(args.elf)):
                 folder, _, _, result = control.prepare_case(args)
             self.assertEqual(result['settings']['GOW_PCSX2_GS_OUTPUT'], str(folder/'pcsx2_frames'))
             self.assertFalse((folder/'pcsx2_frames').exists())
             self.assertEqual(result['pcsx2']['module_sha256'], control.digest(args.pcsx2_gs_module))
             self.assertEqual(result['settings']['GOW_PCSX2_GS_CAPTURE_FROM_TICK'], '123')
+            self.assertEqual(result['settings']['GOW_PCSX2_GS_CAPTURE_EVERY_TICKS'], '1')
 
     def test_pcsx2_invalid_modes_reject_before_creating_run(self):
         for changes in ({'vu1_thread': '1'}, {'pcsx2_capture_count': 17},
-                        {'pcsx2_from_tick': -1}, {'pcsx2_from_tick': True}):
+                        {'pcsx2_from_tick': -1}, {'pcsx2_from_tick': True},
+                        {'pcsx2_capture_interval': 0}, {'pcsx2_capture_interval': 601}):
             with tempfile.TemporaryDirectory(prefix='gow_transition_test_') as name:
                 args = self.fixture(Path(name))
                 args.pcsx2_gs_module = args.runner
