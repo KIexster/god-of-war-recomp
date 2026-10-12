@@ -202,8 +202,9 @@ static bool texturedImage(bool checkFrame = false, unsigned seed = 0)
     if (!send(bridge, path, packet(upload)))
         return false;
     const size_t qwc = expected.size() * sizeof(u32) / 16;
+    const unsigned imageFormat=(seed & 1)?3:2; // GOW-Port: ambos FLG son IMAGE; #55 dependia de FLG=3.
     std::vector<u64> image(2 + qwc * 2, 0);
-    image[0] = qwc | (u64(1) << 15) | (u64(2) << 58); // IMAGE, no A+D.
+    image[0] = qwc | (u64(1) << 15) | (u64(imageFormat) << 58); // IMAGE, no A+D.
     std::memcpy(image.data() + 2, expected.data(), expected.size() * sizeof(u32));
     if (!send(bridge, path, image))
         return false;
@@ -257,7 +258,7 @@ static bool texturedImage(bool checkFrame = false, unsigned seed = 0)
     const double calls = g_perfmon.GetCounter(GSPerfMon::DrawCalls) - previousCalls;
     if (calls < 1)
         return false;
-    std::printf("IMAGE/textura: %.0f draw calls GPU\n", calls);
+    std::printf("IMAGE FLG=%u/textura: %.0f draw calls GPU\n",imageFormat,calls);
     return !checkFrame || frame(expected);
 }
 
@@ -291,7 +292,7 @@ int main(int argc, char** argv)
                 if (!(success = draw(path)))
                     break;
             if (success)
-                for (unsigned seed = 0; seed < (checkFrame ? 3u : 1u); ++seed)
+                for (unsigned seed = 0; seed < (checkFrame ? 3u : 2u); ++seed)
                     if (!(success = texturedImage(checkFrame, seed+cycle*3)))
                         break;
             g_gs_renderer->Destroy();

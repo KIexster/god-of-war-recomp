@@ -209,6 +209,28 @@ SHA-256 restaurado `74e92ae9a886b66f55079d06f6cbf0ddcbf9af18bfe2064e7d92137f94f3
 [CI de `d1bf750` completo correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38244581430).
 El control GPU nuevo es local; el CI del HEAD que lo publica queda pendiente.
 
+### IMAGE FLG 2/3 y revisión del enganche (2026-10-12)
+
+El fixture alterna ahora IMAGE FLG=2 y FLG=3, conservando el tag en el puente.
+Ambos pasan FIFO y, en modo ventana, composición/backbuffer exactos. Omitir
+solo el envío FLG=3 compila y falla: recibe el color del patrón anterior en
+vez del nuevo. Restaurados, los modos sin VSync, Surfaceless y ventana pasan.
+SHA-256 restaurado `77ecd2fa20509b18422d9ade62c8ee35db18f90a0a8ad19e6882be412d311bfd`.
+Conserva explícitamente la semántica que necesitaba la corrección de Opus #55;
+no es una reproducción de sus medidas de FPS ni un fallo observado del juego.
+
+Revisión del runtime 102: el árbitro entrega bytes en su orden decidido, pero
+`tryProcessNativeGifPackedChain` y `tryProcessNativeGifImageUploadChain` pueden
+evitarlo. Esta última llama a `uploadImageNative` con cuatro registros, datos
+y solo el low word del setup tag: ese punto ya no ofrece el flujo GIF original.
+La ruta genérica también puede tomar un atajo IMAGE interno, conservando el
+span de entrada. Un único hook dentro de processGIFPacket perdería las dos
+rutas DMA externas. El primer control de integración deberá conservar bytes
+y orden post-arbitraje, y asegurar un consumidor en un solo hilo; se propone
+desactivar aquellos atajos DMA únicamente al activar el puente opcional y
+mantenerlos cuando esté ausente. No se implementa aún ese cambio del runtime.
+También faltan escrituras directas fuera de GIF, espejo privilegiado, FIFO e IRQ.
+
 Pendiente para una adaptación funcional:
 
 1. Extender el módulo aislado probado a una API opcional para el runtime.

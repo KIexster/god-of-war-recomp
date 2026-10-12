@@ -4895,3 +4895,18 @@ con salida PCRTC correcta; restaurado pasa ventana y Surfaceless. SHA-256
 El nuevo control GPU sigue siendo local. No se ejecuta God of War, no se
 comprueba imagen visible, resize/pérdida de dispositivo ni estabilidad del
 FINISH asíncrono del runtime. No se mide FPS. API/hook de integración pendientes.
+
+## GS de PCSX2: IMAGE FLG=3 y cobertura del futuro hook (2026-10-12)
+
+Se comprueban IMAGE FLG=2/3 con el parser/rasterizador original, sin alterar
+los tags en el puente. FIFO, salida PCRTC y backbuffer de ventana exactos.
+Negativo que omite solo FLG=3 compila y devuelve el patrón anterior; la prueba
+falla. Restaurados, los tres modos pasan. SHA-256
+`77ecd2fa20509b18422d9ade62c8ee35db18f90a0a8ad19e6882be412d311bfd`.
+Conserva la semántica relevante para #55, sin atribuir FPS o un fallo del juego.
+
+Revisión confirma dos atajos DMA que evitan el árbitro/frontend genérico.
+La subida nativa normaliza datos/registros y pierde parte de los tags originales;
+el futuro hook no puede limitarse a processGIFPacket. Propuesta y pendientes
+documentados en [PCSX2_GS.md](PCSX2_GS.md), sin modificar el runtime por ahora.
+[CI de `ada5c5e` completo correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38246271325).
