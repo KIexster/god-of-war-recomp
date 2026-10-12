@@ -4715,3 +4715,26 @@ StartThread crea ese contexto. **No se ha demostrado que causen este espasmo**.
 El próximo control activará `GOW_VU1_BUDGET_DIAG=1`, sin aumentar presupuestos,
 y examinará magnitudes además de finitud. Primero comprobar PMULTH; las demás
 hipótesis requieren evidencia por separado y no se incorporan arreglos en bloque.
+
+## PMULTH: compilación completa y regresiones nativas (2026-10-11)
+
+La cadena 102 termina con código 0 en 959,94 s, regenerando los cuatro sitios
+PMULTH con `ps2_pmulth`. Código funcional de `2fd0fc9`, 54.565.376 bytes,
+runner SHA-256 `3092e98bc53ff8e1109a71ee596d7bfa0a15263ac6a6f1a0bfc3fc91ee8cfc4f`.
+Se conserva esa identidad de compilación: el HEAD posterior corrige argumentos
+de tests, documenta el cierre e integra main, sin cambiar helper/emisión.
+VU1 interpretada, tres tareas, /O2 /Ob2 /DNDEBUG /Zi; datos y símbolos privados.
+No atribuir a esta build los FPS medidos con VU1 compilada.
+
+Regresiones finales de la PR aplicadas al árbol de pruebas nativo: 602 casos
+normales y 638 GPU, cero fallos; cuatro contratos FINISH/presentación correctos.
+Negativo aislado con las aserciones procedurales públicas: el helper correcto
+pasa, reemplazarlo por la suma escalar anterior **compila y falla**, restaurarlo
+pasa. Header del runtime de trabajo intacto. No es un control del juego.
+[CI final `94cacf8` correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38184150710).
+
+Se inicia control privado de la introducción: FINISH síncrono/compartido,
+hilos 0, mismo guion de menú, ventana de matrices 1490 y 16 adquisiciones desde
+1500, hash 0; diagnóstico de cortes VU1 activado sin aumentar el presupuesto.
+Pendiente terminar, revisar poses/registro y publicar el resultado antes de
+marcar #67 lista. No se ha declarado el espasmo resuelto.
