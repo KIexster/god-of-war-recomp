@@ -5120,3 +5120,13 @@ Se inician controles compartidos síncrono/asíncrono con este mismo ejecutable:
 ráfaga de introducción desde 1400 y de Kratos/NPCs desde 2100, respectivamente.
 Distintas ventanas deliberadas; no comparar poses entre pasadas por tick.
 Capturas y registros aún pendientes de revisión. El nuevo CI está en curso.
+
+Revisión intermedia del síncrono/compartido `89ffb57`, todavía ejecutándose:
+16 PCRTC consecutivas 1400..1415 y 16 texturas adquiridas 1400..1414/1416,
+todas 512x448. Se revisan los 15 pares que tienen ambos archivos de ese tick;
+el adquirido 1416 no se empareja con el PCRTC 1415. Encuadre y silueta semejantes,
+movimiento gradual de Kratos en esta ventana, sin deformación brusca observada.
+La diferencia entre líneas/filtrado permanece. Es inspección visual de la misma
+ejecución, sin prueba de igualdad de comandos o píxeles, fidelidad PS2 o todas
+las animaciones. Falta final al límite e inspector del registro completo,
+y control asíncrono posterior de Kratos/NPCs. [CI de código 89ffb57 correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38317718747).

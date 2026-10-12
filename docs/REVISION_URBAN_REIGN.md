@@ -28,10 +28,17 @@ de CSR que recibe la DLL**, con la convención de MTGS. No cambia el contador
 EE, las IRQ, el renderer habitual o la autoridad de VRAM/FIFO. Se añade un
 receptor DLL procedural para comprobar cuatro entregas reales del cliente:
 cambio de campo, campo retenido, regreso, bits ajenos y ticks independientes.
-Validación nativa/negativa y controles con el cliente corregido pendientes
-al preparar esta entrada. Las capturas anteriores mantienen su identidad y
+Validación al preparar esta entrada pendiente; comprobada posteriormente:
+seis CTest sin GPU correctos, incluida la entrega cliente/cola/DLL; negativo
+que vuelve al campo anterior compila/falla y restaurado pasa. Header público
+intacto. Fixture runtime/DLL/DX11 conserva dos imágenes de 2.048 RGBA exactos,
+reset, fragmentos, registro directo y cierre sin fallo. Las capturas anteriores mantienen su identidad y
 no certifican paridad de entrelazado. Este fallo del espejo no se presenta
 como la causa del espasmo o del encuadre original del port.
+
+Cliente corregido `89ffb57` recompilado sobre la cadena completa 103; CI de
+ese código correcto. Controles posteriores con el juego y sus límites se
+registran en [ESTADO.md](ESTADO.md); no atribuirle las capturas del cliente previo.
 
 ## Partes útiles para la siguiente integración
 
