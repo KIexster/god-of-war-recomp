@@ -4,6 +4,7 @@
 #include "GS/Renderers/DX11/GSDevice11.h"
 #include "GS/Renderers/HW/GSRendererHW.h"
 #include "../tools/render/pcsx2_gif_sink.h"
+#include "../tools/render/pcsx2_probe/host_probe.h"
 #include <array>
 #include <cstdio>
 #include <cstring>
@@ -95,10 +96,43 @@ static std::vector<u64> packet(const std::vector<u64>& registers)
     return result;
 }
 
+static const std::vector<u32>* expectedBackbuffer=nullptr;
+static bool backbufferCorrect=false;
+static void checkBackbuffer()
+{
+    auto* device=static_cast<GSDevice11*>(g_gs_device.get());
+    wil::com_ptr_nothrow<ID3D11RenderTargetView> view;
+    device->GetD3DContext()->OMGetRenderTargets(1,view.put(),nullptr);
+    if(!view || !expectedBackbuffer)return;
+    wil::com_ptr_nothrow<ID3D11Resource> resource;
+    view->GetResource(resource.put());
+    auto source=resource.try_query<ID3D11Texture2D>();
+    if(!source)return;
+    D3D11_TEXTURE2D_DESC desc{};source->GetDesc(&desc);
+    if(desc.Width!=64 || desc.Height!=32 || desc.Format!=DXGI_FORMAT_R8G8B8A8_UNORM)return;
+    desc.Usage=D3D11_USAGE_STAGING;desc.BindFlags=0;
+    desc.CPUAccessFlags=D3D11_CPU_ACCESS_READ;desc.MiscFlags=0;
+    wil::com_ptr_nothrow<ID3D11Texture2D> staging;
+    if(FAILED(device->GetD3DDevice()->CreateTexture2D(&desc,nullptr,staging.put())))return;
+    device->GetD3DContext()->CopyResource(staging.get(),source.get());
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    if(FAILED(device->GetD3DContext()->Map(staging.get(),0,D3D11_MAP_READ,0,&mapped)))return;
+    backbufferCorrect=true;
+    for(unsigned y=0;y<32;++y)
+        for(unsigned x=0;x<64;++x)
+        {
+            u32 actual=0;
+            std::memcpy(&actual,static_cast<const u8*>(mapped.pData)+y*mapped.RowPitch+x*sizeof(u32),sizeof(actual));
+            if(actual!=((*expectedBackbuffer)[y*64+x]|0xff000000))backbufferCorrect=false;
+        }
+    device->GetD3DContext()->Unmap(staging.get(),0);
+}
+
 static bool frame(const std::vector<u32>& expected)
 {
     extern unsigned gsProbePresentRequests, gsProbeSkippedPresents, gsProbeFrameUpdates;
     const unsigned presentBefore = gsProbePresentRequests, skipBefore = gsProbeSkippedPresents, updatesBefore = gsProbeFrameUpdates;
+    const unsigned gpuBefore=gsProbeGpuPresents;
     auto& regs = *reinterpret_cast<GSPrivRegSet*>(g_gs_renderer->GetRegsMem());
     regs.PMODE.EN1 = 1; regs.PMODE.EN2 = 0;
     regs.PMODE.MMOD = 1; regs.PMODE.ALP = 255; regs.PMODE.SLBG = 1;
@@ -108,7 +142,10 @@ static bool frame(const std::vector<u32>& expected)
     regs.DISP[0].DISPLAY.MAGH = 3;
     regs.DISP[0].DISPLAY.DW = 255; regs.DISP[0].DISPLAY.DH = 31;
     regs.DISP[0].DISPLAY.DY = 25; // Inicio activo NTSC de VideoModeOffsets original.
+    expectedBackbuffer=&expected;backbufferCorrect=false;
+    gsProbeBeforePresent=gsProbeHasWindow()?checkBackbuffer:nullptr;
     GSvsync(0, true); // Wrapper original: actualizar PCRTC y Flush antes de VSync.
+    gsProbeBeforePresent=nullptr;expectedBackbuffer=nullptr;
     auto* current = g_gs_device->GetCurrent();
     if (!current || current->GetWidth() != 64 || current->GetHeight() != 32)
     {
@@ -129,12 +166,18 @@ static bool frame(const std::vector<u32>& expected)
             std::fprintf(stderr, "VSync: pixel %zu esperado %08X recibido %08X\n", i, expected[i] | 0xff000000, actual[i]);
             return false;
         }
-    if (gsProbePresentRequests != presentBefore + 1 || gsProbeSkippedPresents != skipBefore + 1 || gsProbeFrameUpdates != updatesBefore + 1)
+    const unsigned skipped=gsProbeHasWindow()?0:1;
+    if (gsProbePresentRequests != presentBefore + 1 || gsProbeSkippedPresents != skipBefore + skipped || gsProbeFrameUpdates != updatesBefore + 1)
     {
         std::fprintf(stderr, "VSync: callbacks de host Surfaceless inconsistentes\n");
         return false;
     }
-    std::puts("VSync/PCRTC: 2048 pixeles RGBA exactos en salida compuesta; Surfaceless");
+    if(gsProbeHasWindow() && (!backbufferCorrect || gsProbeGpuPresents!=gpuBefore+1))
+    {
+        std::fprintf(stderr,"VSync: backbuffer o callback Present no coincide\n");return false;
+    }
+    std::puts("VSync/PCRTC: 2048 pixeles RGBA exactos en salida compuesta");
+    if(gsProbeHasWindow())std::puts("DXGI: 2048 pixeles RGBA exactos en backbuffer antes de Present, ventana oculta");
     return true;
 }
 
@@ -220,7 +263,8 @@ static bool texturedImage(bool checkFrame = false, unsigned seed = 0)
 
 int main(int argc, char** argv)
 {
-    const bool checkFrame = argc == 2 && std::strcmp(argv[1], "--frame") == 0;
+    const bool window = argc == 2 && std::strcmp(argv[1], "--window") == 0;
+    const bool checkFrame = window || (argc == 2 && std::strcmp(argv[1], "--frame") == 0);
     if (argc > 1 && !checkFrame)
         return 2;
     GSConfig.Renderer = GSRendererType::DX11;
@@ -229,27 +273,36 @@ int main(int argc, char** argv)
     GSConfig.LinearPresent = GSPostBilinearMode::Off;
     GSConfig.LoadTextureReplacements = false;
     GSConfig.DumpReplaceableTextures = false;
+    EmuConfig.CurrentAspectRatio=AspectRatioType::Stretch;
     GSVertexSW::InitStatic(); // Inicializacion original previa al renderer HW.
-    alignas(16) std::array<u8, 0x2000> regs{};
-    g_gs_device = std::make_unique<GSDevice11>();
-    bool success = g_gs_device->Create(GSVSyncMode::Disabled, false);
-    if (success)
+    bool success=true;
+    for(unsigned cycle=0;cycle<(window?2u:1u);++cycle)
     {
-        g_gs_renderer = std::make_unique<GSRendererHW>();
-        g_gs_renderer->SetRegsMem(regs.data());
-        g_gs_renderer->Reset(true);
-        for (auto path : {gow_pcsx2_gs::Path::Path1, gow_pcsx2_gs::Path::Path2, gow_pcsx2_gs::Path::Path3})
-            if (!(success = draw(path)))
-                break;
+        if(window && !gsProbeOpenWindow(64,32))return 1;
+        alignas(16) std::array<u8, 0x2000> regs{};
+        g_gs_device = std::make_unique<GSDevice11>();
+        success = g_gs_device->Create(GSVSyncMode::Disabled, false);
         if (success)
-            for (unsigned seed = 0; seed < (checkFrame ? 3u : 1u); ++seed)
-                if (!(success = texturedImage(checkFrame, seed)))
+        {
+            g_gs_renderer = std::make_unique<GSRendererHW>();
+            g_gs_renderer->SetRegsMem(regs.data());
+            g_gs_renderer->Reset(true);
+            for (auto path : {gow_pcsx2_gs::Path::Path1, gow_pcsx2_gs::Path::Path2, gow_pcsx2_gs::Path::Path3})
+                if (!(success = draw(path)))
                     break;
-        g_gs_renderer->Destroy();
-        g_gs_renderer.reset();
+            if (success)
+                for (unsigned seed = 0; seed < (checkFrame ? 3u : 1u); ++seed)
+                    if (!(success = texturedImage(checkFrame, seed+cycle*3)))
+                        break;
+            g_gs_renderer->Destroy();
+            g_gs_renderer.reset();
+        }
+        g_gs_device->Destroy();
+        g_gs_device.reset();
+        gsProbeCloseWindow();
+        if(!success)break;
+        std::printf("Ciclo GS %u: creacion/dibujo/cierre correctos\n",cycle);
     }
-    g_gs_device->Destroy();
-    g_gs_device.reset();
     std::puts(success ? "GS HW procedural: correcto" : "GS HW procedural: fallo");
     return success ? 0 : 1;
 }

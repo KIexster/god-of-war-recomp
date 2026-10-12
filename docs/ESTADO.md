@@ -4879,3 +4879,19 @@ de God of War. No cambia el renderer del juego ni resuelve por sí solo su
 encuadre. [CI de `08307ac` completo correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38243100981),
 incluido enlace Windows; esta nueva prueba GPU es local. Ventana/swapchain e
 integración del runtime siguen pendientes; no hay medición de FPS.
+
+## GS de PCSX2: backbuffer DXGI y dos ciclos de ventana (2026-10-12)
+
+El modo `--window` usa una ventana procedural propia oculta y Present original.
+Dos ciclos completos de dispositivo/renderer/ventana, tres patrones por ciclo:
+los seis backbuffers reales leídos antes de Present y las seis texturas PCRTC
+coinciden exactamente en sus 2.048 píxeles RGBA. Contexto ImGui vacío, sin
+archivos de interfaz; callbacks y cierre de HWND/clase comprobados.
+
+Negativo al borrar el backbuffer a magenta tras dibujar: compila y falla aun
+con salida PCRTC correcta; restaurado pasa ventana y Surfaceless. SHA-256
+`74e92ae9a886b66f55079d06f6cbf0ddcbf9af18bfe2064e7d92137f94f3c543`.
+[CI de `d1bf750` completo correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38244581430).
+El nuevo control GPU sigue siendo local. No se ejecuta God of War, no se
+comprueba imagen visible, resize/pérdida de dispositivo ni estabilidad del
+FINISH asíncrono del runtime. No se mide FPS. API/hook de integración pendientes.

@@ -187,13 +187,35 @@ incluido enlace nativo Windows y parser/memoria. Los controles de píxeles sigue
 siendo locales. VSync compuesto no valida todavía swapchain, imagen visible,
 sincronización con el juego o las combinaciones de FINISH/hilos.
 
+### Swapchain DX11 procedural comprobado (2026-10-12)
+
+`gs_gif_draw_probe --window` crea una ventana Win32 propia oculta y usa el
+swapchain/Present originales. Un contexto ImGui vacío acompaña EndPresent,
+sin interfaz del emulador ni archivos ini/log. El control lee el recurso
+**realmente enlazado como render target DXGI antes de Present**, respetando
+RowPitch; la lectura se limita al fixture y no se propone como rendimiento.
+
+Dos ciclos completos de creación/dibujo/cierre de dispositivo, renderer y
+ventana, con tres patrones distintos cada uno: los seis backbuffers y las
+seis salidas PCRTC contienen sus 2.048 píxeles RGBA exactos. Callbacks de
+presentación/métricas consistentes, cierre de HWND/clase comprobado. La ventana
+oculta no demuestra una imagen visible o estabilidad prolongada con el juego.
+
+Negativo privado: borrar a magenta el backbuffer real después de dibujar y
+antes de compararlo compila y falla, aunque la textura PCRTC coincide. Restaurado
+pasa ventana y Surfaceless. Confirma que el control distingue composición y
+buffer final, sin atribuir la alteración procedural a un fallo de God of War.
+SHA-256 restaurado `74e92ae9a886b66f55079d06f6cbf0ddcbf9af18bfe2064e7d92137f94f3c543`.
+[CI de `d1bf750` completo correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38244581430).
+El control GPU nuevo es local; el CI del HEAD que lo publica queda pendiente.
+
 Pendiente para una adaptación funcional:
 
 1. Extender el módulo aislado probado a una API opcional para el runtime.
    Completar los servicios necesarios de Host y definir el contrato de carga,
    recursos y cierre; los servicios ausentes de este fixture siguen limitados.
-2. Añadir ventana/presentación y VSync; ampliar formatos, CLUT, blending,
-   depth/alpha test y controles del cierre completo.
+2. Ampliar presentación a ventana visible, redimensionado y recuperación de
+   dispositivo; ampliar formatos, CLUT, blending y depth/alpha test.
 3. Añadir espejo de registros privilegiados, CSR/FINISH/SIGNAL, FIFO local→host,
    VRAM inicial y sincronización de escrituras/lecturas. `GSopen` recibe memoria
    de **registros privilegiados**, no directamente los 4 MiB de VRAM.

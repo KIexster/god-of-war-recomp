@@ -5,6 +5,7 @@
 #include "GS/Renderers/HW/GSTextureReplacements.h"
 #include <cstdio>
 #include <cstdlib>
+#include "host_probe.h"
 static void unavailable(const char* name){std::fprintf(stderr,"Servicio no disponible: %s\n",name);std::abort();}
 extern unsigned gsProbePresentRequests, gsProbeSkippedPresents, gsProbeFrameUpdates;
 namespace GSTextureReplacements {
@@ -38,13 +39,13 @@ bool FMVstarted=false; // No hay ejecutable ni reproduccion de FMV en este contr
 namespace Host {
 void AddKeyedOSDMessage(std::string,std::string message,float){std::fprintf(stderr,"OSD: %s\n",message.c_str());}
 bool GetBaseBoolSettingValue(const char*,const char*,bool fallback){return fallback;}
-void BeginPresentFrame(){++gsProbePresentRequests;} // Host Surfaceless, sin ventana.
+void BeginPresentFrame(){++gsProbePresentRequests;gsProbeBeginUiFrame();}
 }
-namespace FullscreenUI {void Render(){unavailable("UI");}}
+namespace FullscreenUI {void Render(){if(!gsProbeHasWindow())unavailable("UI");}} // Sin interfaz propia que dibujar.
 namespace ImGuiManager {
-void NewFrame(){unavailable("UI NewFrame");}
-void SkipFrame(){++gsProbeSkippedPresents;} // No se creo una trama de interfaz.
-void RenderOSD(){unavailable("UI OSD");}
+void NewFrame(){if(!gsProbeHasWindow())unavailable("UI NewFrame");gsProbeEndUiFrame();} // El host abre UI en BeginPresentFrame.
+void SkipFrame(){++gsProbeSkippedPresents;gsProbeSkipUiFrame();}
+void RenderOSD(){if(!gsProbeHasWindow())unavailable("UI OSD");if(gsProbeBeforePresent)gsProbeBeforePresent();}
 }
 namespace GSDumpReplayer {
 bool IsReplayingDump(){return false;} bool IsRunner(){return false;}
@@ -52,7 +53,7 @@ void RenderUI(){unavailable("dump UI");} void UpdateGSStats(){unavailable("dump 
 }
 namespace PerformanceMetrics {
 void Update(bool,bool,bool){++gsProbeFrameUpdates;} // Solo cuenta callbacks; no mide FPS.
-void OnGPUPresent(float,u64,u64){unavailable("metrics GPU");}
+void OnGPUPresent(float,u64,u64){++gsProbeGpuPresents;} // Contador de callbacks, no rendimiento.
 InternalFPSMethod GetInternalFPSMethod(){return InternalFPSMethod::None;}
 void StartSavingMetrics(u32){unavailable("metrics save");}
 bool IsSavingMetrics(){return false;} void DumpSavedMetrics(){unavailable("metrics dump");}
