@@ -35,6 +35,12 @@ verifica alias, handles y MEM_FREE tras ocho ciclos; no cubre fallos de reserva.
 CTest ejecuta parser y memoria **sin dispositivo**. Se compilan también los
 controles GPU; ejecutarlos expresamente, uno después del otro, en un PC libre:
 
+Si se dispone de cabeceras de PS2Recomp con la cadena del port aplicada,
+`-DGOW_RUNTIME_HEADERS=C:/trabajo/PS2Recomp/ps2xRuntime/include` añade el contrato
+cliente/cola/DLL de VSync y CSR, sin GPU. La CI Windows activa este sexto control.
+
+Controles GPU optativos:
+
 ```powershell
 & C:/trabajo/gs-build/gs_dx11_probe.exe
 & C:/trabajo/gs-build/gs_gif_draw_probe.exe

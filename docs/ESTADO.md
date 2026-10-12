@@ -5097,3 +5097,26 @@ PCSX2 usa desentrelazado automático. Conteo descriptivo, no igualdad de píxele
 ni prueba de que la diferencia sea la causa de deformación del modelo. Las
 capturas previas conservan el campo invertido del espejo: no certificar paridad
 de entrelazado con ellas. El asíncrono/RAM e5 equivalente sigue en curso.
+
+Validación posterior del cliente `89ffb57ab40577ea6bcb342d151f2217e14b0165`:
+seis CTest Windows sin dispositivo correctos, incluida entrega de cuatro
+VSync/CSR por el cliente y la cola. Negativo en copia privada, pasando de
+nuevo el campo del runtime directamente: compila y falla con código 1;
+restaurado código 0, header público intacto. Fixture real runtime/DLL/DX11
+recompilado y correcto, 2x2.048 RGBA exactos, GIF fragmentado, registro directo,
+reset y cierre sin fallo. No es aún comparación de campos con la escena PS2.
+
+La matriz e5e040e completa sus cuatro controles de 420 s: asíncrono/RAM,
+420,08 s, alcanza el límite sin fallo registrado del espejo; 16 capturas
+PCRTC revisadas, movimiento gradual en la ventana, tarjeta copiada intacta.
+Cada variante conserva 16 PCRTC 1400..1415; compartidas también 16 texturas
+adquiridas. Conservar el límite del campo invertido en esas capturas del espejo.
+No extrapolar a hilos, rutas DMA optimizadas o todas las animaciones/NPCs.
+
+Src/ del cliente corregido recompilado sobre full 477e013/103, código 0 en
+20,67 s, biblioteca del runtime intacta. Runner SHA-256
+`0c2d81f875bd15032cd030be8a068cc08670a2185c2cfc428b36e6342e4299e7`.
+Se inician controles compartidos síncrono/asíncrono con este mismo ejecutable:
+ráfaga de introducción desde 1400 y de Kratos/NPCs desde 2100, respectivamente.
+Distintas ventanas deliberadas; no comparar poses entre pasadas por tick.
+Capturas y registros aún pendientes de revisión. El nuevo CI está en curso.
