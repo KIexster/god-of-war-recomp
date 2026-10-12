@@ -56,6 +56,32 @@ se corrige al índice 3 antes de usarlo en el port. Los controles de sintaxis
 no habrían detectado esa pérdida de datos. Se compila además GSState.cpp real
 como objeto privado con MSVC: correcto; su enlace y ejecución siguen pendientes.
 
+### Parser original ejecutado en Windows (2026-10-12)
+
+Se extrae una biblioteca privada de objetos GS/common de las fuentes fijadas
+y se enlaza un host explícitamente sin ventana. Configuración, memoria virtual
+repetida, detección de CPU y registros de dump usan implementaciones originales;
+los servicios Host de este fixture ofrecen ajustes por defecto, errores a
+stderr y rechazan solicitudes de ventana. Su contador debe quedar en cero.
+La capa de interfaz se compila con fuentes STB de ImGui para este fixture sin UI.
+Los codecs privados ya disponibles en PCSX2 usan cabeceras coincidentes:
+libpng 1.6.58/zlib 1.3.2. Ninguna de esas DLL o fuentes descargadas se publica.
+
+`tests/pcsx2_gif_parser_probe.cpp` ejecuta **GSState real** con una subclase
+que cuenta solicitudes de dibujo sin rasterizarlas. Comprueba tag/payload
+PATH1 separados, nloop retenido, dos paquetes EOP en un lote, fragmentos de
+PATH2/3 intercalados, sus cursores independientes y RGBAQ exacto. Correcto
+en MSVC; dibujo y solicitudes de ventana: cero, como exige la prueba.
+
+Negativo aislado: cambiar solo PATH1 de índice 3 a 0 compila y falla en
+`PATH1 conserva nloop al cortar tras tag`. Restaurado pasa. El ejecutable
+restaurado tiene SHA-256
+`1289d908c425c0f1b138ff7dc4cf619f1a9341c443fe6145eae5c02d9b7e033c`.
+La CI comprueba sintaxis del fixture con los headers reales; **no reproduce
+todavía su enlace/ejecución nativa**. El contexto de extracción y sus artefactos
+siguen privados. Esta prueba confirma la selección de entrada del parser,
+no dispositivo DX11, píxeles, caché completa, FIFO/IRQ o renderizado del juego.
+
 Pendiente para una adaptación funcional:
 
 1. Construir un módulo GS aislado con las fuentes/licencias fijadas, recursos

@@ -4791,3 +4791,20 @@ continuo 3 usado por GSgifTransfer/MTGS; los otros dos mantienen sus cursores.
 Sintaxis correcta no prueba ese comportamiento. GSState.cpp real compila
 como objeto privado en MSVC; aún falta enlazar/ejecutar el módulo. No se había
 conectado el puente al juego ni modificado su renderer.
+
+## GS de PCSX2: parser original probado (2026-10-12)
+
+La extracción privada de GS/common ya enlaza y ejecuta GSState original sin
+ventana/dispositivo. Se publica el fixture procedural, sin datos del juego:
+retención de PATH1 al separar tag/payload, dos EOP por lote, fragmentos PATH2/3
+y cursores independientes, RGBAQ exacto. La subclase cuenta dibujo sin
+rasterizar; la prueba exige cero dibujos y cero solicitudes de ventana.
+No es un renderer de sustitución. Bibliotecas/servicios originales y límites
+de reproducción del host privado detallados en [PCSX2_GS.md](PCSX2_GS.md).
+
+Negativo de índice PATH1 0: compila y falla en el nloop pendiente; índice 3
+restaurado correcto. SHA-256 del ejecutable procedural restaurado
+`1289d908c425c0f1b138ff7dc4cf619f1a9341c443fe6145eae5c02d9b7e033c`.
+El CI anterior `d4aab8e` completo correcto, incluido enlace sintáctico de
+headers reales; pendiente CI del HEAD que añade fixture/resultados.
+Todavía falta alojar DX11, píxeles, FIFO/VRAM/IRQ y conectar el runtime.

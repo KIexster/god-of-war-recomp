@@ -83,6 +83,8 @@ jobs:
         run: |
           g++ -std=c++20 -march=x86-64-v3 -fsyntax-only tests/pcsx2_gif_sink_syntax.cpp \
             -I pcsx2-reference -I pcsx2-reference/pcsx2 -I pcsx2-reference/3rdparty/fmt/include
+          g++ -std=c++20 -march=x86-64-v3 -fsyntax-only tests/pcsx2_gif_parser_probe.cpp \
+            -I pcsx2-reference -I pcsx2-reference/pcsx2 -I pcsx2-reference/3rdparty/fmt/include
 
   runtime:
     name: Parches y suite del runtime (PS2Recomp)
