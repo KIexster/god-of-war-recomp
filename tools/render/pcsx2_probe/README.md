@@ -38,6 +38,7 @@ controles GPU; ejecutarlos expresamente, uno después del otro, en un PC libre:
 & C:/trabajo/gs-build/gs_gif_draw_probe.exe
 & C:/trabajo/gs-build/gs_gif_draw_probe.exe --frame
 & C:/trabajo/gs-build/gs_gif_draw_probe.exe --window
+& C:/trabajo/gs-build/gs_module_gpu_probe.exe C:/trabajo/gs-build/gow_pcsx2_gs_module.dll
 ```
 
 DX11 usa shaders SM4/5 originales y modo Surfaceless. DXC se enlaza con carga
@@ -58,3 +59,26 @@ Reapertura, captura, dumps y reemplazos de texturas no están implementados;
 sus operaciones abortan con diagnóstico. Los objetos
 SW originales se conservan; los controles GPU no validan esa ruta. Los resultados
 y pendientes de integración están en [PCSX2_GS.md](../../../docs/PCSX2_GS.md).
+
+## ABI experimental de la DLL
+
+`module_api.h` define ABI 1 con estructuras de tamaño fijo (Windows x64),
+handles numéricos y estados de error. Crea un único GS por DLL, recibe bytes
+GIF prestados durante la llamada y una copia de los **8 KiB de registros PS2
+privilegiados**, y permite consultar/copiar la textura PCRTC compuesta RGBA.
+Ese layout no es el struct GSRegisters de PS2Recomp: el adaptador debe construir
+el espejo de registros. VSync no exige terminar los fragmentos GIF pendientes.
+La secuencia cuenta VSync, sin certificar contenido nuevo o imagen visible.
+
+Crear, enviar, VSync, leer y cerrar exige el mismo hilo. Un fallo al procesar
+entrada se retiene hasta cerrar; los rechazos de argumentos no consumen datos.
+La consulta sin buffer devuelve dimensiones/bytes requeridos; un buffer menor
+no recibe píxeles. Leer salida realiza readback y tiene coste explícito.
+
+`gs_module_contract_probe` carga la DLL y comprueba exports/ABI/rechazos sin
+dispositivo; se añade a CTest/CI. El control GPU optativo usa solo GetProcAddress,
+sin enlazar los globals C++ del renderer: creación repetida, singleton ocupado,
+handle cerrado, otro hilo, GIF fragmentado, tamaño de registros, capacidad y
+2.048 píxeles RGBA exactos por ciclo. La DLL todavía es **solo renderizado**:
+no sustituye FIFO/VRAM del runtime, IRQ/FINISH ni soporta carga a mitad de una
+partida, pérdida de dispositivo o todos los caminos de fallo de reserva.

@@ -231,11 +231,33 @@ desactivar aquellos atajos DMA únicamente al activar el puente opcional y
 mantenerlos cuando esté ausente. No se implementa aún ese cambio del runtime.
 También faltan escrituras directas fuera de GIF, espejo privilegiado, FIFO e IRQ.
 
+### DLL y ABI de renderizado comprobadas (2026-10-12)
+
+El módulo aislado ahora construye `gow_pcsx2_gs_module.dll`, con ABI 1 propia
+de estructuras de tamaño fijo, handles, estado y validación de hilo. Recibe
+GIF fragmentado y un espejo privilegiado PS2 de 8 KiB, llama GSvsync original
+y copia explícitamente la textura compuesta. No intercambia objetos C++ con
+el consumidor. Recursos y superficie se configuran al crear; no cambia runtime.
+
+Contrato sin dispositivo: DLL cargada, exports/ABI y argumentos/handles
+rechazados correctamente. GPU por GetProcAddress, sin usar los globals del GS:
+dos ciclos correctos; singleton ocupado, handles cerrados, otro hilo, registros
+incompletos y buffer pequeño rechazados; consulta de tamaño/secuencia correcta,
+guardia final intacta y 2.048 píxeles RGBA exactos en cada ciclo.
+
+Negativos aislados: omitir guardia de hilo o de capacidad compila y hace fallar
+el control; restaurados correctos. El negativo de capacidad reserva físicamente
+más memoria que la capacidad declarada para probar el contrato sin provocar
+un acceso fuera de su asignación. La DLL sigue siendo render-only: IRQ/FINISH,
+FIFO/VRAM del runtime, activación a mitad de juego y recuperación del dispositivo
+pendientes. Detalles en el [README del módulo](../tools/render/pcsx2_probe/README.md).
+La CI nueva carga solo el contrato sin dispositivo; GPU comprobada localmente.
+
 Pendiente para una adaptación funcional:
 
-1. Extender el módulo aislado probado a una API opcional para el runtime.
-   Completar los servicios necesarios de Host y definir el contrato de carga,
-   recursos y cierre; los servicios ausentes de este fixture siguen limitados.
+1. Enlazar la ABI probada con un hook opcional del runtime que preserve bytes,
+   orden y hilo, incluidos los atajos DMA. Completar servicios de Host necesarios;
+   los servicios ausentes de este fixture siguen limitados.
 2. Ampliar presentación a ventana visible, redimensionado y recuperación de
    dispositivo; ampliar formatos, CLUT, blending y depth/alpha test.
 3. Añadir espejo de registros privilegiados, CSR/FINISH/SIGNAL, FIFO local→host,

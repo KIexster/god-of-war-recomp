@@ -20,7 +20,8 @@ unsigned gsProbeFrameUpdates=0;
 unsigned gsProbeGpuPresents=0;
 void (*gsProbeBeforePresent)()=nullptr;
 static HWND probeWindow=nullptr;
-static unsigned probeWidth=0, probeHeight=0;
+static unsigned probeWidth=73, probeHeight=37;
+void gsProbeSetSurfaceSize(unsigned width,unsigned height){probeWidth=width;probeHeight=height;}
 static bool probeUiFrame=false;
 bool gsProbeHasWindow(){return probeWindow!=nullptr;}
 bool gsProbeOpenWindow(unsigned width,unsigned height){
@@ -64,7 +65,7 @@ std::optional<WindowInfo> AcquireRenderWindow(bool) {
     ++gsProbeWindowRequests;
     if(!g_gs_device) return std::nullopt;
     WindowInfo info; info.type=WindowInfo::Type::Surfaceless;
-    info.surface_width=73; info.surface_height=37;
+    info.surface_width=probeWidth; info.surface_height=probeHeight;
     if(probeWindow){info.type=WindowInfo::Type::Win32;info.window_handle=probeWindow;
         info.surface_width=probeWidth;info.surface_height=probeHeight;}
     return info;

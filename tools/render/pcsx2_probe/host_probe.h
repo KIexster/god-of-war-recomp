@@ -3,6 +3,7 @@
 bool gsProbeOpenWindow(unsigned width, unsigned height);
 void gsProbeCloseWindow();
 bool gsProbeHasWindow();
+void gsProbeSetSurfaceSize(unsigned width, unsigned height);
 void gsProbeBeginUiFrame();
 void gsProbeSkipUiFrame();
 void gsProbeEndUiFrame();

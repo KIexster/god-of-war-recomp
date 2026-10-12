@@ -4910,3 +4910,19 @@ La subida nativa normaliza datos/registros y pierde parte de los tags originales
 el futuro hook no puede limitarse a processGIFPacket. Propuesta y pendientes
 documentados en [PCSX2_GS.md](PCSX2_GS.md), sin modificar el runtime por ahora.
 [CI de `ada5c5e` completo correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38246271325).
+
+## GS de PCSX2: ABI de DLL y consumidor independiente (2026-10-12)
+
+Se construye una DLL opcional con ABI 1 (tamaños/handles/errores/hilo). Contrato
+de carga/exports/argumentos sin dispositivo correcto, añadido a CTest/CI. Cliente
+GPU mediante GetProcAddress, sin globals del GS: dos ciclos, GIF fragmentado,
+registros y consulta de salida correctos; 2.048 píxeles RGBA exactos por ciclo.
+Singleton ocupado, handle cerrado, otro hilo y buffers insuficientes rechazados;
+guardia final intacta. Negativos de hilo/capacidad compilan y fallan; restaurados
+correctos. No se modifica aún PS2Recomp ni se enlaza el juego. El espejo de 8 KiB
+debe construirse desde registros PS2 reales; no copiar su struct GSRegisters.
+
+[CI de `1f87036` completo correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38248274550).
+Nuevo contrato DLL pendiente del HEAD que lo publica. GPU local, sin medición
+de FPS; IRQ/FINISH, FIFO/VRAM, recuperación y hook pendientes. Alcance en
+[PCSX2_GS.md](PCSX2_GS.md) y [README del módulo](../tools/render/pcsx2_probe/README.md).
