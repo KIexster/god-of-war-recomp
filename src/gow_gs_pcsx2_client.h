@@ -139,9 +139,13 @@ public:
         catch(...){fail("copia-GIF");}
     }
     void reg(uint8_t address,uint64_t value) noexcept override {Event e;e.kind=Event::Register;e.path=address;e.value=value;send(std::move(e));}
-    void vsync(const GSRegisters& registers,uint64_t tick,uint32_t field) noexcept override {
+    void vsync(const GSRegisters& registers,uint64_t tick,uint32_t /*field*/) noexcept override {
         if(failed.load())return;
-        try{Event e;e.kind=Event::VSync;e.tick=tick;e.field=field;const auto packed=gow_pcsx2_mirror::pack(registers);e.bytes.assign(packed.begin(),packed.end());send(std::move(e));}
+        try{Event e;e.kind=Event::VSync;e.tick=tick;const auto packed=gow_pcsx2_mirror::pack(registers);
+            // GOW-Port: MTGS de PCSX2 usa CSR.FIELD=1 -> campo 0, FIELD=0 -> campo 1.
+            // Leer la misma instantánea que recibe la DLL, no la paridad del contador del host.
+            e.field=(packed[0x1001]&0x20u)?0u:1u;
+            e.bytes.assign(packed.begin(),packed.end());send(std::move(e));}
         catch(...){fail("copia-registros");}
     }
     void reset() noexcept override {Event e;e.kind=Event::Reset;send(std::move(e));}

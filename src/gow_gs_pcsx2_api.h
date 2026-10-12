@@ -32,6 +32,7 @@ GOW_GS_API uint32_t gow_gs_destroy(uint64_t handle);
 GOW_GS_API uint32_t gow_gs_submit(uint64_t handle, uint32_t path, const uint8_t* bytes, uint32_t size);
 GOW_GS_API uint32_t gow_gs_write_register(uint64_t handle, uint32_t reg, uint64_t value);
 GOW_GS_API uint32_t gow_gs_reset(uint64_t handle);
+// GOW-Port: field usa la convención GSvsync de PCSX2 (CSR.FIELD ? 0 : 1).
 GOW_GS_API uint32_t gow_gs_vsync(uint64_t handle, uint32_t field, const uint8_t* privileged, uint32_t size);
 GOW_GS_API uint32_t gow_gs_read_output(uint64_t handle, uint8_t* rgba, uint64_t capacity, GowGsFrameInfo* info);
 #ifdef __cplusplus

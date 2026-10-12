@@ -1,8 +1,10 @@
 # Módulo GS aislado para controles procedurales
 
 Este proyecto compila fuentes **originales** de PCSX2 y una capa Host limitada.
-No contiene ni requiere el juego, BIOS, ELF o dumps. Tampoco está conectado al
-runtime del port. Windows x64, MSVC, Windows SDK, CMake/Ninja y CPU AVX2.
+No contiene ni requiere el juego, BIOS, ELF o dumps para estos controles.
+La DLL también puede recibir el flujo del runtime mediante el espejo opcional
+de [PCSX2_GS.md](../../../docs/PCSX2_GS.md); el renderer habitual se conserva.
+Windows x64, MSVC, Windows SDK, CMake/Ninja y CPU AVX2.
 
 Entradas fijadas:
 

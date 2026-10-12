@@ -5076,3 +5076,24 @@ Síncrono/compartido y asíncrono/RAM equivalentes siguen en curso para completa
 la matriz con este mismo ejecutable. Diagnósticos, hash, dos renderers y readbacks
 impiden usar estos controles para comparar FPS con las mediciones de Opus.
 El espejo fuerza rutas DMA genéricas; estabilidad de atajos e hilos pendiente.
+
+## GS de PCSX2: convención de campo revisada con Urban Reign (2026-10-12)
+
+El autor publica su integración; [revisión y referencias](REVISION_URBAN_REIGN.md).
+Se confirma en MTGS original que GSvsync recibe `CSR.FIELD ? 0 : 1`. El espejo
+anterior pasaba la paridad del contador EE directamente, invertida respecto a
+esa convención. El cliente se ajusta a la misma instantánea CSR enviada a la
+DLL. Se prepara regresión de productor/cola/receptor DLL sin GPU, con cuatro
+campos incluyendo retención y ticks independientes. Validación nativa,
+negativo y juego posteriores pendientes. No cambia runtime, IRQ, contador o
+renderer habitual, ni acredita la causa del espasmo/encuadre del juego.
+
+Antes de ese ajuste, el síncrono/compartido e5e040e también termina a 420,06 s;
+961 adquisiciones sin anomalías del inspector, 16 pares de capturas revisados
+con encuadre/silueta semejantes en la ventana 1400..1415. Ambos controles
+compartidos presentan 224 pares de filas RGB duplicadas en cada imagen OpenGL,
+y cero pares duplicados en sus salidas DX11. OpenGL duplica el campo seleccionado;
+PCSX2 usa desentrelazado automático. Conteo descriptivo, no igualdad de píxeles
+ni prueba de que la diferencia sea la causa de deformación del modelo. Las
+capturas previas conservan el campo invertido del espejo: no certificar paridad
+de entrelazado con ellas. El asíncrono/RAM e5 equivalente sigue en curso.
