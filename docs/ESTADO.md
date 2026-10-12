@@ -4660,3 +4660,110 @@ sin determinantes cero/negativos en esa muestra. Son magnitudes observadas,
 no tolerancias de fidelidad: escala o mezcla de animación pueden producir
 bases no unitarias. No normalizar ni corregir matrices sin identificar su
 productor y contrastar una pose de referencia. La causa del espasmo sigue abierta.
+
+## Pista de PMULTH del port de Waffle565 (2026-10-11)
+
+El usuario aporta [God-Of-War-Native-Port](https://github.com/Waffle565/God-Of-War-Native-Port),
+revisado en `811313597514940a4d6020fefc1ce5b83f5b4fe4`. Su
+[entrada de corrección `50b591d`](https://github.com/Waffle565/God-Of-War-Native-Port/commit/50b591d2bc679cc705b55764588716410df10d92)
+identifica PMULTH mal traducida en decodificadores de animación; relata
+comparación diferencial y mejora visual en su port. Son comprobaciones de
+ese colaborador, no una reproducción independiente nuestra. El commit público
+documenta el arreglo, pero no incluye su implementación del runtime.
+
+Se comprueba independientemente en nuestro código regenerado NTSC que cuatro
+PMULTH, en tres decodificadores, siguen emitiendo `_mm_madd_epi16` y sumando
+sus resultados en un escalar. Es un fallo de semántica: PMULTH produce ocho
+productos signed de 16 por 16 bits, LO={p0,p1,p4,p5}, HI={p2,p3,p6,p7} y
+rd={p0,p2,p4,p6}. Se contrasta el orden con
+[PCSX2 MMI.cpp fijado](https://github.com/PCSX2/pcsx2/blob/2954ebe6965669219f1bbd256e958fbd8f83a85d/pcsx2/MMI.cpp#L1292).
+
+Se prepara `ps2recomp-ee-pmulth.patch`, tema separado al final de la cadena
+(102), con implementación propia de esa semántica en el header del runtime
+y emisión por el recompilador. Conserva los ocho resultados en ambos pares
+HI/LO, el registro cero y los operandos cuando rd coincide con rs/rt. No cambia
+la estructura del contexto, direcciones o funciones del juego. Regresiones con
+valores distintos por lane, negativos/extremos, ambos pares HI/LO, alias y cero;
+la prueba de emisión cubre rd=0 con sus efectos secundarios. No se incorpora
+código generado o del otro port, ni se modifica el checkout de Opus.
+
+Pendientes compilación completa que regenere las cuatro instrucciones,
+suite/negativo, CI y control de la introducción con el nuevo ejecutable. La
+evidencia confirma el error de instrucción, **todavía no que corrija todos los
+espasmos, el encuadre o la presentación asíncrona/compartida**.
+
+## Cierre y controles pendientes de PMULTH (2026-10-11)
+
+#65 fusionada en `dbfbe719eea0483b768aa4eef3894db1221cf28c`, tras revisión,
+control y [CI del HEAD final `396f594` correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38183579985).
+La [PR #67](https://github.com/KIexster/god-of-war-recomp/pull/67) contiene
+PMULTH y permanece en borrador. La compilación completa privada de `2fd0fc9`
+ya regeneró los cuatro sitios con el helper correcto y sigue compilando el
+runner. Todavía no hay ejecutable final ni control visual de esta corrección.
+
+El primer CI de #67 falla compilando las regresiones: `GPR_VEC(&ctx, ...)`
+expande el puntero sin paréntesis. Se corrige el argumento de esas pruebas a
+`GPR_VEC((&ctx), ...)`; no cambia el helper, la emisión o la lógica del juego.
+Pendiente CI del nuevo HEAD, suite nativa y negativo significativo. No tratar
+el primer CI fallido como validación del runtime.
+
+También se revisa la [issue #66](https://github.com/KIexster/god-of-war-recomp/issues/66),
+aportada por otro colaborador: separa casos medidos en Transformers de sus
+hipótesis para God of War. En nuestro runtime se confirman los presupuestos
+65.536/4.096 de VU1/VU0 y que el constructor de contexto deja vf0 a cero;
+StartThread crea ese contexto. **No se ha demostrado que causen este espasmo**.
+El próximo control activará `GOW_VU1_BUDGET_DIAG=1`, sin aumentar presupuestos,
+y examinará magnitudes además de finitud. Primero comprobar PMULTH; las demás
+hipótesis requieren evidencia por separado y no se incorporan arreglos en bloque.
+
+## PMULTH: compilación completa y regresiones nativas (2026-10-11)
+
+La cadena 102 termina con código 0 en 959,94 s, regenerando los cuatro sitios
+PMULTH con `ps2_pmulth`. Código funcional de `2fd0fc9`, 54.565.376 bytes,
+runner SHA-256 `3092e98bc53ff8e1109a71ee596d7bfa0a15263ac6a6f1a0bfc3fc91ee8cfc4f`.
+Se conserva esa identidad de compilación: el HEAD posterior corrige argumentos
+de tests, documenta el cierre e integra main, sin cambiar helper/emisión.
+VU1 interpretada, tres tareas, /O2 /Ob2 /DNDEBUG /Zi; datos y símbolos privados.
+No atribuir a esta build los FPS medidos con VU1 compilada.
+
+Regresiones finales de la PR aplicadas al árbol de pruebas nativo: 602 casos
+normales y 638 GPU, cero fallos; cuatro contratos FINISH/presentación correctos.
+Negativo aislado con las aserciones procedurales públicas: el helper correcto
+pasa, reemplazarlo por la suma escalar anterior **compila y falla**, restaurarlo
+pasa. Header del runtime de trabajo intacto. No es un control del juego.
+[CI final `94cacf8` correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38184150710).
+
+Se inicia control privado de la introducción: FINISH síncrono/compartido,
+hilos 0, mismo guion de menú, ventana de matrices 1490 y 16 adquisiciones desde
+1500, hash 0; diagnóstico de cortes VU1 activado sin aumentar el presupuesto.
+Pendiente terminar, revisar poses/registro y publicar el resultado antes de
+marcar #67 lista. No se ha declarado el espasmo resuelto.
+
+## PMULTH: primer control visual posterior (2026-10-11)
+
+La pasada anterior termina a 300,06 s por límite; tarjeta procedural intacta,
+sin firmas buscadas de error ni minimización. Se registra foco durante unos
+dos segundos, sin probar su causa. Con `GOW_VU1_BUDGET_DIAG=1` no aparecen
+cortes de presupuesto en esta configuración síncrona/compartida, hilos 0;
+esto no descarta cortes en otros tramos o con hilos/rendimiento activados.
+
+128 retornos completos, cinco grupos, ambas variantes, ninguna pausa;
+6.173 lecturas válidas finitas y 5.629 productos finales, residuo descriptivo
+máximo 0,0001364. Candidato de 111 slots: 32 muestras 1490..1520, 3.296 productos
+y máximo 0,000005823. Conserva bases fuente no unitarias (determinante mínimo
+0,6596880, eje mínimo 0,8122119), sin ceros/negativos en esta muestra: tampoco
+ahora justifican normalizar matrices por intuición.
+
+16 texturas adquiridas 512x448, secuencias 1455..1470/ticks 1500..1515, metadatos
+exactos y RGBA diferentes; 224 pares de filas duplicadas por imagen. Las
+imágenes 1/8/16 revisadas muestran cabeza erguida y hojas delante del cuerpo,
+sin la pose elevada del ejemplo. Es un resultado favorable de esta ventana,
+**no una validación completa de animaciones/NPCs, cámara o estabilidad**.
+
+Comparación descriptiva con la ventana de la traza anterior: los 32 stamps
+coinciden, pero ninguna matriz de entrada ni scalar coincide exactamente.
+No son poses alineadas. El mayor paso fuente del slot 14 pasa de 1,13344 a
+0,0007890 y el mayor paso de posición observado en el grupo pasa de 18,71 a
+0,84; no se usan como tolerancia PS2, porcentaje de mejora o prueba causal
+automática. PMULTH sí queda corregida por su semántica y regresiones. Falta
+ampliar el control a otras animaciones y contrastar referencia alineada.

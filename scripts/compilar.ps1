@@ -114,6 +114,7 @@ $gsHostFrameDiagPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-host-frame-dia
 $gsHostDiagWindowPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-host-diag-window.patch'
 $gsAcquiredModeDiagPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-acquired-mode-diag.patch'
 $gsHostAcquiredCapturePatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-host-acquired-capture.patch'
+$eePmulthPatch = Join-Path $RepoRoot 'patches\ps2recomp-ee-pmulth.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -252,6 +253,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $gsHostFrameDiagPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsHostDiagWindowPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsAcquiredModeDiagPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsHostAcquiredCapturePatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $eePmulthPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
