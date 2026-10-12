@@ -4824,3 +4824,20 @@ El nuevo control DX11 fue nativo privado, no una ejecución GPU de CI. Host,
 dependencias, alcance y pendientes en [PCSX2_GS.md](PCSX2_GS.md). Falta enviar
 GIF al rasterizador/cache completos, VRAM/FIFO/IRQ y conectar el juego.
 No cambia el renderer actual ni acredita una mejora de FPS.
+
+## GS de PCSX2: primer dibujo GIF en hardware comprobado (2026-10-12)
+
+La extracción privada de GSRenderer/GSRendererHW/GSTextureCache originales
+enlaza y dibuja en DX11. Fixture publicado `tests/pcsx2_gif_draw_probe.cpp`:
+mosaico de 16 sprites, fragmentos de 13 bytes, colores distintos por PATH1/2/3
+y descarga FIFO original. Los tres envíos producen un draw call GPU cada uno
+y 2.048 píxeles RGBA exactos. Negativo que omite solo el paquete de dibujo:
+compila y falla en el primer píxel; restaurado pasa los tres PATH. SHA-256
+`1d271fd05fcbf01cec0b688655c26337b99259a2545274ecccda423740ef01fb`.
+
+[CI completo de `72e4f55` correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38238566117).
+Este control GPU sigue siendo nativo privado. Servicios opcionales ausentes
+abortan si se usan; no se solicita VSync, ventana o reapertura. Los objetos
+SW se conservan, sin validación de esa ruta. Límites en [PCSX2_GS.md](PCSX2_GS.md).
+Faltan reproducción pública del módulo, IMAGE/texturas, presentación y conexión
+al runtime. No se atribuye renderizado de God of War ni una mejora de FPS.

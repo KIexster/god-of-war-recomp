@@ -1,10 +1,17 @@
 # Diagnóstico de la transición con presentación compartida
 
-Estado actual, 2026-10-11: cadena 100 revisada compilada en Windows; 600/600
-normal, 635/635 GPU, cuatro contratos FINISH/texturas y negativo significativo
-con restauración correctos. El control del juego sin hilos completa seis
-minutos; repeticiones con VU1/frente GS pendientes. #51 continúa en borrador
-mientras se cierra su validación.
+Estado actual, 2026-10-12: #51 fusionada en
+`05421940617e5ce69889600d9eb727b3c36c0b3b` tras su validación y CI del HEAD final.
+La cadena posterior 102 incluye la corrección EE PMULTH de #67: compilación
+completa nativa, 602/602 normal, 638/638 GPU y cuatro contratos correctos.
+El primer control síncrono/compartido sin hilos completa cinco minutos; sus
+16 imágenes adquiridas de la introducción son favorables, con los límites
+descritos en ESTADO.md. La combinación asíncrona con hilos y el control amplio
+de animaciones/NPCs siguen pendientes; no se declaran todos los fallos resueltos.
+
+La adaptación independiente de PCSX2 de #68 ya verifica dibujo GIF procedural
+y FIFO en DX11, pero todavía no está conectada al juego. Véase PCSX2_GS.md.
+Los resultados históricos siguientes conservan la identidad de sus cadenas.
 
 Count #59 y unidades de framebuffer #58 están fusionadas en main. Se conservan
 la matriz aislada de cuatro controles de 98 y las tres pasadas de seis minutos

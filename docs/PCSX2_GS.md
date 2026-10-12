@@ -106,14 +106,39 @@ El fixture se publica; su host/enlace siguen privados y este control GPU no
 se ejecuta en CI. No procesa todavía GIF hacia GSRendererHW, importa VRAM,
 presenta en una ventana o dibuja el juego. No es una medición de rendimiento.
 
+### GIF hacia GSRendererHW y FIFO comprobados (2026-10-12)
+
+La extracción incorpora GSRenderer, GSRendererHW, GSTextureCache y sus helpers
+originales, incluidos los objetos de apoyo SW. No se modifica el dibujo ni
+se reemplaza la caché con valores fabricados. El fixture inicializa las tablas
+SW originales antes del renderer; su ruta SW no está cubierta por este control.
+La configuración usa constructores originales extraídos, sin cargar ajustes,
+tarjetas ni una VM. Los servicios opcionales ausentes (captura, dumps, UI,
+reapertura y reemplazos de texturas) abortan con diagnóstico si se solicitan;
+los ajustes de captura/reemplazos quedan desactivados. No se llama a VSync.
+
+`tests/pcsx2_gif_draw_probe.cpp` envía un mosaico de 16 sprites a FRAME PSMCT32,
+sin textura/blending/depth test, por el puente y la conexión originales. Usa
+fragmentos de 13 bytes, regenera colores distintos para PATH1/2/3 y lee por
+BITBLTBUF/TRXPOS/TRXREG/TRXDIR más InitReadFIFO/ReadFIFO originales. Cada PATH
+produce un draw call GPU y **2.048 píxeles RGBA exactos**, incluida alpha.
+Se verifica el delta de dibujos de cada envío, no un contador acumulado.
+
+Windows/MSVC Release, RX 5700 XT: tres PATH correctos. Negativo privado que
+omite solo el paquete de dibujo compila y falla en el primer píxel de FIFO;
+restaurado pasa los tres. SHA-256 restaurado:
+`1d271fd05fcbf01cec0b688655c26337b99259a2545274ecccda423740ef01fb`.
+Este control verifica dibujo y descarga procedural; no equivale a presentar
+un frame del juego, coherencia con su RAM/VRAM, interrupciones o rendimiento.
+Su host/enlace todavía siguen privados y la CI no ejecuta este control GPU.
+
 Pendiente para una adaptación funcional:
 
 1. Construir un módulo GS aislado con las fuentes/licencias fijadas, recursos
    de shaders y dependencias de Windows. `GS.cpp` usa servicios Host, ajustes,
    recursos, métricas y estado del juego; incluir un header no los resuelve.
-2. Extender el dispositivo probado al frontend/rasterizador GSRendererHW:
-   dibujar un patrón mediante GIF y verificar transferencias/píxeles. Añadir
-   después ventana/presentación y cierre completo del renderer.
+2. Ampliar los patrones a transferencias IMAGE, texturas y lectura parcial;
+   añadir ventana/presentación, VSync y controles del cierre completo.
 3. Añadir espejo de registros privilegiados, CSR/FINISH/SIGNAL, FIFO local→host,
    VRAM inicial y sincronización de escrituras/lecturas. `GSopen` recibe memoria
    de **registros privilegiados**, no directamente los 4 MiB de VRAM.
