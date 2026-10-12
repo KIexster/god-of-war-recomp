@@ -82,13 +82,38 @@ todavía su enlace/ejecución nativa**. El contexto de extracción y sus artefac
 siguen privados. Esta prueba confirma la selección de entrada del parser,
 no dispositivo DX11, píxeles, caché completa, FIFO/IRQ o renderizado del juego.
 
+### Dispositivo DX11 original ejecutado (2026-10-12)
+
+La biblioteca privada incorpora GSDevice11, GSTexture11, D3D11ShaderCache y
+GSTexture originales. `tests/pcsx2_dx11_device_probe.cpp` crea el dispositivo
+en modo Surfaceless, con shaders de la revisión fijada y caché desactivada.
+No necesita ventana ni ejecuta EE/VU. El host ofrece ajustes por defecto,
+traducción identidad y errores a stderr; las referencias estáticas a registros
+EE usan almacenamiento procedural, sin ejecutar una CPU de sustitución.
+
+Windows/MSVC Release, AMD Radeon RX 5700 XT: dos ciclos de creación/cierre
+correctos. Cada ciclo verifica **todos los 2.701 píxeles RGBA** de una textura
+73x37 tras Clear y tras subir un patrón con siete palabras de padding por fila
+y dibujarlo con `StretchRectAuto`/Nearest. Esa segunda operación usa el shader
+COPY original, no una copia directa DXGI. El readback respeta el pitch de la
+textura staging. Canales/alpha y orientación se comparan sin tolerancia.
+
+Negativo privado: omitir solamente la llamada de dibujo compila y falla en
+el primer píxel de Shader COPY; restaurado pasa ambos ciclos. SHA-256 del
+ejecutable restaurado:
+`2be054f554e71ebdafc234998b84d4e7b53542f26a40c2f58403fcbead66db14`.
+El fixture se publica; su host/enlace siguen privados y este control GPU no
+se ejecuta en CI. No procesa todavía GIF hacia GSRendererHW, importa VRAM,
+presenta en una ventana o dibuja el juego. No es una medición de rendimiento.
+
 Pendiente para una adaptación funcional:
 
 1. Construir un módulo GS aislado con las fuentes/licencias fijadas, recursos
    de shaders y dependencias de Windows. `GS.cpp` usa servicios Host, ajustes,
    recursos, métricas y estado del juego; incluir un header no los resuelve.
-2. Alojar DX11, configuración, ventana y cierre correctos; comprobar un patrón
-   procedural completo con el GS real, transferencias y salida de píxeles.
+2. Extender el dispositivo probado al frontend/rasterizador GSRendererHW:
+   dibujar un patrón mediante GIF y verificar transferencias/píxeles. Añadir
+   después ventana/presentación y cierre completo del renderer.
 3. Añadir espejo de registros privilegiados, CSR/FINISH/SIGNAL, FIFO local→host,
    VRAM inicial y sincronización de escrituras/lecturas. `GSopen` recibe memoria
    de **registros privilegiados**, no directamente los 4 MiB de VRAM.

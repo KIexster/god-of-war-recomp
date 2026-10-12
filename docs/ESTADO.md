@@ -4808,3 +4808,19 @@ restaurado correcto. SHA-256 del ejecutable procedural restaurado
 El CI anterior `d4aab8e` completo correcto, incluido enlace sintáctico de
 headers reales; pendiente CI del HEAD que añade fixture/resultados.
 Todavía falta alojar DX11, píxeles, FIFO/VRAM/IRQ y conectar el runtime.
+
+## GS de PCSX2: dispositivo DX11 con píxeles comprobados (2026-10-12)
+
+La extracción privada ya crea GSDevice11 original en modo sin ventana sobre
+la AMD Radeon RX 5700 XT. Se publica `tests/pcsx2_dx11_device_probe.cpp`:
+dos ciclos de creación/cierre; Clear y patrón subido con padding por fila,
+dibujado por shader COPY original. Los 2.701 píxeles RGBA de cada operación
+coinciden exactamente, incluida alpha y orientación. Negativo aislado que
+omite el dibujo: compila y falla en el primer píxel; restaurado pasa.
+SHA-256 restaurado `2be054f554e71ebdafc234998b84d4e7b53542f26a40c2f58403fcbead66db14`.
+
+[CI completo de `6139073` correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38200847766).
+El nuevo control DX11 fue nativo privado, no una ejecución GPU de CI. Host,
+dependencias, alcance y pendientes en [PCSX2_GS.md](PCSX2_GS.md). Falta enviar
+GIF al rasterizador/cache completos, VRAM/FIFO/IRQ y conectar el juego.
+No cambia el renderer actual ni acredita una mejora de FPS.
