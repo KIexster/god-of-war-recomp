@@ -95,6 +95,9 @@ foreach(pair "gs_parser_probe;pcsx2_gif_parser_probe" "gs_dx11_probe;pcsx2_dx11_
   target_link_libraries(${target} PRIVATE gow_pcsx2_probe)
 endforeach()
 enable_testing()
+add_executable(gs_queue_probe "${GOW_REPO}/tests/pcsx2_queue_test.cpp")
+target_compile_options(gs_queue_probe PRIVATE /O2 /EHsc /utf-8)
+add_test(NAME cola_ordenada_acotada COMMAND gs_queue_probe)
 add_test(NAME parser_original COMMAND gs_parser_probe)
 add_test(NAME memoria_alias_y_cierre COMMAND gs_wrapped_memory_probe)
 add_executable(gs_privileged_mirror_probe "${GOW_REPO}/tests/pcsx2_privileged_mirror_test.cpp"

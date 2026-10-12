@@ -13,7 +13,7 @@ int main(int argc,char** argv){
     HMODULE module=LoadLibraryExA(argv[1],nullptr,LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR|LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
     if(!module)return 1;
 #define LOAD(name) auto name=reinterpret_cast<decltype(&gow_gs_##name)>(GetProcAddress(module,"gow_gs_" #name)); if(!name)return 1
-    LOAD(create);LOAD(destroy);LOAD(submit);LOAD(vsync);LOAD(read_output);
+    LOAD(create);LOAD(destroy);LOAD(submit);LOAD(vsync);LOAD(read_output);LOAD(write_register);LOAD(reset);
 #undef LOAD
     auto require=[](bool value,const char* message){if(!value)std::fprintf(stderr,"DLL GPU: %s\n",message);return value;};
     bool ok=true;
@@ -40,6 +40,7 @@ int main(int argc,char** argv){
         for(size_t offset=0;offset<words.size()*8 && ok;){
             const size_t size=std::min<size_t>(13,words.size()*8-offset);
             ok&=require(submit(handle,3,bytes+offset,uint32_t(size))==GOW_GS_OK,"GIF fragmentado");offset+=size;
+            if(offset==13)ok&=require(write_register(handle,0x3b,0x80)==GOW_GS_OK,"registro directo con tag PATH3 incompleto");
         }
         alignas(16) GSPrivRegSet regs{};
         regs.PMODE.EN1=1;regs.PMODE.MMOD=1;regs.PMODE.ALP=255;regs.PMODE.SLBG=1;
@@ -55,6 +56,8 @@ int main(int argc,char** argv){
         ok&=require(read_output(handle,reinterpret_cast<uint8_t*>(pixels.data()),8192,&info)==GOW_GS_OK,"readback explicito");
         for(unsigned i=0;i<2048;++i)ok&=pixels[i]==(color|0xff000000);
         ok&=require(pixels.back()==0xdeadbeef,"no escribir fuera del frame");
+        ok&=require(write_register(handle,0x100,0)==GOW_GS_BAD_ARGUMENT,"rechazar direccion de registro");
+        ok&=require(reset(handle)==GOW_GS_OK,"reset sin cerrar instancia");
         ok&=require(destroy(handle)==GOW_GS_OK && destroy(handle)==GOW_GS_BAD_HANDLE,"cierre y handle invalidado");
         old=handle;
     }

@@ -4935,3 +4935,17 @@ Prueba de valores distintos/CSR multibyte y cambios de tick correcta en MSVC.
 Los 19 offsets y 8 KiB se contrastan con GSPrivRegSet original mediante
 static_assert. CI/CTest incorporados. El llamante debe sincronizar los campos
 no atómicos; el helper no corrige por sí solo acceso concurrente o presentación.
+
+## GS de PCSX2: enlace espejo opcional preparado (2026-10-12)
+
+Parche 103: observador de GIF original, escrituras directas/reset y VSync del
+EE. Se rechazan los dos atajos DMA y PACKED mientras está ligado, sin consumir
+su entrada; comportamiento habitual conservado al desenlazar. Cliente Windows
+por DLL, hilo dueño y cola acotada; captura PCRTC BMP privada limitada. Rechaza
+hilos VU1/frente GS. IRQ/FIFO/VRAM siguen en runtime; backend habitual intacto.
+
+Compilación del módulo/cliente Windows correcta. Parser conserva cursor y Q
+con registro directo; DLL GPU dos ciclos/2.048 RGBA exactos, reset y rechazo
+de dirección inválida correctos. Config 0 errores/4 avisos existentes; 24 PS1
+sin errores. La suite del nuevo runtime y la compilación completa de 103 aún
+pendientes. Variables/protocolo y límites en [PCSX2_GS.md](PCSX2_GS.md).

@@ -285,3 +285,31 @@ Pendiente para una adaptación funcional:
 
 Este primer puente es preparación verificable de la integración, sin mejora
 de FPS o fidelidad atribuida todavía y sin declarar disponibles DX11/DX12/Vulkan.
+
+### Conexión opcional al runtime: preparación (2026-10-12)
+
+El parche 103 añade `GSExternalObserver`: copia los spans GIF originales antes
+del atajo interno, informa las escrituras directas de stubs y reset, y entrega
+VSync desde `EeScheduler::VBlankStart`, antes de callbacks/IRQ del juego. Ambos
+atajos DMA y PACKED nativo rechazan sin consumir cuando hay observador; sin él
+conservan su comportamiento. El GS del runtime sigue siendo la autoridad de
+VRAM, FIFO, CSR, SIGNAL y FINISH. No es un cambio del renderer predeterminado.
+
+`GOW_PCSX2_GS_DIAG=1` enlaza la DLL desde arranque. Requiere una ruta absoluta
+`GOW_PCSX2_GS_DLL`; admite `GOW_PCSX2_GS_RESOURCES` para shaders. Un hilo propio
+crea/consume/cierra DX11. Cola FIFO con copia propia, 64 MiB y presión al llenarse;
+un fallo detiene el espejo y se registra. Se rechazan `PS2X_VU1_HILO=1` y
+`PS2X_GS_FRENTE=1`: el primer control requiere registros del EE coherentes.
+
+Captura opcional y privada: `GOW_PCSX2_GS_OUTPUT` debe ser una carpeta absoluta
+nueva; `GOW_PCSX2_GS_CAPTURE_COUNT=0..16` (8 si hay carpeta, 0 sin ella) y
+`GOW_PCSX2_GS_CAPTURE_FROM_TICK` (900 por defecto). Guarda BMP de la composición
+PCRTC con tick/secuencia; mínimo 120 ticks entre capturas. No representa la
+textura adquirida de OpenGL ni un fotograma alineado con PCSX2 externo.
+
+ABI 1 amplía exports con escritura directa y reset. El adaptador usa el índice
+legado 0 solo para A+D completo y conserva Q; PATH1/2/3 del juego usan 3/1/2.
+Parser y DLL GPU pasan con escritura directa durante un tag incompleto. Cola
+con regresión de copia/FIFO/presión/drenaje; sintaxis Windows correcta. Nuevas
+regresiones del runtime y compilación completa/juego pendientes en este commit.
+No hay medición de FPS ni corrección de animación/encuadre acreditada.

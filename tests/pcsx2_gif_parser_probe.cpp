@@ -1,15 +1,18 @@
 // GOW-Port: solo estado/transferencias del GS original, no es un renderer.
 #include "GS/GSState.h"
 #include "../tools/render/pcsx2_gif_bridge.h"
+#include "../tools/render/pcsx2_register_adapter.h"
 #include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-class Decoder final: public GSState {
+class Decoder final: public gow_pcsx2_gs::RegisterAdapter<GSState> {
 public:
     unsigned draws=0;
     void Draw() override { ++draws; }
     uint64_t rgbaq() const { uint64_t bits=0; std::memcpy(&bits,&m_v.RGBAQ,8); return bits; }
+    float q() const {return m_q;}
+    void q(float value){m_q=value;}
 };
 static void require(bool value,const char *label) {
     if(!value){ std::fprintf(stderr,"Parser GS real: %s\n",label); std::exit(1); }
@@ -34,6 +37,8 @@ int main(){
     const std::array<uint64_t,2> b{0x3f80000080102030ull,1};
     require(bridge.submit(gow_pcsx2_gs::Path::Path1,reinterpret_cast<const uint8_t*>(tag.data()),16),"tag PATH1");
     require(gs.m_path[3].nloop==1,"PATH1 conserva nloop al cortar tras tag");
+    gs.q(2.5f);gs.writeDirect(0x3b,0x80);
+    require(gs.m_path[3].nloop==1 && gs.q()==2.5f,"registro directo conserva cursor PATH1 y Q");
     require(bridge.submit(gow_pcsx2_gs::Path::Path1,reinterpret_cast<const uint8_t*>(a.data()),16),"payload PATH1");
     require(gs.m_path[3].nloop==0 && gs.rgbaq()==a[0],"registro PATH1 correcto");
     std::array<uint64_t,8> both{tag[0],tag[1],a[0],a[1],tag[0],tag[1],b[0],b[1]};

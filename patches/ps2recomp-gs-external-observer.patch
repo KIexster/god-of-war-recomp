@@ -1,0 +1,297 @@
+diff --git a/ps2xRuntime/include/runtime/gs/gs_frontend.h b/ps2xRuntime/include/runtime/gs/gs_frontend.h
+index 65b02fa..9ae15aa 100644
+--- a/ps2xRuntime/include/runtime/gs/gs_frontend.h
++++ b/ps2xRuntime/include/runtime/gs/gs_frontend.h
+@@ -99,6 +99,18 @@ struct GSDebugHistoryEntry
+     bool usedPreferred = false;
+ };
+ 
++// GOW-Port: observador opcional; los bytes prestados solo viven durante la llamada.
++// No devuelve IRQ/FIFO ni cambia la autoridad del GS del runtime. No reentrar en GS.
++struct GSRegisters;
++struct GSExternalObserver
++{
++    virtual ~GSExternalObserver() = default;
++    virtual void gif(GifPathId path, const uint8_t* data, uint32_t size) noexcept = 0;
++    virtual void reg(uint8_t address, uint64_t value) noexcept = 0;
++    virtual void vsync(const GSRegisters& registers, uint64_t tick, uint32_t field) noexcept = 0;
++    virtual void reset() noexcept = 0;
++};
++
+ class GS
+ {
+ public:
+@@ -107,6 +119,10 @@ public:
+ 
+     void init(uint8_t *vram, uint32_t vramSize, struct GSRegisters *privRegs = nullptr);
+     void reset();
++    // GOW-Port: enlazar antes de ejecutar el EE; el consumidor empieza con VRAM vacía.
++    void setExternalObserver(std::shared_ptr<GSExternalObserver> observer);
++    bool hasExternalObserver() const;
++    void notifyExternalVSync(uint64_t tick, uint32_t field);
+     void setRasterBackend(std::unique_ptr<GSRasterBackend> backend);
+ 
+     void processGIFPacket(const uint8_t *data, uint32_t sizeBytes, GifPathId path = GifPathId::Path1);
+@@ -269,6 +285,7 @@ private:
+     uint64_t m_debugLastVsyncTick = UINT64_MAX;
+     bool m_debugHistoryPaused = true;
+ 
++    std::shared_ptr<GSExternalObserver> m_externalObserver; // GOW-Port: vida independiente de los callbacks.
+     std::unique_ptr<GSRasterBackend> m_backend;
+ };
+ 
+diff --git a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+index 6bb6857..94ee16e 100644
+--- a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
++++ b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+@@ -1916,6 +1916,8 @@ void EeScheduler::processEvent(const EeEvent &event)
+         {
+             m_runtime.memory().gs().csr.fetch_and(~0x2000ull, std::memory_order_acq_rel);
+         }
++        // GOW-Port: registros coherentes desde el EE, antes de despertar callbacks del juego.
++        m_runtime.gs().notifyExternalVSync(m_vsyncTick, static_cast<uint32_t>(m_vsyncTick & 1u));
+         writeGuestU32(m_vsyncFlagAddress, 1u);
+         if (m_vsyncTickAddress != 0u)
+         {
+diff --git a/ps2xRuntime/src/lib/gs/gs_frontend.cpp b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+index 96a92e8..727e241 100644
+--- a/ps2xRuntime/src/lib/gs/gs_frontend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+@@ -157,9 +157,30 @@ void GS::init(uint8_t *vram, uint32_t vramSize, GSRegisters *privRegs)
+     reset();
+ }
+ 
++// GOW-Port: el mutex del frontend ordena GIF, escrituras directas y la instantánea del EE.
++void GS::setExternalObserver(std::shared_ptr<GSExternalObserver> observer)
++{
++    std::lock_guard<std::recursive_mutex> lock(m_stateMutex);
++    m_externalObserver = std::move(observer);
++}
++
++bool GS::hasExternalObserver() const
++{
++    std::lock_guard<std::recursive_mutex> lock(m_stateMutex);
++    return static_cast<bool>(m_externalObserver);
++}
++
++void GS::notifyExternalVSync(uint64_t tick, uint32_t field)
++{
++    std::lock_guard<std::recursive_mutex> lock(m_stateMutex);
++    if (m_externalObserver && m_privRegs && field <= 1u)
++        m_externalObserver->vsync(*m_privRegs, tick, field);
++}
++
+ void GS::reset()
+ {
+     std::lock_guard<std::recursive_mutex> lock(m_stateMutex);
++    if (m_externalObserver) m_externalObserver->reset(); // GOW-Port: conservar el enlace tras reset.
+     std::memset(m_ctx, 0, sizeof(m_ctx));
+     m_gifInput = {}; // GOW-Port: reset tambien descarta etiquetas/registros incompletos.
+     m_prim = {};
+@@ -737,6 +758,8 @@ void GS::processGIFPacket(const uint8_t *data, uint32_t sizeBytes, GifPathId pat
+     if (!data || !sizeBytes || !m_backend || pathIndex == 0u || pathIndex >= m_gifInput.size())
+         return;
+ 
++    // GOW-Port: observar el span original una sola vez, antes de cualquier atajo interno.
++    if (m_externalObserver) m_externalObserver->gif(path, data, sizeBytes);
+     auto &input = m_gifInput[pathIndex];
+     if (!input.pending() && tryProcessNativeImageUploadPacket(data, sizeBytes))
+         return;
+@@ -847,7 +870,8 @@ void GS::processGIFPacket(const uint8_t *data, uint32_t sizeBytes, GifPathId pat
+ bool GS::processNativePackedGIFPacket(const uint8_t *data, uint32_t sizeBytes, GifPathId path)
+ {
+     std::lock_guard<std::recursive_mutex> lock(m_stateMutex);
+-    if (!data || sizeBytes < 16u || !m_backend || hasPendingGIFPacket(path))
++    // GOW-Port: el llamante debe usar la ruta genérica, que conserva tags y orden.
++    if (m_externalObserver || !data || sizeBytes < 16u || !m_backend || hasPendingGIFPacket(path))
+         return false;
+ 
+     if (!validatePackedGifPacket(data, sizeBytes))
+@@ -1189,6 +1213,7 @@ void GS::writeRegisterPacked(uint8_t regDesc, uint64_t lo, uint64_t hi)
+ void GS::writeRegister(uint8_t regAddr, uint64_t value)
+ {
+     std::lock_guard<std::recursive_mutex> lock(m_stateMutex);
++    if (m_externalObserver) m_externalObserver->reg(regAddr, value); // GOW-Port: stubs sin GIF.
+     writeRegisterUnlocked(regAddr, value);
+ }
+ 
+diff --git a/ps2xRuntime/src/lib/ps2_memory.cpp b/ps2xRuntime/src/lib/ps2_memory.cpp
+index a72b972..780406b 100644
+--- a/ps2xRuntime/src/lib/ps2_memory.cpp
++++ b/ps2xRuntime/src/lib/ps2_memory.cpp
+@@ -2511,6 +2511,8 @@ void PS2Memory::processGIFPacket(const uint8_t *data, uint32_t sizeBytes)
+ 
+ bool PS2Memory::tryProcessNativeGifImageUploadChain(GS &gs, uint32_t tadr, uint32_t chcr)
+ {
++    // GOW-Port: estos atajos eliminan tags; el observador necesita el flujo genérico completo.
++    if (gs.hasExternalObserver()) return false;
+     syncVu1Worker(); // GOW-Port: el GS y el árbitro los usa también el hilo de VU1
+     static constexpr uint32_t GIF_CHANNEL = 0x1000A000u;
+     static constexpr uint32_t D_STAT = 0x1000E010u;
+@@ -2708,6 +2710,8 @@ bool PS2Memory::tryProcessNativeGifImageUploadChain(GS &gs, uint32_t tadr, uint3
+ 
+ bool PS2Memory::tryProcessNativeGifPackedChain(GS &gs, uint32_t tadr, uint32_t chcr)
+ {
++    // GOW-Port: estos atajos eliminan tags; el observador necesita el flujo genérico completo.
++    if (gs.hasExternalObserver()) return false;
+     syncVu1Worker(); // GOW-Port: el GS y el árbitro los usa también el hilo de VU1
+     static constexpr uint32_t GIF_CHANNEL = 0x1000A000u;
+     static constexpr uint32_t D_STAT = 0x1000E010u;
+diff --git a/ps2xTest/CMakeLists.txt b/ps2xTest/CMakeLists.txt
+index b4ded93..48589a1 100644
+--- a/ps2xTest/CMakeLists.txt
++++ b/ps2xTest/CMakeLists.txt
+@@ -33,6 +33,7 @@ add_library(ps2_test_lib STATIC
+     src/ps2_vu1_tests.cpp
+     src/ps2_vu_tests.cpp
+     src/ps2_gs_tests.cpp
++    src/ps2_gs_external_tests.cpp # GOW-Port: transporte opcional sin perder tags.
+     src/ps2_gs_backend_tests.cpp # GOW-Port: cola, VRAM y comparación CPU/OpenGL.
+     src/ps2_gpu_profile_tests.cpp # GOW-Port: ventanas y lecturas de timestamps sin espera.
+     src/ps2_gpu_upload_ring_tests.cpp # GOW-Port: datos pendientes y fallback de uploads.
+diff --git a/ps2xTest/src/main.cpp b/ps2xTest/src/main.cpp
+index d183476..7498d48 100644
+--- a/ps2xTest/src/main.cpp
++++ b/ps2xTest/src/main.cpp
+@@ -14,6 +14,7 @@ void register_ps2_memory_tests();
+ void register_ps2_vu1_tests();
+ void register_ps2_vu_tests();
+ void register_ps2_gs_tests();
++void register_gs_external_tests(); // GOW-Port
+ void register_ps2_gs_backend_tests(); // GOW-Port
+ void register_ps2_gpu_profile_tests(); // GOW-Port
+ void runGpuUploadRingTests(); // GOW-Port
+@@ -49,6 +50,7 @@ int main()
+     register_ps2_vu1_tests();
+     register_ps2_vu_tests();
+     register_ps2_gs_tests();
++    register_gs_external_tests(); // GOW-Port
+     register_ps2_gs_backend_tests();
+     register_ps2_gpu_profile_tests();
+     runGpuUploadRingTests();
+diff --git a/ps2xTest/src/ps2_gs_external_tests.cpp b/ps2xTest/src/ps2_gs_external_tests.cpp
+new file mode 100644
+index 0000000..a148e78
+--- /dev/null
++++ b/ps2xTest/src/ps2_gs_external_tests.cpp
+@@ -0,0 +1,76 @@
++// GOW-Port: regresiones del observador independiente; el GS original sigue activo.
++#include "MiniTest.h"
++#include "runtime/gs/gs_frontend.h"
++#include "runtime/ps2_memory.h"
++#include <array>
++#include <cstring>
++#include <vector>
++
++namespace {
++struct Observer final : GSExternalObserver {
++    std::vector<uint8_t> bytes;
++    std::vector<unsigned> paths;
++    unsigned direct=0, frames=0, resets=0;
++    uint64_t tick=0, display=0, value=0;
++    uint32_t field=0;
++    void gif(GifPathId p,const uint8_t* b,uint32_t n) noexcept override {
++        paths.push_back(static_cast<unsigned>(p)); bytes.insert(bytes.end(),b,b+n);
++    }
++    void reg(uint8_t, uint64_t v) noexcept override { ++direct; value=v; }
++    void vsync(const GSRegisters& r,uint64_t t,uint32_t f) noexcept override {
++        ++frames; tick=t;field=f;display=r.display1;
++    }
++    void reset() noexcept override { ++resets; }
++};
++}
++void register_gs_external_tests() {
++    MiniTest::Case("GS observador externo",[](TestCase& tc){
++        tc.Run("fragmentos originales, PATH y registros sin duplicados",[](TestCase& t){
++            PS2Memory memory;t.IsTrue(memory.initialize(),"memoria inicializada");
++            GS gs;gs.init(memory.getGSVRAM(),PS2_GS_VRAM_SIZE,&memory.gs());
++            auto observer=std::make_shared<Observer>();gs.setExternalObserver(observer);
++            const std::array<uint64_t,4> packet{1|(1ull<<15)|(1ull<<60),0xe,0x1234,0x3b}; // TEXA.
++            const auto* p=reinterpret_cast<const uint8_t*>(packet.data());
++            gs.processGIFPacket(p,7,GifPathId::Path1);
++            gs.processGIFPacket(p+7,25,GifPathId::Path1);
++            gs.processGIFPacket(p,32,GifPathId::Path2);
++            gs.processGIFPacket(p,32,GifPathId::Path3);
++            t.Equals(observer->bytes.size(),size_t(96),"cada span aparece una vez");
++            t.IsTrue(std::memcmp(observer->bytes.data(),p,32)==0,"tag fragmentado conservado");
++            t.IsTrue(observer->paths==std::vector<unsigned>{1,1,2,3},"origen y orden conservados");
++            t.Equals(observer->direct,0u,"registro decodificado no se entrega dos veces");
++            gs.writeRegister(0x3b,0x42);
++            t.Equals(observer->direct,1u,"escritura de stub cubierta");
++            t.Equals(observer->value,0x42ull,"valor completo de escritura");
++            gs.setExternalObserver({});gs.processGIFPacket(p,32,GifPathId::Path3);
++            t.Equals(observer->bytes.size(),size_t(96),"desenlazar detiene entregas");
++        });
++        tc.Run("VSync explícito y reset conservan enlace",[](TestCase& t){
++            PS2Memory memory;t.IsTrue(memory.initialize(),"memoria inicializada");
++            GS gs;gs.init(memory.getGSVRAM(),PS2_GS_VRAM_SIZE,&memory.gs());
++            auto observer=std::make_shared<Observer>();gs.setExternalObserver(observer);
++            memory.gs().display1=0x1122334455667788ull;
++            gs.notifyExternalVSync(17,1);gs.notifyExternalVSync(18,2);
++            t.Equals(observer->frames,1u,"field inválido no se entrega");
++            t.Equals(observer->tick,17ull,"tick explícito");
++            t.Equals(observer->field,1u,"campo explícito");
++            t.Equals(observer->display,0x1122334455667788ull,"registros completos");
++            gs.reset();t.Equals(observer->resets,1u,"reset externo informado");
++            t.IsTrue(gs.hasExternalObserver(),"reset conserva observador");
++            gs.notifyExternalVSync(19,0);t.Equals(observer->frames,2u,"VSync tras reset");
++        });
++        tc.Run("atajo PACKED rechaza sin consumir y permite fallback",[](TestCase& t){
++            PS2Memory memory;t.IsTrue(memory.initialize(),"memoria inicializada");
++            GS gs;gs.init(memory.getGSVRAM(),PS2_GS_VRAM_SIZE,&memory.gs());
++            auto observer=std::make_shared<Observer>();gs.setExternalObserver(observer);
++            const std::array<uint64_t,4> packet{1|(1ull<<15)|(1ull<<60),0xe,0x1234,0x3b};
++            const auto* p=reinterpret_cast<const uint8_t*>(packet.data());
++            t.IsFalse(gs.processNativePackedGIFPacket(p,32,GifPathId::Path3),"atajo desactivado");
++            t.Equals(observer->bytes.size(),size_t(0),"rechazo no consume bytes");
++            gs.processGIFPacket(p,32,GifPathId::Path3);
++            t.Equals(observer->bytes.size(),size_t(32),"fallback entrega tag original");
++            gs.setExternalObserver({});
++            t.IsTrue(gs.processNativePackedGIFPacket(p,32,GifPathId::Path3),"predeterminado conserva atajo");
++        });
++    });
++}
+diff --git a/ps2xTest/src/ps2_memory_tests.cpp b/ps2xTest/src/ps2_memory_tests.cpp
+index 3847fda..92986a7 100644
+--- a/ps2xTest/src/ps2_memory_tests.cpp
++++ b/ps2xTest/src/ps2_memory_tests.cpp
+@@ -14,6 +14,15 @@
+ #include <cstring>
+ #include <vector>
+ 
++
++
++// GOW-Port: el enlace externo debe desactivar ambos atajos sin consumir la DMA.
++struct MemoryGsObserver final : GSExternalObserver {
++    void gif(GifPathId, const uint8_t*, uint32_t) noexcept override {}
++    void reg(uint8_t, uint64_t) noexcept override {}
++    void vsync(const GSRegisters&, uint64_t, uint32_t) noexcept override {}
++    void reset() noexcept override {}
++};
+ namespace
+ {
+     uint32_t makeVifCmd(uint8_t opcode, uint8_t num, uint16_t imm)
+@@ -1320,6 +1329,11 @@ void register_ps2_memory_tests()
+             writeDmaTag(rdram, chain, makeDmaTag(0u, 7u, 0u, false)); // END.
+ 
+             t.IsTrue(mem.writeIORegister(kGifCh + 0x30u, kChain), "write GIF TADR should succeed");
++            gs.setExternalObserver(std::make_shared<MemoryGsObserver>());
++            t.IsFalse(mem.tryProcessNativeGifImageUploadChain(gs, kChain, 0x105u), "observador conserva tags IMAGE por ruta genérica");
++            t.Equals(mem.readIORegister(kGifCh + 0x30u), kChain, "rechazar atajo no consume TADR");
++            t.Equals(gs.nativeImageUploadCount(), 0ull, "observador no sube IMAGE por atajo");
++            gs.setExternalObserver({});
+             t.IsTrue(mem.tryProcessNativeGifImageUploadChain(gs, kChain, 0x105u),
+                      "canonical load-image chain should use the native upload path");
+ 
+@@ -1397,6 +1411,11 @@ void register_ps2_memory_tests()
+             std::memcpy(scratch + 16u, packet.data(), packet.size());
+ 
+             t.IsTrue(mem.writeIORegister(kGifCh + 0x30u, kScratchTag), "write GIF TADR scratchpad alias should succeed");
++            nativeGs.setExternalObserver(std::make_shared<MemoryGsObserver>());
++            t.IsFalse(mem.tryProcessNativeGifPackedChain(nativeGs, kScratchTag, 0x105u), "observador conserva tags PACKED por ruta genérica");
++            t.Equals(mem.readIORegister(kGifCh + 0x30u), kScratchTag, "rechazar atajo PACKED no consume TADR");
++            t.Equals(nativeGs.nativePackedGIFPacketCount(), 0ull, "observador no consume PACKED por atajo");
++            nativeGs.setExternalObserver({});
+             t.IsTrue(mem.tryProcessNativeGifPackedChain(nativeGs, kScratchTag, 0x105u),
+                      "packed primitive chain should use the native packed GIF path");
+ 

@@ -2,6 +2,7 @@
 #include "module_api.h"
 #include "host_probe.h"
 #include "../pcsx2_gif_sink.h"
+#include "../pcsx2_register_adapter.h"
 #include "GS/GS.h"
 #include "GS/Renderers/DX11/GSDevice11.h"
 #include "GS/Renderers/HW/GSRendererHW.h"
@@ -54,7 +55,7 @@ uint32_t gow_gs_create(const GowGsCreateInfo* info,uint64_t* handle){
         g_gs_device=std::make_unique<GSDevice11>();
         if(!g_gs_device->Create(GSVSyncMode::Disabled,false)){close();return GOW_GS_FAILED;}
         std::memset(&regs,0,sizeof(regs));
-        g_gs_renderer=std::make_unique<GSRendererHW>();
+        g_gs_renderer=std::make_unique<gow_pcsx2_gs::RegisterAdapter<GSRendererHW>>();
         g_gs_renderer->SetRegsMem(reinterpret_cast<u8*>(&regs));g_gs_renderer->Reset(true);
         bridge=std::make_unique<gow_pcsx2_gs::GifBridge>(gow_pcsx2_gs::pcsx2TransferSink());
         if(++nextHandle==0)++nextHandle;
@@ -86,6 +87,23 @@ uint32_t gow_gs_vsync(uint64_t handle,uint32_t field,const uint8_t* privileged,u
         std::memcpy(&regs,privileged,sizeof(regs));
         // No exigir complete(): VSync puede interrumpir un paquete GIF.
         GSvsync(field,true);++sequence;return GOW_GS_OK;
+    } catch(...) {failed=true;return GOW_GS_FAILED;}
+}
+uint32_t gow_gs_write_register(uint64_t handle,uint32_t reg,uint64_t value){
+    std::lock_guard lock(gate);
+    const auto status=access(handle);if(status)return status;
+    if(reg>0x7f)return GOW_GS_BAD_ARGUMENT;
+    try {
+        static_cast<gow_pcsx2_gs::RegisterAdapter<GSRendererHW>*>(g_gs_renderer.get())->writeDirect(uint8_t(reg),value);
+        return GOW_GS_OK;
+    } catch(...) {failed=true;return GOW_GS_FAILED;}
+}
+uint32_t gow_gs_reset(uint64_t handle){
+    std::lock_guard lock(gate);
+    const auto status=access(handle);if(status)return status;
+    try {
+        g_gs_renderer->Reset(true);bridge->discardAfterGsReset();sequence=0;
+        return GOW_GS_OK;
     } catch(...) {failed=true;return GOW_GS_FAILED;}
 }
 uint32_t gow_gs_read_output(uint64_t handle,uint8_t* rgba,uint64_t capacity,GowGsFrameInfo* info){
