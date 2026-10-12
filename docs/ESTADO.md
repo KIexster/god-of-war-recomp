@@ -5130,3 +5130,38 @@ La diferencia entre líneas/filtrado permanece. Es inspección visual de la mism
 ejecución, sin prueba de igualdad de comandos o píxeles, fidelidad PS2 o todas
 las animaciones. Falta final al límite e inspector del registro completo,
 y control asíncrono posterior de Kratos/NPCs. [CI de código 89ffb57 correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38317718747).
+
+## GS de PCSX2: introducción y NPCs con campo corregido (2026-10-12)
+
+Ambos controles de `89ffb57`, mismo runner `0c2d81f...`, terminan al límite
+de 420 s: síncrono/compartido 420,08 s; asíncrono/compartido 420,06 s. Sin
+salida anticipada ni fallo registrado del espejo; tarjetas copiadas intactas.
+Se conserva la terminación forzada del proceso propio, sin verificar cierre
+normal de partida. [CI documental anterior f7ad52a correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38318710304).
+
+Inspector final: 714 adquisiciones síncronas desde 1400 y 417 asíncronas desde
+2100, sin regresiones de secuencia/render, metadatos inconsistentes, A-B-A,
+cambios de dimensiones o hashes desconocidos en esas muestras. Distancia de
+ticks 0 en ambas; no es una medida de latencia, FPS o ausencia de retenciones.
+El espejo conserva DMA genérico e hilos VU1/frente GS apagados.
+
+Introducción: se revisan las 16 PCRTC y 16 texturas adquiridas, con 15 pares
+de ticks coincidentes y el adquirido 1416 separado. Kratos mantiene silueta
+coherente y movimiento gradual en la ventana. No acredita todas sus poses.
+
+Asíncrono: se revisan las 16 parejas PCRTC/adquirido 2100..2115, 512x448;
+las salidas muestran HUD, Kratos y NPCs. Hay diferencias visibles mayores
+que el filtrado de líneas: la imagen OpenGL tiene mucha más niebla y oculta
+detalles de algunos NPCs; DX11 los muestra más claros. El encuadre general y
+los objetos de primer plano son semejantes. No se observa la deformación
+brusca buscada en estas imágenes, pero **no hay equivalencia visual validada**.
+El tick por sí solo tampoco garantiza el mismo prefijo GIF o pose; esta
+observación no identifica aún un fallo concreto de fog, profundidad o mezcla.
+
+Siguiente control: seguir FOG/FOGCOL/FGE y raster, con comandos/estado comparables
+y patrones procedurales, antes de cambiar la cámara o normalizar matrices.
+El diagnóstico opcional de #68 ya recibe y dibuja el flujo del juego; no es
+un backend principal, un benchmark o resolución general de espasmos/encuadre.
+La revisión de Urban Reign incluye crédito explícito a thiagordsfx, por petición
+del usuario; implementación del enlace y ajuste de campo propios, contrastados
+con PCSX2 original. No se han publicado capturas, volcados o datos del juego.

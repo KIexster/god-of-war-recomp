@@ -64,3 +64,11 @@ de GIF. Es una heurística; ese contador no es un hash de píxeles ni demuestra
 que una imagen sea distinta. No utilizarla para declarar resuelto un retorno
 de contenido antiguo. La revisión no reproduce su transporte completo,
 la estabilidad con hilos ni la equivalencia de escena.
+
+## Créditos
+
+A **thiagordsfx**, autor de [urban-reign-recomp](https://github.com/thiagordsfx/urban-reign-recomp),
+por publicar su integración y compartirla con este proyecto. Su Bridge.cpp
+permitió detectar la convención de campo incorrecta de nuestro espejo;
+la corrección propia se contrastó con MTGS original. El GS utilizado procede
+de PCSX2 y conserva sus avisos GPL-3.0+. Esta revisión no importa código del juego.

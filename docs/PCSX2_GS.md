@@ -334,3 +334,26 @@ carpeta `capturas_ñ`. Reproduce el fallo de interpretar bytes ACP de `getenv`
 como UTF-8. Corregido a `_wgetenv` y paths UTF-16; recursos convertidos a UTF-8
 para el ABI. Negativo anterior código 1; positivo corregido código 0. No cambia
 la cadena 103: es una actualización de src/ sobre la compilación completa.
+
+### VSync y controles del juego con campo corregido (2026-10-12)
+
+El cliente 89ffb57 selecciona el campo con CSR.FIELD de la misma instantánea
+que recibe la DLL: `CSR.FIELD ? 0 : 1`, conforme al MTGS original. Pasar la
+paridad EE directamente, como en el cliente anterior, invertía esa convención.
+Regresión de cuatro entregas cliente/cola/DLL sin dispositivo correcta;
+negativo anterior compila/falla y restaurado pasa. Seis CTest Windows correctos
+y fixture runtime/DLL/DX11 de dos colores/reset, 2x2.048 RGBA exactos y cierre limpio.
+
+Compilación completa 103 y actualización de src/ verificadas. Dos controles
+compartidos de 420 s con campo corregido terminan al límite, sin fallo registrado
+del espejo; tarjetas privadas intactas. Inspector: 714/417 adquisiciones sin
+anomalías en las muestras registradas. Ráfaga de introducción: 15 pares de ticks
+coincidentes y un adquirido sin pareja dentro del cupo PCRTC. Ráfaga de HUD/NPCs:
+16 pares 2100..2115; OpenGL muestra mucha más niebla que DX11 y diferencias de
+visibilidad de NPCs. No hay paridad visual validada, ni se identifica todavía la
+causa entre fog, profundidad, mezcla o diferencia de prefijo de comandos.
+
+Conservar CPU/OpenGL y seguir ese contraste antes de cambiar el renderer principal.
+Estas ejecuciones activan dos renderers, hash y readbacks: no miden FPS. El espejo
+usa rutas DMA genéricas y rechaza hilos VU1/frente GS. Resultados completos y
+siguiente control en ESTADO.md; revisión y créditos en REVISION_URBAN_REIGN.md.

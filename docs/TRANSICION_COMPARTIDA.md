@@ -14,7 +14,12 @@ en la cadena 103. Dos controles compartidos de seis minutos verifican recepción
 de GIF/VSync y salidas de introducción/NPCs; el asíncrono muestra HUD. Conserva
 el renderer habitual y usa rutas DMA genéricas, sin hilos VU1/frente GS. No
 certifica animación, paridad de escena, rendimiento o estabilidad prolongada.
-La captura por ráfaga y los controles RAM siguen en curso. Véase PCSX2_GS.md.
+La matriz de cuatro variantes de siete minutos de e5e040e se completa, pero
+su espejo usaba el campo invertido respecto a MTGS. Corregido en 89ffb57, con
+regresión de cliente/cola/DLL y dos controles compartidos adicionales completos.
+Introducción favorable en su ventana; con HUD/NPCs OpenGL muestra mucha más
+niebla que DX11. No hay equivalencia visual validada. Véase PCSX2_GS.md y las
+últimas entradas de ESTADO.md para identidad, cantidades y límites.
 Los resultados históricos siguientes conservan la identidad de sus cadenas.
 
 Count #59 y unidades de framebuffer #58 están fusionadas en main. Se conservan
