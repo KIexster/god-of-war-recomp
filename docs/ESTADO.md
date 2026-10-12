@@ -4738,3 +4738,32 @@ hilos 0, mismo guion de menú, ventana de matrices 1490 y 16 adquisiciones desde
 1500, hash 0; diagnóstico de cortes VU1 activado sin aumentar el presupuesto.
 Pendiente terminar, revisar poses/registro y publicar el resultado antes de
 marcar #67 lista. No se ha declarado el espasmo resuelto.
+
+## PMULTH: primer control visual posterior (2026-10-11)
+
+La pasada anterior termina a 300,06 s por límite; tarjeta procedural intacta,
+sin firmas buscadas de error ni minimización. Se registra foco durante unos
+dos segundos, sin probar su causa. Con `GOW_VU1_BUDGET_DIAG=1` no aparecen
+cortes de presupuesto en esta configuración síncrona/compartida, hilos 0;
+esto no descarta cortes en otros tramos o con hilos/rendimiento activados.
+
+128 retornos completos, cinco grupos, ambas variantes, ninguna pausa;
+6.173 lecturas válidas finitas y 5.629 productos finales, residuo descriptivo
+máximo 0,0001364. Candidato de 111 slots: 32 muestras 1490..1520, 3.296 productos
+y máximo 0,000005823. Conserva bases fuente no unitarias (determinante mínimo
+0,6596880, eje mínimo 0,8122119), sin ceros/negativos en esta muestra: tampoco
+ahora justifican normalizar matrices por intuición.
+
+16 texturas adquiridas 512x448, secuencias 1455..1470/ticks 1500..1515, metadatos
+exactos y RGBA diferentes; 224 pares de filas duplicadas por imagen. Las
+imágenes 1/8/16 revisadas muestran cabeza erguida y hojas delante del cuerpo,
+sin la pose elevada del ejemplo. Es un resultado favorable de esta ventana,
+**no una validación completa de animaciones/NPCs, cámara o estabilidad**.
+
+Comparación descriptiva con la ventana de la traza anterior: los 32 stamps
+coinciden, pero ninguna matriz de entrada ni scalar coincide exactamente.
+No son poses alineadas. El mayor paso fuente del slot 14 pasa de 1,13344 a
+0,0007890 y el mayor paso de posición observado en el grupo pasa de 18,71 a
+0,84; no se usan como tolerancia PS2, porcentaje de mejora o prueba causal
+automática. PMULTH sí queda corregida por su semántica y regresiones. Falta
+ampliar el control a otras animaciones y contrastar referencia alineada.
