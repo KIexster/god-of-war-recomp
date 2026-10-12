@@ -4926,3 +4926,12 @@ debe construirse desde registros PS2 reales; no copiar su struct GSRegisters.
 Nuevo contrato DLL pendiente del HEAD que lo publica. GPU local, sin medición
 de FPS; IRQ/FINISH, FIFO/VRAM, recuperación y hook pendientes. Alcance en
 [PCSX2_GS.md](PCSX2_GS.md) y [README del módulo](../tools/render/pcsx2_probe/README.md).
+
+## GS de PCSX2: espejo privilegiado explícito (2026-10-12)
+
+Helper sin activar en el juego: empaqueta 19 registros a offsets PS2, en
+little-endian, huecos cero y CSR atómico; omite vsyncTick del struct compacto.
+Prueba de valores distintos/CSR multibyte y cambios de tick correcta en MSVC.
+Los 19 offsets y 8 KiB se contrastan con GSPrivRegSet original mediante
+static_assert. CI/CTest incorporados. El llamante debe sincronizar los campos
+no atómicos; el helper no corrige por sí solo acceso concurrente o presentación.

@@ -56,6 +56,10 @@ jobs:
         run: |
           g++ -std=c++20 -Wall -Wextra -Werror tests/camera_probe_test.cpp -o camera_probe_test
           ./camera_probe_test
+      - name: Probar espejo de registros privilegiados PS2
+        run: |
+          g++ -std=c++20 -Wall -Wextra -Werror tests/pcsx2_privileged_mirror_test.cpp -o pcsx2_privileged_mirror_test
+          ./pcsx2_privileged_mirror_test
       - name: Probar muestreo de intro y lectura de modelos sin el juego
         run: |
           g++ -std=c++20 -Wall -Wextra -Werror tests/model_probe_test.cpp -o model_probe_test
@@ -84,6 +88,8 @@ jobs:
           g++ -std=c++20 -march=x86-64-v3 -fsyntax-only tests/pcsx2_gif_sink_syntax.cpp \
             -I pcsx2-reference -I pcsx2-reference/pcsx2 -I pcsx2-reference/3rdparty/fmt/include
           g++ -std=c++20 -march=x86-64-v3 -fsyntax-only tests/pcsx2_gif_parser_probe.cpp \
+            -I pcsx2-reference -I pcsx2-reference/pcsx2 -I pcsx2-reference/3rdparty/fmt/include
+          g++ -std=c++20 -march=x86-64-v3 -fsyntax-only tests/pcsx2_privileged_layout_syntax.cpp \
             -I pcsx2-reference -I pcsx2-reference/pcsx2 -I pcsx2-reference/3rdparty/fmt/include
 
   pcsx2_native:

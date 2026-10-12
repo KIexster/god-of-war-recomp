@@ -253,6 +253,20 @@ FIFO/VRAM del runtime, activación a mitad de juego y recuperación del disposit
 pendientes. Detalles en el [README del módulo](../tools/render/pcsx2_probe/README.md).
 La CI nueva carga solo el contrato sin dispositivo; GPU comprobada localmente.
 
+### Espejo privilegiado para el adaptador (2026-10-12)
+
+`src/gow_gs_pcsx2_mirror.h` empaqueta los 19 registros reales del runtime en
+sus offsets PS2 de 8 KiB, explícitamente little-endian y con huecos en cero.
+Excluye vsyncTick: es un contador del runtime que ocupa espacio entre CSR/IMR
+en su struct compacto. CSR se lee atómicamente; el llamante debe sincronizar
+los demás registros con su escritor. El helper todavía no se instala en el juego.
+
+Prueba independiente con valores distintos y CSR multibyte: correcta en MSVC.
+Contraste de los 19 offsets y tamaño con GSPrivRegSet **original** mediante
+static_assert: correcto. Se añaden controles portables y de headers reales
+a CI, más CTest Windows. No se transforma una copia del struct de 160 bytes
+en una copia válida de registros de 8 KiB por rellenar solo su final.
+
 Pendiente para una adaptación funcional:
 
 1. Enlazar la ABI probada con un hook opcional del runtime que preserve bytes,
