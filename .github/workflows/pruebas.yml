@@ -86,6 +86,59 @@ jobs:
           g++ -std=c++20 -march=x86-64-v3 -fsyntax-only tests/pcsx2_gif_parser_probe.cpp \
             -I pcsx2-reference -I pcsx2-reference/pcsx2 -I pcsx2-reference/3rdparty/fmt/include
 
+  pcsx2_native:
+    name: Modulo GS aislado Windows (enlace y parser, sin GPU)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      VCPKG_DISABLE_METRICS: '1'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
+        with:
+          repository: PCSX2/pcsx2
+          ref: 2954ebe6965669219f1bbd256e958fbd8f83a85d
+          path: pcsx2-reference
+          sparse-checkout: |
+            common
+            pcsx2
+            3rdparty
+            bin/resources/shaders
+      - uses: actions/checkout@v5
+        with:
+          repository: microsoft/DirectX-Headers
+          ref: 64c650b0c6642ab0f3cdf674e38401e02ccd2460
+          path: directx-headers
+      - uses: actions/checkout@v5
+        with:
+          repository: microsoft/vcpkg
+          ref: e456309491fd875487bf02b8a0dca76c1b1b00cc
+          path: vcpkg-reference
+      - uses: actions/cache@v4
+        with:
+          path: vcpkg-reference/installed
+          key: windows-vcpkg-e456309-libpng-x64-static-md
+      - name: Preparar libpng y zlib estaticas, sin DLL privada
+        shell: pwsh
+        run: |
+          ./vcpkg-reference/bootstrap-vcpkg.bat -disableMetrics
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./vcpkg-reference/vcpkg.exe install libpng:x64-windows-static-md --disable-metrics
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Extraer dependencias de la revision fijada, sin el juego
+        run: python tools/render/pcsx2_probe/prepare.py --pcsx2-source pcsx2-reference --output pcsx2-generated
+      - name: Compilar modulo y fixtures; ejecutar parser y memoria, sin dispositivo
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvars64.bat" >nul
+          if errorlevel 1 exit /b 1
+          cmake -S tools/render/pcsx2_probe -B pcsx2-probe-build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPCSX2_SOURCE="%CD%/pcsx2-reference" -DPROBE_GENERATED="%CD%/pcsx2-generated" -DDIRECTX_HEADERS="%CD%/directx-headers" -DCMAKE_TOOLCHAIN_FILE="%CD%/vcpkg-reference/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static-md
+          if errorlevel 1 exit /b 1
+          cmake --build pcsx2-probe-build --parallel 3
+          if errorlevel 1 exit /b 1
+          ctest --test-dir pcsx2-probe-build --output-on-failure
+          if errorlevel 1 exit /b 1
+
   runtime:
     name: Parches y suite del runtime (PS2Recomp)
     runs-on: ubuntu-latest

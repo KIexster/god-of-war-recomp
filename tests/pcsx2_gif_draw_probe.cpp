@@ -88,6 +88,93 @@ static bool draw(gow_pcsx2_gs::Path path)
     return true;
 }
 
+static std::vector<u64> packet(const std::vector<u64>& registers)
+{
+    std::vector<u64> result{(registers.size() / 2) | (u64(1) << 15) | (u64(1) << 60), 0x0e};
+    result.insert(result.end(), registers.begin(), registers.end());
+    return result;
+}
+
+static bool texturedImage()
+{
+    constexpr u32 width = 64, height = 32, textureBase = 0x1000;
+    const auto path = gow_pcsx2_gs::Path::Path3;
+    const double previousCalls = g_perfmon.GetCounter(GSPerfMon::DrawCalls);
+    std::vector<u32> expected(width * height);
+    for (u32 y = 0; y < height; ++y)
+        for (u32 x = 0; x < width; ++x)
+            expected[y * width + x] = ((x * 7 + y * 3 + 9) & 255) |
+                (((x * 5 + y * 11 + 37) & 255) << 8) |
+                (((x * 13 + y * 17 + 67) & 255) << 16) |
+                (((x * 19 + y * 23 + 127) & 255) << 24);
+    gow_pcsx2_gs::GifBridge bridge(gow_pcsx2_gs::pcsx2TransferSink());
+    std::vector<u64> upload;
+    ad(upload, (u64(textureBase) << 32) | (u64(1) << 48), 0x50); // BITBLTBUF destino CT32.
+    ad(upload, 0, 0x51);
+    ad(upload, width | (u64(height) << 32), 0x52);
+    ad(upload, 0, 0x53); // Host -> local.
+    if (!send(bridge, path, packet(upload)))
+        return false;
+    const size_t qwc = expected.size() * sizeof(u32) / 16;
+    std::vector<u64> image(2 + qwc * 2, 0);
+    image[0] = qwc | (u64(1) << 15) | (u64(2) << 58); // IMAGE, no A+D.
+    std::memcpy(image.data() + 2, expected.data(), expected.size() * sizeof(u32));
+    if (!send(bridge, path, image))
+        return false;
+    std::vector<u64> textured;
+    ad(textured, 0, 0x3f); // TEXFLUSH tras IMAGE.
+    ad(textured, textureBase | (u64(1) << 14) | (u64(6) << 26) | (u64(5) << 30) |
+        (u64(1) << 34) | (u64(1) << 35), 0x06); // TEX0: TCC=RGBA, DECAL.
+    ad(textured, 0, 0x14); // TEX1 nearest.
+    ad(textured, 6 | (1 << 4) | (1 << 8), 0x00); // Sprite, TME, FST.
+    ad(textured, 0x3f80000080808080ull, 0x01);
+    ad(textured, 0, 0x03); // UV.
+    ad(textured, 0, 0x05); // XYZ2.
+    ad(textured, width * 16 | (u64(height * 16) << 16), 0x03);
+    ad(textured, width * 16 | (u64(height * 16) << 16), 0x05);
+    if (!send(bridge, path, packet(textured)))
+        return false;
+    g_gs_renderer->Flush(GSState::GSFlushReason::DOWNLOADFIFO);
+    // GOW-Port: incluye un rectangulo que cruza bloques, con ultima QW parcial.
+    for (const GSVector4i rect : {GSVector4i(0, 0, width, height), GSVector4i(11, 9, 24, 16)})
+    {
+        std::vector<u64> read;
+        ad(read, u64(1) << 16, 0x50);
+        ad(read, rect.x | (u64(rect.y) << 16), 0x51);
+        ad(read, rect.width() | (u64(rect.height()) << 32), 0x52);
+        ad(read, 1, 0x53);
+        if (!send(bridge, path, packet(read)))
+            return false;
+        const size_t pixels = rect.width() * rect.height();
+        const size_t qw = (pixels * sizeof(u32) + 15) / 16;
+        std::vector<u32> actual(qw * 4 + 4, 0xdeadbeef);
+        g_gs_renderer->InitReadFIFO(reinterpret_cast<u8*>(actual.data()), qw * 16);
+        g_gs_renderer->ReadFIFO(reinterpret_cast<u8*>(actual.data()), qw);
+        for (size_t i = 0; i < pixels; ++i)
+        {
+            const u32 color = expected[(rect.y + i / rect.width()) * width + rect.x + i % rect.width()];
+            if (actual[i] != color)
+            {
+                std::fprintf(stderr, "IMAGE/textura FIFO: pixel %zu esperado %08X recibido %08X\n", i, color, actual[i]);
+                return false;
+            }
+        }
+        for (size_t i = qw * 4; i < actual.size(); ++i)
+            if (actual[i] != 0xdeadbeef)
+            {
+                std::fprintf(stderr, "IMAGE/textura FIFO: escritura fuera de QWC solicitado\n");
+                return false;
+            }
+        std::printf("IMAGE/textura FIFO: %zu pixeles RGBA exactos, rect %d,%d %dx%d\n",
+            pixels, rect.x, rect.y, rect.width(), rect.height());
+    }
+    const double calls = g_perfmon.GetCounter(GSPerfMon::DrawCalls) - previousCalls;
+    if (calls < 1)
+        return false;
+    std::printf("IMAGE/textura: %.0f draw calls GPU\n", calls);
+    return true;
+}
+
 int main()
 {
     GSConfig.Renderer = GSRendererType::DX11;
@@ -107,6 +194,8 @@ int main()
         for (auto path : {gow_pcsx2_gs::Path::Path1, gow_pcsx2_gs::Path::Path2, gow_pcsx2_gs::Path::Path3})
             if (!(success = draw(path)))
                 break;
+        if (success)
+            success = texturedImage();
         g_gs_renderer->Destroy();
         g_gs_renderer.reset();
     }

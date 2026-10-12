@@ -132,13 +132,45 @@ Este control verifica dibujo y descarga procedural; no equivale a presentar
 un frame del juego, coherencia con su RAM/VRAM, interrupciones o rendimiento.
 Su host/enlace todavía siguen privados y la CI no ejecuta este control GPU.
 
+### Receta pública de construcción y control IMAGE (2026-10-12)
+
+`tools/render/pcsx2_probe/` publica el host limitado, servicios, CMake y una
+preparación que extrae solo fuentes GS/config originales de la revisión limpia.
+No copia DLL privadas ni datos del juego al repositorio. Instrucciones y
+dependencias en su [README](../tools/render/pcsx2_probe/README.md). Se añade CI
+Windows para enlazar todos los fixtures y ejecutar parser/memoria sin GPU;
+los controles de dispositivo/dibujo se ejecutan localmente, de forma explícita.
+
+Esta receta compila y pasa los cuatro controles en Windows/MSVC sobre la
+RX 5700 XT. El dibujo amplía su cobertura: IMAGE PSMCT32 host→local, TEXFLUSH,
+sprite texturado DECAL/nearest y descarga FIFO. Los 2.048 píxeles completos y
+los 91 de una región 13x7 que cruza bloques coinciden exactamente, incluida
+alpha. El final parcial de quadword no escribe más allá del QWC solicitado.
+Omitir solo IMAGE compila y falla en el primer píxel; restaurado correcto.
+SHA-256 del fixture restaurado de dibujo:
+`a7991d25961bdddddd8ce3631cf73287f057b8928c735df8724c818e575f3444`.
+
+El cierre del mapeo Windows extraído tenía dos fugas locales: el handle y
+tres placeholders retenidos. La preparación añade correcciones GOW-Port sin
+cambiar el checkout original: cierra el handle y une las vistas antes de
+liberar el rango. Se sigue la semántica documentada de
+[VirtualFreeEx](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualfreeex).
+Ocho ciclos de cuatro vistas alias, handles estables y MEM_FREE en todo el
+rango: correctos. Omitir cada corrección por separado compila y falla (ocho
+handles retenidos o vista 1 reservada); restaurado correcto. No valida fallos
+de reserva ni transforma este host limitado en el host completo del juego.
+
+Los cuatro ejecutables locales funcionan sin dxcompiler.dll/dxil.dll en su
+carpeta: DX11 usa el compilador SM4/5 original, con import DXC retardado para
+otras APIs. La carga retardada no acredita soporte de DX12/Vulkan.
+
 Pendiente para una adaptación funcional:
 
-1. Construir un módulo GS aislado con las fuentes/licencias fijadas, recursos
-   de shaders y dependencias de Windows. `GS.cpp` usa servicios Host, ajustes,
-   recursos, métricas y estado del juego; incluir un header no los resuelve.
-2. Ampliar los patrones a transferencias IMAGE, texturas y lectura parcial;
-   añadir ventana/presentación, VSync y controles del cierre completo.
+1. Extender el módulo aislado probado a una API opcional para el runtime.
+   Completar los servicios necesarios de Host y definir el contrato de carga,
+   recursos y cierre; los servicios ausentes de este fixture siguen limitados.
+2. Añadir ventana/presentación y VSync; ampliar formatos, CLUT, blending,
+   depth/alpha test y controles del cierre completo.
 3. Añadir espejo de registros privilegiados, CSR/FINISH/SIGNAL, FIFO local→host,
    VRAM inicial y sincronización de escrituras/lecturas. `GSopen` recibe memoria
    de **registros privilegiados**, no directamente los 4 MiB de VRAM.

@@ -4841,3 +4841,25 @@ abortan si se usan; no se solicita VSync, ventana o reapertura. Los objetos
 SW se conservan, sin validación de esa ruta. Límites en [PCSX2_GS.md](PCSX2_GS.md).
 Faltan reproducción pública del módulo, IMAGE/texturas, presentación y conexión
 al runtime. No se atribuye renderizado de God of War ni una mejora de FPS.
+
+## GS de PCSX2: módulo reproducible, IMAGE y cierre de memoria (2026-10-12)
+
+Se publica host/CMake/preparación del módulo aislado y se añade CI Windows:
+enlace de cuatro fixtures, parser y memoria ejecutados sin GPU. Compilación
+local de la receta y cuatro controles correctos. Se verifica además IMAGE
+CT32, textura DECAL/nearest y FIFO completo/parcial: 2.048 + 91 píxeles RGBA
+exactos, dibujo GPU confirmado. Omitir IMAGE compila y falla; restaurado
+correcto. SHA-256 del fixture de dibujo
+`a7991d25961bdddddd8ce3631cf73287f057b8928c735df8724c818e575f3444`.
+
+La extracción Windows conservaba un handle y placeholders al cerrar. Se
+corrige solo el host aislado, con comentarios GOW-Port y regresión: ocho
+ciclos alias de 4x4 MiB, handles estables y todo el rango libre. Negativos
+separados para handle y unión de placeholders compilan y fallan; restaurado
+correcto. Sin validación del camino de fallo de reserva. Las fuentes originales
+y el runtime del juego permanecen intactos.
+
+La receta local ejecuta los cuatro fixtures sin DLL DXC; no acredita otras
+APIs o rendimiento. [Instrucciones](../tools/render/pcsx2_probe/README.md),
+límites y siguientes pasos en [PCSX2_GS.md](PCSX2_GS.md). El CI de `4addf7b`
+completo correcto; el nuevo job nativo está pendiente del HEAD que lo publica.
