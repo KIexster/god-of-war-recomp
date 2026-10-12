@@ -5041,3 +5041,38 @@ runtime/DLL captura dos colores exactos en ticks 1 y 2 con reset; negativo que
 ignora el intervalo y fuerza 120 compila/falla, restaurado correcto. Cambio
 solo de src/ y control, sin nuevo parche del runtime. Recompilación del runner
 y ráfaga con el juego pendientes; el ejecutable e4cf8c1 no contiene esta opción.
+
+## GS de PCSX2: primeras ráfagas comparadas dentro de una ejecución (2026-10-12)
+
+Src/ `e5e040e5bd4ea56d13499bd827f9276fa4400ce7` recompilado sobre la misma
+cadena completa 103 de `477e013`, sin cambiar la biblioteca del runtime.
+Runner SHA-256 `4af9bd9bca230265db2bb4c9f8a3122bad0643e83a95c477d11eeae5c4641d09`;
+VU1 interpretada, hilos VU1/frente GS apagados. [CI del HEAD e5e040e correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38314554618).
+Mismos ELF, ISO, guion y copia de tarjeta inicial; espejo DX11 desde arranque,
+16 capturas PCRTC consecutivas desde tick 1400, sin capturas periódicas del mando.
+
+Dos controles terminados: síncrono/RAM, 420,08 s, y asíncrono/compartido,
+420,07 s. Ambos alcanzan el límite, sin salida anticipada ni fallo registrado
+del espejo; terminación forzada del proceso propio, no cierre normal del juego.
+La tarjeta copiada conserva su hash. El asíncrono registra 1.142 adquisiciones
+compartidas sin regresiones, metadatos inconsistentes, hashes desconocidos,
+cambios de dimensiones o A-B-A en esa muestra. Cero filas retenidas no prueba
+ausencia de retenciones: el diagnóstico solo registra adquisiciones nuevas.
+
+Se revisan las 16 imágenes PCRTC del síncrono/RAM y los 16 pares PCRTC/textura
+adquirida del asíncrono/compartido, 512x448, ticks 1400..1415. En esos pares
+de una sola ejecución se observa encuadre y silueta de Kratos semejantes, con
+movimiento gradual, sin el salto grande o la deformación brusca buscados en
+esta ventana. OpenGL muestra bordes más dentados y diferencias entre líneas.
+Es una observación visual: no certifica igualdad de píxeles, fidelidad PS2,
+poses de todas las animaciones/NPCs ni la causa de esas diferencias.
+
+Entre el control RAM y las pasadas compartidas anteriores, un mismo tick
+corresponde a momentos distintos de la introducción. No atribuir al renderer
+una diferencia de cámara o postura obtenida así. Incluso dentro de la misma
+ejecución, tick EE y tick de adquisición no garantizan idéntico prefijo GIF;
+el contraste visual no sustituye una referencia alineada por estado/comandos.
+Síncrono/compartido y asíncrono/RAM equivalentes siguen en curso para completar
+la matriz con este mismo ejecutable. Diagnósticos, hash, dos renderers y readbacks
+impiden usar estos controles para comparar FPS con las mediciones de Opus.
+El espejo fuerza rutas DMA genéricas; estabilidad de atajos e hilos pendiente.

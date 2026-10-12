@@ -9,8 +9,12 @@ El primer control síncrono/compartido sin hilos completa cinco minutos; sus
 descritos en ESTADO.md. La combinación asíncrona con hilos y el control amplio
 de animaciones/NPCs siguen pendientes; no se declaran todos los fallos resueltos.
 
-La adaptación independiente de PCSX2 de #68 ya verifica dibujo GIF procedural
-y FIFO en DX11, pero todavía no está conectada al juego. Véase PCSX2_GS.md.
+La adaptación independiente de PCSX2 de #68 está conectada como espejo opcional
+en la cadena 103. Dos controles compartidos de seis minutos verifican recepción
+de GIF/VSync y salidas de introducción/NPCs; el asíncrono muestra HUD. Conserva
+el renderer habitual y usa rutas DMA genéricas, sin hilos VU1/frente GS. No
+certifica animación, paridad de escena, rendimiento o estabilidad prolongada.
+La captura por ráfaga y los controles RAM siguen en curso. Véase PCSX2_GS.md.
 Los resultados históricos siguientes conservan la identidad de sus cadenas.
 
 Count #59 y unidades de framebuffer #58 están fusionadas en main. Se conservan
