@@ -4995,3 +4995,32 @@ Las suites nativas de esa compilación completa terminan correctamente:
 conocidos. Los cuatro contratos FINISH normal/asíncrono, incluida presentación
 compartida real y comparación CPU de 16 texturas, pasan. Estos patrones no
 sustituyen la transición con el juego ni validan todas las combinaciones de hilos.
+
+## GS de PCSX2: primera transición y revisión de Tobiichi (2026-10-12)
+
+Src/ `e4cf8c14732771112bb87054b53edaae66ea6f35` actualizado sobre runtime
+completo `477e013`/103; runner SHA-256
+`089b1cea9cd14bb3cf3e2fa387b3a6f7f303801dfbd24b67b3be3b2fa8916ca5`.
+CI de e4cf8c1 completo correcto. Negativo privado que omite escrituras directas
+y permite atajos con observador: compila y provoca cuatro fallos. Fuentes
+restauradas byte por byte, 605 normales y 641 GPU correctas de nuevo.
+
+Primer control del juego, FINISH síncrono/presentación compartida, sin hilos
+VU1/frente GS: 360,08 s hasta el límite, sin salida anticipada. Tarjeta privada
+copiada, mismo ELF verificado, guion sin capturas periódicas. Espejo DX11
+procesa GIF/VSync del juego y guarda 10 imágenes PCRTC 512x448, ticks 900..1980,
+además de ocho texturas OpenGL adquiridas 1400..1407. Se revisan muestras de
+la introducción y enemigos; no se certifican poses/animación o paridad con PS2.
+Estado 11 incluye la introducción: no demuestra control jugable/HUD.
+
+Inspector compartido: 610 adquisiciones desde tick 1400, sin regresiones,
+metadatos inconsistentes, cambios de dimensiones o retornos A-B-A registrados.
+Cubre esa muestra; no demuestra ausencia de retenciones ni resuelve todos
+los fallos. Tick EE del espejo y tick host/adquisición no alinean píxeles por
+sí solos. Salida 1 corresponde a la terminación del proceso propio al límite;
+no se verifica cierre normal de la partida. No mide FPS.
+
+Se revisan cambios recientes de Tobiichi-Port por petición del usuario:
+[comparación, candidatos y límites](REVISION_TOBIICHI.md). No se copian el
+buzón global o el control de fences sin sus regresiones. Control asíncrono
+compartido equivalente en curso; no se cambia la compilación durante la partida.
