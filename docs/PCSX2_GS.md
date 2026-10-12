@@ -313,3 +313,17 @@ Parser y DLL GPU pasan con escritura directa durante un tag incompleto. Cola
 con regresión de copia/FIFO/presión/drenaje; sintaxis Windows correcta. Nuevas
 regresiones del runtime y compilación completa/juego pendientes en este commit.
 No hay medición de FPS ni corrección de animación/encuadre acreditada.
+
+### Recorrido runtime/DLL y entorno Windows (2026-10-12)
+
+`gow_gs_pcsx2_client_test` usa el frontend real del runtime, observador, cola,
+DLL y composición PCRTC. Dos patrones distintos separados por reset, entregados
+en fragmentos de 13 bytes y con escritura directa durante un tag incompleto:
+las dos imágenes 64x32 coinciden exactamente en sus 2.048 RGBA. Drena la cola y
+cierra el módulo sin fallos. Ejecutado localmente en Windows/DX11, no en CI GPU.
+
+El fixture configura el entorno con una ruta real que contiene acentos y una
+carpeta `capturas_ñ`. Reproduce el fallo de interpretar bytes ACP de `getenv`
+como UTF-8. Corregido a `_wgetenv` y paths UTF-16; recursos convertidos a UTF-8
+para el ABI. Negativo anterior código 1; positivo corregido código 0. No cambia
+la cadena 103: es una actualización de src/ sobre la compilación completa.

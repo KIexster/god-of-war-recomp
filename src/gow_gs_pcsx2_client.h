@@ -156,16 +156,19 @@ inline void configure(GS& gs){
         std::fprintf(stderr,"[gow-pcsx2-gs] rechazado: desactivar PS2X_VU1_HILO y PS2X_GS_FRENTE\n");return;
     }
     try{
-        const char* dll=std::getenv("GOW_PCSX2_GS_DLL");const char* folder=std::getenv("GOW_PCSX2_GS_OUTPUT");
-        const char* resources=std::getenv("GOW_PCSX2_GS_RESOURCES");
+        const wchar_t* dll=_wgetenv(L"GOW_PCSX2_GS_DLL");const wchar_t* folder=_wgetenv(L"GOW_PCSX2_GS_OUTPUT");
+        const wchar_t* resources=_wgetenv(L"GOW_PCSX2_GS_RESOURCES");
         uint64_t from=0,count=0;
         if(!dll || !number("GOW_PCSX2_GS_CAPTURE_FROM_TICK",900,UINT64_MAX,from) || !number("GOW_PCSX2_GS_CAPTURE_COUNT",folder?8:0,16,count))throw std::runtime_error("opciones");
-        const auto path=std::filesystem::u8path(dll);
+        // GOW-Port: el entorno Windows es UTF-16; no interpretar bytes ACP como UTF-8.
+        const auto path=std::filesystem::path(dll);
         if(!path.is_absolute() || !std::filesystem::is_regular_file(path))throw std::runtime_error("DLL absoluta requerida");
         std::filesystem::path output;
-        if(count){if(!folder)throw std::runtime_error("carpeta privada requerida");output=std::filesystem::u8path(folder);
+        if(count){if(!folder)throw std::runtime_error("carpeta privada requerida");output=std::filesystem::path(folder);
             if(!output.is_absolute() || std::filesystem::exists(output) || !std::filesystem::create_directories(output))throw std::runtime_error("carpeta nueva absoluta requerida");}
-        auto client=std::make_shared<Client>(path,resources?resources:"",output,from,count);
+        std::string resourceUtf8;
+        if(resources){const auto u8=std::filesystem::path(resources).u8string();resourceUtf8.assign(reinterpret_cast<const char*>(u8.data()),u8.size());}
+        auto client=std::make_shared<Client>(path,resourceUtf8,output,from,count);
         if(client->initialized()){gs.setExternalObserver(std::move(client));std::fprintf(stderr,"[gow-pcsx2-gs] enlace activo desde arranque; atajos DMA desactivados\n");}
     }catch(const std::exception& e){std::fprintf(stderr,"[gow-pcsx2-gs] configuracion rechazada: %s\n",e.what());}
 #else

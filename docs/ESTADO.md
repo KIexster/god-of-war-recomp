@@ -4972,3 +4972,26 @@ Unicode y regresión con carpeta no ASCII, recompilación de src/ sobre esta
 compilación completa, suites nativas/contratos, control procedural runtime/DLL
 y después menú/introducción/partida. PR #68 permanece en borrador; no se afirma
 mejora de FPS ni resolución de encuadre, espasmos o FINISH asíncrono.
+
+## GS de PCSX2: recorrido runtime/DLL y rutas Unicode verificados (2026-10-12)
+
+Se retoma por petición del usuario. El control nativo del enlace reproduce el
+rechazo de configuración con la DLL en una ruta con acentos y una carpeta
+`capturas_ñ`: los bytes ACP de `getenv` no son UTF-8 válido para `u8path`.
+Se leen esas rutas con `_wgetenv`/UTF-16 y se convierten únicamente los recursos
+a UTF-8 para el ABI. El negativo anterior compila y termina con código 1;
+con la corrección termina con 0, sin cambiar el runtime ni el módulo DX11.
+
+Control completo con el runtime 103: 28 spans GIF/352 bytes, dos escrituras
+directas durante tags incompletos, dos VSync y un reset; ambas imágenes de
+64x32 tienen sus 2.048 RGBA exactos, con colores distintos antes/después del
+reset. Cola drenada y DLL cerrada con `failed=0`; carpeta no ASCII correcta.
+DLL SHA-256 `cbbc2d060df61e479355479fc3ce5b054e5ce27302bf19d5accda735d21ecd62`.
+Todavía no es un control del juego o de FPS. La actualización de src/ del
+runner sobre la compilación completa 103 y las suites nativas están pendientes.
+
+Las suites nativas de esa compilación completa terminan correctamente:
+605/605 normal y 641/641 con los controles OpenGL GPU activados, sin fallos
+conocidos. Los cuatro contratos FINISH normal/asíncrono, incluida presentación
+compartida real y comparación CPU de 16 texturas, pasan. Estos patrones no
+sustituyen la transición con el juego ni validan todas las combinaciones de hilos.
