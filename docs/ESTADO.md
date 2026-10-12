@@ -4949,3 +4949,26 @@ con registro directo; DLL GPU dos ciclos/2.048 RGBA exactos, reset y rechazo
 de dirección inválida correctos. Config 0 errores/4 avisos existentes; 24 PS1
 sin errores. La suite del nuevo runtime y la compilación completa de 103 aún
 pendientes. Variables/protocolo y límites en [PCSX2_GS.md](PCSX2_GS.md).
+
+## Pausa solicitada tras compilación completa 103 (2026-10-12)
+
+HEAD de código `477e01372d3f4a58c460b126b8e459873e9b9286`: los cuatro trabajos
+de CI correctos en run `38298178064`. Compilación Windows completa mediante
+`2_compilar.cmd` en workspace privado, 103 parches, salida 0, 1.072,57 s.
+Runner SHA-256 `e8e18d005dce8674de8df92be4522ec8f038b6a6aeedc3769915c5679988a471`.
+El ejecutable y su manifiesto quedan congelados; no se ejecuta aún el juego.
+
+Se publica preparación del control completo runtime/cola/DLL, con dos patrones
+distintos separados por reset, y opciones del control de transición que registran
+hash de DLL y capturas PCRTC privadas. Las 19 pruebas Python del control pasan.
+El fixture nativo completo aún no se ha compilado/ejecutado. Sigue pendiente
+corregir la lectura Unicode del entorno Windows en el cliente: el controlador
+puede resolver la junction a una ruta con acentos y `u8path(getenv(...))` no
+garantiza interpretar correctamente los bytes ACP. No se activa el espejo en
+una partida antes de corregir y validar ese camino.
+
+Pausa expresa del usuario al terminar la compilación. Pendientes al retomar:
+Unicode y regresión con carpeta no ASCII, recompilación de src/ sobre esta
+compilación completa, suites nativas/contratos, control procedural runtime/DLL
+y después menú/introducción/partida. PR #68 permanece en borrador; no se afirma
+mejora de FPS ni resolución de encuadre, espasmos o FINISH asíncrono.

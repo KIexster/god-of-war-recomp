@@ -15,6 +15,8 @@ target_link_libraries(gow_gs_finish_async_test PRIVATE ps2_runtime)
 if(WIN32)
     add_executable(gow_gs_shared_finish_test "${CMAKE_CURRENT_LIST_DIR}/../../tests/gs_shared_finish_test.cpp")
     target_link_libraries(gow_gs_shared_finish_test PRIVATE ps2_runtime)
+    add_executable(gow_gs_pcsx2_client_test "${CMAKE_CURRENT_LIST_DIR}/../../tests/pcsx2_runtime_client_test.cpp")
+    target_link_libraries(gow_gs_pcsx2_client_test PRIVATE ps2_runtime)
 endif()
 
 # GOW-Port: el patrón reducido también conserva el freeze y el GIF usados por PCSX2.
