@@ -30,9 +30,13 @@ El reset exige resetear también el GS. Comprobar final de flujo no equivale
 a VSync: los paquetes pueden continuar después de él. El consumidor debe
 terminar de usar el puntero antes de retornar; el puente no es una cola de hilos.
 
-`pcsx2_gif_sink.h` enlaza con `GSState::Transfer<0/1/2>` del renderer abierto.
-El índice 0 corresponde a PATH1. No se usa `GSgifTransfer1(span, size)`:
-esa función espera un anillo VU de 16 KiB y una dirección dentro de él.
+`pcsx2_gif_sink.h` enlaza con `GSState::Transfer<3/1/2>` del renderer abierto.
+PATH1 utiliza el índice continuo 3 de `GSgifTransfer`; PATH2/3 conservan sus
+índices 1/2. No se usa `GSgifTransfer1(span, size)`: esa función espera un
+anillo VU de 16 KiB y una dirección dentro de él. Tampoco basta llamar al
+índice 0 directamente: corta al terminar EOP, ignoraría otros paquetes del
+mismo lote y borra nloop pendiente cuando se agota el span. Son reglas leídas
+en el cuerpo fijado de GSState/MTGS, no una prueba de ejecución del renderer.
 La conexión rechaza un GS ausente. **No crea un dispositivo, importa VRAM,
 presenta un frame ni está conectada al runtime del juego.**
 
@@ -45,6 +49,12 @@ entrada inválida, fragmento incompleto, error retenido y reset coordinado.
 Sintaxis de la conexión con las cabeceras **reales** fijadas correcta en MSVC,
 con las definiciones x86/SSE4.1 del proyecto y AVX2. La CI comprueba además
 esa conexión en Linux; no sustituye enlace/ejecución del renderer.
+
+La primera versión del enlace compilaba con índice 0 para PATH1. La revisión
+del cuerpo real detectó aquellas reglas incompatibles con fragmentos/lotes;
+se corrige al índice 3 antes de usarlo en el port. Los controles de sintaxis
+no habrían detectado esa pérdida de datos. Se compila además GSState.cpp real
+como objeto privado con MSVC: correcto; su enlace y ejecución siguen pendientes.
 
 Pendiente para una adaptación funcional:
 

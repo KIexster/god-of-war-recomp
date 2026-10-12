@@ -4783,3 +4783,11 @@ reales correctas; CI añadida para ambas. No cambia runtime/parches o backend
 predeterminado. Todavía no crea un GS real ni dibuja el juego: extracción del
 módulo DX11, registros, FIFO/VRAM y cobertura de caminos nativos pendientes.
 Arquitectura, condiciones y límites en [PCSX2_GS.md](PCSX2_GS.md).
+
+Revisión posterior: la primera conexión compilaba pero PATH1 usaba el índice
+0 legado. GSState corta ese índice en EOP y borra nloop incompleto al terminar
+el span, incompatible con nuestros lotes/fragmentos. Se corrige al índice
+continuo 3 usado por GSgifTransfer/MTGS; los otros dos mantienen sus cursores.
+Sintaxis correcta no prueba ese comportamiento. GSState.cpp real compila
+como objeto privado en MSVC; aún falta enlazar/ejecutar el módulo. No se había
+conectado el puente al juego ni modificado su renderer.

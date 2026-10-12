@@ -10,10 +10,12 @@ namespace gow_pcsx2_gs
     inline Sink pcsx2TransferSink() {
         return {nullptr,[](void *,Path path,const uint8_t *bytes,uint32_t qwc)->bool {
             if(!g_gs_renderer) return false;
-            // PATH1 directo a Transfer<0>: GSgifTransfer1 espera un anillo de
-            // 16 KiB y una dirección, no un span arbitrario de paquetes del port.
+            // PATH1 usa la entrada continua de GSgifTransfer (índice 3). El
+            // índice 0 legado corta en EOP y descarta nloop si acaba el span:
+            // rompería tanto fragmentos como varios paquetes en un mismo lote.
+            // Los índices 1/2 conservan cursores propios para PATH2/3.
             switch(path) {
-            case Path::Path1: g_gs_renderer->Transfer<0>(bytes,qwc); break;
+            case Path::Path1: g_gs_renderer->Transfer<3>(bytes,qwc); break;
             case Path::Path2: g_gs_renderer->Transfer<1>(bytes,qwc); break;
             case Path::Path3: g_gs_renderer->Transfer<2>(bytes,qwc); break;
             default: return false;
