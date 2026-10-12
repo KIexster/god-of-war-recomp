@@ -95,7 +95,50 @@ static std::vector<u64> packet(const std::vector<u64>& registers)
     return result;
 }
 
-static bool texturedImage()
+static bool frame(const std::vector<u32>& expected)
+{
+    extern unsigned gsProbePresentRequests, gsProbeSkippedPresents, gsProbeFrameUpdates;
+    const unsigned presentBefore = gsProbePresentRequests, skipBefore = gsProbeSkippedPresents, updatesBefore = gsProbeFrameUpdates;
+    auto& regs = *reinterpret_cast<GSPrivRegSet*>(g_gs_renderer->GetRegsMem());
+    regs.PMODE.EN1 = 1; regs.PMODE.EN2 = 0;
+    regs.PMODE.MMOD = 1; regs.PMODE.ALP = 255; regs.PMODE.SLBG = 1;
+    regs.SMODE1.CMOD = 2; regs.SMODE2.INT = 0;
+    regs.DISP[0].DISPFB.FBW = 1; regs.DISP[0].DISPFB.PSM = 0;
+    // GOW-Port: NTSC usa cuatro ciclos horizontales por pixel en PCRTC.
+    regs.DISP[0].DISPLAY.MAGH = 3;
+    regs.DISP[0].DISPLAY.DW = 255; regs.DISP[0].DISPLAY.DH = 31;
+    regs.DISP[0].DISPLAY.DY = 25; // Inicio activo NTSC de VideoModeOffsets original.
+    GSvsync(0, true); // Wrapper original: actualizar PCRTC y Flush antes de VSync.
+    auto* current = g_gs_device->GetCurrent();
+    if (!current || current->GetWidth() != 64 || current->GetHeight() != 32)
+    {
+        std::fprintf(stderr, "VSync: salida %dx%d; esperado 64x32\n", current ? current->GetWidth() : 0, current ? current->GetHeight() : 0);
+        return false;
+    }
+    const GSVector4i rect(0, 0, 64, 32);
+    auto download = g_gs_device->CreateDownloadTexture(64, 32, GSTexture::Format::Color);
+    if (!download)
+        return false;
+    download->CopyFromTexture(rect, current, rect, 0); download->Flush();
+    std::vector<u32> actual(expected.size(), 0xdeadbeef);
+    if (!download->ReadTexels(rect, actual.data(), 64 * sizeof(u32)))
+        return false;
+    for (size_t i = 0; i < actual.size(); ++i)
+        if (actual[i] != (expected[i] | 0xff000000)) // PMODE.MMOD/ALP: alpha final 255.
+        {
+            std::fprintf(stderr, "VSync: pixel %zu esperado %08X recibido %08X\n", i, expected[i] | 0xff000000, actual[i]);
+            return false;
+        }
+    if (gsProbePresentRequests != presentBefore + 1 || gsProbeSkippedPresents != skipBefore + 1 || gsProbeFrameUpdates != updatesBefore + 1)
+    {
+        std::fprintf(stderr, "VSync: callbacks de host Surfaceless inconsistentes\n");
+        return false;
+    }
+    std::puts("VSync/PCRTC: 2048 pixeles RGBA exactos en salida compuesta; Surfaceless");
+    return true;
+}
+
+static bool texturedImage(bool checkFrame = false, unsigned seed = 0)
 {
     constexpr u32 width = 64, height = 32, textureBase = 0x1000;
     const auto path = gow_pcsx2_gs::Path::Path3;
@@ -103,7 +146,7 @@ static bool texturedImage()
     std::vector<u32> expected(width * height);
     for (u32 y = 0; y < height; ++y)
         for (u32 x = 0; x < width; ++x)
-            expected[y * width + x] = ((x * 7 + y * 3 + 9) & 255) |
+            expected[y * width + x] = ((x * 7 + y * 3 + 9 + seed * 43) & 255) |
                 (((x * 5 + y * 11 + 37) & 255) << 8) |
                 (((x * 13 + y * 17 + 67) & 255) << 16) |
                 (((x * 19 + y * 23 + 127) & 255) << 24);
@@ -172,14 +215,18 @@ static bool texturedImage()
     if (calls < 1)
         return false;
     std::printf("IMAGE/textura: %.0f draw calls GPU\n", calls);
-    return true;
+    return !checkFrame || frame(expected);
 }
 
-int main()
+int main(int argc, char** argv)
 {
+    const bool checkFrame = argc == 2 && std::strcmp(argv[1], "--frame") == 0;
+    if (argc > 1 && !checkFrame)
+        return 2;
     GSConfig.Renderer = GSRendererType::DX11;
     GSConfig.UpscaleMultiplier = 1.0f;
     GSConfig.DisableShaderCache = true;
+    GSConfig.LinearPresent = GSPostBilinearMode::Off;
     GSConfig.LoadTextureReplacements = false;
     GSConfig.DumpReplaceableTextures = false;
     GSVertexSW::InitStatic(); // Inicializacion original previa al renderer HW.
@@ -195,7 +242,9 @@ int main()
             if (!(success = draw(path)))
                 break;
         if (success)
-            success = texturedImage();
+            for (unsigned seed = 0; seed < (checkFrame ? 3u : 1u); ++seed)
+                if (!(success = texturedImage(checkFrame, seed)))
+                    break;
         g_gs_renderer->Destroy();
         g_gs_renderer.reset();
     }

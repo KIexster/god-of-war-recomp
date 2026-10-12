@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 static void unavailable(const char* name){std::fprintf(stderr,"Servicio no disponible: %s\n",name);std::abort();}
+extern unsigned gsProbePresentRequests, gsProbeSkippedPresents, gsProbeFrameUpdates;
 namespace GSTextureReplacements {
 void Initialize(){if(GSConfig.LoadTextureReplacements || GSConfig.DumpReplaceableTextures)unavailable("TextureReplacements");}
 bool HasAnyReplacementTextures(){Initialize();return false;}
@@ -37,11 +38,12 @@ bool FMVstarted=false; // No hay ejecutable ni reproduccion de FMV en este contr
 namespace Host {
 void AddKeyedOSDMessage(std::string,std::string message,float){std::fprintf(stderr,"OSD: %s\n",message.c_str());}
 bool GetBaseBoolSettingValue(const char*,const char*,bool fallback){return fallback;}
-void BeginPresentFrame(){unavailable("Host present");}
+void BeginPresentFrame(){++gsProbePresentRequests;} // Host Surfaceless, sin ventana.
 }
 namespace FullscreenUI {void Render(){unavailable("UI");}}
 namespace ImGuiManager {
-void NewFrame(){unavailable("UI NewFrame");} void SkipFrame(){unavailable("UI SkipFrame");}
+void NewFrame(){unavailable("UI NewFrame");}
+void SkipFrame(){++gsProbeSkippedPresents;} // No se creo una trama de interfaz.
 void RenderOSD(){unavailable("UI OSD");}
 }
 namespace GSDumpReplayer {
@@ -49,9 +51,9 @@ bool IsReplayingDump(){return false;} bool IsRunner(){return false;}
 void RenderUI(){unavailable("dump UI");} void UpdateGSStats(){unavailable("dump stats");}
 }
 namespace PerformanceMetrics {
-void Update(bool,bool,bool){unavailable("metrics Update");}
+void Update(bool,bool,bool){++gsProbeFrameUpdates;} // Solo cuenta callbacks; no mide FPS.
 void OnGPUPresent(float,u64,u64){unavailable("metrics GPU");}
-InternalFPSMethod GetInternalFPSMethod(){unavailable("metrics FPS");return InternalFPSMethod::None;}
+InternalFPSMethod GetInternalFPSMethod(){return InternalFPSMethod::None;}
 void StartSavingMetrics(u32){unavailable("metrics save");}
 bool IsSavingMetrics(){return false;} void DumpSavedMetrics(){unavailable("metrics dump");}
 void SetGSSWThreadCount(u32){} // Estadisticas deshabilitadas; no altera rasterizacion.

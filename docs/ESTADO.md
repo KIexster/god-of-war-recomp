@@ -4863,3 +4863,19 @@ La receta local ejecuta los cuatro fixtures sin DLL DXC; no acredita otras
 APIs o rendimiento. [Instrucciones](../tools/render/pcsx2_probe/README.md),
 límites y siguientes pasos en [PCSX2_GS.md](PCSX2_GS.md). El CI de `4addf7b`
 completo correcto; el nuevo job nativo está pendiente del HEAD que lo publica.
+
+## GS de PCSX2: salida VSync/PCRTC procedural (2026-10-12)
+
+`gs_gif_draw_probe --frame` ejecuta GSvsync original, su actualización CRT/Flush
+y Merge DX11. Tres patrones distintos, tres salidas 64x32: los 2.048 píxeles
+RGBA de cada una coinciden exactamente con RGB de entrada y alpha 255 impuesta
+por PMODE. Surfaceless omite el Present de ventana y el host comprueba sus
+callbacks. Negativo al omitir solo GSvsync compila y falla; restaurado pasa.
+SHA-256 `cd46ebb2f58aa6bd80c5849e30d7ee5fc0659c644db030f65c8fed1c6701cffb`.
+
+DISPLAY se configura conforme a las unidades NTSC del cuerpo original. El
+primer desfase de 25 líneas pertenecía al fixture con DY 0, no a una ejecución
+de God of War. No cambia el renderer del juego ni resuelve por sí solo su
+encuadre. [CI de `08307ac` completo correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38243100981),
+incluido enlace Windows; esta nueva prueba GPU es local. Ventana/swapchain e
+integración del runtime siguen pendientes; no hay medición de FPS.

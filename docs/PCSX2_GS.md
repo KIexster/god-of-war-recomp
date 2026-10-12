@@ -164,6 +164,29 @@ Los cuatro ejecutables locales funcionan sin dxcompiler.dll/dxil.dll en su
 carpeta: DX11 usa el compilador SM4/5 original, con import DXC retardado para
 otras APIs. La carga retardada no acredita soporte de DX12/Vulkan.
 
+### VSync/PCRTC sin ventana comprobados (2026-10-12)
+
+El modo `gs_gif_draw_probe --frame` añade GSvsync **original**: actualización
+de PCRTC y Flush antes de GSRendererHW::VSync, caché de salida y Merge DX11.
+Tres patrones IMAGE distintos producen tres salidas compuestas 64x32 con
+2.048 píxeles RGBA exactos cada una. PMODE MMOD/ALP 255 determina alpha final
+255; RGB conserva el patrón. Host cuenta solicitud de frame, FrameSkipped de
+Surfaceless y actualización de métricas; no ejecuta interfaz ni mide FPS.
+
+El fixture configura DISPLAY con MAGH 3/DW 255 y DY 25 conforme a NTSC en
+PCSX2. La primera configuración procedural usaba DW 63/DY 0: daba salida
+16x32 y un desplazamiento vertical de 25 líneas. Se corrigen los registros
+de **la prueba** según el cuerpo original; no se modifica el renderer ni se
+atribuye este caso al encuadre observado en God of War.
+
+Negativo que omite solo GSvsync: compila y falla por salida 0x0; restaurado
+pasa los tres patrones. SHA-256 restaurado:
+`cd46ebb2f58aa6bd80c5849e30d7ee5fc0659c644db030f65c8fed1c6701cffb`.
+[CI de `08307ac` completo correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38243100981),
+incluido enlace nativo Windows y parser/memoria. Los controles de píxeles siguen
+siendo locales. VSync compuesto no valida todavía swapchain, imagen visible,
+sincronización con el juego o las combinaciones de FINISH/hilos.
+
 Pendiente para una adaptación funcional:
 
 1. Extender el módulo aislado probado a una API opcional para el runtime.

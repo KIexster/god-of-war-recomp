@@ -11,6 +11,9 @@
 alignas(16) cpuRegistersPack _cpuRegistersPack{};
 alignas(__pagealignsize) u8 eeHw[Ps2MemSize::Hardware]{};
 unsigned gsProbeWindowRequests=0;
+unsigned gsProbePresentRequests=0;
+unsigned gsProbeSkippedPresents=0;
+unsigned gsProbeFrameUpdates=0;
 Pcsx2Config::GSOptions GSConfig;
 std::unique_ptr<GSDevice> g_gs_device;
 bool GSIsHardwareRenderer(){return GSGetCurrentRenderer()!=GSRendererType::SW;}

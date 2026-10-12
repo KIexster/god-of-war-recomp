@@ -104,6 +104,8 @@ static HANDLE s_fh = NULL;
     for signature in ["std::string GetDefaultAdapter()", "u32 GSGetMaxUpscaleMultiplier",
                       "std::pair<u8, u8> GSGetRGBA8AlphaMinMax"]:
         result += function(gs, signature)
+    result += '#include "GS/Renderers/Common/GSRenderer.h"\n'
+    result += function(gs, "void GSvsync(u32 field, bool registers_written)")
     result += '#include "common/Image.h"\nRGBA8Image::RGBA8Image() = default;\n'
     result += function(read("common/Image.cpp"), "RGBA8Image::RGBA8Image(RGBA8Image&& move)")
     write("gs_extract.cpp", result)

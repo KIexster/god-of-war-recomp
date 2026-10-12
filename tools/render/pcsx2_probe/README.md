@@ -36,6 +36,7 @@ controles GPU; ejecutarlos expresamente, uno después del otro, en un PC libre:
 ```powershell
 & C:/trabajo/gs-build/gs_dx11_probe.exe
 & C:/trabajo/gs-build/gs_gif_draw_probe.exe
+& C:/trabajo/gs-build/gs_gif_draw_probe.exe --frame
 ```
 
 DX11 usa shaders SM4/5 originales y modo Surfaceless. DXC se enlaza con carga
@@ -45,7 +46,10 @@ WARP para atribuirle el resultado de una GPU.
 
 La capa Host ofrece configuración por defecto, recursos de shaders, mensajes
 a stderr, registros procedurales y memoria de código SW real cuando se solicita.
+`--frame` añade tres patrones distintos a GSvsync original y compara cada salida
+PCRTC compuesta. El host cuenta los callbacks y la omisión de presentación
+propia de Surfaceless; esos contadores no son FPS. No hay ventana/presentación.
 UI, reapertura, captura, dumps y reemplazos de texturas no están implementados;
-sus operaciones abortan con diagnóstico. No hay VSync/presentación. Los objetos
+sus operaciones abortan con diagnóstico. Los objetos
 SW originales se conservan; los controles GPU no validan esa ruta. Los resultados
 y pendientes de integración están en [PCSX2_GS.md](../../../docs/PCSX2_GS.md).
