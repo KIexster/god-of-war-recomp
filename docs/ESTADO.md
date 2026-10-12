@@ -4767,3 +4767,19 @@ No son poses alineadas. El mayor paso fuente del slot 14 pasa de 1,13344 a
 0,84; no se usan como tolerancia PS2, porcentaje de mejora o prueba causal
 automática. PMULTH sí queda corregida por su semántica y regresiones. Falta
 ampliar el control a otras animaciones y contrastar referencia alineada.
+
+## GS de PCSX2: comienzo de adaptación propia (2026-10-11)
+
+#67 fusionada en `96853bad688305c1d62d9dad6faeb1f1e58e1de4` tras controles,
+revisión y [CI del HEAD final `3ba1000` correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38196063455).
+Se integra main sin reescribir historia. El usuario pide adaptar por nuestra
+cuenta el GS de PCSX2 mientras el autor del port de Urban Reign entrega su enlace.
+No se dispone aún de su código ni se reproducen sus cifras de FPS/resolución.
+
+Se prepara transporte propio de GIF para los tres PATH, con fragmentos,
+quadwords alineadas, límites y errores; conexión a `GSState::Transfer` de
+PCSX2 `2954ebe`. Pruebas procedurales Windows y sintaxis con sus cabeceras
+reales correctas; CI añadida para ambas. No cambia runtime/parches o backend
+predeterminado. Todavía no crea un GS real ni dibuja el juego: extracción del
+módulo DX11, registros, FIFO/VRAM y cobertura de caminos nativos pendientes.
+Arquitectura, condiciones y límites en [PCSX2_GS.md](PCSX2_GS.md).
