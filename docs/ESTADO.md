@@ -5540,3 +5540,74 @@ añadidos ni datos del juego publicados. **Compilación completa del runner
 106, CI final y control funcional todavía pendientes**; no trasladar los
 resultados de escena 105 al nuevo comportamiento. Seguir el pase de niebla
 con estado de profundidad/mezcla y una referencia de comandos coherente.
+
+Compilación completa 106 terminada: fuente
+`32be6ec31da2decf7b49e6ee4c190a39070e0526`, código 0 en 1175,59 s,
+VU1 compilada con la misma copia privada de 501 micromemorias y 13 archivos
+generados compilados/enlazados. Runner de 66.302.464 bytes, SHA-256
+`fc2436ee121feaa15e14e7f2dd0998ee6eb6b0c251a5e292af4397cb82e46f72`.
+Manifiesto y ELF comprobados, binario/símbolos congelados, flags
+`/O2 /Ob2 /DNDEBUG /Zi` y `/INCREMENTAL:NO /DEBUG /OPT:REF /OPT:ICF`.
+Biblioteca del full `5c3787e7ae5a47c427efd0cdd0c4de469bed33c132e34e0a4ea370d7a5ec67bc`;
+las suites anteriores usaron otro artefacto de las mismas fuentes/corrección.
+El primer intento falló antes del compilador al leer salida Python CP1252
+como UTF-8; se conserva y se repite con codificación explícita en carpeta
+nueva. No se interpreta el registro de una compilación previa como ese intento.
+
+[CI del código 32be6ec completo correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38393297586).
+Después del full, se integra main con #72 por merge en
+`834f6ec15529f497de08c11370615540f3aefb66`; la fuente del runner sigue siendo
+32be6ec. #72 corrige el resumen de métricas, con 13 pruebas y
+[CI final ed05d9f correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38394545326),
+merge `08103d113ebb57edbc2b8b2e810e4d08d7e24371`.
+
+Controles 106 síncrono y asíncrono compartidos, espejo DX11 original,
+ambos hilos apagados, tarjetas copiadas de la misma inicial:
+
+| Control | Duración | Primer informe 11 | Estado final | Adquisiciones desde 4000 | A–B–A | Distancia máxima |
+|---|---:|---:|---:|---:|---:|---:|
+| Síncrono | 420,08 s | 91,19 s | 11 | 1.026 | 0 | 0 |
+| Asíncrono | 420,08 s | 45,13 s | 14 | 4.096 | 110 | 10 |
+
+Ambos terminan por límite (proceso 1/controlador 0), con tarjeta intacta,
+sin minimización ni firmas buscadas de fallo. Ventanas visibles sin primer
+plano; eso no demuestra que estuvieran descubiertas. No hay regresiones de
+secuencia, metadatos inconsistentes, cambios de tamaño o hashes desconocidos.
+El asíncrono agota el cupo; sus 110 retornos aparecen tras el último informe
+14 y no prueban contenido viejo. No usar estado 14 como partida sostenida.
+
+16 adquiridos y 16 PCRTC de cada pasada, 16 parejas 4000..4015, todas
+correlacionadas y con RGBA distintos. Se revisan las parejas y las primeras
+salidas completas: HUD, Kratos y enemigos, movimiento gradual sin deformación
+brusca observada en la muestra. **La neblina más intensa de OpenGL persiste
+con ZTE corregido**. Comparar dentro de una ejecución no garantiza igual
+prefijo GIF; no comparar píxeles con otra pasada por compartir tick. No son
+benchmarks, cierre normal, encuadre PS2 ni estabilidad prolongada.
+Control combinado 106 en curso; #71 conserva el borrador hasta completar
+su validación y comprobar CI del HEAD final.
+
+Combinado 106 terminado: 420,05 s por límite, proceso 1/controlador 0,
+tarjeta intacta, sin minimización ni firmas buscadas de error. Primer
+informe 11 a 35,07 s del mando; último 14 a 415,92 s. 4.096 adquisiciones
+(cupo agotado), 18 retornos A–B–A tras el último informe de estado 14,
+distancia máxima 27; cero regresiones, metadatos inconsistentes, tamaños
+cambiantes o hashes desconocidos. No convertir esos retornos en prueba
+de contenido viejo ni el estado 14 en partida sostenida.
+
+Sus 16 adquiridos 3989..4045, con saltos, tienen RGBA distintos y JSON
+correlacionados. Revisadas las 16 imágenes: HUD, Kratos y enemigos,
+movimiento gradual en la muestra, sin deformación brusca observada; neblina
+intensa permanece. Este control no usa espejo porque ambos hilos están
+activos. Los tres controles 106 completados, junto a negativos, positivos
+nativos y compilación completa, cierran la validación local de **ZTE**.
+No cierran frescura del host, encuadre PS2, jugabilidad completa o estabilidad
+prolongada. Comprobar CI del HEAD documental final antes de ready/merge #71.
+
+La referencia actual del módulo reinicializa GSOptions, heredando exactitud
+de mezcla Basic de Config.h en 2954ebe; no la fija a Maximum. El HLSL original
+tiene caminos de mezcla hardware/software y documenta aproximaciones de
+hardware dependientes de GPU. Por ello las cuatro diferencias menores del
+corpus Basic no bastan para cambiar CPU/GLSL. Se prepara una DLL Maximum
+separada para ese contraste, conservando módulo original y su hash; todavía
+no se construye ni prueba. Seguir prefijo de comandos, profundidad, mezcla
+y pases posteriores antes de atribuir la neblina restante.
