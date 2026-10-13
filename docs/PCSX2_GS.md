@@ -357,3 +357,18 @@ Conservar CPU/OpenGL y seguir ese contraste antes de cambiar el renderer princip
 Estas ejecuciones activan dos renderers, hash y readbacks: no miden FPS. El espejo
 usa rutas DMA genéricas y rechaza hilos VU1/frente GS. Resultados completos y
 siguiente control en ESTADO.md; revisión y créditos en REVISION_URBAN_REIGN.md.
+
+### Runner 105 con VU1 compilada (2026-10-13)
+
+Controles síncrono y asíncrono compartidos de 420 s con el runner 105
+congelado, ambos hilos apagados, mismo módulo DX11 y tarjetas privadas.
+El primero ofrece 16 parejas 2100..2115 de introducción; el segundo, 15
+parejas 4000..4014 con HUD/Kratos/enemigos y un adquirido 3999 sin PCRTC del
+mismo tick dentro del cupo. Metadatos correlacionados e imágenes revisadas.
+La neblina OpenGL más intensa persiste. El tick coincidente dentro de la
+ejecución no acredita igual prefijo de comandos ni equivalencia de píxeles.
+
+El combinado de 105 completa otros 420 s, pero utiliza solo OpenGL: el espejo
+mantiene el rechazo de ambos hilos por coherencia de registros. Los tres
+controles, retornos de hash, estados finales y límites constan en ESTADO.md.
+No son benchmarks ni validan estabilidad prolongada o el encuadre de PS2.

@@ -1033,3 +1033,21 @@ Antes de fusionar #60, comprobar también el CI del HEAD que incorpore este
 resultado. Encuadre, frescura del contenido, discrepancia en modo cuadro y
 estabilidad prolongada siguen abiertos; no se cambian matemáticas ni se
 declara solucionado el síntoma original. PNG/JSON/análisis quedan privados.
+
+## Controles del runner 105 y separación de contadores (2026-10-13)
+
+El runner 105 con VU1 compilada está construido e identificado en ESTADO.md;
+las pasadas históricas anteriores no lo acreditan. La prueba manual posterior
+confirma presentación compartida y ambos hilos, pero no registra escena,
+ventana ni código de salida. Flip/s y host/s cuentan operaciones distintas y
+no miden cuadros únicos mostrados. Sus tiempos cero corresponden al modo
+`frames`, que desactiva temporizadores.
+
+El control reproducible permite ahora `--perf frames` o `--perf timing` y
+`--presentation-diagnostics sequence` o `off`, además del hash predeterminado.
+Sin `--capture-acquired` no se exportan píxeles. Para seguir esperas sin
+readbacks ni hash usar `--perf timing --presentation-diagnostics off`,
+sin espejo DX11 y con captura desactivada. Mantener monitor de ventana,
+resultado de cierre, identidad y tarjeta privada. Los tiempos son transcurridos
+de ámbitos instrumentados; no son porcentajes de CPU. Para referencia visual
+usar otra pasada explícita con espejo/capturas y ambos hilos apagados.
