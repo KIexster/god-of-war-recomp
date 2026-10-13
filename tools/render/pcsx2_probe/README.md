@@ -47,7 +47,16 @@ Controles GPU optativos:
 & C:/trabajo/gs-build/gs_gif_draw_probe.exe --frame
 & C:/trabajo/gs-build/gs_gif_draw_probe.exe --window
 & C:/trabajo/gs-build/gs_module_gpu_probe.exe C:/trabajo/gs-build/gow_pcsx2_gs_module.dll
+python tools/render/probe_fog_reference.py --module C:/trabajo/gs-build/gow_pcsx2_gs_module.dll --resources C:/trabajo/pcsx2/bin/resources
 ```
+
+El control FOG por ABI compara 14 patrones de RGB medidos, con FGE apagado y
+FOG 0/1/77/128/201/255. Cada mitad de un sprite se comprueba en 32×32 píxeles.
+Se envían dos sprites con nieblas distintas en el mismo lote: un clear uniforme
+FOG=255 de PCSX2 puede omitir el shader, por lo que ese clear no sirve para
+decidir su redondeo. Los datos son sintéticos, sin archivos del juego. Alpha
+PCRTC es 255; la regresión del runtime comprueba por separado alpha framebuffer
+128. No valida interpolación variable, una escena o rendimiento.
 
 DX11 usa shaders SM4/5 originales y modo Surfaceless. DXC se enlaza con carga
 retardada; esos controles no necesitan dxcompiler.dll ni dxil.dll. Esto no

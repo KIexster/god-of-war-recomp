@@ -5293,3 +5293,41 @@ abierto. Comprobar CI del HEAD documental final antes de sacar de borrador y
 fusionar. Esta validación cierra la corrección de retención FOG; siguen abiertos
 la neblina restante, referencia alineada de encuadre, modos con hilos, estabilidad
 prolongada y rendimiento habitual sin diagnósticos.
+
+## GS: precisión de FOG contra el shader original (2026-10-12)
+
+#69 fusionada en `595fe5a03c80f36199ec727c1ff8672311001fae` tras revisión,
+compilación, controles funcionales y [CI final 3359e3c correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38336793501).
+Se integra main por avance directo y se abre tema independiente de aritmética.
+
+CPU y GLSL usan pesos `F` y `255-F` y truncan ambos productos por separado.
+Con F=0 y FOGCOL=(50,100,200), producen (49,99,199), aunque la referencia DX11
+produce FOGCOL exacto. También oscurecen un canal cuyo color y FOGCOL son iguales.
+El control público `tools/render/probe_fog_reference.py`, por ABI de la DLL
+original identificada, confirma 14 patrones RGB: FGE apagado y FOG
+0/1/77/128/201/255, dos colores y ambas direcciones de diferencia.
+
+La primera referencia privada de sprite uniforme no permite decidir F=255:
+PCSX2 lo trata como clear sin efecto de niebla y omite el shader. Se conserva
+esa limitación; el control final envía dos sprites con nieblas distintas en el
+mismo lote, verifica la mitad uniforme y reproduce el shader, incluidos los
+dos casos F=255. Los 14 patrones finales coinciden con una suma de productos
+de pesos `F` y `256-F`, truncada una sola vez. Referencia DX11/PCRTC alpha255;
+las regresiones del runtime conservan alpha framebuffer128.
+
+Se prepara parche 105, `ps2recomp-gs-fog-math.patch`, sobre base 104 íntegra:
+CPU, compute y hardware comparten la corrección, sin tocar mezcla posterior,
+matrices, CRTC o opciones de rendimiento. Una prueba antigua esperaba
+FOGCOL=(15,31,47) al programar (16,32,48) con F=0; se corrige ese esperado
+porque contradice la retención exacta comprobada, manteniendo la prueba.
+
+Negativo nativo antes de corregir runtime: 612 casos normales, falla solo la
+nueva regresión CPU; 650 GPU, fallan exactamente las tres nuevas de CPU,
+compute y hardware. Los otros 611/647 pasan; biblioteca 104 intacta. Tras
+corregir código, las nuevas pasan, pero la expectativa antigua citada falla
+en ambas suites; se ajusta antes de repetir el positivo. Configuración
+0 errores/4 avisos existentes; 24 PowerShell, 0 errores. Positivo normal
+definitivo: 612/612 correcto tras ajustar ese esperado. La repetición GPU
+definitiva está en curso; compilación completa 105, CI y control funcional pendientes.
+Esta diferencia de uno o dos niveles por canal no explica por sí sola la
+neblina fuerte restante ni acredita mejoras de animación o FPS.
