@@ -30,6 +30,41 @@ def sample():
 
 
 class PerfSummaryTest(unittest.TestCase):
+    def test_disabled_timers_do_not_claim_no_wait(self):
+        row = dict(t=5, window=5, guest_flip_hz=30, host_hz=12,
+                   **{key: 0 for key in summary.TIME_KEYS})
+        data = summary.summarize_windows([row])
+        self.assertEqual((data['guest_flip_hz'], data['host_hz']), (30, 12))
+        self.assertIsNone(data['tiempo_ms'])
+        self.assertIsNone(data['reparto_tiempo_instrumentado_pct'])
+        self.assertIn('No acredita ausencia', data['limite_tiempos'])
+
+    def test_threaded_scopes_are_not_named_a_game_thread_percentage(self):
+        row = dict(t=5, window=5, guest_flip_hz=30, host_hz=12,
+                   ee_ms=3000, iop_ms=2000, vu_ms=4000, gs_ms=1000,
+                   guest_wait_ms=0, upload_ms=100, host_wait_ms=4900)
+        data = summary.summarize_windows([row])
+        self.assertNotIn('porcentaje_hilo_juego', data)
+        self.assertAlmostEqual(sum(data['reparto_tiempo_instrumentado_pct'].values()), 100)
+        self.assertEqual(data['tiempo_ms']['host_wait_ms'], 4900)
+        self.assertIn('No uso de CPU', data['limite_tiempos'])
+        self.assertIn('pueden repetir', data['metricas']['host_hz'])
+
+    def test_absent_scope_is_unknown_and_absent_counter_is_invalid(self):
+        data = summary.summarize_windows(summary.select_windows(perf(5), 0, 10))
+        self.assertIsNone(data['tiempo_ms']['host_wait_ms'])
+        self.assertIsNone(data['reparto_tiempo_instrumentado_pct']['host_wait_ms'])
+        with self.assertRaises(ValueError):
+            summary.select_windows('[gow-perf] t=5 window=5 guest_flip_hz=30', 0, 10)
+
+    def test_malformed_numeric_windows_fail_before_export(self):
+        for text in (perf(5, 0), perf(5).replace('host_hz=60.00', 'host_hz=nan'),
+                     perf(5).replace('host_hz=60.00', 'host_hz=-1'),
+                     perf(5)+' host_hz=1', '\n'.join([perf(5), perf(5)]),
+                     '\n'.join([perf(5), perf(9)])):
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                summary.select_windows(text, 0, 100)
+
     def test_partida_excludes_transition_windows_with_different_clocks(self):
         self.assertEqual([row['t'] for row in summary.select_windows(sample(), 0, 100, True)], [20])
 

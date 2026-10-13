@@ -21,6 +21,33 @@ y el rechazo de pasadas invalidadas.
 El script retira también `PS2X_GS_DISCARD_DRAWS` y los diagnósticos de GS/VU1 durante el perfil,
 y restaura sus valores al terminar.
 
+## Contadores y tiempos con varios hilos
+
+`guest_flip_hz` cuenta entradas a `vid::Flip`; `host_hz`, iteraciones del host
+terminadas después de `EndDrawing`, que pueden repetir la textura. Ninguno
+acredita cuadros únicos mostrados. El resumen conserva sus medias ponderadas
+y el filtro por estado observado, sin igualar los relojes del mando y del perfil.
+
+Los ámbitos EE/VU/GS/IOP son exclusivos dentro de cada hilo, pero VU/GS pueden
+ejecutarse en hilos diferentes. La suma puede superar el tiempo de la ventana
+y no es uso de CPU ni coste total de un solo hilo. Se elimina la etiqueta JSON
+`porcentaje_hilo_juego`; `reparto_tiempo_instrumentado_pct` reparte únicamente
+los tiempos instrumentados registrados, incluidos Upload y HostWait. No se
+usa ese reparto para atribuir carga CPU ni para comparar renderers por sí solo.
+
+Con tiempos todos cero, el resumen devuelve `null` en tiempos/reparto: el modo
+`frames` desactiva temporizadores y una ausencia de valores positivos no prueba
+ausencia de esperas. Un ámbito ausente también queda `null`, en vez de inventar
+cero. Los contadores obligatorios ausentes, valores no finitos/negativos,
+campos repetidos o ventanas solapadas/reiniciadas rechazan el registro antes
+de exportar. Se conserva la tolerancia de centésimas para tiempos redondeados.
+
+13 pruebas procedurales correctas. Relectura sin ejecutar juego del perfil105:
+las mismas 14 ventanas y medias Flip 29,19/host 13,69; la prueba manual en modo
+frames conserva sus contadores y ya no produce porcentajes de tiempos cero.
+El resumen no aporta monitor de ventana, causa de cierre, poses o imágenes:
+esas evidencias requieren los registros/artefactos del control correspondiente.
+
 ## Comparar presentación RAM y compartida
 
 `probar_rendimiento.ps1` fija `PS2X_GS_DIRECT_PRESENT` en cada pasada y restaura su
