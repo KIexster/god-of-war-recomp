@@ -133,6 +133,43 @@ class TransitionControlTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             control.settings_for('async_shared', Path('/case'), Path('/iso'), Path('/cache'), '0', '1')
 
+    def test_profile_without_hash_readback_or_inherited_diagnostics(self):
+        for mode, expected in [('frames', 'frames'), ('timing', '1')]:
+            settings = control.settings_for('async_shared', Path('/case'), Path('/iso'), Path('/cache'),
+                                            presentation_diagnostics='off', perf=mode)
+            env = control.isolated_environment({'PS2X_FRAME_HASH': '1', 'PS2X_GS_PRESENT_DIAG': '1',
+                                               'PS2X_GS_ACQUIRED_CAPTURE_DIR': '/old'}, settings)
+            self.assertEqual(env['GOW_PERF_DIAG'], expected)
+            self.assertEqual(env['GOW_PERF_FRAME_PC'], '0x001837B8')
+            self.assertFalse(any('ACQUIRED_CAPTURE' in key for key in env))
+            self.assertNotIn('PS2X_FRAME_HASH', env)
+            self.assertNotIn('PS2X_GS_PRESENT_DIAG', env)
+        settings = control.settings_for('async_shared', Path('/case'), Path('/iso'), Path('/cache'),
+                                        presentation_diagnostics='sequence')
+        self.assertEqual(settings['PS2X_GS_PRESENT_DIAG'], '1')
+        self.assertNotIn('PS2X_FRAME_HASH', settings)
+        self.assertNotIn('GOW_PERF_DIAG', settings)
+
+    def test_invalid_profile_modes_fail_before_creating_run(self):
+        for key in ('presentation_diagnostics', 'perf'):
+            with tempfile.TemporaryDirectory(prefix='gow_transition_test_') as name:
+                args = self.fixture(Path(name))
+                setattr(args, key, 'invalid')
+                with patch.object(control, 'EXPECTED_ELF_SHA256', control.digest(args.elf)):
+                    with self.assertRaises(ValueError):
+                        control.prepare_case(args)
+                self.assertFalse(args.output_root.exists())
+
+    def test_explicit_pad_script_preserves_input_isolation(self):
+        script = '5:start,12:x,60:cuadrado:0.7'
+        settings = control.settings_for('async_shared', Path('/case'), Path('/iso'), Path('/cache'),
+                                        pad_script=script)
+        env = control.isolated_environment({'GOW_PAD_GUION': '1:start', 'GOW_PAD_SOLO_GUION': '0'}, settings)
+        self.assertEqual(env['GOW_PAD_GUION'], script)
+        self.assertEqual(env['GOW_PAD_SOLO_GUION'], '1')
+        default = control.settings_for('async_shared', Path('/case'), Path('/iso'), Path('/cache'))
+        self.assertNotIn('GOW_PAD_GUION', control.isolated_environment({'GOW_PAD_GUION': script}, default))
+
     def test_acquired_capture_is_explicit_and_inherited_capture_does_not_enable_it(self):
         settings = control.settings_for('async_shared', Path('/case'), Path('/iso'), Path('/cache'))
         self.assertFalse(any('ACQUIRED_CAPTURE' in key for key in settings))

@@ -23,7 +23,7 @@ def digest(path):
 
 
 def settings_for(case, folder, iso, shader_cache, vu1_thread='0', gs_front='0', diag_from_tick=0,
-                 capture_acquired=0):
+                 capture_acquired=0, presentation_diagnostics='hash', perf='off', pad_script=None):
     if case not in CASES or vu1_thread not in ('0', '1') or gs_front not in ('0', '1'):
         raise ValueError('Caso o modo de hilos inválido')
     if gs_front == '1' and vu1_thread != '1':
@@ -34,17 +34,27 @@ def settings_for(case, folder, iso, shader_cache, vu1_thread='0', gs_front='0', 
         raise ValueError('La captura adquirida requiere un cupo de 0..16')
     if capture_acquired and not case.endswith('shared'):
         raise ValueError('La captura adquirida requiere presentación compartida')
+    if presentation_diagnostics not in ('hash', 'sequence', 'off') or perf not in ('off', 'frames', 'timing'):
+        raise ValueError('Modo de diagnóstico o perfil inválido')
     settings = {
         'GOW_ISO': str(iso), 'GOW_MC0': str(folder / 'Mcd001.ps2'), 'GOW_MC1': '0',
         'GOW_GS_FINISH_ASINCRONO': '1' if case.startswith('async') else '0',
         'PS2X_GS_DIRECT_PRESENT': '1' if case.endswith('shared') else '0',
-        'PS2X_GS_GPU': '1', 'PS2X_GS_PRESENT_DIAG': '1', 'PS2X_FRAME_HASH': '1',
-        'PS2X_GS_PRESENT_DIAG_FROM_TICK': str(diag_from_tick),
+        'PS2X_GS_GPU': '1',
         'PS2X_VU1_HILO': vu1_thread, 'PS2X_GS_FRENTE': gs_front,
         'GOW_PAD_TEST': '1', 'GOW_PAD_TEST_NO_CAPTURE': '1', 'GOW_PAD_SOLO_GUION': '1',
         'GOW_FAST_BOOT': '0', 'GOW_SKIP_FMV': '1',
         'PS2X_GS_SHADER_CACHE_DIR': str(shader_cache),
     }
+    if presentation_diagnostics != 'off':
+        settings.update(PS2X_GS_PRESENT_DIAG='1', PS2X_GS_PRESENT_DIAG_FROM_TICK=str(diag_from_tick))
+    if presentation_diagnostics == 'hash':
+        settings['PS2X_FRAME_HASH'] = '1'
+    if perf != 'off':
+        settings.update(GOW_PERF_DIAG='1' if perf == 'timing' else 'frames',
+                        GOW_PERF_FRAME_PC='0x001837B8')
+    if pad_script is not None:
+        settings['GOW_PAD_GUION'] = pad_script
     if capture_acquired:
         settings.update(PS2X_GS_ACQUIRED_CAPTURE_DIR=str(folder/'acquired'),
                         PS2X_GS_ACQUIRED_CAPTURE_FROM_TICK=str(diag_from_tick),
@@ -249,7 +259,9 @@ def prepare_case(args):
     if folder.is_relative_to(modules):
         raise ValueError('La salida no puede estar dentro del IOP_MOD de origen')
     settings = settings_for(args.case, folder, iso, root/'shader_cache',
-                            args.vu1_thread, args.gs_front, args.diag_from_tick, args.capture_acquired)
+                            args.vu1_thread, args.gs_front, args.diag_from_tick, args.capture_acquired,
+                            getattr(args, 'presentation_diagnostics', 'hash'), getattr(args, 'perf', 'off'),
+                            getattr(args, 'pad_script', None))
     external_settings, external_identity = pcsx2_settings(args, folder)
     settings.update(external_settings)
     # No reutilizar una carpeta: evita sobrescribir una pasada o una tarjeta original.
@@ -272,6 +284,12 @@ def prepare_case(args):
                   initial_card_sha256=digest(card),
                   card_origin='copy' if card_source else 'procedural_unformatted',
                   note='Control funcional; hashes y registros no miden FPS ni alinean cuadros.')
+    result['measurement'] = dict(
+        perf=getattr(args, 'perf', 'off'),
+        presentation_diagnostics=getattr(args, 'presentation_diagnostics', 'hash'),
+        acquired_readback=bool(args.capture_acquired),
+        guest_flip_hz='Entradas a vid::Flip por segundo; no cuadros únicos mostrados.',
+        host_hz='Iteraciones completadas de renderFrame/EndDrawing por segundo; pueden repetir textura.')
     if external_identity is not None:
         result['pcsx2'] = external_identity
     return folder, runner, card, result
@@ -292,6 +310,11 @@ def main():
                         help='Primer tick host registrado; no modifica la presentación ni su cupo')
     parser.add_argument('--capture-acquired', type=int, choices=range(17), default=0,
                         help='Capturas explícitas de la textura adquirida desde diag-from-tick; 0 desactiva')
+    parser.add_argument('--presentation-diagnostics', choices=('hash', 'sequence', 'off'), default='hash',
+                        help='hash: secuencias y hash GPU; sequence: solo metadatos; off: sin ambos')
+    parser.add_argument('--perf', choices=('off', 'frames', 'timing'), default='off',
+                        help='Contar entradas Flip/iteraciones host; timing añade tiempos transcurridos por ámbito')
+    parser.add_argument('--pad-script', help='Guion explícito GOW_PAD_GUION; sustituye las pulsaciones predeterminadas')
     parser.add_argument('--pcsx2-gs-module', type=Path, help='DLL opcional del espejo GS original DX11')
     parser.add_argument('--pcsx2-resources', type=Path, help='Recursos/shaders de la revisión PCSX2 fijada')
     parser.add_argument('--pcsx2-capture-count', type=int, choices=range(17), default=8)

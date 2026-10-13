@@ -5364,3 +5364,136 @@ sin abrir el juego. No quedan compiladores, suites ni partidas propios activos.
 Se deja el PC disponible para su prueba. Control funcional del nuevo ejecutable,
 modo combinado y FPS todavía pendientes: #70 conserva el borrador. No atribuir
 a este binario las pruebas de escena realizadas con el intérprete 104.
+
+## Runner 105: revisión de la prueba manual y significado de los contadores (2026-10-13)
+
+Se vuelven a traer las referencias remotas y a integrar `origin/main`, ya
+contenido en la rama, sin reescribir historia. Los cuatro checks del HEAD
+documental `3b1715e` terminaron en SUCCESS, [run 38340666366](https://github.com/KIexster/god-of-war-recomp/actions/runs/38340666366).
+Manifiesto, resultado de compilación y SHA-256 del runner 105 congelado
+coinciden con la entrada anterior; `-PrepararSolo` correcto. No se recompila.
+
+Se revisan `err.log` y `out.log` de la prueba manual privada
+`prueba_usuario_0843bf95ada5435895db0bc966a91559`. Acreditan renderer hardware,
+presentación compartida e hilos VU1/frente GS activos; contienen 166 lecturas
+pad2, con botones y sticks reales. Hay 20 ventanas de perfil, hasta t=113,80
+del reloj del contador. Las seis últimas informan 26,25..37,07 entradas a
+Flip/s y 9,06..14,80 iteraciones host/s. Otras tres ventanas registran host
+0,91/0,65/0,59 por segundo; las dos primeras duran 7,71/9,17 s. No omitir
+esos tramos lentos ni presentar el máximo como rendimiento sostenido.
+
+`ps2_perf::guestEntry` cuenta entradas a `vid::Flip` (`0x001837B8`) desde el
+dispatcher o llamadas directas. El host incrementa `hostFrames` después de
+`renderFrame`/`EndDrawing`; puede dibujar de nuevo la misma textura. Acquire
+escoge la publicación más reciente cuyo fence terminó y puede conservar la
+anterior. Por tanto, **ninguno de los dos contadores mide cuadros únicos
+mostrados**, ni existe una correspondencia obligatoria uno a uno. El código
+conserva fences y no introduce `glFinish` global para ocultar esta diferencia.
+
+Todos los ámbitos de tiempo del registro manual están a cero: el modo
+`GOW_PERF_DIAG=frames` desactiva sus temporizadores. Cero no acredita ausencia
+de trabajo o esperas. La prueba carece de informes `pad2:state`, monitor de
+ventana y resultado con código/causa de salida. out contiene liberación de
+texturas, pero eso solo acredita parte del desmontaje. No permite atribuir
+las ventanas a una escena precisa, minimización, espera GS o cierre normal;
+tampoco ofrece referencia visual alineada ni estabilidad prolongada.
+
+El lanzador de controles admite `--perf off|frames|timing` y
+`--presentation-diagnostics hash|sequence|off`, preservando hash/off como
+opciones independientes del perfil y desactivando diagnósticos heredados.
+`timing` activa tiempos transcurridos exclusivos por hilo, no uso de CPU;
+los ámbitos se contabilizan al cambiar/cerrar, no al instante del informe.
+La captura sigue requiriendo opción explícita. Se registran opciones y
+significado de las métricas en el resultado privado. 21 pruebas Python
+correctas; configuración 0 errores/4 avisos existentes; 25 scripts PowerShell,
+0 errores. Estos checks prueban la herramienta, no validan todavía #70.
+
+Se añade `--pad-script` para registrar un guion de mando explícito en el
+control, conservando `GOW_PAD_SOLO_GUION=1` y descartando guiones heredados.
+Motivo: el guion predeterminado solo pulsa Start/Cross al principio; las
+pasadas nuevas alcanzan después el estado 14, que no se usa como muestra de
+partida sostenida. 22 pruebas de preparación/aislamiento correctas tras
+ampliarlo. El guion explícito no convierte el control en replay determinista.
+
+## GS: control funcional de FOG preciso con runner 105 (2026-10-13)
+
+Tres controles secuenciales completados sobre el mismo runner 105 congelado
+de `3828e9e`/SHA-256 `747c4224...a3340`, VU1 compilada y tarjetas privadas
+copiadas de la misma inicial. El usuario confirmó el PC libre; no se ejecutaron
+otras partidas, compilaciones o suites locales simultáneamente. Se conserva
+CPU y el espejo DX11. Las pasadas con espejo tienen ambos hilos apagados;
+el combinado tiene VU1/frente GS activados y no usa espejo.
+
+| Control compartido | Duración | Primer estado 11 del mando | Estado final | Adquisiciones | A–B–A | Distancia máxima host/imagen |
+|---|---:|---:|---:|---:|---:|---:|
+| FINISH síncrono, espejo DX11 | 420,07 s | 50,15 s | 11 | 3.313 | 0 | 0 |
+| FINISH asíncrono, espejo DX11 | 420,07 s | 45,14 s | 14 | 4.096 | 108 | 19 |
+| FINISH asíncrono, ambos hilos | 420,04 s | 35,04 s | 14 | 4.096 | 6 | 32 |
+
+Todas terminan por límite (proceso 1/controlador 0), con tarjeta intacta.
+Ningún monitor registra minimización; el foco varía en el síncrono y no
+pertenece al juego en los otros dos. Visible no demuestra ventana descubierta.
+No aparecen las firmas buscadas de excepción, aserción, acceso inválido,
+opcode desconocido/no implementado ni fallo del espejo. No es prueba de
+cierre normal ni estabilidad prolongada. Los dos cupos de 4.096 se agotan;
+no cubren todas las adquisiciones hasta el cierre. No se encuentran regresiones
+de secuencia, metadatos inconsistentes, cambios de tamaño o hashes desconocidos.
+
+Los 108 retornos del asíncrono aparecen después del último informe de estado
+14; 107 tienen igual paridad y uno alterna, todos en modo de campos. Un hash
+que vuelve no acredita igualdad de píxeles ni contenido antiguo. El estado 14
+no se usa como partida sostenida. Ninguna de estas pasadas mide FPS.
+
+Síncrono: 16 pares adquiridos/PCRTC 2100..2115, cámara de introducción/NPCs
+sin HUD. Asíncrono: adquiridos 3999..4014 y PCRTC 4000..4015, 15 parejas por
+tick y un adquirido 3999 sin pareja dentro del cupo; HUD, Kratos y enemigos.
+Se revisan todas las parejas y las primeras salidas completas: movimiento
+gradual sin deformación brusca observada en esas ventanas. **La neblina
+OpenGL más intensa que DX11 persiste**. El tick coincidente dentro de la
+ejecución no garantiza igual prefijo de comandos ni equivalencia de píxeles.
+
+Combinado: 16 adquiridos 3989..4071 con saltos, HUD/Kratos/NPCs y movimiento
+gradual en las imágenes revisadas. El primer adquirido tiene
+hostTick4001/frameTick3989: el umbral elige cuándo capturar en el host, no
+obliga a adquirir un tick posterior. Las 16 imágenes de cada pasada son
+distintas en RGBA y sus JSON coinciden con los registros. No comparar poses
+entre ejecuciones por compartir tick.
+
+Revisión local de #70: pesos y suma coinciden con los 14 patrones externos;
+CPU y el shader común compute/hardware conservan alpha y mezcla posterior.
+Negativos, positivos 612/612 normal y 650/650 GPU, compilación completa 105
+y estos controles cierran la validación local de la corrección numérica.
+Antes de ready/merge comprobar CI del HEAD final. Siguen abiertos neblina
+restante, encuadre PS2, frescura de presentación, jugabilidad completa,
+estabilidad prolongada y cuadros únicos mostrados.
+
+## Runner 105: espera del host y nuevo control de profundidad (2026-10-13)
+
+Perfil separado sin espejo, hash ni capturas, con ambos hilos, temporizadores
+y guion explícito de Start/Cross y ataques cada dos segundos. Primer intento:
+116,92 s hasta STOP propio, sin llegar a IRX, lecturas de mando o estados;
+Flip=0/host≈60. No sirve como perfil de partida. El segundo, con las mismas
+opciones, sí arranca y completa 240,06 s por límite. El atasco no tiene causa
+identificada; no atribuirlo al perfil o al guion por esa única pareja.
+
+Repetición: tarjeta intacta, ventana visible/no minimizada sin primer plano,
+sin firmas buscadas de error; último estado 14. El selector por orden de líneas
+conserva 14 ventanas completas de estado 11 entre t=50,07 y 120,54 del perfil,
+70,46 s. Flip ponderado 29,19 entradas/s (15,80..35,55 por ventana), host
+13,69 iteraciones/s (10,37..20,52). Upload acumula 4.014,37 ms y HostWait
+66.320,16 ms. El último ámbito contiene `EndDrawing`, que incluye dibujo,
+swap y limitador; la preparación contiene selección/cola/acquisición.
+Es una localización del tiempo transcurrido del host, no uso de CPU ni causa
+GPU aislada. Separar driver, limitador y GPU/cola sin retirar fences o añadir
+`glFinish`. Los tiempos VU/GS pueden proceder de otros hilos y no forman un
+reparto del hilo EE. La pasada no ofrece imágenes alineadas, benchmark con
+Opus ni cuadros únicos mostrados; estados muestreados no fijan cámara/poses.
+
+Fixture procedural privado de 24 casos por modo, mismo runtime 105 y DLL
+DX11: CPU/compute/hardware efectivos ofrecen las mismas 11 diferencias.
+Siete proceden de ZTE apagado: se descarta color con ZTST 0/2/3 y se escribe
+profundidad con ZTST 1, mientras DX11 dibuja y conserva Z. La lectura del
+GS original también condiciona prueba y escritura Z por ZTE. Otras cuatro
+difieren un nivel durante mezcla, dos con FGE apagado; seguirlas por separado
+antes de cambiar blending. No se modificó runtime ni runner, y no se ha
+acreditado todavía que el pase de niebla del juego use esos casos ZTE.
