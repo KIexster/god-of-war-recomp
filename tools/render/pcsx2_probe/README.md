@@ -15,6 +15,14 @@ Entradas fijadas:
   `e456309491fd875487bf02b8a0dca76c1b1b00cc`, `libpng:x64-windows-static-md`.
   Una instalación dinámica necesita sus DLL junto a los ejecutables.
 
+La DLL fija la precisión de mezcla **Maximum** por defecto, sin modificar las
+fuentes de PCSX2. `-DGOW_PCSX2_BLENDING=Basic` conserva la configuración de los
+controles anteriores; cualquier otro valor se rechaza al configurar. Usar builds
+separados y registrar el hash de cada DLL. Al crear GS se registra
+`[gow-pcsx2-module] blending=Maximum` o `Basic`; la ABI sigue siendo 1.
+Maximum puede costar más: el espejo y sus readbacks siguen siendo diagnósticos,
+sin atribuirles rendimiento del port.
+
 Desde Developer PowerShell, con Python 3 en PATH, elegir directorios propios
 para las fuentes, extractos y build. No reutilizar el checkout de un colaborador:
 
@@ -48,6 +56,7 @@ Controles GPU optativos:
 & C:/trabajo/gs-build/gs_gif_draw_probe.exe --window
 & C:/trabajo/gs-build/gs_module_gpu_probe.exe C:/trabajo/gs-build/gow_pcsx2_gs_module.dll
 python tools/render/probe_fog_reference.py --module C:/trabajo/gs-build/gow_pcsx2_gs_module.dll --resources C:/trabajo/pcsx2/bin/resources
+python tools/render/probe_pipeline_reference.py --module C:/trabajo/gs-build/gow_pcsx2_gs_module.dll --resources C:/trabajo/pcsx2/bin/resources
 ```
 
 El control FOG por ABI compara 14 patrones de RGB medidos, con FGE apagado y
@@ -57,6 +66,15 @@ FOG=255 de PCSX2 puede omitir el shader, por lo que ese clear no sirve para
 decidir su redondeo. Los datos son sintéticos, sin archivos del juego. Alpha
 PCRTC es 255; la regresión del runtime comprueba por separado alpha framebuffer
 128. No valida interpolación variable, una escena o rendimiento.
+
+El segundo control envía 24 celdas de 8×8: ocho combinaciones ZTE/ZTST,
+ocho sondas de escritura Z y ocho casos de FOG seguido de mezcla con alpha 64.
+Comprueba RGB y uniformidad de todos los píxeles de cada celda. Los esperados
+se contrastaron con CPU, compute, hardware y DX11 Maximum. La DLL Basic
+histórica coincide en 20/24 y difiere un nivel en cuatro casos de mezcla,
+incluidos dos sin FOG; Maximum coincide en 24/24. No convertir diferencias de
+una referencia Basic en una corrección del runtime. Alpha PCRTC es 255 y este
+control no verifica alpha framebuffer, interpolación variable ni el juego.
 
 DX11 usa shaders SM4/5 originales y modo Surfaceless. DXC se enlaza con carga
 retardada; esos controles no necesitan dxcompiler.dll ni dxil.dll. Esto no
