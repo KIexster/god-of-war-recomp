@@ -420,3 +420,11 @@ original pasa los 24 patrones de pipeline y 14 de FOG, aunque su fixture privado
 solo admite GIF y rechaza escrituras directas. No usar Maximum como prueba de
 exactitud de todo alpha ni cambiar el runtime a partir de una sola referencia.
 Seguir merge previo al desentrelazado y estado/pases de una ráfaga acotada.
+
+El control FOG completo detecta también una discrepancia hardware al variar
+FOG entre los dos sprites del lote: 16/28, frente a 28/28 de software original
+y CPU/OpenGL. Los 14 controles históricos solo observaban la mitad izquierda
+y siguen pasando con `--left-only`; ahora se comprueban ambas por defecto.
+El software restaura además una ráfaga Freeze/GIF/VSync sintética con sus
+cuatro imágenes idénticas a su ejecución fresca. El desacuerdo hardware no
+se debe al Freeze de ese patrón. No extrapolarlo aún al fondo del juego.

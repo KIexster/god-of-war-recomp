@@ -5721,3 +5721,32 @@ renderer integrado del juego ni una validación de toda la ABI. CPU y espejo
 hardware se conservan. Próximo contraste: salida de merge antes del
 desentrelazado y ráfaga acotada con estado inicial verificable para el software
 original; seguir profundidad, alpha, textura/FOG y pases posteriores.
+
+El contraste completo de esa ráfaga procedural revela otro límite de la
+referencia hardware: los 14 controles FOG históricos solo verificaban la
+mitad izquierda. En ambas mitades hay 28 controles; CPU/OpenGL del runtime
+y software original coinciden en 28/28, hardware Maximum en 16/28. Sus 12
+mitades derechas FGE usan el FOG del primer sprite. Por ejemplo, F=0 a la
+izquierda y 17 a la derecha: hardware produce (50,100,200) en ambas,
+software original y runtime (50,100,200)/(62,95,190). Los 14 esperados
+izquierdos, incluidos los de la corrección matemática #70, permanecen válidos;
+el método no excluye toda optimización hardware de un lote con nieblas distintas.
+No prueba que ocurra en el fondo de la escena ni justifica reducir FOG globalmente.
+
+`probe_fog_reference.py` comprueba ahora ambas mitades por defecto, color y
+uniformidad de todos los píxeles; `--left-only` reproduce los 14 anteriores.
+Negativo real hardware 16/28/código 1; positivo software original 28/28/código 0;
+CPU/OpenGL privados 28/28 RGB y uniforme. El modo histórico conserva 14/14.
+No se modifica renderer/alpha del runtime. Se mantiene explícito que PCRTC
+no valida por sí solo alpha framebuffer o interpolación dentro de una primitiva.
+
+Herramienta privada de merge/Freeze/GIF/VSync ya compilada: limita la ráfaga
+a 16 campos/160 MiB, exige fragmentos exteriores completos en la frontera y
+un End válido. Freeze original incluye lectura de destinos de la caché para
+capturar VRAM; no se publica. Una ráfaga sintética de cuatro campos, 11 registros,
+4.237.045 bytes, se restaura en GSRendererSW original: sus cuatro imágenes
+64×32 coinciden enteramente en RGB con una ejecución fresca de ese software.
+El desacuerdo con hardware se reproduce también sin Freeze y queda localizado
+en la mitad derecha; no se adjudica a restauración. End truncado se rechaza
+antes de crear dispositivo/directorio. La historia inicial de desentrelazado
+no está serializada. Control de esta herramienta con el juego pendiente.

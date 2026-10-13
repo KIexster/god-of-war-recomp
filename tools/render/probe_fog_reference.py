@@ -24,7 +24,7 @@ def require(value, message):
         raise RuntimeError(message)
 
 
-def run(module, resources):
+def run(module, resources, left_only=False):
     require(c.sizeof(CreateInfo) == c.sizeof(FrameInfo) == 32, 'Se requiere ABI Windows x64')
     # GOW-Port: conservar la búsqueda de dependencias durante todas las llamadas a la DLL.
     with os.add_dll_directory(str(module.parent)):
@@ -82,15 +82,24 @@ def run(module, resources):
                     output = (c.c_uint8 * 8192)()
                     require(dll.gow_gs_read_output(handle, output, 8192, c.byref(info)) == 0, 'Leer PCRTC')
                     pixels = bytes(output)
-                    observed = tuple(pixels[:4])
-                    require(all(pixels[(y * 64 + x) * 4:(y * 64 + x + 1) * 4] == pixels[:4]
-                                for y in range(32) for x in range(32)), 'Mitad de control no uniforme')
-                    rows.append(dict(source=source, fog_color=fog_color, fog=fog, enabled=enabled,
-                                     observed_rgba=observed, expected_rgba=(*expected, 255),
-                                     matches=observed == (*expected, 255)))
+                    other_fog = (fog + 17) % 255
+                    # GOW-Port: la mitad derecha detecta que un clear hardware use el FOG del primer sprite.
+                    other_expected = tuple((s * other_fog + f * (256 - other_fog)) >> 8
+                                           for s, f in zip(source, fog_color)) if enabled else source
+                    halves = [(0, fog, expected, 'left')]
+                    if not left_only:
+                        halves.append((32, other_fog, other_expected, 'right'))
+                    for x0, value, rgb, half in halves:
+                        observed = tuple(pixels[x0 * 4:x0 * 4 + 4])
+                        uniform = all(tuple(pixels[(y * 64 + x) * 4:(y * 64 + x + 1) * 4]) == observed
+                                      for y in range(32) for x in range(x0, x0 + 32))
+                        rows.append(dict(source=source, fog_color=fog_color, fog=value, enabled=enabled,
+                                         half=half, uniform=uniform, observed_rgba=observed,
+                                         expected_rgba=(*rgb, 255), matches=uniform and observed == (*rgb, 255)))
         finally:
             require(dll.gow_gs_destroy(handle) == 0, 'Cerrar GS DX11')
     return dict(module_sha256=hashlib.sha256(module.read_bytes()).hexdigest(), cases=rows,
+                scope='left_only' if left_only else 'both_halves',
                 limitation='Patrones sintéticos de RGB/PCRTC. No valida juego, interpolación variable, estabilidad ni FPS.')
 
 
@@ -98,6 +107,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--module', required=True, type=Path)
     parser.add_argument('--resources', required=True, type=Path)
+    parser.add_argument('--left-only', action='store_true', help='Reproducir los 14 controles históricos de la mitad izquierda')
     args = parser.parse_args()
     if os.name != 'nt':
         parser.error('El control requiere Windows x64 y hardware DX11')
@@ -105,7 +115,7 @@ def main():
         module, resources = args.module.resolve(strict=True), args.resources.resolve(strict=True)
         if not module.is_file() or not resources.is_dir():
             raise ValueError('Se requieren DLL local y directorio de recursos')
-        result = run(module, resources)
+        result = run(module, resources, args.left_only)
     except (OSError, ValueError, RuntimeError, AttributeError) as error:
         parser.exit(1, f'FOG DX11: {error}\n')
     print(json.dumps(result, ensure_ascii=False, indent=2))
