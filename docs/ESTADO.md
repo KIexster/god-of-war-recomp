@@ -5268,3 +5268,28 @@ visual en esta escena. Seguir profundidad, mezcla y pases posteriores, además
 del atributo de niebla. Se inicia a continuación el control asíncrono/compartido
 con el mismo runner, copia inicial de tarjeta, hilos apagados y ventana 2100.
 Sin datos del juego publicados; estos controles no son benchmarks.
+
+Control 104 asíncrono/compartido terminado con el mismo runner: 420,06 s por
+límite (proceso 1/lanzador 0), tarjeta copiada intacta, primer informe 11 a
+126,98 s y último 11. Minimización 49,30..241,88 s, restaurada antes de la
+ráfaga. No hay firmas buscadas de fallo fatal, aserción, acceso inválido,
+opcode no implementado/desconocido o fallo del enlace en los dos registros
+revisados; no sustituye comprobar todos los caminos del juego.
+
+16 PCRTC y 16 adquiridos, 16 parejas 2100..2115, metadatos correlacionados y
+16 RGBA distintos. 347 adquisiciones desde el umbral, sin anomalías del
+inspector y distancia de ticks 0. Se revisan todas las parejas y las imágenes
+completas iniciales: HUD, Kratos y cuatro enemigos, movimiento gradual sin
+espasmo brusco observado en esa ventana. Encuadre general semejante entre
+los dos renderers de la misma ejecución. La neblina excesiva de OpenGL sigue
+presente. Las poses de las dos pasadas difieren: el mismo tick entre pasadas
+no alinea la escena; no comparar sus píxeles como efecto aislado de FINISH.
+
+Revisión local de #69: el atributo es global, se actualiza antes de ADC/kick,
+todos los decodificadores implicados conservan FOG y los casos negativos
+fallan con código anterior. Cadena 104 íntegra, compilación completa y controles
+síncrono/asíncrono completados. Ningún proceso propio del juego permanece
+abierto. Comprobar CI del HEAD documental final antes de sacar de borrador y
+fusionar. Esta validación cierra la corrección de retención FOG; siguen abiertos
+la neblina restante, referencia alineada de encuadre, modos con hilos, estabilidad
+prolongada y rendimiento habitual sin diagnósticos.
