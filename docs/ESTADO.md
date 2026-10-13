@@ -5182,3 +5182,114 @@ Se añade a su fixture público. En nuestro frontend, XYZF asigna el fog al vér
 pero no actualiza `m_curFog`, que usa el XYZ posterior. Se prepara comprobación
 de regresión propia antes de corregirlo en un tema separado. No se atribuye
 todavía a esa omisión la diferencia de niebla observada ni el espasmo original.
+
+## GS: retener FOG al escribir XYZF, preparación (2026-10-12)
+
+#68 fusionada en `578d4ec582da3b5c05f521b9aa33102046b40499`, tras revisión,
+controles y [CI final fe13f32 correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38331548876).
+Se integra main por avance directo y se abre tema independiente para FOG.
+
+Control procedural nativo del frontend anterior con renderer CPU explícito,
+POINT/FGE, profundidad ALWAYS y colores distintos: seis variantes PACKED,
+A+D y REGLIST, XYZF2/3→XYZ2, dibujan el control `805c2ec6`, pero el XYZ posterior
+produce `80c05f3b`. La referencia se obtiene escribiendo FOG explícitamente,
+con las mismas entradas; los valores son sintéticos, sin datos del juego.
+La primera prueba sin configurar profundidad ALWAYS no dibujaba: se descarta
+como prueba del fallo. El control corregido sí dibuja y distingue las nieblas.
+
+Se prepara `ps2recomp-gs-fog-latch.patch`, al final de la cadena (104), sobre
+base 103 íntegra en worktree propio. XYZF2 PACKED, XYZF3 PACKED y la ruta común
+A+D/REGLIST actualizan `m_curFog` antes de lanzar o descartar el vértice. XYZ2/3
+siguen conservando el atributo. No cambia cámara, matrices, CRTC, fences o
+opciones de rendimiento. El atajo PACKED nativo comparte ese decodificador.
+
+Seis regresiones de grupo cubren los tres PATH, PACKED/A+D/REGLIST/directo/nativo,
+ADC, cambio de contexto y reset, comprobando píxeles dibujados y actualización
+FOG posterior. Configuración 0 errores/4 avisos existentes; sintaxis 24 PS1,
+0 errores. El parche pasa aplicación en comprobación sobre 103. La suite con
+regresiones y código anterior se está construyendo para comprobar el negativo.
+Positivo, compilación completa de 104, CI y control funcional todavía pendientes.
+No se declara corregida la diferencia de niebla del juego, los espasmos o el encuadre.
+
+Validación nativa de `1bfa0358f23a0c25604a7e69c7ab50890a2bfcbf`: las seis
+regresiones nuevas con el código anterior fallan y las otras 605 pasan; biblioteca
+103 SHA-256 `bf984c75fd78a3dc78502460e22390dfc16ea50b9653a850719724f7f517b2df`
+intacta. Aplicando solo la corrección, 611/611 normales y 647/647 con controles
+OpenGL GPU correctas. El control privado de seis variantes también pasa a
+seis colores iguales al control explícito. No hay fallos conocidos añadidos.
+[CI del código 1bfa035 correcto](https://github.com/KIexster/god-of-war-recomp/pull/69/checks).
+
+Son pruebas del runtime, no una compilación nueva del juego. Se inicia la
+compilación completa 104 con `GOW_WORK` privado y fuentes anteriores conservadas;
+se registrará su commit/hash al terminar. La [PR #69](https://github.com/KIexster/god-of-war-recomp/pull/69)
+sigue en borrador hasta completar compilación, escena y CI del HEAD final.
+
+Compilación completa terminada de `9b80b05b7bd23a63d24af32a61495a3501b19c21`:
+104 parches aplicados en orden, código final 0 en 1039,50 s, con `GOW_WORK`
+privado y VU1 intérprete. Runner de 54.589.952 bytes, SHA-256
+`0e65c95d134daccfe3f6f295e299e6def27a77b46402c6e18f4cb66cd2ee8643`.
+ELF SCUS_973.99 con hash esperado; fuentes anteriores conservadas y ejecutable,
+símbolos y manifiesto congelados antes del control. Flags `/O2 /Ob2 /DNDEBUG /Zi`
+y `/INCREMENTAL:NO /DEBUG /OPT:REF /OPT:ICF`.
+[CI de 9b80b05 completo correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38333982967).
+
+Se inicia el control síncrono/compartido de este ejecutable, hilos VU1/frente GS
+apagados, tarjeta privada copiada, diagnóstico y ráfaga de 16 imágenes desde
+2100. Espejo PCSX2 DX11 con campo corregido y módulo anterior identificado.
+Después se repetirá con FINISH asíncrono. Resultado de escena todavía pendiente;
+los dos renderers, hashes y readbacks excluyen una comparación de FPS con Opus.
+
+Durante esta revisión, el usuario confirma que han desaparecido los espasmos
+de Kratos y los errores de animación de los NPCs en su prueba. Se conserva como
+validación visual aportada por el usuario; el mensaje no identifica hash del
+ejecutable ni duración. Es un resultado favorable del conjunto de mejoras,
+incluida la corrección PMULTH de #67. No permite atribuir por sí solo esa mejora
+al nuevo FOG ni cerrar el encuadre o la estabilidad con todas las opciones.
+
+Primer control 104 síncrono/compartido terminado: 420,08 s por límite del
+controlador, proceso 1/lanzador 0; tarjeta copiada intacta. Primer informe de
+estado 11 a 158,36 s y último 11. El monitor registra minimización entre
+358,44 y 372,53 s, restaurada antes de la ráfaga: no afirmar ventana constante.
+No se registran fallos del enlace PCSX2 en la muestra revisada.
+
+16 PCRTC y 16 texturas adquiridas forman 16 parejas 2100..2115, 512×448.
+Cada JSON adquirido coincide con su registro; los 16 RGBA son distintos.
+18 adquisiciones totales desde el umbral hasta el final: sin regresiones,
+metadatos inconsistentes, A-B-A, cambios de tamaño o hashes desconocidos;
+distancia de ticks 0, sin interpretar ese dato como latencia o FPS.
+Revisadas las 16 parejas y las salidas completas iniciales: HUD, Kratos y
+enemigos, con movimientos graduales y sin deformación brusca observada en
+esta ventana. Encuadre general semejante entre salidas de la misma ejecución,
+sin certificar el encuadre de PS2 ni equivalencia de poses/píxeles.
+
+**La neblina más intensa de OpenGL frente a DX11 persiste con el FOG corregido.**
+La regresión semántica es real, pero su reparación no resuelve esa diferencia
+visual en esta escena. Seguir profundidad, mezcla y pases posteriores, además
+del atributo de niebla. Se inicia a continuación el control asíncrono/compartido
+con el mismo runner, copia inicial de tarjeta, hilos apagados y ventana 2100.
+Sin datos del juego publicados; estos controles no son benchmarks.
+
+Control 104 asíncrono/compartido terminado con el mismo runner: 420,06 s por
+límite (proceso 1/lanzador 0), tarjeta copiada intacta, primer informe 11 a
+126,98 s y último 11. Minimización 49,30..241,88 s, restaurada antes de la
+ráfaga. No hay firmas buscadas de fallo fatal, aserción, acceso inválido,
+opcode no implementado/desconocido o fallo del enlace en los dos registros
+revisados; no sustituye comprobar todos los caminos del juego.
+
+16 PCRTC y 16 adquiridos, 16 parejas 2100..2115, metadatos correlacionados y
+16 RGBA distintos. 347 adquisiciones desde el umbral, sin anomalías del
+inspector y distancia de ticks 0. Se revisan todas las parejas y las imágenes
+completas iniciales: HUD, Kratos y cuatro enemigos, movimiento gradual sin
+espasmo brusco observado en esa ventana. Encuadre general semejante entre
+los dos renderers de la misma ejecución. La neblina excesiva de OpenGL sigue
+presente. Las poses de las dos pasadas difieren: el mismo tick entre pasadas
+no alinea la escena; no comparar sus píxeles como efecto aislado de FINISH.
+
+Revisión local de #69: el atributo es global, se actualiza antes de ADC/kick,
+todos los decodificadores implicados conservan FOG y los casos negativos
+fallan con código anterior. Cadena 104 íntegra, compilación completa y controles
+síncrono/asíncrono completados. Ningún proceso propio del juego permanece
+abierto. Comprobar CI del HEAD documental final antes de sacar de borrador y
+fusionar. Esta validación cierra la corrección de retención FOG; siguen abiertos
+la neblina restante, referencia alineada de encuadre, modos con hilos, estabilidad
+prolongada y rendimiento habitual sin diagnósticos.
