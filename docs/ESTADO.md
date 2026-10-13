@@ -5245,3 +5245,26 @@ validación visual aportada por el usuario; el mensaje no identifica hash del
 ejecutable ni duración. Es un resultado favorable del conjunto de mejoras,
 incluida la corrección PMULTH de #67. No permite atribuir por sí solo esa mejora
 al nuevo FOG ni cerrar el encuadre o la estabilidad con todas las opciones.
+
+Primer control 104 síncrono/compartido terminado: 420,08 s por límite del
+controlador, proceso 1/lanzador 0; tarjeta copiada intacta. Primer informe de
+estado 11 a 158,36 s y último 11. El monitor registra minimización entre
+358,44 y 372,53 s, restaurada antes de la ráfaga: no afirmar ventana constante.
+No se registran fallos del enlace PCSX2 en la muestra revisada.
+
+16 PCRTC y 16 texturas adquiridas forman 16 parejas 2100..2115, 512×448.
+Cada JSON adquirido coincide con su registro; los 16 RGBA son distintos.
+18 adquisiciones totales desde el umbral hasta el final: sin regresiones,
+metadatos inconsistentes, A-B-A, cambios de tamaño o hashes desconocidos;
+distancia de ticks 0, sin interpretar ese dato como latencia o FPS.
+Revisadas las 16 parejas y las salidas completas iniciales: HUD, Kratos y
+enemigos, con movimientos graduales y sin deformación brusca observada en
+esta ventana. Encuadre general semejante entre salidas de la misma ejecución,
+sin certificar el encuadre de PS2 ni equivalencia de poses/píxeles.
+
+**La neblina más intensa de OpenGL frente a DX11 persiste con el FOG corregido.**
+La regresión semántica es real, pero su reparación no resuelve esa diferencia
+visual en esta escena. Seguir profundidad, mezcla y pases posteriores, además
+del atributo de niebla. Se inicia a continuación el control asíncrono/compartido
+con el mismo runner, copia inicial de tarjeta, hilos apagados y ventana 2100.
+Sin datos del juego publicados; estos controles no son benchmarks.
