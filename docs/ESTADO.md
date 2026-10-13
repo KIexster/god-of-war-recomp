@@ -5238,3 +5238,10 @@ apagados, tarjeta privada copiada, diagnóstico y ráfaga de 16 imágenes desde
 2100. Espejo PCSX2 DX11 con campo corregido y módulo anterior identificado.
 Después se repetirá con FINISH asíncrono. Resultado de escena todavía pendiente;
 los dos renderers, hashes y readbacks excluyen una comparación de FPS con Opus.
+
+Durante esta revisión, el usuario confirma que han desaparecido los espasmos
+de Kratos y los errores de animación de los NPCs en su prueba. Se conserva como
+validación visual aportada por el usuario; el mensaje no identifica hash del
+ejecutable ni duración. Es un resultado favorable del conjunto de mejoras,
+incluida la corrección PMULTH de #67. No permite atribuir por sí solo esa mejora
+al nuevo FOG ni cerrar el encuadre o la estabilidad con todas las opciones.
