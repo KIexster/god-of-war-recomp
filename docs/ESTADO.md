@@ -5497,3 +5497,117 @@ GS original también condiciona prueba y escritura Z por ZTE. Otras cuatro
 difieren un nivel durante mezcla, dos con FGE apagado; seguirlas por separado
 antes de cambiar blending. No se modificó runtime ni runner, y no se ha
 acreditado todavía que el pase de niebla del juego use esos casos ZTE.
+
+## GS: habilitación de prueba y escritura de profundidad (2026-10-13)
+
+#70 fusionada en `4792988b83c26b318ec455c8666e945194a01323`, tras revisión
+local, controles y los cuatro checks del [HEAD final b6d1559 correctos](https://github.com/KIexster/god-of-war-recomp/actions/runs/38390456236).
+Se integra main por merge y se abre tema independiente en
+`codex/gs-depth-enable`, comprobando primero el árbol limpio.
+
+El parche 106, `ps2recomp-gs-zte.patch`, condiciona la prueba y escritura de Z
+por TEST.ZTE. Con ZTE=0, CPU y el shader común compute/hardware ignoran ZTST
+y conservan el valor Z existente, aunque ZMSK=0. No cambia alpha, FOG, mezcla,
+fences, FIFO, opciones de rendimiento o el renderer de referencia.
+
+El fixture procedural original DX11/corpus de 24 casos daba 11 diferencias
+con 105: siete de ZTE y cuatro de mezcla de un nivel. Tras corregir ZTE,
+CPU/compute/hardware coinciden en los 16 casos de profundidad; permanecen
+las cuatro diferencias menores de mezcla, incluidas dos con FGE apagado.
+Se conservan para investigación separada. No acreditan todavía causa de la
+neblina en el juego ni autorizan cambiar blending sin otro contraste.
+
+Nueva regresión: 16 combinaciones ZTE/ZTST/ZMSK, color/alpha, profundidad y
+píxel vecino; GPU exige compute/hardware efectivos, sin CPU como oráculo.
+Negativo contra biblioteca 105 intacta: fallan los tres grupos CPU, compute
+y hardware. Primer positivo normal: 612/613; GPU: 652/653. Falla solo el
+fixture antiguo PACKED XYZ2 que pretendía escribir todos los bits Z32, pero
+programaba TEST=1<<17 sin ZTE. Se activa explícitamente ZTE=1, manteniendo
+todos sus esperados y rutas nativa/fragmentada; no se retira la prueba.
+
+Positivos definitivos: **613/613 normal y 653/653 GPU**, códigos 0. GPU
+reutiliza únicamente la caché privada 106 de la primera pasada, con claves
+que incluyen el shader completo; estos tiempos no son un benchmark.
+Test SHA-256 `bd67ab7f3e9225767dc9c96f15d5c09297b008f8e0be66a961f439e90faef8a8`;
+biblioteca `57022e3a794851038bc141600cf00069daa939c01073e03ee15ac3235c5dba69`.
+Originales de fuentes/fixture/biblioteca/test 105 e identidades conservados
+en snapshot privado antes de editar. El runner 105 congelado permanece intacto.
+
+106/106 parches comprobados/aplicados en orden desde el pin en un worktree
+privado nuevo, sin reset/clean de los directorios de Opus. Configuración
+0 errores/4 avisos existentes; 25 PowerShell, 0 errores. Sin fallos conocidos
+añadidos ni datos del juego publicados. **Compilación completa del runner
+106, CI final y control funcional todavía pendientes**; no trasladar los
+resultados de escena 105 al nuevo comportamiento. Seguir el pase de niebla
+con estado de profundidad/mezcla y una referencia de comandos coherente.
+
+Compilación completa 106 terminada: fuente
+`32be6ec31da2decf7b49e6ee4c190a39070e0526`, código 0 en 1175,59 s,
+VU1 compilada con la misma copia privada de 501 micromemorias y 13 archivos
+generados compilados/enlazados. Runner de 66.302.464 bytes, SHA-256
+`fc2436ee121feaa15e14e7f2dd0998ee6eb6b0c251a5e292af4397cb82e46f72`.
+Manifiesto y ELF comprobados, binario/símbolos congelados, flags
+`/O2 /Ob2 /DNDEBUG /Zi` y `/INCREMENTAL:NO /DEBUG /OPT:REF /OPT:ICF`.
+Biblioteca del full `5c3787e7ae5a47c427efd0cdd0c4de469bed33c132e34e0a4ea370d7a5ec67bc`;
+las suites anteriores usaron otro artefacto de las mismas fuentes/corrección.
+El primer intento falló antes del compilador al leer salida Python CP1252
+como UTF-8; se conserva y se repite con codificación explícita en carpeta
+nueva. No se interpreta el registro de una compilación previa como ese intento.
+
+[CI del código 32be6ec completo correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38393297586).
+Después del full, se integra main con #72 por merge en
+`834f6ec15529f497de08c11370615540f3aefb66`; la fuente del runner sigue siendo
+32be6ec. #72 corrige el resumen de métricas, con 13 pruebas y
+[CI final ed05d9f correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38394545326),
+merge `08103d113ebb57edbc2b8b2e810e4d08d7e24371`.
+
+Controles 106 síncrono y asíncrono compartidos, espejo DX11 original,
+ambos hilos apagados, tarjetas copiadas de la misma inicial:
+
+| Control | Duración | Primer informe 11 | Estado final | Adquisiciones desde 4000 | A–B–A | Distancia máxima |
+|---|---:|---:|---:|---:|---:|---:|
+| Síncrono | 420,08 s | 91,19 s | 11 | 1.026 | 0 | 0 |
+| Asíncrono | 420,08 s | 45,13 s | 14 | 4.096 | 110 | 10 |
+
+Ambos terminan por límite (proceso 1/controlador 0), con tarjeta intacta,
+sin minimización ni firmas buscadas de fallo. Ventanas visibles sin primer
+plano; eso no demuestra que estuvieran descubiertas. No hay regresiones de
+secuencia, metadatos inconsistentes, cambios de tamaño o hashes desconocidos.
+El asíncrono agota el cupo; sus 110 retornos aparecen tras el último informe
+14 y no prueban contenido viejo. No usar estado 14 como partida sostenida.
+
+16 adquiridos y 16 PCRTC de cada pasada, 16 parejas 4000..4015, todas
+correlacionadas y con RGBA distintos. Se revisan las parejas y las primeras
+salidas completas: HUD, Kratos y enemigos, movimiento gradual sin deformación
+brusca observada en la muestra. **La neblina más intensa de OpenGL persiste
+con ZTE corregido**. Comparar dentro de una ejecución no garantiza igual
+prefijo GIF; no comparar píxeles con otra pasada por compartir tick. No son
+benchmarks, cierre normal, encuadre PS2 ni estabilidad prolongada.
+Control combinado 106 en curso; #71 conserva el borrador hasta completar
+su validación y comprobar CI del HEAD final.
+
+Combinado 106 terminado: 420,05 s por límite, proceso 1/controlador 0,
+tarjeta intacta, sin minimización ni firmas buscadas de error. Primer
+informe 11 a 35,07 s del mando; último 14 a 415,92 s. 4.096 adquisiciones
+(cupo agotado), 18 retornos A–B–A tras el último informe de estado 14,
+distancia máxima 27; cero regresiones, metadatos inconsistentes, tamaños
+cambiantes o hashes desconocidos. No convertir esos retornos en prueba
+de contenido viejo ni el estado 14 en partida sostenida.
+
+Sus 16 adquiridos 3989..4045, con saltos, tienen RGBA distintos y JSON
+correlacionados. Revisadas las 16 imágenes: HUD, Kratos y enemigos,
+movimiento gradual en la muestra, sin deformación brusca observada; neblina
+intensa permanece. Este control no usa espejo porque ambos hilos están
+activos. Los tres controles 106 completados, junto a negativos, positivos
+nativos y compilación completa, cierran la validación local de **ZTE**.
+No cierran frescura del host, encuadre PS2, jugabilidad completa o estabilidad
+prolongada. Comprobar CI del HEAD documental final antes de ready/merge #71.
+
+La referencia actual del módulo reinicializa GSOptions, heredando exactitud
+de mezcla Basic de Config.h en 2954ebe; no la fija a Maximum. El HLSL original
+tiene caminos de mezcla hardware/software y documenta aproximaciones de
+hardware dependientes de GPU. Por ello las cuatro diferencias menores del
+corpus Basic no bastan para cambiar CPU/GLSL. Se prepara una DLL Maximum
+separada para ese contraste, conservando módulo original y su hash; todavía
+no se construye ni prueba. Seguir prefijo de comandos, profundidad, mezcla
+y pases posteriores antes de atribuir la neblina restante.
