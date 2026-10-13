@@ -65,6 +65,29 @@ que una imagen sea distinta. No utilizarla para declarar resuelto un retorno
 de contenido antiguo. La revisión no reproduce su transporte completo,
 la estabilidad con hilos ni la equivalencia de escena.
 
+## Qué significa la cobertura SDK
+
+El [mapa y sus detalles](https://github.com/thiagordsfx/urban-reign-recomp/blob/8fcce75fcbcca3e558073180becb8654f3c396a8/docs/status/details.en.md)
+clasifican 983 funciones de librerías estáticas enlazadas en SLUS-21209.
+`functions.csv` contiene dirección/tamaño; el estado se asigna por grupos en
+`data.toml`. Ese 100% no es un SDK completo de Sony para PC ni una validación
+independiente de todas sus funciones en SCUS-97399.
+
+En [hle_bindings.cpp](https://github.com/thiagordsfx/urban-reign-recomp/blob/8fcce75fcbcca3e558073180becb8654f3c396a8/src/urban/hle_bindings.cpp)
+se identifican funciones por nombre y se vinculan servicios del runtime.
+GS/DMA/VIF, libpad, libmc y newlib conservan código original recompilado.
+Por eso lo reutilizable es la implementación de servicios comunes y el método
+de identificación; no sus direcciones, módulos del juego o C++ generado.
+SIF/RPC/IOP, archivos, mando y MPEG/IPU requieren comparación por servicio y
+pruebas con la edición propia. EE/IOP/VU se coordinarán con Opus antes de cambiar
+sus áreas; esta revisión no modifica su checkout.
+
+Un ejemplo de límite: su alias de `sceCdLayerSearchFile` descarta el argumento
+de capa, porque Urban Reign usa disco de una capa. No trasladar ese supuesto a
+la ISO de 8,5 GB de God of War sin validar búsquedas/lecturas. El mapa también
+marca varios límites de librería como aproximados. Mantener nuestro estado
+basado en lo comprobado; no importar automáticamente sus etiquetas verdes.
+
 ## Créditos
 
 A **thiagordsfx**, autor de [urban-reign-recomp](https://github.com/thiagordsfx/urban-reign-recomp),

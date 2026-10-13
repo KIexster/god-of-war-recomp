@@ -13,6 +13,7 @@ public:
     uint64_t rgbaq() const { uint64_t bits=0; std::memcpy(&bits,&m_v.RGBAQ,8); return bits; }
     float q() const {return m_q;}
     void q(float value){m_q=value;}
+    uint32_t fog() const {return m_v.FOG;}
 };
 static void require(bool value,const char *label) {
     if(!value){ std::fprintf(stderr,"Parser GS real: %s\n",label); std::exit(1); }
@@ -52,7 +53,27 @@ int main(){
     require(gs.rgbaq()==a[0] && gs.m_path[2].nloop==1,"PATH2 no consume PATH3");
     require(bridge.submit(gow_pcsx2_gs::Path::Path3,reinterpret_cast<const uint8_t*>(b.data()),16),"payload PATH3");
     require(gs.rgbaq()==b[0] && bridge.complete(),"PATH3 y transporte completos");
+    // GOW-Port: referencia original para el atributo FOG entre XYZF y XYZ, también sin dibujo.
+    const auto packed=[&](uint64_t descriptor,uint64_t high){
+        const std::array<uint64_t,4> packet{tag[0],descriptor,0,high};
+        require(bridge.submit(gow_pcsx2_gs::Path::Path3,
+                              reinterpret_cast<const uint8_t*>(packet.data()),sizeof(packet)),"paquete FOG/XYZ");
+    };
+    gs.writeDirect(0x00,0); // PRIM_POINT: instalar handlers XYZ de una primitiva válida.
+    gs.writeDirect(0x0a,13ull<<56);
+    packed(0x0c,201ull<<36);
+    require(gs.fog()==201,"XYZF3 PACKED actualiza FOG");
+    packed(0x0d,0);
+    require(gs.fog()==201,"XYZ3 PACKED conserva FOG del XYZF3 anterior");
+    packed(0x04,(233ull<<36)|(1ull<<47));
+    require(gs.fog()==233,"XYZF2 con ADC actualiza FOG aunque no dibuje");
+    packed(0x05,1ull<<47);
+    require(gs.fog()==233,"XYZ2 con ADC conserva el atributo anterior");
+    gs.writeDirect(0x0c,77ull<<56);
+    require(gs.fog()==77,"XYZF3 A+D actualiza FOG");
+    gs.writeDirect(0x0d,0);
+    require(gs.fog()==77,"XYZ3 A+D conserva FOG");
     require(gsProbeWindowRequests==0,"no se abrió dispositivo o ventana");
     require(gs.draws==0,"no se declara dibujo de píxeles en esta prueba");
-    std::puts("Parser PCSX2 real: PATH1 fragmentado, EOP múltiples, PATH2/3 independientes y RGBAQ: OK");
+    std::puts("Parser PCSX2 real: PATH, fragmentos, EOP, RGBAQ y FOG retenido entre XYZF/XYZ: OK");
 }

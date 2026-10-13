@@ -5165,3 +5165,20 @@ un backend principal, un benchmark o resolución general de espasmos/encuadre.
 La revisión de Urban Reign incluye crédito explícito a thiagordsfx, por petición
 del usuario; implementación del enlace y ajuste de campo propios, contrastados
 con PCSX2 original. No se han publicado capturas, volcados o datos del juego.
+
+## Urban Reign: SDK y referencia de FOG (2026-10-12)
+
+Se revisa su mapa SDK de 983 funciones enlazadas, metadatos y bindings HLE:
+[alcance, servicios candidatos y créditos](REVISION_URBAN_REIGN.md).
+Muchas librerías conservan código original recompilado; reutilizar servicios
+comunes, sin trasladar direcciones ni supuestos del juego. Su alias de búsqueda
+CD/DVD ignora la capa en un disco de una capa: requiere control propio para GoW.
+Se añade crédito a thiagordsfx y PCSX2 en los tres README, con el mismo alcance.
+
+El parser original fijado conserva FOG al alternar XYZF/XYZ: PACKED XYZF3→XYZ3,
+XYZF2 con ADC→XYZ2 y A+D XYZF3→XYZ3. Control sin dispositivo con una primitiva
+válida, valores distintos 13/201/233/77 y ninguna llamada a Draw: correcto.
+Se añade a su fixture público. En nuestro frontend, XYZF asigna el fog al vértice
+pero no actualiza `m_curFog`, que usa el XYZ posterior. Se prepara comprobación
+de regresión propia antes de corregirlo en un tema separado. No se atribuye
+todavía a esa omisión la diferencia de niebla observada ni el espasmo original.
