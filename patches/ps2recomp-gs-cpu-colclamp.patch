@@ -21,16 +21,14 @@ index 2f4aa7c..97ce797 100644
              else
              {
 diff --git a/ps2xTest/CMakeLists.txt b/ps2xTest/CMakeLists.txt
-index bc26740..6387806 100644
+index bc26740..f413782 100644
 --- a/ps2xTest/CMakeLists.txt
 +++ b/ps2xTest/CMakeLists.txt
-@@ -36,7 +36,8 @@ add_library(ps2_test_lib STATIC
-     src/ps2_gs_external_tests.cpp # GOW-Port: transporte opcional sin perder tags.
+@@ -37,6 +37,7 @@ add_library(ps2_test_lib STATIC
      src/ps2_gs_fog_latch_tests.cpp # GOW-Port: atributo FOG después de XYZF.
      src/ps2_gs_fog_math_tests.cpp # GOW-Port: RGB de referencia para la niebla.
--    src/ps2_gs_zte_tests.cpp # GOW-Port: habilitacion de test y escritura Z.
-+    src/ps2_gs_zte_tests.cpp
-+    src/ps2_gs_cpu_colclamp_tests.cpp # GOW-Port: habilitacion de test y escritura Z.
+     src/ps2_gs_zte_tests.cpp # GOW-Port: habilitacion de test y escritura Z.
++    src/ps2_gs_cpu_colclamp_tests.cpp # GOW-Port: wrap/clamp del RGB de mezcla en CPU.
      src/ps2_gs_backend_tests.cpp # GOW-Port: cola, VRAM y comparación CPU/OpenGL.
      src/ps2_gpu_profile_tests.cpp # GOW-Port: ventanas y lecturas de timestamps sin espera.
      src/ps2_gpu_upload_ring_tests.cpp # GOW-Port: datos pendientes y fallback de uploads.
