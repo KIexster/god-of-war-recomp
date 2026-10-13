@@ -5327,7 +5327,19 @@ compute y hardware. Los otros 611/647 pasan; biblioteca 104 intacta. Tras
 corregir código, las nuevas pasan, pero la expectativa antigua citada falla
 en ambas suites; se ajusta antes de repetir el positivo. Configuración
 0 errores/4 avisos existentes; 24 PowerShell, 0 errores. Positivo normal
-definitivo: 612/612 correcto tras ajustar ese esperado. La repetición GPU
-definitiva está en curso; compilación completa 105, CI y control funcional pendientes.
+definitivo: 612/612 correcto tras ajustar ese esperado. GPU definitivo:
+650/650 correcto, incluidos compute y hardware efectivos. No se añaden fallos conocidos.
+Compilación completa 105, CI y control funcional pendientes.
 Esta diferencia de uno o dos niveles por canal no explica por sí sola la
 neblina fuerte restante ni acredita mejoras de animación o FPS.
+
+Por petición del usuario de reunir las opciones de rendimiento de ambos
+colaboradores, la próxima compilación completa 105 incorporará VU1 compilada.
+Se verifica el checkout limpio de Opus y se copian a carpeta privada propia
+las 501 micromemorias de 16 KiB que indica su CMake; identidad original/copia
+comprobada antes y después. No se modifica su checkout, runtime o capturas.
+Los controles anteriores incorporan sus parches, pero usan VU1 intérprete y
+hilos apagados: no representan su modo de 24–25 FPS. El C++ VU generado y las
+micromemorias se conservarán únicamente en el workspace privado. Registrar
+runner/hash, generación/enlace VU y control funcional antes de atribuir esa
+configuración al nuevo ejecutable. #70 sigue en borrador hasta completar esos pasos.
