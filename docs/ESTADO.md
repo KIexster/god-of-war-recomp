@@ -5497,3 +5497,46 @@ GS original también condiciona prueba y escritura Z por ZTE. Otras cuatro
 difieren un nivel durante mezcla, dos con FGE apagado; seguirlas por separado
 antes de cambiar blending. No se modificó runtime ni runner, y no se ha
 acreditado todavía que el pase de niebla del juego use esos casos ZTE.
+
+## GS: habilitación de prueba y escritura de profundidad (2026-10-13)
+
+#70 fusionada en `4792988b83c26b318ec455c8666e945194a01323`, tras revisión
+local, controles y los cuatro checks del [HEAD final b6d1559 correctos](https://github.com/KIexster/god-of-war-recomp/actions/runs/38390456236).
+Se integra main por merge y se abre tema independiente en
+`codex/gs-depth-enable`, comprobando primero el árbol limpio.
+
+El parche 106, `ps2recomp-gs-zte.patch`, condiciona la prueba y escritura de Z
+por TEST.ZTE. Con ZTE=0, CPU y el shader común compute/hardware ignoran ZTST
+y conservan el valor Z existente, aunque ZMSK=0. No cambia alpha, FOG, mezcla,
+fences, FIFO, opciones de rendimiento o el renderer de referencia.
+
+El fixture procedural original DX11/corpus de 24 casos daba 11 diferencias
+con 105: siete de ZTE y cuatro de mezcla de un nivel. Tras corregir ZTE,
+CPU/compute/hardware coinciden en los 16 casos de profundidad; permanecen
+las cuatro diferencias menores de mezcla, incluidas dos con FGE apagado.
+Se conservan para investigación separada. No acreditan todavía causa de la
+neblina en el juego ni autorizan cambiar blending sin otro contraste.
+
+Nueva regresión: 16 combinaciones ZTE/ZTST/ZMSK, color/alpha, profundidad y
+píxel vecino; GPU exige compute/hardware efectivos, sin CPU como oráculo.
+Negativo contra biblioteca 105 intacta: fallan los tres grupos CPU, compute
+y hardware. Primer positivo normal: 612/613; GPU: 652/653. Falla solo el
+fixture antiguo PACKED XYZ2 que pretendía escribir todos los bits Z32, pero
+programaba TEST=1<<17 sin ZTE. Se activa explícitamente ZTE=1, manteniendo
+todos sus esperados y rutas nativa/fragmentada; no se retira la prueba.
+
+Positivos definitivos: **613/613 normal y 653/653 GPU**, códigos 0. GPU
+reutiliza únicamente la caché privada 106 de la primera pasada, con claves
+que incluyen el shader completo; estos tiempos no son un benchmark.
+Test SHA-256 `bd67ab7f3e9225767dc9c96f15d5c09297b008f8e0be66a961f439e90faef8a8`;
+biblioteca `57022e3a794851038bc141600cf00069daa939c01073e03ee15ac3235c5dba69`.
+Originales de fuentes/fixture/biblioteca/test 105 e identidades conservados
+en snapshot privado antes de editar. El runner 105 congelado permanece intacto.
+
+106/106 parches comprobados/aplicados en orden desde el pin en un worktree
+privado nuevo, sin reset/clean de los directorios de Opus. Configuración
+0 errores/4 avisos existentes; 25 PowerShell, 0 errores. Sin fallos conocidos
+añadidos ni datos del juego publicados. **Compilación completa del runner
+106, CI final y control funcional todavía pendientes**; no trasladar los
+resultados de escena 105 al nuevo comportamiento. Seguir el pase de niebla
+con estado de profundidad/mezcla y una referencia de comandos coherente.
