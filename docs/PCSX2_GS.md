@@ -428,3 +428,30 @@ y siguen pasando con `--left-only`; ahora se comprueban ambas por defecto.
 El software restaura además una ráfaga Freeze/GIF/VSync sintética con sus
 cuatro imágenes idénticas a su ejecución fresca. El desacuerdo hardware no
 se debe al Freeze de ese patrón. No extrapolarlo aún al fondo del juego.
+
+### Merge y software original en la escena (2026-10-13)
+
+Otra DLL privada conserva el DX11 Maximum original y captura su merge antes
+del desentrelazado junto al shadow OpenGL de la misma frontera. Runner 106
+congelado, hilos apagados, control de 600,391 s terminado por límite y tarjeta
+intacta. Guarda Freeze original en 3999, con destinos de caché leídos a VRAM,
+y una ráfaga limitada de GIF/VSync hasta End 4015: 114.804.229 bytes,
+100.082 registros, sin escrituras directas. GSRendererSW original restaura
+y repite esos eventos: código 0, 17 imágenes 3999..4015. La historia inicial
+de desentrelazado no se serializa; no es otro renderer integrado del juego.
+
+Revisados 16 tríos en contactos y cuatro completos después de varios campos,
+el fondo del software original permanece cercano al merge hardware y OpenGL
+conserva más neblina/brillo. En la región de fondo de 4004, diferencia media
+OpenGL−software +31,03/+37,26/+32,57 RGB; media absoluta software−hardware
+0,49/0,50/0,45. Son descripciones locales, sin equivalencia de imágenes.
+En ese fondo de 4000, PCRTC actual y merge hardware tienen RGB idéntico:
+el desentrelazado posterior no explica allí el contraste con OpenGL.
+
+PMODE constante `0x8023` (ambos circuitos, MMOD=1, ALP=128, SLBG=0),
+SMODE2 `0x21fed1`, DISPFB1 `0x800000090d0` y DISPFB2 `0x90d0`.
+No adjudicar la escena a los desacuerdos sintéticos del espejo. El siguiente
+control compara un campo de backend del runtime en CPU/GPU con estado/VRAM
+propios, para separar frontend y rasterización. Hashes, límites y próximos
+pasos en ESTADO.md. CPU/DX11 originales preservados; sin corrección nueva de
+neblina, benchmark, cierre normal ni validación de estabilidad prolongada.

@@ -5750,3 +5750,65 @@ El desacuerdo con hardware se reproduce también sin Freeze y queda localizado
 en la mitad derecha; no se adjudica a restauración. End truncado se rechaza
 antes de crear dispositivo/directorio. La historia inicial de desentrelazado
 no está serializada. Control de esta herramienta con el juego pendiente.
+
+### Ráfaga de escena repetida con el software original (2026-10-13)
+
+[#74 fusionada](https://github.com/KIexster/god-of-war-recomp/pull/74),
+merge `6aaa1ed0f595f7f91a9e4e27d72481fd0fa92060`, tras revisión local y
+[cuatro controles CI correctos del HEAD 622af4b](https://github.com/KIexster/god-of-war-recomp/actions/runs/38456073463).
+
+Control nuevo con el runner 106 congelado, presentación compartida síncrona,
+hilos apagados y tarjeta privada. DLL de diagnóstico separada
+`eeef73a7162c129f67f03da037765d20071682492b0c1e7b6bf9df3bf54786de`:
+conserva el renderer DX11 Maximum original y el segundo frontend/OpenGL del
+contraste de frontera común. Lee además su salida de merge **antes del
+desentrelazado**, guarda Freeze original en 3999 con lectura de destinos de
+caché y registra los eventos posteriores hasta End 4015. No modifica IRQ/FIFO,
+runner, parches ni renderer principal. El readback y la referencia adicional
+pueden alterar tiempos/cachés; son diagnósticos, no medición de velocidad.
+
+Termina a los 600,391 s por límite, proceso 1/controlador 0; tarjeta intacta.
+Primer informe de estado 11 a 55,84 s, último 11 a 596,70 s; sin firmas buscadas
+de fallo ni minimización en los cambios de ventana registrados.
+1.167 adquisiciones, sin regresiones/inconsistencias/retornos A–B–A/tamaños
+cambiantes/hashes desconocidos; distancia máxima 0. Se obtienen 16 adquiridos,
+16 PCRTC, 16 merges y 16 shadow, 512×448, en 4000..4015; los adquiridos están
+correlacionados y hay 16 RGBA distintos. No certifica oclusión, cierre normal,
+partida completa, modo combinado prolongado, FPS únicos ni estabilidad larga.
+
+La ráfaga privada tiene 100.082 registros/114.804.229 bytes, bajo el límite
+de 160 MiB, con Freeze inicial, GIF, 17 VSync 3999..4015 y End válido. No
+contiene escrituras directas: el fixture software sigue rechazándolas.
+Referencia privada de restauración
+`894057dfb542ca43abd9d1b934301151c9c740cf6d67f8a5c212e860dd486a1c`,
+GSRendererSW original y dispositivo/composición DX11, termina con código 0 y
+17 imágenes. El formato exige continuidad y End antes de crear el dispositivo;
+su control sintético de restauración y rechazo de truncado consta arriba.
+El Freeze incluye VRAM nativa y estado GS; **no conserva la historia inicial
+de desentrelazado**. No demuestra equivalencia de cachés/optimizaciones entre
+hardware y software ni integra ese software como renderer del juego.
+
+Se revisan los 16 tríos en contactos reducidos y cuatro completos de
+4004/4007/4011/4015, tras varios campos de calentamiento de la referencia.
+El software original mantiene un fondo cercano al merge hardware;
+**el exceso de brillo/neblina permanece en OpenGL**. En la región de fondo
+x=210..439, y=35..149 de 4004, OpenGL−software tiene media
++31,03/+37,26/+32,57 RGB; software−hardware tiene media
+−0,44/−0,45/−0,41 y media absoluta 0,49/0,50/0,45. En las 16 imágenes,
+esa media absoluta software/hardware está por debajo de 0,68 por canal.
+Son medidas descriptivas de esa región, sin tolerancia de equivalencia:
+las imágenes completas también tienen diferencias y los campos iniciales
+no restauran historia anterior. En el fondo de 4000, PCRTC actual y merge
+hardware coinciden en RGB; allí el desentrelazado posterior no explica el
+contraste de brillo con OpenGL.
+
+Los registros de composición son constantes en 3999..4015: PMODE `0x8023`
+(EN1=EN2=1, MMOD=1, AMOD=0, SLBG=0, ALP=128), SMODE2 `0x21fed1`
+(INT=1, FFMD=0), DISPFB1 `0x800000090d0`, DISPFB2 `0x90d0` y BGCOLOR=0.
+Esto acota el contraste a la configuración real; los desacuerdos procedurales
+de alpha y FOG variable del espejo no demuestran por sí solos la causa del
+fondo. Como inferencia, el desacuerdo persistente frente a ambas referencias
+orienta el siguiente control hacia el runtime. Falta repetir el mismo campo
+de comandos de backend, con su estado/VRAM inicial, en CPU y GPU para separar
+interpretación del frontend y rasterización; seguir profundidad, mezcla,
+textura/FOG y pases posteriores. **La neblina no está corregida**.
