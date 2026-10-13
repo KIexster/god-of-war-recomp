@@ -5210,3 +5210,16 @@ FOG posterior. Configuración 0 errores/4 avisos existentes; sintaxis 24 PS1,
 regresiones y código anterior se está construyendo para comprobar el negativo.
 Positivo, compilación completa de 104, CI y control funcional todavía pendientes.
 No se declara corregida la diferencia de niebla del juego, los espasmos o el encuadre.
+
+Validación nativa de `1bfa0358f23a0c25604a7e69c7ab50890a2bfcbf`: las seis
+regresiones nuevas con el código anterior fallan y las otras 605 pasan; biblioteca
+103 SHA-256 `bf984c75fd78a3dc78502460e22390dfc16ea50b9653a850719724f7f517b2df`
+intacta. Aplicando solo la corrección, 611/611 normales y 647/647 con controles
+OpenGL GPU correctas. El control privado de seis variantes también pasa a
+seis colores iguales al control explícito. No hay fallos conocidos añadidos.
+[CI del código 1bfa035 correcto](https://github.com/KIexster/god-of-war-recomp/pull/69/checks).
+
+Son pruebas del runtime, no una compilación nueva del juego. Se inicia la
+compilación completa 104 con `GOW_WORK` privado y fuentes anteriores conservadas;
+se registrará su commit/hash al terminar. La [PR #69](https://github.com/KIexster/god-of-war-recomp/pull/69)
+sigue en borrador hasta completar compilación, escena y CI del HEAD final.
