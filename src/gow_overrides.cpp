@@ -6,6 +6,7 @@
 #include "gow_pad2_packet.h"
 #include "gow_pad_script.h"
 #include "gow_gs_replay.h" // GOW-Port: captura opcional y acotada para comparar backends.
+#include "gow_gs_pcsx2_client.h" // GOW-Port: espejo GIF/DX11 opcional desde arranque.
 #include "gow_camera_probe.h"
 #include "gow_model_probe.h"
 #include "gow_skin_probe.h"
@@ -1101,6 +1102,7 @@ namespace
     {
         configureGowCdImage();
         gow_gs_replay::configure(runtime.memory(),runtime.gs());
+        gow_pcsx2_client::configure(runtime.gs());
         // El heap interno del runtime va bajo el ELF (memoria libre) para no pisar el heap propio del juego,
         // que este crea con SetupHeap al final del .bss (patches/ps2recomp-heap.patch).
         runtime.setPrivateGuestHeap(0x000A0000u, 0x000FF000u);

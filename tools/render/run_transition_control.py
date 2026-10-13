@@ -75,6 +75,41 @@ def private_output(directory):
     return directory
 
 
+def pcsx2_settings(args, folder):
+    """Espejo opcional: identidad explícita, captura privada y hilos aislados."""
+    module = getattr(args, 'pcsx2_gs_module', None)
+    if module is None:
+        return {}, None
+    if args.vu1_thread != '0' or args.gs_front != '0':
+        raise ValueError('El espejo PCSX2 requiere VU1 y frente GS sin hilos')
+    count, tick = args.pcsx2_capture_count, args.pcsx2_from_tick
+    interval = getattr(args, 'pcsx2_capture_interval', 120)
+    if type(count) is not int or not 0 <= count <= 16:
+        raise ValueError('Capturas PCSX2: entero 0..16')
+    if type(tick) is not int or not 0 <= tick <= 0xffffffffffffffff:
+        raise ValueError('Inicio PCSX2: tick uint64')
+    if type(interval) is not int or not 1 <= interval <= 600:
+        raise ValueError('Intervalo PCSX2: entero 1..600 ticks')
+    module = Path(module).resolve(strict=True)
+    if not module.is_file():
+        raise ValueError('Se requiere una DLL PCSX2 local')
+    settings = dict(GOW_PCSX2_GS_DIAG='1', GOW_PCSX2_GS_DLL=str(module),
+                    GOW_PCSX2_GS_CAPTURE_COUNT=str(count),
+                    GOW_PCSX2_GS_CAPTURE_FROM_TICK=str(tick),
+                    GOW_PCSX2_GS_CAPTURE_EVERY_TICKS=str(interval))
+    if count:
+        settings['GOW_PCSX2_GS_OUTPUT'] = str(folder/'pcsx2_frames')
+    resources = getattr(args, 'pcsx2_resources', None)
+    if resources is not None:
+        resources = Path(resources).resolve(strict=True)
+        if not resources.is_dir():
+            raise ValueError('Recursos PCSX2: directorio local requerido')
+        settings['GOW_PCSX2_GS_RESOURCES'] = str(resources)
+    return settings, dict(module=str(module), module_sha256=digest(module),
+                          resources=str(resources) if resources else None,
+                          note='Espejo DX11/PCRTC; no reemplaza renderer, IRQ/FIFO ni mide FPS.')
+
+
 class WindowsApi:
     """Solo lectura; no activa ventanas, manda entradas ni captura imágenes."""
     def __init__(self):
@@ -215,6 +250,8 @@ def prepare_case(args):
         raise ValueError('La salida no puede estar dentro del IOP_MOD de origen')
     settings = settings_for(args.case, folder, iso, root/'shader_cache',
                             args.vu1_thread, args.gs_front, args.diag_from_tick, args.capture_acquired)
+    external_settings, external_identity = pcsx2_settings(args, folder)
+    settings.update(external_settings)
     # No reutilizar una carpeta: evita sobrescribir una pasada o una tarjeta original.
     folder.mkdir(parents=True, exist_ok=False)
     if args.capture_acquired:
@@ -235,6 +272,8 @@ def prepare_case(args):
                   initial_card_sha256=digest(card),
                   card_origin='copy' if card_source else 'procedural_unformatted',
                   note='Control funcional; hashes y registros no miden FPS ni alinean cuadros.')
+    if external_identity is not None:
+        result['pcsx2'] = external_identity
     return folder, runner, card, result
 
 
@@ -253,6 +292,12 @@ def main():
                         help='Primer tick host registrado; no modifica la presentación ni su cupo')
     parser.add_argument('--capture-acquired', type=int, choices=range(17), default=0,
                         help='Capturas explícitas de la textura adquirida desde diag-from-tick; 0 desactiva')
+    parser.add_argument('--pcsx2-gs-module', type=Path, help='DLL opcional del espejo GS original DX11')
+    parser.add_argument('--pcsx2-resources', type=Path, help='Recursos/shaders de la revisión PCSX2 fijada')
+    parser.add_argument('--pcsx2-capture-count', type=int, choices=range(17), default=8)
+    parser.add_argument('--pcsx2-from-tick', type=int, default=900)
+    parser.add_argument('--pcsx2-capture-interval', type=int, default=120,
+                        help='Ticks entre capturas PCRTC: 1..600; 1 permite una ráfaga limitada')
     args = parser.parse_args()
     if os.name != 'nt':
         parser.error('La ejecución del juego y el monitor de ventana requieren Windows')

@@ -96,6 +96,36 @@ class TransitionControlTest(unittest.TestCase):
         self.assertEqual(env['GOW_PAD_SOLO_GUION'], '1')
         self.assertEqual((env['PS2X_VU1_HILO'], env['PS2X_GS_FRENTE']), ('0', '0'))
 
+    def test_pcsx2_module_identity_and_private_capture_without_precreating_folder(self):
+        with tempfile.TemporaryDirectory(prefix='gow_transition_test_') as name:
+            args = self.fixture(Path(name))
+            args.pcsx2_gs_module = Path(name)/'procedural.dll'
+            args.pcsx2_gs_module.write_bytes(b'fixture, no DLL ejecutable')
+            args.pcsx2_capture_count, args.pcsx2_from_tick = 2, 123
+            args.pcsx2_capture_interval = 1
+            with patch.object(control, 'EXPECTED_ELF_SHA256', control.digest(args.elf)):
+                folder, _, _, result = control.prepare_case(args)
+            self.assertEqual(result['settings']['GOW_PCSX2_GS_OUTPUT'], str(folder/'pcsx2_frames'))
+            self.assertFalse((folder/'pcsx2_frames').exists())
+            self.assertEqual(result['pcsx2']['module_sha256'], control.digest(args.pcsx2_gs_module))
+            self.assertEqual(result['settings']['GOW_PCSX2_GS_CAPTURE_FROM_TICK'], '123')
+            self.assertEqual(result['settings']['GOW_PCSX2_GS_CAPTURE_EVERY_TICKS'], '1')
+
+    def test_pcsx2_invalid_modes_reject_before_creating_run(self):
+        for changes in ({'vu1_thread': '1'}, {'pcsx2_capture_count': 17},
+                        {'pcsx2_from_tick': -1}, {'pcsx2_from_tick': True},
+                        {'pcsx2_capture_interval': 0}, {'pcsx2_capture_interval': 601}):
+            with tempfile.TemporaryDirectory(prefix='gow_transition_test_') as name:
+                args = self.fixture(Path(name))
+                args.pcsx2_gs_module = args.runner
+                args.pcsx2_capture_count, args.pcsx2_from_tick = 0, 0
+                for key, value in changes.items():
+                    setattr(args, key, value)
+                with patch.object(control, 'EXPECTED_ELF_SHA256', control.digest(args.elf)):
+                    with self.assertRaises(ValueError):
+                        control.prepare_case(args)
+                self.assertFalse(args.output_root.exists())
+
     def test_matrix_and_invalid_thread_combination(self):
         for case, pair in zip(control.CASES, [('0', '0'), ('0', '1'), ('1', '0'), ('1', '1')]):
             settings = control.settings_for(case, Path('/case'), Path('/iso'), Path('/cache'))

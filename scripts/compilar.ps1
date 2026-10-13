@@ -1,4 +1,4 @@
-# Clona PS2Recomp, recompila SCUS_973.99 a C++ y compila el ejecutable para PC.
+﻿# Clona PS2Recomp, recompila SCUS_973.99 a C++ y compila el ejecutable para PC.
 # Lo llama scripts\2_compilar.cmd, que antes carga el entorno de Visual Studio (vcvars64).
 param([switch]$Trazas)
 $ErrorActionPreference = 'Stop'
@@ -115,6 +115,7 @@ $gsHostDiagWindowPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-host-diag-win
 $gsAcquiredModeDiagPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-acquired-mode-diag.patch'
 $gsHostAcquiredCapturePatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-host-acquired-capture.patch'
 $eePmulthPatch = Join-Path $RepoRoot 'patches\ps2recomp-ee-pmulth.patch'
+$gsExternalObserverPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-external-observer.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -254,6 +255,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $gsHostDiagWindowPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsAcquiredModeDiagPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsHostAcquiredCapturePatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $eePmulthPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsExternalObserverPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner

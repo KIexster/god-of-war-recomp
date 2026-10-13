@@ -4767,3 +4767,418 @@ No son poses alineadas. El mayor paso fuente del slot 14 pasa de 1,13344 a
 0,84; no se usan como tolerancia PS2, porcentaje de mejora o prueba causal
 automática. PMULTH sí queda corregida por su semántica y regresiones. Falta
 ampliar el control a otras animaciones y contrastar referencia alineada.
+
+## GS de PCSX2: comienzo de adaptación propia (2026-10-11)
+
+#67 fusionada en `96853bad688305c1d62d9dad6faeb1f1e58e1de4` tras controles,
+revisión y [CI del HEAD final `3ba1000` correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38196063455).
+Se integra main sin reescribir historia. El usuario pide adaptar por nuestra
+cuenta el GS de PCSX2 mientras el autor del port de Urban Reign entrega su enlace.
+No se dispone aún de su código ni se reproducen sus cifras de FPS/resolución.
+
+Se prepara transporte propio de GIF para los tres PATH, con fragmentos,
+quadwords alineadas, límites y errores; conexión a `GSState::Transfer` de
+PCSX2 `2954ebe`. Pruebas procedurales Windows y sintaxis con sus cabeceras
+reales correctas; CI añadida para ambas. No cambia runtime/parches o backend
+predeterminado. Todavía no crea un GS real ni dibuja el juego: extracción del
+módulo DX11, registros, FIFO/VRAM y cobertura de caminos nativos pendientes.
+Arquitectura, condiciones y límites en [PCSX2_GS.md](PCSX2_GS.md).
+
+Revisión posterior: la primera conexión compilaba pero PATH1 usaba el índice
+0 legado. GSState corta ese índice en EOP y borra nloop incompleto al terminar
+el span, incompatible con nuestros lotes/fragmentos. Se corrige al índice
+continuo 3 usado por GSgifTransfer/MTGS; los otros dos mantienen sus cursores.
+Sintaxis correcta no prueba ese comportamiento. GSState.cpp real compila
+como objeto privado en MSVC; aún falta enlazar/ejecutar el módulo. No se había
+conectado el puente al juego ni modificado su renderer.
+
+## GS de PCSX2: parser original probado (2026-10-12)
+
+La extracción privada de GS/common ya enlaza y ejecuta GSState original sin
+ventana/dispositivo. Se publica el fixture procedural, sin datos del juego:
+retención de PATH1 al separar tag/payload, dos EOP por lote, fragmentos PATH2/3
+y cursores independientes, RGBAQ exacto. La subclase cuenta dibujo sin
+rasterizar; la prueba exige cero dibujos y cero solicitudes de ventana.
+No es un renderer de sustitución. Bibliotecas/servicios originales y límites
+de reproducción del host privado detallados en [PCSX2_GS.md](PCSX2_GS.md).
+
+Negativo de índice PATH1 0: compila y falla en el nloop pendiente; índice 3
+restaurado correcto. SHA-256 del ejecutable procedural restaurado
+`1289d908c425c0f1b138ff7dc4cf619f1a9341c443fe6145eae5c02d9b7e033c`.
+El CI anterior `d4aab8e` completo correcto, incluido enlace sintáctico de
+headers reales; pendiente CI del HEAD que añade fixture/resultados.
+Todavía falta alojar DX11, píxeles, FIFO/VRAM/IRQ y conectar el runtime.
+
+## GS de PCSX2: dispositivo DX11 con píxeles comprobados (2026-10-12)
+
+La extracción privada ya crea GSDevice11 original en modo sin ventana sobre
+la AMD Radeon RX 5700 XT. Se publica `tests/pcsx2_dx11_device_probe.cpp`:
+dos ciclos de creación/cierre; Clear y patrón subido con padding por fila,
+dibujado por shader COPY original. Los 2.701 píxeles RGBA de cada operación
+coinciden exactamente, incluida alpha y orientación. Negativo aislado que
+omite el dibujo: compila y falla en el primer píxel; restaurado pasa.
+SHA-256 restaurado `2be054f554e71ebdafc234998b84d4e7b53542f26a40c2f58403fcbead66db14`.
+
+[CI completo de `6139073` correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38200847766).
+El nuevo control DX11 fue nativo privado, no una ejecución GPU de CI. Host,
+dependencias, alcance y pendientes en [PCSX2_GS.md](PCSX2_GS.md). Falta enviar
+GIF al rasterizador/cache completos, VRAM/FIFO/IRQ y conectar el juego.
+No cambia el renderer actual ni acredita una mejora de FPS.
+
+## GS de PCSX2: primer dibujo GIF en hardware comprobado (2026-10-12)
+
+La extracción privada de GSRenderer/GSRendererHW/GSTextureCache originales
+enlaza y dibuja en DX11. Fixture publicado `tests/pcsx2_gif_draw_probe.cpp`:
+mosaico de 16 sprites, fragmentos de 13 bytes, colores distintos por PATH1/2/3
+y descarga FIFO original. Los tres envíos producen un draw call GPU cada uno
+y 2.048 píxeles RGBA exactos. Negativo que omite solo el paquete de dibujo:
+compila y falla en el primer píxel; restaurado pasa los tres PATH. SHA-256
+`1d271fd05fcbf01cec0b688655c26337b99259a2545274ecccda423740ef01fb`.
+
+[CI completo de `72e4f55` correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38238566117).
+Este control GPU sigue siendo nativo privado. Servicios opcionales ausentes
+abortan si se usan; no se solicita VSync, ventana o reapertura. Los objetos
+SW se conservan, sin validación de esa ruta. Límites en [PCSX2_GS.md](PCSX2_GS.md).
+Faltan reproducción pública del módulo, IMAGE/texturas, presentación y conexión
+al runtime. No se atribuye renderizado de God of War ni una mejora de FPS.
+
+## GS de PCSX2: módulo reproducible, IMAGE y cierre de memoria (2026-10-12)
+
+Se publica host/CMake/preparación del módulo aislado y se añade CI Windows:
+enlace de cuatro fixtures, parser y memoria ejecutados sin GPU. Compilación
+local de la receta y cuatro controles correctos. Se verifica además IMAGE
+CT32, textura DECAL/nearest y FIFO completo/parcial: 2.048 + 91 píxeles RGBA
+exactos, dibujo GPU confirmado. Omitir IMAGE compila y falla; restaurado
+correcto. SHA-256 del fixture de dibujo
+`a7991d25961bdddddd8ce3631cf73287f057b8928c735df8724c818e575f3444`.
+
+La extracción Windows conservaba un handle y placeholders al cerrar. Se
+corrige solo el host aislado, con comentarios GOW-Port y regresión: ocho
+ciclos alias de 4x4 MiB, handles estables y todo el rango libre. Negativos
+separados para handle y unión de placeholders compilan y fallan; restaurado
+correcto. Sin validación del camino de fallo de reserva. Las fuentes originales
+y el runtime del juego permanecen intactos.
+
+La receta local ejecuta los cuatro fixtures sin DLL DXC; no acredita otras
+APIs o rendimiento. [Instrucciones](../tools/render/pcsx2_probe/README.md),
+límites y siguientes pasos en [PCSX2_GS.md](PCSX2_GS.md). El CI de `4addf7b`
+completo correcto; el nuevo job nativo está pendiente del HEAD que lo publica.
+
+## GS de PCSX2: salida VSync/PCRTC procedural (2026-10-12)
+
+`gs_gif_draw_probe --frame` ejecuta GSvsync original, su actualización CRT/Flush
+y Merge DX11. Tres patrones distintos, tres salidas 64x32: los 2.048 píxeles
+RGBA de cada una coinciden exactamente con RGB de entrada y alpha 255 impuesta
+por PMODE. Surfaceless omite el Present de ventana y el host comprueba sus
+callbacks. Negativo al omitir solo GSvsync compila y falla; restaurado pasa.
+SHA-256 `cd46ebb2f58aa6bd80c5849e30d7ee5fc0659c644db030f65c8fed1c6701cffb`.
+
+DISPLAY se configura conforme a las unidades NTSC del cuerpo original. El
+primer desfase de 25 líneas pertenecía al fixture con DY 0, no a una ejecución
+de God of War. No cambia el renderer del juego ni resuelve por sí solo su
+encuadre. [CI de `08307ac` completo correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38243100981),
+incluido enlace Windows; esta nueva prueba GPU es local. Ventana/swapchain e
+integración del runtime siguen pendientes; no hay medición de FPS.
+
+## GS de PCSX2: backbuffer DXGI y dos ciclos de ventana (2026-10-12)
+
+El modo `--window` usa una ventana procedural propia oculta y Present original.
+Dos ciclos completos de dispositivo/renderer/ventana, tres patrones por ciclo:
+los seis backbuffers reales leídos antes de Present y las seis texturas PCRTC
+coinciden exactamente en sus 2.048 píxeles RGBA. Contexto ImGui vacío, sin
+archivos de interfaz; callbacks y cierre de HWND/clase comprobados.
+
+Negativo al borrar el backbuffer a magenta tras dibujar: compila y falla aun
+con salida PCRTC correcta; restaurado pasa ventana y Surfaceless. SHA-256
+`74e92ae9a886b66f55079d06f6cbf0ddcbf9af18bfe2064e7d92137f94f3c543`.
+[CI de `d1bf750` completo correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38244581430).
+El nuevo control GPU sigue siendo local. No se ejecuta God of War, no se
+comprueba imagen visible, resize/pérdida de dispositivo ni estabilidad del
+FINISH asíncrono del runtime. No se mide FPS. API/hook de integración pendientes.
+
+## GS de PCSX2: IMAGE FLG=3 y cobertura del futuro hook (2026-10-12)
+
+Se comprueban IMAGE FLG=2/3 con el parser/rasterizador original, sin alterar
+los tags en el puente. FIFO, salida PCRTC y backbuffer de ventana exactos.
+Negativo que omite solo FLG=3 compila y devuelve el patrón anterior; la prueba
+falla. Restaurados, los tres modos pasan. SHA-256
+`77ecd2fa20509b18422d9ade62c8ee35db18f90a0a8ad19e6882be412d311bfd`.
+Conserva la semántica relevante para #55, sin atribuir FPS o un fallo del juego.
+
+Revisión confirma dos atajos DMA que evitan el árbitro/frontend genérico.
+La subida nativa normaliza datos/registros y pierde parte de los tags originales;
+el futuro hook no puede limitarse a processGIFPacket. Propuesta y pendientes
+documentados en [PCSX2_GS.md](PCSX2_GS.md), sin modificar el runtime por ahora.
+[CI de `ada5c5e` completo correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38246271325).
+
+## GS de PCSX2: ABI de DLL y consumidor independiente (2026-10-12)
+
+Se construye una DLL opcional con ABI 1 (tamaños/handles/errores/hilo). Contrato
+de carga/exports/argumentos sin dispositivo correcto, añadido a CTest/CI. Cliente
+GPU mediante GetProcAddress, sin globals del GS: dos ciclos, GIF fragmentado,
+registros y consulta de salida correctos; 2.048 píxeles RGBA exactos por ciclo.
+Singleton ocupado, handle cerrado, otro hilo y buffers insuficientes rechazados;
+guardia final intacta. Negativos de hilo/capacidad compilan y fallan; restaurados
+correctos. No se modifica aún PS2Recomp ni se enlaza el juego. El espejo de 8 KiB
+debe construirse desde registros PS2 reales; no copiar su struct GSRegisters.
+
+[CI de `1f87036` completo correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38248274550).
+Nuevo contrato DLL pendiente del HEAD que lo publica. GPU local, sin medición
+de FPS; IRQ/FINISH, FIFO/VRAM, recuperación y hook pendientes. Alcance en
+[PCSX2_GS.md](PCSX2_GS.md) y [README del módulo](../tools/render/pcsx2_probe/README.md).
+
+## GS de PCSX2: espejo privilegiado explícito (2026-10-12)
+
+Helper sin activar en el juego: empaqueta 19 registros a offsets PS2, en
+little-endian, huecos cero y CSR atómico; omite vsyncTick del struct compacto.
+Prueba de valores distintos/CSR multibyte y cambios de tick correcta en MSVC.
+Los 19 offsets y 8 KiB se contrastan con GSPrivRegSet original mediante
+static_assert. CI/CTest incorporados. El llamante debe sincronizar los campos
+no atómicos; el helper no corrige por sí solo acceso concurrente o presentación.
+
+## GS de PCSX2: enlace espejo opcional preparado (2026-10-12)
+
+Parche 103: observador de GIF original, escrituras directas/reset y VSync del
+EE. Se rechazan los dos atajos DMA y PACKED mientras está ligado, sin consumir
+su entrada; comportamiento habitual conservado al desenlazar. Cliente Windows
+por DLL, hilo dueño y cola acotada; captura PCRTC BMP privada limitada. Rechaza
+hilos VU1/frente GS. IRQ/FIFO/VRAM siguen en runtime; backend habitual intacto.
+
+Compilación del módulo/cliente Windows correcta. Parser conserva cursor y Q
+con registro directo; DLL GPU dos ciclos/2.048 RGBA exactos, reset y rechazo
+de dirección inválida correctos. Config 0 errores/4 avisos existentes; 24 PS1
+sin errores. La suite del nuevo runtime y la compilación completa de 103 aún
+pendientes. Variables/protocolo y límites en [PCSX2_GS.md](PCSX2_GS.md).
+
+## Pausa solicitada tras compilación completa 103 (2026-10-12)
+
+HEAD de código `477e01372d3f4a58c460b126b8e459873e9b9286`: los cuatro trabajos
+de CI correctos en run `38298178064`. Compilación Windows completa mediante
+`2_compilar.cmd` en workspace privado, 103 parches, salida 0, 1.072,57 s.
+Runner SHA-256 `e8e18d005dce8674de8df92be4522ec8f038b6a6aeedc3769915c5679988a471`.
+El ejecutable y su manifiesto quedan congelados; no se ejecuta aún el juego.
+
+Se publica preparación del control completo runtime/cola/DLL, con dos patrones
+distintos separados por reset, y opciones del control de transición que registran
+hash de DLL y capturas PCRTC privadas. Las 19 pruebas Python del control pasan.
+El fixture nativo completo aún no se ha compilado/ejecutado. Sigue pendiente
+corregir la lectura Unicode del entorno Windows en el cliente: el controlador
+puede resolver la junction a una ruta con acentos y `u8path(getenv(...))` no
+garantiza interpretar correctamente los bytes ACP. No se activa el espejo en
+una partida antes de corregir y validar ese camino.
+
+Pausa expresa del usuario al terminar la compilación. Pendientes al retomar:
+Unicode y regresión con carpeta no ASCII, recompilación de src/ sobre esta
+compilación completa, suites nativas/contratos, control procedural runtime/DLL
+y después menú/introducción/partida. PR #68 permanece en borrador; no se afirma
+mejora de FPS ni resolución de encuadre, espasmos o FINISH asíncrono.
+
+## GS de PCSX2: recorrido runtime/DLL y rutas Unicode verificados (2026-10-12)
+
+Se retoma por petición del usuario. El control nativo del enlace reproduce el
+rechazo de configuración con la DLL en una ruta con acentos y una carpeta
+`capturas_ñ`: los bytes ACP de `getenv` no son UTF-8 válido para `u8path`.
+Se leen esas rutas con `_wgetenv`/UTF-16 y se convierten únicamente los recursos
+a UTF-8 para el ABI. El negativo anterior compila y termina con código 1;
+con la corrección termina con 0, sin cambiar el runtime ni el módulo DX11.
+
+Control completo con el runtime 103: 28 spans GIF/352 bytes, dos escrituras
+directas durante tags incompletos, dos VSync y un reset; ambas imágenes de
+64x32 tienen sus 2.048 RGBA exactos, con colores distintos antes/después del
+reset. Cola drenada y DLL cerrada con `failed=0`; carpeta no ASCII correcta.
+DLL SHA-256 `cbbc2d060df61e479355479fc3ce5b054e5ce27302bf19d5accda735d21ecd62`.
+Todavía no es un control del juego o de FPS. La actualización de src/ del
+runner sobre la compilación completa 103 y las suites nativas están pendientes.
+
+Las suites nativas de esa compilación completa terminan correctamente:
+605/605 normal y 641/641 con los controles OpenGL GPU activados, sin fallos
+conocidos. Los cuatro contratos FINISH normal/asíncrono, incluida presentación
+compartida real y comparación CPU de 16 texturas, pasan. Estos patrones no
+sustituyen la transición con el juego ni validan todas las combinaciones de hilos.
+
+## GS de PCSX2: primera transición y revisión de Tobiichi (2026-10-12)
+
+Src/ `e4cf8c14732771112bb87054b53edaae66ea6f35` actualizado sobre runtime
+completo `477e013`/103; runner SHA-256
+`089b1cea9cd14bb3cf3e2fa387b3a6f7f303801dfbd24b67b3be3b2fa8916ca5`.
+CI de e4cf8c1 completo correcto. Negativo privado que omite escrituras directas
+y permite atajos con observador: compila y provoca cuatro fallos. Fuentes
+restauradas byte por byte, 605 normales y 641 GPU correctas de nuevo.
+
+Primer control del juego, FINISH síncrono/presentación compartida, sin hilos
+VU1/frente GS: 360,08 s hasta el límite, sin salida anticipada. Tarjeta privada
+copiada, mismo ELF verificado, guion sin capturas periódicas. Espejo DX11
+procesa GIF/VSync del juego y guarda 10 imágenes PCRTC 512x448, ticks 900..1980,
+además de ocho texturas OpenGL adquiridas 1400..1407. Se revisan muestras de
+la introducción y enemigos; no se certifican poses/animación o paridad con PS2.
+Estado 11 incluye la introducción: no demuestra control jugable/HUD.
+
+Inspector compartido: 610 adquisiciones desde tick 1400, sin regresiones,
+metadatos inconsistentes, cambios de dimensiones o retornos A-B-A registrados.
+Cubre esa muestra; no demuestra ausencia de retenciones ni resuelve todos
+los fallos. Tick EE del espejo y tick host/adquisición no alinean píxeles por
+sí solos. Salida 1 corresponde a la terminación del proceso propio al límite;
+no se verifica cierre normal de la partida. No mide FPS.
+
+Se revisan cambios recientes de Tobiichi-Port por petición del usuario:
+[comparación, candidatos y límites](REVISION_TOBIICHI.md). No se copian el
+buzón global o el control de fences sin sus regresiones. Control asíncrono
+compartido equivalente en curso; no se cambia la compilación durante la partida.
+
+Control FINISH asíncrono/compartido sobre el mismo runner e4cf8c1: 360,06 s,
+final al límite sin salida anticipada, 12 capturas PCRTC 900..2220 y ocho
+texturas adquiridas. Se observa HUD, Kratos y enemigos en la salida DX11 del
+tick 2100; no se afirma fidelidad de animación o control manual por esa imagen.
+Inspector: 918 adquisiciones, sin regresiones, metadatos inconsistentes,
+cambios de dimensiones o A-B-A registrados. Mismos ELF/tarjeta inicial y
+opciones de aislamiento. Ambos controles del espejo usan rutas DMA genéricas:
+no extrapolar estabilidad a los atajos habituales, los hilos o una partida larga.
+
+Se prepara captura por intervalo configurable para estudiar poses consecutivas:
+`GOW_PCSX2_GS_CAPTURE_EVERY_TICKS=1..600`, predeterminado 120, cupo máximo 16
+conservado. Controlador actualizado y 19 pruebas Python correctas. Fixture
+runtime/DLL captura dos colores exactos en ticks 1 y 2 con reset; negativo que
+ignora el intervalo y fuerza 120 compila/falla, restaurado correcto. Cambio
+solo de src/ y control, sin nuevo parche del runtime. Recompilación del runner
+y ráfaga con el juego pendientes; el ejecutable e4cf8c1 no contiene esta opción.
+
+## GS de PCSX2: primeras ráfagas comparadas dentro de una ejecución (2026-10-12)
+
+Src/ `e5e040e5bd4ea56d13499bd827f9276fa4400ce7` recompilado sobre la misma
+cadena completa 103 de `477e013`, sin cambiar la biblioteca del runtime.
+Runner SHA-256 `4af9bd9bca230265db2bb4c9f8a3122bad0643e83a95c477d11eeae5c4641d09`;
+VU1 interpretada, hilos VU1/frente GS apagados. [CI del HEAD e5e040e correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38314554618).
+Mismos ELF, ISO, guion y copia de tarjeta inicial; espejo DX11 desde arranque,
+16 capturas PCRTC consecutivas desde tick 1400, sin capturas periódicas del mando.
+
+Dos controles terminados: síncrono/RAM, 420,08 s, y asíncrono/compartido,
+420,07 s. Ambos alcanzan el límite, sin salida anticipada ni fallo registrado
+del espejo; terminación forzada del proceso propio, no cierre normal del juego.
+La tarjeta copiada conserva su hash. El asíncrono registra 1.142 adquisiciones
+compartidas sin regresiones, metadatos inconsistentes, hashes desconocidos,
+cambios de dimensiones o A-B-A en esa muestra. Cero filas retenidas no prueba
+ausencia de retenciones: el diagnóstico solo registra adquisiciones nuevas.
+
+Se revisan las 16 imágenes PCRTC del síncrono/RAM y los 16 pares PCRTC/textura
+adquirida del asíncrono/compartido, 512x448, ticks 1400..1415. En esos pares
+de una sola ejecución se observa encuadre y silueta de Kratos semejantes, con
+movimiento gradual, sin el salto grande o la deformación brusca buscados en
+esta ventana. OpenGL muestra bordes más dentados y diferencias entre líneas.
+Es una observación visual: no certifica igualdad de píxeles, fidelidad PS2,
+poses de todas las animaciones/NPCs ni la causa de esas diferencias.
+
+Entre el control RAM y las pasadas compartidas anteriores, un mismo tick
+corresponde a momentos distintos de la introducción. No atribuir al renderer
+una diferencia de cámara o postura obtenida así. Incluso dentro de la misma
+ejecución, tick EE y tick de adquisición no garantizan idéntico prefijo GIF;
+el contraste visual no sustituye una referencia alineada por estado/comandos.
+Síncrono/compartido y asíncrono/RAM equivalentes siguen en curso para completar
+la matriz con este mismo ejecutable. Diagnósticos, hash, dos renderers y readbacks
+impiden usar estos controles para comparar FPS con las mediciones de Opus.
+El espejo fuerza rutas DMA genéricas; estabilidad de atajos e hilos pendiente.
+
+## GS de PCSX2: convención de campo revisada con Urban Reign (2026-10-12)
+
+El autor publica su integración; [revisión y referencias](REVISION_URBAN_REIGN.md).
+Se confirma en MTGS original que GSvsync recibe `CSR.FIELD ? 0 : 1`. El espejo
+anterior pasaba la paridad del contador EE directamente, invertida respecto a
+esa convención. El cliente se ajusta a la misma instantánea CSR enviada a la
+DLL. Se prepara regresión de productor/cola/receptor DLL sin GPU, con cuatro
+campos incluyendo retención y ticks independientes. Validación nativa,
+negativo y juego posteriores pendientes. No cambia runtime, IRQ, contador o
+renderer habitual, ni acredita la causa del espasmo/encuadre del juego.
+
+Antes de ese ajuste, el síncrono/compartido e5e040e también termina a 420,06 s;
+961 adquisiciones sin anomalías del inspector, 16 pares de capturas revisados
+con encuadre/silueta semejantes en la ventana 1400..1415. Ambos controles
+compartidos presentan 224 pares de filas RGB duplicadas en cada imagen OpenGL,
+y cero pares duplicados en sus salidas DX11. OpenGL duplica el campo seleccionado;
+PCSX2 usa desentrelazado automático. Conteo descriptivo, no igualdad de píxeles
+ni prueba de que la diferencia sea la causa de deformación del modelo. Las
+capturas previas conservan el campo invertido del espejo: no certificar paridad
+de entrelazado con ellas. El asíncrono/RAM e5 equivalente sigue en curso.
+
+Validación posterior del cliente `89ffb57ab40577ea6bcb342d151f2217e14b0165`:
+seis CTest Windows sin dispositivo correctos, incluida entrega de cuatro
+VSync/CSR por el cliente y la cola. Negativo en copia privada, pasando de
+nuevo el campo del runtime directamente: compila y falla con código 1;
+restaurado código 0, header público intacto. Fixture real runtime/DLL/DX11
+recompilado y correcto, 2x2.048 RGBA exactos, GIF fragmentado, registro directo,
+reset y cierre sin fallo. No es aún comparación de campos con la escena PS2.
+
+La matriz e5e040e completa sus cuatro controles de 420 s: asíncrono/RAM,
+420,08 s, alcanza el límite sin fallo registrado del espejo; 16 capturas
+PCRTC revisadas, movimiento gradual en la ventana, tarjeta copiada intacta.
+Cada variante conserva 16 PCRTC 1400..1415; compartidas también 16 texturas
+adquiridas. Conservar el límite del campo invertido en esas capturas del espejo.
+No extrapolar a hilos, rutas DMA optimizadas o todas las animaciones/NPCs.
+
+Src/ del cliente corregido recompilado sobre full 477e013/103, código 0 en
+20,67 s, biblioteca del runtime intacta. Runner SHA-256
+`0c2d81f875bd15032cd030be8a068cc08670a2185c2cfc428b36e6342e4299e7`.
+Se inician controles compartidos síncrono/asíncrono con este mismo ejecutable:
+ráfaga de introducción desde 1400 y de Kratos/NPCs desde 2100, respectivamente.
+Distintas ventanas deliberadas; no comparar poses entre pasadas por tick.
+Capturas y registros aún pendientes de revisión. El nuevo CI está en curso.
+
+Revisión intermedia del síncrono/compartido `89ffb57`, todavía ejecutándose:
+16 PCRTC consecutivas 1400..1415 y 16 texturas adquiridas 1400..1414/1416,
+todas 512x448. Se revisan los 15 pares que tienen ambos archivos de ese tick;
+el adquirido 1416 no se empareja con el PCRTC 1415. Encuadre y silueta semejantes,
+movimiento gradual de Kratos en esta ventana, sin deformación brusca observada.
+La diferencia entre líneas/filtrado permanece. Es inspección visual de la misma
+ejecución, sin prueba de igualdad de comandos o píxeles, fidelidad PS2 o todas
+las animaciones. Falta final al límite e inspector del registro completo,
+y control asíncrono posterior de Kratos/NPCs. [CI de código 89ffb57 correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38317718747).
+
+## GS de PCSX2: introducción y NPCs con campo corregido (2026-10-12)
+
+Ambos controles de `89ffb57`, mismo runner `0c2d81f...`, terminan al límite
+de 420 s: síncrono/compartido 420,08 s; asíncrono/compartido 420,06 s. Sin
+salida anticipada ni fallo registrado del espejo; tarjetas copiadas intactas.
+Se conserva la terminación forzada del proceso propio, sin verificar cierre
+normal de partida. [CI documental anterior f7ad52a correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38318710304).
+
+Inspector final: 714 adquisiciones síncronas desde 1400 y 417 asíncronas desde
+2100, sin regresiones de secuencia/render, metadatos inconsistentes, A-B-A,
+cambios de dimensiones o hashes desconocidos en esas muestras. Distancia de
+ticks 0 en ambas; no es una medida de latencia, FPS o ausencia de retenciones.
+El espejo conserva DMA genérico e hilos VU1/frente GS apagados.
+
+Introducción: se revisan las 16 PCRTC y 16 texturas adquiridas, con 15 pares
+de ticks coincidentes y el adquirido 1416 separado. Kratos mantiene silueta
+coherente y movimiento gradual en la ventana. No acredita todas sus poses.
+
+Asíncrono: se revisan las 16 parejas PCRTC/adquirido 2100..2115, 512x448;
+las salidas muestran HUD, Kratos y NPCs. Hay diferencias visibles mayores
+que el filtrado de líneas: la imagen OpenGL tiene mucha más niebla y oculta
+detalles de algunos NPCs; DX11 los muestra más claros. El encuadre general y
+los objetos de primer plano son semejantes. No se observa la deformación
+brusca buscada en estas imágenes, pero **no hay equivalencia visual validada**.
+El tick por sí solo tampoco garantiza el mismo prefijo GIF o pose; esta
+observación no identifica aún un fallo concreto de fog, profundidad o mezcla.
+
+Siguiente control: seguir FOG/FOGCOL/FGE y raster, con comandos/estado comparables
+y patrones procedurales, antes de cambiar la cámara o normalizar matrices.
+El diagnóstico opcional de #68 ya recibe y dibuja el flujo del juego; no es
+un backend principal, un benchmark o resolución general de espasmos/encuadre.
+La revisión de Urban Reign incluye crédito explícito a thiagordsfx, por petición
+del usuario; implementación del enlace y ajuste de campo propios, contrastados
+con PCSX2 original. No se han publicado capturas, volcados o datos del juego.
+
+## Urban Reign: SDK y referencia de FOG (2026-10-12)
+
+Se revisa su mapa SDK de 983 funciones enlazadas, metadatos y bindings HLE:
+[alcance, servicios candidatos y créditos](REVISION_URBAN_REIGN.md).
+Muchas librerías conservan código original recompilado; reutilizar servicios
+comunes, sin trasladar direcciones ni supuestos del juego. Su alias de búsqueda
+CD/DVD ignora la capa en un disco de una capa: requiere control propio para GoW.
+Se añade crédito a thiagordsfx y PCSX2 en los tres README, con el mismo alcance.
+
+El parser original fijado conserva FOG al alternar XYZF/XYZ: PACKED XYZF3→XYZ3,
+XYZF2 con ADC→XYZ2 y A+D XYZF3→XYZ3. Control sin dispositivo con una primitiva
+válida, valores distintos 13/201/233/77 y ninguna llamada a Draw: correcto.
+Se añade a su fixture público. En nuestro frontend, XYZF asigna el fog al vértice
+pero no actualiza `m_curFog`, que usa el XYZ posterior. Se prepara comprobación
+de regresión propia antes de corregirlo en un tema separado. No se atribuye
+todavía a esa omisión la diferencia de niebla observada ni el espasmo original.

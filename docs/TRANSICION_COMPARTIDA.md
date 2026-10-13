@@ -1,10 +1,26 @@
 # Diagnóstico de la transición con presentación compartida
 
-Estado actual, 2026-10-11: cadena 100 revisada compilada en Windows; 600/600
-normal, 635/635 GPU, cuatro contratos FINISH/texturas y negativo significativo
-con restauración correctos. El control del juego sin hilos completa seis
-minutos; repeticiones con VU1/frente GS pendientes. #51 continúa en borrador
-mientras se cierra su validación.
+Estado actual, 2026-10-12: #51 fusionada en
+`05421940617e5ce69889600d9eb727b3c36c0b3b` tras su validación y CI del HEAD final.
+La cadena posterior 102 incluye la corrección EE PMULTH de #67: compilación
+completa nativa, 602/602 normal, 638/638 GPU y cuatro contratos correctos.
+El primer control síncrono/compartido sin hilos completa cinco minutos; sus
+16 imágenes adquiridas de la introducción son favorables, con los límites
+descritos en ESTADO.md. La combinación asíncrona con hilos y el control amplio
+de animaciones/NPCs siguen pendientes; no se declaran todos los fallos resueltos.
+
+La adaptación independiente de PCSX2 de #68 está conectada como espejo opcional
+en la cadena 103. Dos controles compartidos de seis minutos verifican recepción
+de GIF/VSync y salidas de introducción/NPCs; el asíncrono muestra HUD. Conserva
+el renderer habitual y usa rutas DMA genéricas, sin hilos VU1/frente GS. No
+certifica animación, paridad de escena, rendimiento o estabilidad prolongada.
+La matriz de cuatro variantes de siete minutos de e5e040e se completa, pero
+su espejo usaba el campo invertido respecto a MTGS. Corregido en 89ffb57, con
+regresión de cliente/cola/DLL y dos controles compartidos adicionales completos.
+Introducción favorable en su ventana; con HUD/NPCs OpenGL muestra mucha más
+niebla que DX11. No hay equivalencia visual validada. Véase PCSX2_GS.md y las
+últimas entradas de ESTADO.md para identidad, cantidades y límites.
+Los resultados históricos siguientes conservan la identidad de sus cadenas.
 
 Count #59 y unidades de framebuffer #58 están fusionadas en main. Se conservan
 la matriz aislada de cuatro controles de 98 y las tres pasadas de seis minutos
