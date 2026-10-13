@@ -5223,3 +5223,18 @@ Son pruebas del runtime, no una compilación nueva del juego. Se inicia la
 compilación completa 104 con `GOW_WORK` privado y fuentes anteriores conservadas;
 se registrará su commit/hash al terminar. La [PR #69](https://github.com/KIexster/god-of-war-recomp/pull/69)
 sigue en borrador hasta completar compilación, escena y CI del HEAD final.
+
+Compilación completa terminada de `9b80b05b7bd23a63d24af32a61495a3501b19c21`:
+104 parches aplicados en orden, código final 0 en 1039,50 s, con `GOW_WORK`
+privado y VU1 intérprete. Runner de 54.589.952 bytes, SHA-256
+`0e65c95d134daccfe3f6f295e299e6def27a77b46402c6e18f4cb66cd2ee8643`.
+ELF SCUS_973.99 con hash esperado; fuentes anteriores conservadas y ejecutable,
+símbolos y manifiesto congelados antes del control. Flags `/O2 /Ob2 /DNDEBUG /Zi`
+y `/INCREMENTAL:NO /DEBUG /OPT:REF /OPT:ICF`.
+[CI de 9b80b05 completo correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38333982967).
+
+Se inicia el control síncrono/compartido de este ejecutable, hilos VU1/frente GS
+apagados, tarjeta privada copiada, diagnóstico y ráfaga de 16 imágenes desde
+2100. Espejo PCSX2 DX11 con campo corregido y módulo anterior identificado.
+Después se repetirá con FINISH asíncrono. Resultado de escena todavía pendiente;
+los dos renderers, hashes y readbacks excluyen una comparación de FPS con Opus.
