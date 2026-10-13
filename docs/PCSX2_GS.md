@@ -372,3 +372,33 @@ El combinado de 105 completa otros 420 s, pero utiliza solo OpenGL: el espejo
 mantiene el rechazo de ambos hilos por coherencia de registros. Los tres
 controles, retornos de hash, estados finales y límites constan en ESTADO.md.
 No son benchmarks ni validan estabilidad prolongada o el encuadre de PS2.
+
+### Precisión declarada del espejo DX11 (2026-10-13)
+
+El módulo anterior heredaba `AccBlendLevel::Basic` de GSOptions. En un corpus
+procedural de 24 casos, ya con ZTE corregido, cuatro mezclas diferían un nivel
+frente a CPU/compute/hardware, incluidas dos sin FOG. Una DLL privada Maximum
+separada coincide en 24/24 con los tres backends sin cambiar su mezcla. La
+referencia Basic se conserva: sus diferencias no justifican por sí solas
+otra corrección del runtime.
+
+El módulo aislado fija ahora Maximum explícitamente; CMake admite
+`-DGOW_PCSX2_BLENDING=Basic` para repetir los controles anteriores y rechaza
+otros valores. Al crear GS declara su precisión en el registro. ABI 1 y el
+renderer del port se conservan. El control optativo
+`tools/render/probe_pipeline_reference.py` comprueba 24 celdas de 8×8:
+ZTE/ZTST, escritura Z y FOG seguido de mezcla. No verifica alpha framebuffer.
+
+Control de juego con la DLL Maximum privada y runner 106 congelado: 420,39 s
+por límite, tarjeta intacta, sin firmas buscadas de fallo; primer informe de
+estado 11 a 50,17 s y último 11 a 415,47 s. 16 parejas 4000..4015 con
+HUD/Kratos/enemigos, 16 RGBA distintos y metadatos adquiridos correlacionados.
+672 adquisiciones registradas sin regresiones, inconsistencias, retornos A–B–A
+o cambios de tamaño; distancia máxima de ticks 0.
+
+**La neblina más intensa de OpenGL persiste frente a Maximum**, junto con
+diferencias de líneas y poses. Mismo tick y ejecución no acreditan el mismo
+prefijo GIF: DX11 recibe el VSync en EE antes de callbacks/IRQ; OpenGL toma
+su solicitud de presentación en el bucle host. Seguir ese orden, composición,
+profundidad y pases posteriores. Este control usa dos renderers y readbacks;
+no demuestra FPS únicos, cierre normal, encuadre PS2 o estabilidad prolongada.

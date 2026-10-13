@@ -7,8 +7,16 @@
 #include "GS/Renderers/DX11/GSDevice11.h"
 #include "GS/Renderers/HW/GSRendererHW.h"
 #include <cstring>
+#include <cstdio>
 #include <mutex>
 #include <thread>
+
+// GOW-Port: precisión explícita para no heredar silenciosamente Basic de GSOptions.
+#ifndef GOW_PCSX2_BLENDING
+#error GOW_PCSX2_BLENDING debe fijarse al compilar el módulo
+#endif
+#define GOW_STRINGIFY_IMPL(value) #value
+#define GOW_STRINGIFY(value) GOW_STRINGIFY_IMPL(value)
 
 namespace {
 std::mutex gate;
@@ -43,6 +51,7 @@ uint32_t gow_gs_create(const GowGsCreateInfo* info,uint64_t* handle){
     try {
         owner=std::this_thread::get_id();
         GSConfig=Pcsx2Config::GSOptions();
+        GSConfig.AccurateBlendingUnit=AccBlendLevel::GOW_PCSX2_BLENDING;
         GSConfig.Renderer=GSRendererType::DX11;GSConfig.UpscaleMultiplier=1.0f;
         GSConfig.DisableShaderCache=true;GSConfig.LinearPresent=GSPostBilinearMode::Off;
         GSConfig.LoadTextureReplacements=false;GSConfig.DumpReplaceableTextures=false;
@@ -60,6 +69,8 @@ uint32_t gow_gs_create(const GowGsCreateInfo* info,uint64_t* handle){
         bridge=std::make_unique<gow_pcsx2_gs::GifBridge>(gow_pcsx2_gs::pcsx2TransferSink());
         if(++nextHandle==0)++nextHandle;
         activeHandle=nextHandle;sequence=0;failed=false;*handle=activeHandle;
+        std::fprintf(stderr,"[gow-pcsx2-module] blending=%s; referencia procedural, sin benchmark\n",
+                     GOW_STRINGIFY(GOW_PCSX2_BLENDING));
         return GOW_GS_OK;
     } catch(...) {close();return GOW_GS_FAILED;}
 }

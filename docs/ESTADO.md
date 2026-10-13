@@ -5611,3 +5611,52 @@ corpus Basic no bastan para cambiar CPU/GLSL. Se prepara una DLL Maximum
 separada para ese contraste, conservando módulo original y su hash; todavía
 no se construye ni prueba. Seguir prefijo de comandos, profundidad, mezcla
 y pases posteriores antes de atribuir la neblina restante.
+
+### Referencia DX11 Maximum reproducible (2026-10-13)
+
+La preparación anterior se completó. DLL Maximum privada separada, SHA-256
+`aa98175972b0c3c654861465cba83934ec5edffa9e74f5128458182492f93546`,
+ABI/exportaciones/rechazos sin dispositivo y dos ciclos GPU de 2.048 RGBA
+correctos. Con el corpus de 24 casos, CPU/compute/hardware coinciden en 24/24;
+las cuatro diferencias menores Basic desaparecen sin cambiar el runtime.
+La DLL Basic original permanece intacta, SHA-256
+`cbbc2d060df61e479355479fc3ce5b054e5ce27302bf19d5accda735d21ecd62`.
+
+Control con esa DLL privada y runner 106 congelado: 420,386 s por límite,
+proceso 1/controlador 0, tarjeta intacta. Ambos hilos apagados, presentación
+compartida síncrona; no otras cargas simultáneas detectadas. Primer informe
+de estado 11 a 50,17 s; último 11 a 415,47 s. Ventana visible y sin minimizar
+en las dos transiciones registradas; sin firmas buscadas de fallo.
+16 adquiridos y 16 PCRTC, parejas 4000..4015 revisadas más primera pareja
+completa. HUD, Kratos y enemigos; RGBA distintos y correlación con metadatos.
+672 adquisiciones, sin regresiones/inconsistencias/retornos A–B–A/tamaños
+cambiantes/hashes desconocidos; distancia máxima 0. No supervisión exhaustiva
+del foco u oclusión, cierre normal, estabilidad prolongada ni FPS únicos.
+
+OpenGL conserva neblina más intensa y diferencias de líneas/poses frente
+a Maximum. No comparar con otro run por tick ni afirmar prefijo alineado:
+VSync DX11 se observa antes de callbacks/IRQ EE; la presentación OpenGL se
+solicita desde el bucle host, que puede encontrar comandos posteriores.
+Es una posibilidad establecida por el orden del código, aún sin cuantificar
+en esta escena. Seguir composición/profundidad/pases posteriores además de FOG.
+
+Se añade `GOW_PCSX2_BLENDING=Maximum|Basic` a CMake del módulo aislado:
+Maximum explícito por defecto, Basic disponible para reproducir lo anterior,
+otros valores rechazados; la DLL declara la precisión al crear GS. ABI 1
+sin cambios. Nuevo control procedural público de 24 celdas, todos sus píxeles,
+con esperados RGB contrastados con los cuatro renderers; Basic histórico
+20/24, Maximum privado 24/24. No prueba alpha framebuffer ni el juego.
+La compilación de esta herramienta no sustituye la del runner 106; no se
+cambian parches, mezcla del runtime ni referencias CPU.
+
+Build aislado de la herramienta completo: 107 unidades compiladas/enlazadas.
+DLL Maximum final `9f0130e26d34ce26c0ee3423d56a77358fd0fec2351661cd194a879328179bb7`:
+24/24 pipeline, 14/14 FOG, dos ciclos GPU de 2.048 RGBA y seis CTest correctos.
+Basic configurado por CMake
+`b6f43f1778fa450db764cda512f5526cc8de1a3ef8e95e2e697e00ba42136cb7`
+reproduce 20/24 con los mismos cuatro casos de un nivel, y pasa el contrato
+sin dispositivo. Configuración inválida rechazada, Maximum restaurado y
+artefacto final vuelto a verificar; Basic histórico intacto. Configuración
+del port sin errores/cuatro avisos existentes y 25 scripts PowerShell sin
+errores. El control de escena anterior corresponde a aa9817, no a esta DLL.
+CI del HEAD publicado pendiente antes de fusionar esta etapa.
