@@ -5343,3 +5343,24 @@ hilos apagados: no representan su modo de 24–25 FPS. El C++ VU generado y las
 micromemorias se conservarán únicamente en el workspace privado. Registrar
 runner/hash, generación/enlace VU y control funcional antes de atribuir esa
 configuración al nuevo ejecutable. #70 sigue en borrador hasta completar esos pasos.
+
+Compilación completa 105 con VU1 compilada terminada (2026-10-13): fuente
+`3828e9ec499482e039c6d73a0eeb399aa6c42295`, código final 0 en 1169,19 s,
+501 micromemorias de la copia privada, 13 archivos generados compilados y
+enlazados. El generador informa 5.991 funciones de par y 1.294 bloques.
+Runner de 66.302.976 bytes, SHA-256
+`747c4224ee0ff19a15ac73dbb8df471a4ea5ce755fc6088e2547a8b9f26a3340`;
+ELF con hash esperado, símbolos/manifiesto/ejecutable congelados. Flags
+`/O2 /Ob2 /DNDEBUG /Zi` y `/INCREMENTAL:NO /DEBUG /OPT:REF /OPT:ICF`.
+[CI del código/documentación 3828e9e correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38338896408).
+
+Se prepara el lanzador privado solicitado por el usuario: verifica manifiesto,
+hash del ejecutable y ELF, usa una tarjeta copiada y activa VU1 compilada,
+hilos VU1/frente GS, FINISH asíncrono y presentación compartida. Desactiva
+espejo DX11, hashes, sondas y capturas; permite solo contador de cuadros
+`GOW_PERF_DIAG=frames`/`GOW_PERF_FRAME_PC=0x001837B8` para mostrar
+`guest_flip_hz`. Comprobación `-PrepararSolo` en Windows PowerShell correcta,
+sin abrir el juego. No quedan compiladores, suites ni partidas propios activos.
+Se deja el PC disponible para su prueba. Control funcional del nuevo ejecutable,
+modo combinado y FPS todavía pendientes: #70 conserva el borrador. No atribuir
+a este binario las pruebas de escena realizadas con el intérprete 104.
