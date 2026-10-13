@@ -5812,3 +5812,80 @@ orienta el siguiente control hacia el runtime. Falta repetir el mismo campo
 de comandos de backend, con su estado/VRAM inicial, en CPU y GPU para separar
 interpretación del frontend y rasterización; seguir profundidad, mezcla,
 textura/FOG y pases posteriores. **La neblina no está corregida**.
+
+### Destino recién dibujado, alpha y referencia CPU (2026-10-13)
+
+[#75 fusionada](https://github.com/KIexster/god-of-war-recomp/pull/75),
+merge `9ac5585f1a8400922223e41719e6bc01c7e4e35d`, tras revisión local y
+[cuatro controles CI correctos del HEAD 0f42d7f](https://github.com/KIexster/god-of-war-recomp/actions/runs/38460157286).
+
+Nuevo diagnóstico privado, runner 106 congelado: registra un campo de backend
+después de VSync 4002 y hasta Present/End 4003, con estado/VRAM propios.
+DLL `7bb35c83b832fa1b055e8fc269f1640d1bcd94952b80d67701f28d33d261edb6`;
+patrón 64×64 validado primero, dos repeticiones CPU/compute/hardware con estado
+final e imágenes correctos. Se conserva la DLL anterior y no se cambia el juego.
+Control compartido síncrono, hilos apagados: 450,224 s, detenido mediante STOP
+propio después de completar la captura y 16 muestras; proceso 1/controlador 0,
+tarjeta intacta, primer informe 11 a 55,21 s, último 11 a 442,00 s. No es un
+control completo de 600 s ni un cierre normal. 283 adquisiciones sin anomalías
+buscadas, distancia máxima 0; 16 adquiridos/PCRTC 4003..4018 correlacionados y
+distintos. Sin FPS, estabilidad prolongada o validación del modo combinado.
+
+Registro de 33.391.712 bytes: Initial, 78.181 Submit, 23 TEXFLUSH, 139 CLUT,
+tres transferencias/tres uploads, Present y End. Ningún Submit activa FGE.
+La referencia CPU y el candidato se restauran desde ese mismo estado inicial.
+Dos repeticiones hardware hasta Present tienen diferencias de RGB/VRAM/estado;
+la primera mezcla compute mientras calientan shaders, la segunda registra cero
+tiles. Un replay completo CPU devuelve código 3 al no reproducir el End GPU.
+**No se declara paridad ni se convierte ese código en éxito**.
+
+La imagen PCRTC de 4003 copia FBP0 heredado a FBP208 al comienzo del campo;
+después se dibuja la escena nueva en FBP0. Que CPU repita la bruma al presentar
+FBP208 no excluye un problema previo de GPU. Una sonda cambia únicamente los
+dos DISPFB de Present para leer el destino FBP0 recién dibujado como CT32:
+es una petición de diagnóstico, **no la imagen presentada del juego**.
+CPU/GPU tienen 122.960 píxeles RGB distintos, media absoluta
+9,92/11,71/10,34; dos pasadas hardware calientes tienen el mismo RGB aunque
+su VRAM final difiere en 1.151 bytes. Compute solicitado produce el mismo RGB
+final que hardware en esta sonda. No acredita estabilidad global.
+
+Prefijos independientes con la misma entrada anterior y readback al final
+acotan el contraste de fondo: después del clear 54, RGBA y Z son cero en
+las regiones inspeccionadas; el RGB del fondo permanece igual hasta 76158.
+La diferencia grande aparece en los 64 triángulos 76160..76223, con FGE=0,
+T8 y ALPHA `0x54`, cuya ecuación usa el alpha del destino. Antes de ese pase,
+el alpha del fondo ya difiere: tras 76158, medias CPU 63,43 y GPU 102,24;
+después de 76223, GPU supera CPU en +26,77/+31,78/+27,88 RGB.
+La Z24 leída en las regiones permanece idéntica en los cuatro prefijos
+76076/76142/76158/76223. Son descripciones locales, sin equivalencia global.
+Snapshot experimental por Submit no cambia el RGB de esta sonda; invalidar
+la página de textura CPU por Submit tampoco cambia su resultado.
+
+La divergencia de alpha se introduce en el bloque 75983..76076: preparación
+CT24 en FBP320 y lectura Z16 hacia un destino CT16 en FBP0 con FBMSK `0x3fff`.
+Un primer patrón reducido Z16/CT16/máscara no reproduce todo el desacuerdo de
+la escena y también muestra diferencias con el software original. Por tanto,
+no se adjudica aún a una conversión, máscara o sincronización concretas.
+
+La auditoría identifica entretanto un error de la referencia CPU: aplica
+siempre saturación al resultado de ALPHA, aunque COLCLAMP=0. Cuatro patrones
+procedurales completos 64×64 contrastados con GSRendererSW original y GPU
+coinciden en los esperados wrap/clamp. Por ejemplo, −(32,64,128) envuelto da
+(224,192,128), no cero; (200,220,240)+(80,64,32) envuelto da (24,28,16), no 255.
+CPU 106 falla esos dos controles y pasa los dos de saturación. El espejo
+hardware Maximum falla los dos negativos incluso con saturación, por una
+ruta que conserva el color fuente; no usarlo como autoridad única aquí.
+
+Parche 107 separado `ps2recomp-gs-cpu-colclamp.patch`: CPU selecciona wrap o
+saturación del RGB de ALPHA y conserva alpha/Z y el resto del pipeline.
+Regresión sin juego: CPU 106 falla 2/4, código 2; nuevo objeto CPU con el
+resto de la biblioteca 106 pasa 4/4, código 0. No modifica GLSL. COLCLAMP=0
+aparece en la preparación de la máscara de esta escena: la CPU más oscura
+no certificaba que GPU estuviera equivocada en ese bloque. Se conserva el
+runner/runtime 106 mientras se valida la corrección de la referencia.
+Suite completa incremental reenlazada con CPU/main/regresión/tabla 107 y
+bibliotecas restantes 106: 617/617 normal y 657/657 con controles GPU,
+códigos 0, sin fallos conocidos añadidos. No sustituye el full del juego.
+`scripts/2_compilar.cmd`, CI del HEAD final y control funcional de 107
+siguen pendientes antes de fusionar. **La neblina GPU y
+su fidelidad frente al software original continúan abiertas**.

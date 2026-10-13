@@ -1,0 +1,98 @@
+diff --git a/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp b/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
+index 2f4aa7c..97ce797 100644
+--- a/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
+@@ -1174,9 +1174,14 @@ void GSCpuBackend::WritePixel(const GSDrawState &state, int x, int y, int z, uin
+                 int cAlpha = (csel == 0) ? a : (csel == 1) ? da
+                                                            : fix;
+ 
+-                r = clampU8(((pickRGB(asel, r, dr) - pickRGB(bsel, r, dr)) * cAlpha >> 7) + pickRGB(dsel, r, dr));
+-                g = clampU8(((pickRGB(asel, g, dg) - pickRGB(bsel, g, dg)) * cAlpha >> 7) + pickRGB(dsel, g, dg));
+-                b = clampU8(((pickRGB(asel, b, db) - pickRGB(bsel, b, db)) * cAlpha >> 7) + pickRGB(dsel, b, db));
++                // GOW-Port: COLCLAMP=0 envuelve el resultado de ALPHA a ocho bits,
++                // incluidos negativos, como GSRendererSW original y el backend GLSL.
++                const auto outputChannel = [&](int value) -> uint8_t {
++                    return (state.colclamp & 1u) ? clampU8(value) : static_cast<uint8_t>(value);
++                };
++                r = outputChannel(((pickRGB(asel, r, dr) - pickRGB(bsel, r, dr)) * cAlpha >> 7) + pickRGB(dsel, r, dr));
++                g = outputChannel(((pickRGB(asel, g, dg) - pickRGB(bsel, g, dg)) * cAlpha >> 7) + pickRGB(dsel, g, dg));
++                b = outputChannel(((pickRGB(asel, b, db) - pickRGB(bsel, b, db)) * cAlpha >> 7) + pickRGB(dsel, b, db));
+             }
+             else
+             {
+diff --git a/ps2xTest/CMakeLists.txt b/ps2xTest/CMakeLists.txt
+index bc26740..6387806 100644
+--- a/ps2xTest/CMakeLists.txt
++++ b/ps2xTest/CMakeLists.txt
+@@ -36,7 +36,8 @@ add_library(ps2_test_lib STATIC
+     src/ps2_gs_external_tests.cpp # GOW-Port: transporte opcional sin perder tags.
+     src/ps2_gs_fog_latch_tests.cpp # GOW-Port: atributo FOG después de XYZF.
+     src/ps2_gs_fog_math_tests.cpp # GOW-Port: RGB de referencia para la niebla.
+-    src/ps2_gs_zte_tests.cpp # GOW-Port: habilitacion de test y escritura Z.
++    src/ps2_gs_zte_tests.cpp
++    src/ps2_gs_cpu_colclamp_tests.cpp # GOW-Port: habilitacion de test y escritura Z.
+     src/ps2_gs_backend_tests.cpp # GOW-Port: cola, VRAM y comparación CPU/OpenGL.
+     src/ps2_gpu_profile_tests.cpp # GOW-Port: ventanas y lecturas de timestamps sin espera.
+     src/ps2_gpu_upload_ring_tests.cpp # GOW-Port: datos pendientes y fallback de uploads.
+diff --git a/ps2xTest/src/main.cpp b/ps2xTest/src/main.cpp
+index 518216e..de3a5d5 100644
+--- a/ps2xTest/src/main.cpp
++++ b/ps2xTest/src/main.cpp
+@@ -18,6 +18,7 @@ void register_gs_external_tests(); // GOW-Port
+ void register_gs_fog_latch_tests(); // GOW-Port
+ void register_gs_fog_math_tests(); // GOW-Port
+ void register_gs_zte_tests(); // GOW-Port
++void register_gs_cpu_colclamp_tests(); // GOW-Port
+ void register_ps2_gs_backend_tests(); // GOW-Port
+ void register_ps2_gpu_profile_tests(); // GOW-Port
+ void runGpuUploadRingTests(); // GOW-Port
+@@ -57,6 +58,7 @@ int main()
+     register_gs_fog_latch_tests(); // GOW-Port
+     register_gs_fog_math_tests(); // GOW-Port
+     register_gs_zte_tests(); // GOW-Port
++    register_gs_cpu_colclamp_tests(); // GOW-Port
+     register_ps2_gs_backend_tests();
+     register_ps2_gpu_profile_tests();
+     runGpuUploadRingTests();
+diff --git a/ps2xTest/src/ps2_gs_cpu_colclamp_tests.cpp b/ps2xTest/src/ps2_gs_cpu_colclamp_tests.cpp
+new file mode 100644
+index 0000000..bcea4c1
+--- /dev/null
++++ b/ps2xTest/src/ps2_gs_cpu_colclamp_tests.cpp
+@@ -0,0 +1,36 @@
++// GOW-Port: esperados contrastados con GSRendererSW original y GLSL, sin juego.
++#include "MiniTest.h"
++#include "runtime/gs/gs_cpu_backend.h"
++#include <vector>
++namespace {
++void check(TestCase& test,bool negative,bool clamp) {
++    std::vector<uint8_t> vram(4u<<20,0x35);GSCpuBackend backend;
++    backend.Initialize(vram.data(),uint32_t(vram.size()));
++    const uint32_t dest=negative?0u:0x00204050u;
++    const uint32_t source=negative?0x00804020u:0x00f0dcc8u;
++    const uint32_t expected=negative?(clamp?0u:0x0080c0e0u):(clamp?0x00ffffffu:0x00101c18u);
++    backend.WriteVram(GS_PSM_CT32,0,1,2,3,dest|0x73000000u);
++    backend.WriteVram(GS_PSM_Z32,104*32,1,2,3,0x12345678u);
++    GSPrimitiveBatch b{};b.vertexCount=2;b.state.prim.type=GS_PRIM_SPRITE;
++    b.state.prim.abe=true;b.state.colclamp=clamp?1:0;
++    auto& c=b.state.context;c.frame={0,1,GS_PSM_CT32,0};c.scissor={0,63,0,63};
++    c.zbuf={104,GS_PSM_Z32,false};c.test=0;
++    c.alpha=(uint64_t(128)<<32)|(negative?0xa2u:0x68u);
++    for(unsigned i=0;i<2;++i){auto&v=b.vertices[i];v.x=float(2+i);v.y=float(3+i);
++        v.r=uint8_t(source);v.g=uint8_t(source>>8);v.b=uint8_t(source>>16);v.a=128;v.z=50;}
++    backend.Submit(b);
++    test.Equals(backend.ReadVram(GS_PSM_CT32,0,1,2,3),expected|0x80000000u,
++        "COLCLAMP selecciona wrap/clamp del RGB de ALPHA sin modificar alpha fuente");
++    test.Equals(backend.ReadVram(GS_PSM_Z32,104*32,1,2,3),0x12345678u,
++        "La corrección de RGB no altera Z con ZTE deshabilitado");
++    test.Equals(backend.ReadVram(GS_PSM_CT32,0,1,3,3),0x35353535u,"Conserva vecino fuera del sprite");
++}
++}
++void register_gs_cpu_colclamp_tests(){
++    MiniTest::Case("GS CPU COLCLAMP",[](TestCase& test){
++        test.Run("Mezcla negativa envuelta",[](TestCase& t){check(t,true,false);});
++        test.Run("Mezcla negativa saturada",[](TestCase& t){check(t,true,true);});
++        test.Run("Desbordamiento envuelto",[](TestCase& t){check(t,false,false);});
++        test.Run("Desbordamiento saturado",[](TestCase& t){check(t,false,true);});
++    });
++}

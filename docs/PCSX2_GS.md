@@ -455,3 +455,27 @@ control compara un campo de backend del runtime en CPU/GPU con estado/VRAM
 propios, para separar frontend y rasterización. Hashes, límites y próximos
 pasos en ESTADO.md. CPU/DX11 originales preservados; sin corrección nueva de
 neblina, benchmark, cierre normal ni validación de estabilidad prolongada.
+
+### Campo de backend, alpha y límites de la referencia CPU (2026-10-13)
+
+Una captura privada 106 con Initial/Present/End contiene 78.181 dibujos de un
+campo, ninguno con FGE. El PCRTC lee FBP208, copiado de FBP0 heredado al inicio;
+su replay CPU de un solo campo conserva esa entrada GPU. Para separar ese
+efecto, una petición sintética lee FBP0 recién dibujado. No representa otra
+imagen presentada del juego ni autoriza comparar ejecuciones por tick.
+
+El RGB del fondo coincide entre CPU/GPU durante la geometría principal y
+diverge en los 64 triángulos tardíos que mezclan con alpha destino (ALPHA.C=Ad).
+Ese alpha ya difiere al preparar la máscara mediante CT24/Z16/CT16. La Z24
+de las regiones inspeccionadas permanece igual en esos controles. Prefijos,
+datos y límites en ESTADO.md; no equivalencia global ni causa única acreditada.
+
+Además, CPU 106 satura ALPHA con COLCLAMP=0, mientras software original y GPU
+envuelven el RGB. Cuatro patrones procedurales confirman los esperados;
+el espejo hardware falla los dos negativos y no sustituye la referencia
+software en esta ruta. El parche 107 de CPU corrige esa selección y tiene
+negativo 2/4/positivo 4/4; suite incremental completa 617/617 y 657/657 GPU.
+Aún requiere compilación obligatoria, CI y control funcional. La CPU más
+oscura antes de esa corrección no probaba
+que su máscara fuera fiel. No se modifica GLSL ni se declara resuelta la
+neblina de GPU. Referencias anteriores, capturas y runner 106 preservados.

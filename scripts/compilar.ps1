@@ -119,6 +119,7 @@ $gsExternalObserverPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-external-ob
 $gsFogLatchPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-fog-latch.patch'
 $gsFogMathPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-fog-math.patch'
 $gsZtePatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-zte.patch'
+$gsCpuColclampPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-cpu-colclamp.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -262,6 +263,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $gsExternalObserverPatch
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsFogLatchPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsFogMathPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsZtePatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsCpuColclampPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
