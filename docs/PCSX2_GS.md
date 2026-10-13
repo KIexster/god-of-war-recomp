@@ -402,3 +402,21 @@ prefijo GIF: DX11 recibe el VSync en EE antes de callbacks/IRQ; OpenGL toma
 su solicitud de presentación en el bucle host. Seguir ese orden, composición,
 profundidad y pases posteriores. Este control usa dos renderers y readbacks;
 no demuestra FPS únicos, cierre normal, encuadre PS2 o estabilidad prolongada.
+
+### Contraste privado en la misma frontera (2026-10-13)
+
+Un segundo frontend/OpenGL recibe los mismos spans/reg/reset/VSync que la DLL
+DX11, bajo el mutex de la ABI, y captura antes del siguiente evento. Patrones
+24/24 y dos ciclos fragmentados correctos. Control de 600,405 s con runner 106
+sin cambiar, tarjeta intacta, estado 11 hasta el último informe y 16 parejas
+4000..4015: la neblina OpenGL persiste. El diagnóstico usa hardware en esa
+ráfaga y no acredita el prefijo de la imagen del host ni mide FPS. Datos,
+hashes, revisión y límites en ESTADO.md.
+
+Además de la historia de campos de DX11 Automatic, hay límites en alpha del
+espejo hardware: en 16 patrones de composición CPU/OpenGL coinciden entre sí,
+pero hardware y GSRendererSW original discrepan en varios casos. El software
+original pasa los 24 patrones de pipeline y 14 de FOG, aunque su fixture privado
+solo admite GIF y rechaza escrituras directas. No usar Maximum como prueba de
+exactitud de todo alpha ni cambiar el runtime a partir de una sola referencia.
+Seguir merge previo al desentrelazado y estado/pases de una ráfaga acotada.
