@@ -5182,3 +5182,31 @@ Se añade a su fixture público. En nuestro frontend, XYZF asigna el fog al vér
 pero no actualiza `m_curFog`, que usa el XYZ posterior. Se prepara comprobación
 de regresión propia antes de corregirlo en un tema separado. No se atribuye
 todavía a esa omisión la diferencia de niebla observada ni el espasmo original.
+
+## GS: retener FOG al escribir XYZF, preparación (2026-10-12)
+
+#68 fusionada en `578d4ec582da3b5c05f521b9aa33102046b40499`, tras revisión,
+controles y [CI final fe13f32 correcto](https://github.com/KIexster/god-of-war-recomp/actions/runs/38331548876).
+Se integra main por avance directo y se abre tema independiente para FOG.
+
+Control procedural nativo del frontend anterior con renderer CPU explícito,
+POINT/FGE, profundidad ALWAYS y colores distintos: seis variantes PACKED,
+A+D y REGLIST, XYZF2/3→XYZ2, dibujan el control `805c2ec6`, pero el XYZ posterior
+produce `80c05f3b`. La referencia se obtiene escribiendo FOG explícitamente,
+con las mismas entradas; los valores son sintéticos, sin datos del juego.
+La primera prueba sin configurar profundidad ALWAYS no dibujaba: se descarta
+como prueba del fallo. El control corregido sí dibuja y distingue las nieblas.
+
+Se prepara `ps2recomp-gs-fog-latch.patch`, al final de la cadena (104), sobre
+base 103 íntegra en worktree propio. XYZF2 PACKED, XYZF3 PACKED y la ruta común
+A+D/REGLIST actualizan `m_curFog` antes de lanzar o descartar el vértice. XYZ2/3
+siguen conservando el atributo. No cambia cámara, matrices, CRTC, fences o
+opciones de rendimiento. El atajo PACKED nativo comparte ese decodificador.
+
+Seis regresiones de grupo cubren los tres PATH, PACKED/A+D/REGLIST/directo/nativo,
+ADC, cambio de contexto y reset, comprobando píxeles dibujados y actualización
+FOG posterior. Configuración 0 errores/4 avisos existentes; sintaxis 24 PS1,
+0 errores. El parche pasa aplicación en comprobación sobre 103. La suite con
+regresiones y código anterior se está construyendo para comprobar el negativo.
+Positivo, compilación completa de 104, CI y control funcional todavía pendientes.
+No se declara corregida la diferencia de niebla del juego, los espasmos o el encuadre.

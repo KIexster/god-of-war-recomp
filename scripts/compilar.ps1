@@ -116,6 +116,7 @@ $gsAcquiredModeDiagPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-acquired-mo
 $gsHostAcquiredCapturePatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-host-acquired-capture.patch'
 $eePmulthPatch = Join-Path $RepoRoot 'patches\ps2recomp-ee-pmulth.patch'
 $gsExternalObserverPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-external-observer.patch'
+$gsFogLatchPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-fog-latch.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -256,6 +257,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $gsAcquiredModeDiagPatch
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsHostAcquiredCapturePatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $eePmulthPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsExternalObserverPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsFogLatchPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
