@@ -59,13 +59,23 @@ python tools/render/probe_fog_reference.py --module C:/trabajo/gs-build/gow_pcsx
 python tools/render/probe_pipeline_reference.py --module C:/trabajo/gs-build/gow_pcsx2_gs_module.dll --resources C:/trabajo/pcsx2/bin/resources
 ```
 
-El control FOG por ABI compara 14 patrones de RGB medidos, con FGE apagado y
-FOG 0/1/77/128/201/255. Cada mitad de un sprite se comprueba en 32×32 píxeles.
+El control FOG por ABI compara 28 mitades de RGB, con FGE apagado y
+FOG 0/1/77/128/201/255, más FOG `(F+17)%255` en el segundo sprite. Comprueba
+color y uniformidad de los 32×32 píxeles de cada mitad. `--left-only` reproduce
+los 14 controles históricos; aquellos solo comprobaban la mitad izquierda.
 Se envían dos sprites con nieblas distintas en el mismo lote: un clear uniforme
 FOG=255 de PCSX2 puede omitir el shader, por lo que ese clear no sirve para
 decidir su redondeo. Los datos son sintéticos, sin archivos del juego. Alpha
 PCRTC es 255; la regresión del runtime comprueba por separado alpha framebuffer
 128. No valida interpolación variable, una escena o rendimiento.
+
+En el hardware DX11 original se observó 16/28 con Maximum: la mitad derecha
+de los casos FGE adopta el FOG del primer sprite. El software original coincide
+en 28/28 y la repetición de una ráfaga sintética Freeze/GIF/VSync coincide con
+su ejecución fresca en todos sus píxeles. La técnica de dos sprites conserva
+la validez de los 14 esperados izquierdos, pero no impide toda optimización
+hardware del lote. Conservar el negativo y contrastar otros caminos antes de
+atribuirle una discrepancia del juego al runtime.
 
 El segundo control envía 24 celdas de 8×8: ocho combinaciones ZTE/ZTST,
 ocho sondas de escritura Z y ocho casos de FOG seguido de mezcla con alpha 64.

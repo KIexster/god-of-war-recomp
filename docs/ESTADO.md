@@ -5660,3 +5660,93 @@ artefacto final vuelto a verificar; Basic histórico intacto. Configuración
 del port sin errores/cuatro avisos existentes y 25 scripts PowerShell sin
 errores. El control de escena anterior corresponde a aa9817, no a esta DLL.
 CI del HEAD publicado pendiente antes de fusionar esta etapa.
+
+### Neblina con frontera común y límites del espejo hardware (2026-10-13)
+
+[#73 fusionada](https://github.com/KIexster/god-of-war-recomp/pull/73),
+merge `b41467f8b063c34ba553aa914a9d7f662042d9e8`, tras revisión local y
+[cuatro controles CI correctos del HEAD 80a782f](https://github.com/KIexster/god-of-war-recomp/actions/runs/38449849007).
+
+Diagnóstico privado separado, sin cambiar runtime/runner 106: la DLL recibe
+cada span GIF, escritura directa, reset y VSync bajo el mismo mutex de la ABI.
+Entrega el flujo a DX11 Maximum y a otro frontend GS con OpenGL 106; solicita
+su captura en esa misma frontera antes de aceptar nuevos eventos. Se conservan
+los 19 registros privilegiados de entrada, estado inicial vacío y orden de PATH.
+No guarda el flujo completo de aproximadamente 20 GB. La presentación del
+host sigue siendo independiente; este diagnóstico añade un renderer y cortes
+de cola/readbacks, por lo que no mide rendimiento.
+
+DLL privada `6c7e1ed41b75f6f0411c86f139684a5c7c9c94631f535ae3a767d09232a59be8`,
+biblioteca runtime del full 106. Patrones: DX11 y shadow OpenGL 24/24 RGB
+y uniformidad de celdas; dos ciclos ABI/GPU con GIF fragmentado, escritura
+directa, reset/cierre y 2.048 RGB por ciclo correctos. El primer patrón mezcla
+hardware/compute al iniciar; no atribuir todo ese patrón a hardware.
+
+Control síncrono compartido, hilos apagados, tarjeta privada: 600,405 s por
+límite, proceso 1/controlador 0, tarjeta intacta. Primer informe 11 a 55,34 s,
+último 11 a 594,38 s. Sin firmas buscadas de fallo o minimización en los
+cambios de ventana registrados; el foco cambió. 1.106 adquisiciones, distancia
+máxima 0, sin regresiones/inconsistencias/retornos A–B–A/tamaños cambiantes o
+hashes desconocidos en la muestra. No acredita oclusión, cierre normal,
+combate completo, modo combinado durante diez minutos o estabilidad prolongada.
+
+16 parejas DX11/shadow de frontera 4000..4015 y 16 adquiridos del host,
+512×448, distintos y con metadatos adquiridos correlacionados. Revisados los
+16 recortes y cuatro triples completos. En 4000 el prefijo shadow contiene
+14.984.206 spans/17.393.025.344 bytes y cero escrituras directas; GPU efectivo,
+151.982.196 primitivas/0 tiles. En los 15 intervalos siguientes, 64.494..65.782
+primitivas y cero tiles: hardware en la ráfaga. **La neblina más intensa
+persiste con ese flujo y frontera comunes**. En la región de fondo de la
+primera pareja, shadow supera DX11 en promedio +31,50/+37,63/+32,92 RGB;
+en el suelo la diferencia media está por debajo de un nivel por canal.
+Son descripciones de regiones, sin tolerancia de equivalencia ni causa única.
+DX11 Automatic conserva historia de campos; OpenGL duplica filas. El desfase
+de solicitud del host no explica por sí solo este contraste del diagnóstico.
+
+Corpus privado de composición, 16 casos EN1/EN2/MMOD/SLBG/ALP/alpha: CPU y
+OpenGL del runtime coinciden entre sí en 16/16. Frente a DX11 hardware coinciden
+en 10/16; frente al software original de PCSX2 con composición DX11, en 11/16.
+Hay diferencias grandes al usar RC1 solo con alpha cero o ALP reducido, una
+diferencia menor de redondeo y discrepancias hardware/software con alpha 64.
+Ejemplo dual/MMOD=0/alpha=64: hardware (240,64,128), software original y runtime
+(128,112,80). RC1 solo/MMOD=1/ALP=64: ambos renderers originales (210,54,100),
+runtime (240,64,128). No adjudicar esos resultados a la neblina de la escena
+sin sus registros/pases; Maximum no certifica todos los caminos de alpha.
+
+Referencia software privada `3ad27ad874ec7e8bcba35396bb2134f158156261d392965978cc43085587db55`:
+usa la fábrica original GSRendererSW, cero hilos extra y dispositivo/composición
+DX11. Pasa 24/24 pipeline y 14/14 FOG. Solo probada con entradas procedurales;
+su fixture rechaza escrituras directas, sin simular retención de Q. No es un
+renderer integrado del juego ni una validación de toda la ABI. CPU y espejo
+hardware se conservan. Próximo contraste: salida de merge antes del
+desentrelazado y ráfaga acotada con estado inicial verificable para el software
+original; seguir profundidad, alpha, textura/FOG y pases posteriores.
+
+El contraste completo de esa ráfaga procedural revela otro límite de la
+referencia hardware: los 14 controles FOG históricos solo verificaban la
+mitad izquierda. En ambas mitades hay 28 controles; CPU/OpenGL del runtime
+y software original coinciden en 28/28, hardware Maximum en 16/28. Sus 12
+mitades derechas FGE usan el FOG del primer sprite. Por ejemplo, F=0 a la
+izquierda y 17 a la derecha: hardware produce (50,100,200) en ambas,
+software original y runtime (50,100,200)/(62,95,190). Los 14 esperados
+izquierdos, incluidos los de la corrección matemática #70, permanecen válidos;
+el método no excluye toda optimización hardware de un lote con nieblas distintas.
+No prueba que ocurra en el fondo de la escena ni justifica reducir FOG globalmente.
+
+`probe_fog_reference.py` comprueba ahora ambas mitades por defecto, color y
+uniformidad de todos los píxeles; `--left-only` reproduce los 14 anteriores.
+Negativo real hardware 16/28/código 1; positivo software original 28/28/código 0;
+CPU/OpenGL privados 28/28 RGB y uniforme. El modo histórico conserva 14/14.
+No se modifica renderer/alpha del runtime. Se mantiene explícito que PCRTC
+no valida por sí solo alpha framebuffer o interpolación dentro de una primitiva.
+
+Herramienta privada de merge/Freeze/GIF/VSync ya compilada: limita la ráfaga
+a 16 campos/160 MiB, exige fragmentos exteriores completos en la frontera y
+un End válido. Freeze original incluye lectura de destinos de la caché para
+capturar VRAM; no se publica. Una ráfaga sintética de cuatro campos, 11 registros,
+4.237.045 bytes, se restaura en GSRendererSW original: sus cuatro imágenes
+64×32 coinciden enteramente en RGB con una ejecución fresca de ese software.
+El desacuerdo con hardware se reproduce también sin Freeze y queda localizado
+en la mitad derecha; no se adjudica a restauración. End truncado se rechaza
+antes de crear dispositivo/directorio. La historia inicial de desentrelazado
+no está serializada. Control de esta herramienta con el juego pendiente.
