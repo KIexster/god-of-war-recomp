@@ -1084,3 +1084,19 @@ cada `renderFrame/EndDrawing` completado, incluso si reutiliza contenido;
 específicos de reutilización/presentación para convertir ese desacuerdo
 en una medida de cuadros distintos enviados, y aun esa medida no sería
 prueba de cuadros físicos mostrados por el monitor.
+
+## Tiempos109 y cierre solicitado de ventana (2026-10-14)
+
+Pasada combinada600,164s sin espejo/hash/readbacks/diagGS, con tarjeta copiada:
+estado11 observado35,06..596,22, sin minimización registrada. Se envió WM_CLOSE
+solo al HWND del PID hijo y el proceso cerró0en0,147s, sin terminación forzada.
+Esto valida ese cierre solicitado; no final del juego ni estabilidad prolongada.
+El primer plano varió; no atribuir diferencias de velocidad a una sola condición.
+
+Dentro de la misma pasada hay ventanas de partida con host9,11..19,64/s y
+otras posteriores55,66..60/s. Flip y host cuentan operaciones diferentes.
+No hay referencia visual de esa pasada para alinear cámaras con otras por tick.
+HostWait tiene mediana4.979,41ms por ventana de unos5s, aun con host60/s:
+incluye loteGL/swap/limitador/eventos de EndDrawing. Antes de atribuir esperas,
+separar esos componentes conservando llamadas/orden/fences. Los ámbitos de
+hilos distintos no representan porcentaje de CPU ni se suman como tiempo global.
