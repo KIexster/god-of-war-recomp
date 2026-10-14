@@ -5957,3 +5957,55 @@ Se cierra la validación funcional acotada del cambio CPU COLCLAMP. La
 documentación final y su CI todavía deben incorporarse a la PR 76 antes
 de fusionarla. Estos controles no resuelven la neblina, el encuadre,
 el rendimiento real presentado o una sesión combinada prolongada.
+
+### 2026-10-14 — TEXA en texturas de profundidad: negativo externo y candidato 108
+
+Se revisó `GSLocalMemory` del software original: `ReadTexel24Z`,
+`ReadTexel16Z` y `ReadTexel16SZ` llaman a las mismas expansiones TEXA que sus
+formatos de color. CPU y GLSL del runtime solo aplicaban TA0/TA1/AEM a
+CT24/CT16/CT16S y omitían Z24/Z16/Z16S. En el bloque real 75983..76076 de
+la captura de backend anterior, TEXA tiene **TA0=0, TA1=0, AEM=false**;
+32 sprites muestrean Z16 con DECAL/TCC=1 hacia CT16 y FBMSK `0x3fff`.
+El supuesto inicial TA1=128 no corresponde a esa entrada y queda descartado.
+
+Control procedural sin juego, 48 celdas completas 8×8 en una imagen 64×64:
+seis formatos color/profundidad y ocho patrones TA0/TA1/AEM, cero RGB y bit
+alto de 16 bits. Se escribe alpha y se observa mediante una mezcla posterior
+que usa Ad. GSRendererSW original y DX11 Maximum pasan 48/48. CPU 106 y
+GPU 106 pasan 29/48: los 19 fallos son de los alias de profundidad, mientras
+los 24 casos de color pasan. La GPU está realmente activada; esta fixture
+mezcla hardware/compute y no certifica exclusivamente hardware. El caso
+Z16 de bit alto y TA0=TA1=0 devuelve 128 en el runtime anterior y 0 en ambas
+referencias originales.
+
+El candidato 108, separado en `ps2recomp-gs-texa-depth.patch`, añade solamente
+los tres alias a `applyTexa` CPU/GLSL. Conserva RGB, mezcla, FOG, profundidad,
+fences y presentación. Regresión independiente: CPU 107 sin el cambio falla
+las tres pruebas, código 3, con 19 patrones erróneos; CPU 108 pasa 3/3 y
+OpenGL 108 pasa 5/5, incluidos compute y hardware observados sin fallback
+CPU. También comprueba el RGBA y el vecino no cubierto. Suite completa
+incremental con objetos CPU/GLSL/main/regresión 108, biblioteca runtime full
+107 y bibliotecas de pruebas anteriores: 620/620 normal en 11,821 s y
+662/662 GPU en 209,116 s, códigos 0, sin fallos conocidos añadidos.
+**Todavía no sustituye el full obligatorio ni el control del runner 108**.
+
+Se repitieron los mismos prefijos 76076/76158/76223 del campo registrado con
+106, cambiando únicamente los objetos CPU/GLSL a 108. Primero se validó un
+registro procedural completo, código 0 y estado/VRAM End/RGB exactos.
+En las regiones de cielo y actores, CPU y GPU 108 producen RGBA idéntico y
+la Z24 permanece igual. Después de 76076, el alpha medio del cielo cambia
+de 206,7415 con CPU 107 corregida a 85,9133; después de 76158 y 76223,
+de 102,2364 a 43,1870. El RGB después de la mezcla tardía 76223 baja de
+85,2845/95,5252/82,4820 a 44,6819/47,2167/40,0719. Esto atribuye una parte
+del brillo a la expansión TEXA de esa misma entrada, sin comparar ticks
+de distintas ejecuciones. Los replays parciales siguen devolviendo 1 por
+otras diferencias de VRAM/progreso de transferencia: no hay paridad global.
+
+La lectura anterior usa una **sonda sintética de FBP0 recién dibujado**;
+el PCRTC real de ese registro copia FBP208 heredado al comienzo del campo.
+No acredita la imagen presentada del runner 108 ni su fidelidad final.
+Próximo: full aislado con 108 parches y VU1 compilada, menú obligatorio,
+nueva captura con CPU/GPU 108 y espejo DX11 dentro de la misma ejecución,
+repetición software original en la misma frontera, y control combinado.
+Neblina restante, encuadre, cuadros únicos presentados y estabilidad
+prolongada siguen abiertos.
