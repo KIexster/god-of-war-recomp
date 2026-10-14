@@ -23,7 +23,8 @@ def digest(path):
 
 
 def settings_for(case, folder, iso, shader_cache, vu1_thread='0', gs_front='0', diag_from_tick=0,
-                 capture_acquired=0, presentation_diagnostics='hash', perf='off', pad_script=None):
+                 capture_acquired=0, presentation_diagnostics='hash', perf='off', pad_script=None,
+                 gpu_profile=False, gpu_stats=False):
     if case not in CASES or vu1_thread not in ('0', '1') or gs_front not in ('0', '1'):
         raise ValueError('Caso o modo de hilos inválido')
     if gs_front == '1' and vu1_thread != '1':
@@ -36,6 +37,8 @@ def settings_for(case, folder, iso, shader_cache, vu1_thread='0', gs_front='0', 
         raise ValueError('La captura adquirida requiere presentación compartida')
     if presentation_diagnostics not in ('hash', 'sequence', 'off') or perf not in ('off', 'frames', 'timing'):
         raise ValueError('Modo de diagnóstico o perfil inválido')
+    if type(gpu_profile) is not bool or type(gpu_stats) is not bool:
+        raise ValueError('El perfil y estadísticas GPU deben ser opciones booleanas')
     settings = {
         'GOW_ISO': str(iso), 'GOW_MC0': str(folder / 'Mcd001.ps2'), 'GOW_MC1': '0',
         'GOW_GS_FINISH_ASINCRONO': '1' if case.startswith('async') else '0',
@@ -55,6 +58,10 @@ def settings_for(case, folder, iso, shader_cache, vu1_thread='0', gs_front='0', 
                         GOW_PERF_FRAME_PC='0x001837B8')
     if pad_script is not None:
         settings['GOW_PAD_GUION'] = pad_script
+    if gpu_profile:
+        settings['PS2X_GS_GPU_PROF'] = '1'
+    if gpu_stats:
+        settings['PS2X_GS_GPU_STATS'] = '1'
     if capture_acquired:
         settings.update(PS2X_GS_ACQUIRED_CAPTURE_DIR=str(folder/'acquired'),
                         PS2X_GS_ACQUIRED_CAPTURE_FROM_TICK=str(diag_from_tick),
@@ -121,7 +128,7 @@ def pcsx2_settings(args, folder):
 
 
 class WindowsApi:
-    """Solo lectura; no activa ventanas, manda entradas ni captura imágenes."""
+    """Monitor y cierre optativo del hijo propio; no activa ventanas ni manda entradas de juego."""
     def __init__(self):
         import ctypes
         from ctypes import wintypes
@@ -135,6 +142,7 @@ class WindowsApi:
             'GetForegroundWindow': (wintypes.HWND, []),
             'IsWindowVisible': (wintypes.BOOL, [wintypes.HWND]),
             'IsIconic': (wintypes.BOOL, [wintypes.HWND]),
+            'PostMessageW': (wintypes.BOOL, [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]),
         }
         for name, (restype, argtypes) in signatures.items():
             function = getattr(self.user, name)
@@ -160,6 +168,9 @@ class WindowsApi:
 
     def foreground(self):
         return self.user.GetForegroundWindow()
+
+    def post_close(self, handle):
+        return bool(self.user.PostMessageW(handle, 0x0010, 0, 0))  # WM_CLOSE
 
 
 def window_state(api, pid):
@@ -209,7 +220,36 @@ def stop_child(child):
             child.wait()
 
 
-def wait_for_control(child, seconds, stop_file):
+def request_child_window_close(child):
+    # Popen conserva el hijo exacto; no buscar ni detener procesos por nombre.
+    start = time.monotonic()
+    attempted = child.poll() is None
+    sent = forced = False
+    error = None
+    if attempted:
+        try:
+            api = WindowsApi()
+            window = next((handle for handle in api.windows()
+                           if api.pid(handle) == child.pid and api.visible(handle)), None)
+            if window is not None and child.poll() is None:
+                sent = api.post_close(window)
+        except OSError as failure:
+            error = str(failure)
+        if sent:
+            try:
+                child.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                forced = True
+                stop_child(child)
+        elif child.poll() is None:
+            forced = True
+            stop_child(child)
+    return dict(pid=child.pid, attempted=attempted, wm_close_sent=sent, forced_fallback=forced,
+                exit_code=child.poll(), seconds=time.monotonic()-start, error=error,
+                note='Cierre solicitado de ventana propia; no final del juego ni salida espontánea.')
+
+
+def wait_for_control(child, seconds, stop_file, stopper=None):
     deadline = time.monotonic() + seconds
     reason = 'process_exit'
     try:
@@ -228,7 +268,7 @@ def wait_for_control(child, seconds, stop_file):
     except KeyboardInterrupt:
         reason = 'keyboard_interrupt'
     finally:
-        stop_child(child)
+        (stopper or stop_child)(child)
     return reason
 
 
@@ -261,7 +301,8 @@ def prepare_case(args):
     settings = settings_for(args.case, folder, iso, root/'shader_cache',
                             args.vu1_thread, args.gs_front, args.diag_from_tick, args.capture_acquired,
                             getattr(args, 'presentation_diagnostics', 'hash'), getattr(args, 'perf', 'off'),
-                            getattr(args, 'pad_script', None))
+                            getattr(args, 'pad_script', None), getattr(args, 'gpu_profile', False),
+                            getattr(args, 'gpu_stats', False))
     external_settings, external_identity = pcsx2_settings(args, folder)
     settings.update(external_settings)
     # No reutilizar una carpeta: evita sobrescribir una pasada o una tarjeta original.
@@ -288,6 +329,8 @@ def prepare_case(args):
         perf=getattr(args, 'perf', 'off'),
         presentation_diagnostics=getattr(args, 'presentation_diagnostics', 'hash'),
         acquired_readback=bool(args.capture_acquired),
+        gpu_profile=getattr(args, 'gpu_profile', False), gpu_stats=getattr(args, 'gpu_stats', False),
+        close_mode='window_then_force' if getattr(args, 'request_window_close', False) else 'force',
         guest_flip_hz='Entradas a vid::Flip por segundo; no cuadros únicos mostrados.',
         host_hz='Iteraciones completadas de renderFrame/EndDrawing por segundo; pueden repetir textura.')
     if external_identity is not None:
@@ -315,6 +358,11 @@ def main():
     parser.add_argument('--perf', choices=('off', 'frames', 'timing'), default='off',
                         help='Contar entradas Flip/iteraciones host; timing añade tiempos transcurridos por ámbito')
     parser.add_argument('--pad-script', help='Guion explícito GOW_PAD_GUION; sustituye las pulsaciones predeterminadas')
+    parser.add_argument('--gpu-profile', action='store_true',
+                        help='Timestamps GPU optativos; ventanas de compositor, muestras incompletas posibles')
+    parser.add_argument('--gpu-stats', action='store_true', help='Estadísticas optativas del backend GPU')
+    parser.add_argument('--request-window-close', action='store_true',
+                        help='Al detener el control, WM_CLOSE sólo al hijo; espera15s antes de forzar si no termina')
     parser.add_argument('--pcsx2-gs-module', type=Path, help='DLL opcional del espejo GS original DX11')
     parser.add_argument('--pcsx2-resources', type=Path, help='Recursos/shaders de la revisión PCSX2 fijada')
     parser.add_argument('--pcsx2-capture-count', type=int, choices=range(17), default=8)
@@ -339,13 +387,19 @@ def main():
         result.update(pid=child.pid, start_time=time.strftime('%Y-%m-%dT%H:%M:%S%z'))
         monitor = WindowMonitor(child.pid, folder/'window_state.jsonl', start)
         reason = 'control_error'
+        def stop_current(process):
+            if args.request_window_close:
+                if 'window_close' not in result:
+                    result['window_close'] = request_child_window_close(process)
+            else:
+                stop_child(process)
         try:
             (folder/'running.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
             print(f'PID={child.pid}; control={folder}; crear {folder / "STOP"} para detenerlo', flush=True)
             monitor.thread.start()
-            reason = wait_for_control(child, args.seconds, folder/'STOP')
+            reason = wait_for_control(child, args.seconds, folder/'STOP', stopper=stop_current)
         finally:
-            stop_child(child)
+            stop_current(child)
             if monitor.thread.ident is not None:
                 monitor.close()
             result.update(seconds=time.monotonic()-start, exit_code=child.returncode,
