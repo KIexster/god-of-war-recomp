@@ -5957,3 +5957,199 @@ Se cierra la validación funcional acotada del cambio CPU COLCLAMP. La
 documentación final y su CI todavía deben incorporarse a la PR 76 antes
 de fusionarla. Estos controles no resuelven la neblina, el encuadre,
 el rendimiento real presentado o una sesión combinada prolongada.
+
+### 2026-10-14 — TEXA en texturas de profundidad: negativo externo y candidato 108
+
+Se revisó `GSLocalMemory` del software original: `ReadTexel24Z`,
+`ReadTexel16Z` y `ReadTexel16SZ` llaman a las mismas expansiones TEXA que sus
+formatos de color. CPU y GLSL del runtime solo aplicaban TA0/TA1/AEM a
+CT24/CT16/CT16S y omitían Z24/Z16/Z16S. En el bloque real 75983..76076 de
+la captura de backend anterior, TEXA tiene **TA0=0, TA1=0, AEM=false**;
+32 sprites muestrean Z16 con DECAL/TCC=1 hacia CT16 y FBMSK `0x3fff`.
+El supuesto inicial TA1=128 no corresponde a esa entrada y queda descartado.
+
+Control procedural sin juego, 48 celdas completas 8×8 en una imagen 64×64:
+seis formatos color/profundidad y ocho patrones TA0/TA1/AEM, cero RGB y bit
+alto de 16 bits. Se escribe alpha y se observa mediante una mezcla posterior
+que usa Ad. GSRendererSW original y DX11 Maximum pasan 48/48. CPU 106 y
+GPU 106 pasan 29/48: los 19 fallos son de los alias de profundidad, mientras
+los 24 casos de color pasan. La GPU está realmente activada; esta fixture
+mezcla hardware/compute y no certifica exclusivamente hardware. El caso
+Z16 de bit alto y TA0=TA1=0 devuelve 128 en el runtime anterior y 0 en ambas
+referencias originales.
+
+El candidato 108, separado en `ps2recomp-gs-texa-depth.patch`, añade solamente
+los tres alias a `applyTexa` CPU/GLSL. Conserva RGB, mezcla, FOG, profundidad,
+fences y presentación. Regresión independiente: CPU 107 sin el cambio falla
+las tres pruebas, código 3, con 19 patrones erróneos; CPU 108 pasa 3/3 y
+OpenGL 108 pasa 5/5, incluidos compute y hardware observados sin fallback
+CPU. También comprueba el RGBA y el vecino no cubierto. Suite completa
+incremental con objetos CPU/GLSL/main/regresión 108, biblioteca runtime full
+107 y bibliotecas de pruebas anteriores: 620/620 normal en 11,821 s y
+662/662 GPU en 209,116 s, códigos 0, sin fallos conocidos añadidos.
+**Todavía no sustituye el full obligatorio ni el control del runner 108**.
+
+Se repitieron los mismos prefijos 76076/76158/76223 del campo registrado con
+106, cambiando únicamente los objetos CPU/GLSL a 108. Primero se validó un
+registro procedural completo, código 0 y estado/VRAM End/RGB exactos.
+En las regiones de cielo y actores, CPU y GPU 108 producen RGBA idéntico y
+la Z24 permanece igual. Después de 76076, el alpha medio del cielo cambia
+de 206,7415 con CPU 107 corregida a 85,9133; después de 76158 y 76223,
+de 102,2364 a 43,1870. El RGB después de la mezcla tardía 76223 baja de
+85,2845/95,5252/82,4820 a 44,6819/47,2167/40,0719. Esto atribuye una parte
+del brillo a la expansión TEXA de esa misma entrada, sin comparar ticks
+de distintas ejecuciones. Los replays parciales siguen devolviendo 1 por
+otras diferencias de VRAM/progreso de transferencia: no hay paridad global.
+
+La lectura anterior usa una **sonda sintética de FBP0 recién dibujado**;
+el PCRTC real de ese registro copia FBP208 heredado al comienzo del campo.
+No acredita la imagen presentada del runner 108 ni su fidelidad final.
+Próximo: full aislado con 108 parches y VU1 compilada, menú obligatorio,
+nueva captura con CPU/GPU 108 y espejo DX11 dentro de la misma ejecución,
+repetición software original en la misma frontera, y control combinado.
+Neblina restante, encuadre, cuadros únicos presentados y estabilidad
+prolongada siguen abiertos.
+
+### 2026-10-14 — Full 108 terminado; control funcional todavía pendiente
+
+`scripts/2_compilar.cmd` terminó con código 0 en 1.171,305 s, fuente
+`084908442f9640535cbd94bb9dcc216c9e46738d`, 108 parches y VU1 compilada con
+501 micromemorias privadas. Los 13 archivos `programa0..12` se compilaron
+y enlazaron. Ejecutable de 66.302.976 bytes, SHA-256
+`a147193bcf80eb5cdf1c5c68a3cefb201f9f1dcc9ba80eb5f3f509c849e3fd3a`;
+biblioteca runtime
+`116b54c428b5f9d9c85fd7f8c04a3ff4d6dbfdee09634340f0160ea44eff6645`.
+Manifiesto/binarios en carpeta privada separada, sin modificar las
+bibliotecas ni ejecutables 106 y 107. Caché FFmpeg original verificada por
+el mismo SHA-256 del full 107; extracción normal, sin cambiar fuentes.
+
+Los cuatro controles CI de la fuente 0849084 pasaron en `38493899926`.
+Se integró después main mediante merge, conservando la identidad separada
+de la fuente compilada. La PR 76 de COLCLAMP CPU quedó fusionada en
+`4caab4e630b4089e60b884cc3ea782a074249506`, tras revisión local, full,
+controles funcionales y cuatro CI SUCCESS del HEAD documental final
+`60aa5249ad345145a8283d01b197683fda816a0e`, run `38493430447`.
+
+Ampliación del límite del control combinado 107: el **primer** informe de
+estado 14 aparece ya a 100,75 s, además del último a 416,41 s. No se
+adjudica la causa sin captura de esa transición. No se debe tratar el
+intervalo completo como partida sostenida. El futuro control 108 podrá
+entregar ataques con un guion explícito, pero entregar botones por sí
+solo no prueba aceptación del juego ni supervivencia.
+
+La PR 77 de TEXA permanece en borrador. Menú 115, referencia privada
+reenlazada con runtime 108, nueva escena frente a DX11/software en la misma
+frontera y configuración combinada siguen pendientes. El full y su CI no
+acreditan por sí solos fidelidad visual o estabilidad prolongada.
+
+### 2026-10-14 — Menú 108 y referencia reenlazada: controles procedurales cerrados
+
+El menú obligatorio 108 terminó en 115,294 s, controlador 0 por límite.
+Se revisaron las nueve capturas: primera negra durante el arranque,
+título/nueva partida, dificultad, introducción de Kratos e inicio del barco
+con el personaje visible. El informe de 90,87 s muestra estado 11.
+Tarjeta privada intacta antes/después/al original, sin las firmas buscadas
+de excepción/assertion/opcode desconocido. No hay monitoreo de
+minimización en este script, salida normal o prueba de partida prolongada.
+Estas imágenes de otra ejecución no se usan para comparar ticks con 107.
+
+Se construyó una DLL privada nueva con el mismo nativeCore/API Maximum y
+trazado originales, pero frontend/shadow y biblioteca runtime **full 108**
+`116b54…6645`, sin sobrescribir la referencia 106. SHA-256 del módulo:
+`1879c86e9c05189e8d8bc0d9e91c718bd17151a00d1a063def4fde3390d88488`.
+El primer control no pudo crear la referencia porque omitía la carpeta
+obligatoria del trazado; se conservaron los registros y se corrigió la
+configuración del helper, sin cambiar renderer/DLL ni ocultar una diferencia
+de píxeles. El reintento usa carpetas nuevas.
+
+Los 48 patrones TEXA completos pasan en CPU, hardware solicitado y compute
+solicitado del runtime completo 108, y 48/48 en la referencia DX11 original.
+El modo hardware de esta fixture registra 96 primitivas y 12 tiles: es una
+ruta mixta, conservando el alcance de los tests efectivos separados.
+Tres campos FOG 64×64, seis mitades completas, del shadow GPU coinciden
+byte a byte en RGB con software original recién inicializado. Dos campos
+restaurados desde Freeze y el mismo GIF/VSync coinciden exactamente con
+esa referencia software fresca. Un registro sin End se rechaza antes de
+crear dispositivo o directorio de salida. Se conserva el límite conocido
+de FOG de la segunda mitad del hardware original.
+
+Estas comprobaciones validan la herramienta antes de usarla con el juego;
+no son todavía el contraste de escena 108. La PR 77 sigue en borrador:
+faltan nueva escena con las mismas fronteras, control combinado y CI del
+HEAD documental final antes de ready/merge.
+
+### 2026-10-14 — Escena 108 con fronteras comunes y separación del host
+
+Control compartido síncrono 108, VU1 compilada, hilos VU1/frente GS apagados
+y DLL privada 1879: terminó en 464,471 s mediante STOP propio después de
+completar 16 adquiridos, 16 cuadros DX11, 16 shadow GPU y End4015. Proceso 1,
+controlador 0; **no es un control completo de 600 s ni una salida normal**.
+Tarjeta intacta, sin minimización registrada ni firmas de fallo buscadas;
+primer estado 11 a 55,17 s y último a 457,72 s. Las 251 adquisiciones
+registradas no muestran regresiones, repeticiones inconsistentes, retornos
+A-B-A o cambios de tamaño; distancia máxima entre ticks 0. Las 16 capturas
+acquiridas 512×448, 4000..4015, son distintas y se correlacionan con el registro.
+
+Ráfaga nativa con Freeze3999 y el mismo GIF/VSync hasta End4015:
+113.538.293 bytes, 94.829 registros, SHA-256
+`995df20376de22b04678ed4156c55449b48fd8ece1e8d1a1677364c69df13b51`.
+Software original restaura esa misma entrada y produce 17 campos
+3999..4015, código 0. Se revisaron los 16 tríos de merge DX11/software
+restaurado/shadow108 y los cuadros completos 4004/4015. Aparecen HUD,
+Kratos y enemigos; el fondo del shadow 108 queda cercano a las referencias
+originales. En 4015, región fija de fondo x=200..339, y=0..79, medias RGB
+shadow 35,6946/35,7850/31,2411 y software 35,7638/35,8478/31,3343.
+La región incluye mástil/cuerdas y no acredita igualdad global.
+
+Persisten diferencias de líneas, bordes y pose. En todo 4015, diferencia
+absoluta media shadow−SW 3,8922/3,7271/3,2203 RGB; media firmada
+−0,2818/−0,2830/−0,2386, máximo absoluto 157 y 195.092 píxeles distintos.
+DX11−SW tiene media absoluta 0,6009/0,5978/0,5453. Son estadísticas
+descriptivas, sin tolerancia global aceptada ni equivalencia de estado/VRAM.
+La historia de campos anterior al Freeze no se conserva; los 16 campos
+posteriores se inspeccionan sin presentar esa limitación como resuelta.
+
+La textura adquirida por el host **no es idéntica al shadow en ninguno de
+los 16 ticks**. En 4015 difieren 118.710 píxeles RGB, media absoluta
+3,9683/3,5600/3,0705 frente al shadow. También se revisó el cuarteto completo
+DX11/SW/shadow/adquirido. El fondo adquirido sigue cercano, pero ese tick
+no acredita su misma frontera de comandos: el EE ejecuta en otro hilo,
+notifica VSync antes de despertar callbacks y el host toma/enfila Present
+por separado. Esto ofrece una explicación posible de la diferencia,
+**sin atribuirla todavía a orden, slots, raster o presentación**.
+La comparación común de shadow/DX11/SW no debe convertirse en paridad
+acreditada de la textura del host.
+
+La expansión TEXA tiene negativos/positivos externos, full y control visual
+acotado; quedan abiertos la separación anterior y los detalles de imagen.
+El control combinado 108 con entradas de ataque está en curso. PR 77
+continúa en borrador hasta su cierre/revisión y CI del HEAD documental final.
+
+### 2026-10-14 — Combinado 108 con ataques: control de 420 s cerrado
+
+Control compartido con FINISH asíncrono, VU1/frente GS en sus propios hilos
+realmente activados: 420,059 s, proceso 1 por límite/controlador 0. Tarjeta
+privada intacta, sin minimización registrada ni firmas de fallo buscadas.
+Primer estado 11 a 35,06 s y último a 416,35 s; no aparece estado 14 en
+los informes. Se conservó el arranque Start/X y se añadieron pulsaciones
+de cuadrado desde 40 s, cada 0,75 s durante 0,35 s. Los 128 cambios de
+paquete registrados incluyen `ff7f`/neutral en estado 11. Las 16 capturas
+tardías 11998..12032, distintas y correlacionadas, muestran HUD y Kratos
+ejecutando ataques con los arcos de las hojas. Eso acredita entrega y
+acción visible en esa porción, sin afirmar completar una sección del juego.
+
+Las 4.096 adquisiciones registradas no tienen regresiones de secuencia,
+repeticiones inconsistentes, retornos A-B-A o cambios de tamaño; imágenes
+512×448 y modo de campos registrado. Distancia entre ticks 0..4, sin
+convertirla en milisegundos, latencia o FPS únicos. No se compara esa cifra
+con el combinado 107 como mejora de rendimiento: los guiones/escenas son
+distintos. El arranque forma parte de los 420 s; la permanencia observada
+en estado 11 comprende los informes 35,06..416,35. **No hay salida normal,
+estabilidad prolongada ni cobertura del juego completo**.
+
+Quedan cerrados full, menú, negativos/positivos externos, referencia
+procedural y controles funcionales acotados de TEXA 108. La revisión final
+de código/alcance es local, sin aprobación externa. La PR 77 requiere todavía
+CI verde del HEAD documental final antes de ready/merge. Permanecen abiertas
+la diferencia adquirido/shadow, los detalles frente al software original,
+encuadre, presentación única, desglose de HostWait y estabilidad larga.
