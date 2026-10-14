@@ -6608,3 +6608,44 @@ CPU/DX11/SW, fences y el renderer; **no se declara mejora de FPS**.
 Falta CI del HEAD documental final antes de sacar PR83 de borrador/fusionar.
 Sigue pendiente identificar el prefijo común de comandos adquirido/espejo,
 neblina restante, líneas/pose, encuadre y estabilidad prolongada.
+
+### 2026-10-14 — PR83 fusionada y frontera del módulo de referencia
+
+PR83 fusionada mediante merge en `96b164f143dc62917779d42fbdac32c4a2bfa11c`.
+El HEAD final `d0afe0b6062bc5fb240a5efc4038846b572eb6ba` terminó los cuatro
+trabajos con SUCCESS,
+[run38609264065](https://github.com/KIexster/god-of-war-recomp/actions/runs/38609264065).
+La validación anterior de110 queda cerrada dentro de su alcance; neblina,
+encuadre, causa de la espera de swap y estabilidad prolongada siguen pendientes.
+
+La auditoría de fuente detecta dos límites para comparar adquirido/espejo:
+la petición CRTC se construye bajo stateMutex pero Present se encola después
+de soltarlo, y el observador recibe el span GIF completo antes de que termine
+su procesamiento en el frontend. La secuencia de publicación no acredita un
+prefijo original común. El banco CRTC también tiene lectores host y escrituras
+MMIO/syscalls/DispEnv sin exclusión común visible. No se demuestra aquí un
+solapamiento nativo concreto ni que ese riesgo cause la neblina; atomizar cada
+campo tampoco acreditaría una transacción multirregistro. No se cambian locks,
+fences, sincronización, ABI C++ de observadores ni el renderer del juego.
+
+Como paso acotado, el módulo aislado añade `gow_gs_read_stream_info`, export
+optativo de ABI1 con struct64, sin cambiar los contratos anteriores. Cuenta
+llamadas aceptadas y bytes GIF aceptados por el transporte; conserva ambos cursores del último
+VSync, su campo y secuencia; reset separa epochs aunque se repita la secuencia.
+Las consultas/rechazos no avanzan cursores. La alineación se refiere sólo al
+transporte de16bytes: un tag puede seguir pendiente. GetCurrent disponible no
+prueba composición nueva, y entrada posterior no se atribuye al último VSync.
+No son fingerprints ni certificado de alineación con la imagen del host.
+
+Compilación aislada y contratos sin dispositivo:0. Control GPU con dos ciclos:0,
+2.048 píxeles RGBA exactos por ciclo. Comprueba prefijos antes/después de VSync,
+fragmentos a través de VSync, tag con payload pendiente pero QWORD alineado,
+submit vacío, consultas repetidas, rechazos/hilo propietario y reset pendiente.
+Omitir sólo registro de bytes de VSync produce tres fallos de frontera, código1;
+no avanzar epoch produce sólo el fallo de separación por reset, código1.
+Positivo intacto0;16/16 snapshots RGBA iguales al módulo anterior. DLL previa,
+Core original, runtime y runner110 preservados. No se requiere recompilar el
+juego: no hay parche/runtime/override modificado. Falta revisión/CI final de
+esta extensión antes de fusionarla. El siguiente paso es correlacionar estos
+cursores con eventos completos de la FIFO del host y la imagen compuesta,
+sin equiparar capturas sólo por tick o drenar la ruta compartida.

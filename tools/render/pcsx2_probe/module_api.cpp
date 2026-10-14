@@ -31,6 +31,10 @@ std::vector<uint32_t> snapshotPixels;
 uint32_t snapshotWidth=0,snapshotHeight=0,snapshotAspect=0,snapshotWindowWidth=0,snapshotWindowHeight=0;
 uint64_t snapshotHandle=0,snapshotSequence=0;
 bool snapshotValid=false;
+// GOW-Port: ambos cursores son de este ABI; una entrada posterior no se atribuye al último VSync.
+GowGsStreamInfo streamInfo{};
+bool vsyncQwordAligned=false;
+
 struct SnapshotAspectGuard {
     AspectRatioType gsAspect=GSConfig.AspectRatio,emuAspect=EmuConfig.CurrentAspectRatio;
     float customAspect=EmuConfig.CurrentCustomAspectRatio;
@@ -81,6 +85,7 @@ uint32_t gow_gs_create(const GowGsCreateInfo* info,uint64_t* handle){
         bridge=std::make_unique<gow_pcsx2_gs::GifBridge>(gow_pcsx2_gs::pcsx2TransferSink());
         if(++nextHandle==0)++nextHandle;
         activeHandle=nextHandle;sequence=0;failed=false;*handle=activeHandle;
+        streamInfo={};streamInfo.epoch=1;vsyncQwordAligned=false;
         std::fprintf(stderr,"[gow-pcsx2-module] blending=%s; referencia procedural, sin benchmark\n",
                      GOW_STRINGIFY(GOW_PCSX2_BLENDING));
         return GOW_GS_OK;
@@ -98,6 +103,7 @@ uint32_t gow_gs_submit(uint64_t handle,uint32_t path,const uint8_t* bytes,uint32
     if(path<1 || path>3 || (!bytes && size))return GOW_GS_BAD_ARGUMENT;
     try {
         if(!bridge->submit(static_cast<gow_pcsx2_gs::Path>(path),bytes,size)){failed=true;return GOW_GS_FAILED;}
+        ++streamInfo.input_events;streamInfo.input_gif_bytes+=size;
         return GOW_GS_OK;
     } catch(...) {failed=true;return GOW_GS_FAILED;}
 }
@@ -110,7 +116,13 @@ uint32_t gow_gs_vsync(uint64_t handle,uint32_t field,const uint8_t* privileged,u
         std::memcpy(&regs,privileged,sizeof(regs));
         // No exigir complete(): VSync puede interrumpir un paquete GIF.
         snapshotValid=false;
-        GSvsync(field,true);++sequence;return GOW_GS_OK;
+        GSvsync(field,true);++sequence;
+        ++streamInfo.input_events;
+        streamInfo.last_vsync_events=streamInfo.input_events;
+        streamInfo.last_vsync_gif_bytes=streamInfo.input_gif_bytes;
+        streamInfo.last_vsync_sequence=sequence;streamInfo.last_vsync_field=field;
+        vsyncQwordAligned=bridge->complete();
+        return GOW_GS_OK;
     } catch(...) {failed=true;return GOW_GS_FAILED;}
 }
 uint32_t gow_gs_write_register(uint64_t handle,uint32_t reg,uint64_t value){
@@ -119,6 +131,7 @@ uint32_t gow_gs_write_register(uint64_t handle,uint32_t reg,uint64_t value){
     if(reg>0x7f)return GOW_GS_BAD_ARGUMENT;
     try {
         static_cast<gow_pcsx2_gs::RegisterAdapter<GSRendererHW>*>(g_gs_renderer.get())->writeDirect(uint8_t(reg),value);
+        ++streamInfo.input_events;
         return GOW_GS_OK;
     } catch(...) {failed=true;return GOW_GS_FAILED;}
 }
@@ -128,6 +141,8 @@ uint32_t gow_gs_reset(uint64_t handle){
     try {
         snapshotValid=false;
         g_gs_renderer->Reset(true);bridge->discardAfterGsReset();sequence=0;
+        const uint64_t nextEpoch=streamInfo.epoch+1;
+        streamInfo={};streamInfo.epoch=nextEpoch;vsyncQwordAligned=false;
         return GOW_GS_OK;
     } catch(...) {failed=true;return GOW_GS_FAILED;}
 }
@@ -149,6 +164,19 @@ uint32_t gow_gs_read_output(uint64_t handle,uint8_t* rgba,uint64_t capacity,GowG
         download->CopyFromTexture(rect,current,rect,0);download->Flush();
         return download->ReadTexels(rect,rgba,uint32_t(row))?GOW_GS_OK:GOW_GS_FAILED;
     } catch(...) {failed=true;return GOW_GS_FAILED;}
+}
+
+uint32_t gow_gs_read_stream_info(uint64_t handle,GowGsStreamInfo* info){
+    std::lock_guard lock(gate);
+    const auto status=access(handle);if(status)return status;
+    if(!info||info->size!=sizeof(*info))return GOW_GS_BAD_ARGUMENT;
+    auto result=streamInfo;
+    result.size=sizeof(result);
+    result.flags=(result.last_vsync_sequence?GOW_GS_STREAM_HAS_VSYNC:0) |
+        (g_gs_device->GetCurrent()?GOW_GS_STREAM_OUTPUT_AVAILABLE:0) |
+        (bridge->complete()?GOW_GS_STREAM_INPUT_QWORD_ALIGNED:0) |
+        (vsyncQwordAligned?GOW_GS_STREAM_VSYNC_QWORD_ALIGNED:0);
+    *info=result;return GOW_GS_OK;
 }
 
 uint32_t gow_gs_read_video_info(uint64_t handle,GowGsVideoInfo* info){
