@@ -5889,3 +5889,71 @@ códigos 0, sin fallos conocidos añadidos. No sustituye el full del juego.
 `scripts/2_compilar.cmd`, CI del HEAD final y control funcional de 107
 siguen pendientes antes de fusionar. **La neblina GPU y
 su fidelidad frente al software original continúan abiertas**.
+
+### 2026-10-14 — Compilación completa de la referencia CPU 107
+
+El full obligatorio `scripts/2_compilar.cmd` terminó con código 0 en
+1.110,174 s, fuente `f76bc46327ca646a1eb5fc6103b4b484d1d9be8b`, 107 parches,
+VU1 compilada y 501 micromemorias privadas. Los 13 archivos `programa0..12`
+se compilaron y enlazaron. Ejecutable de 66.302.464 bytes, SHA-256
+`c19f1d31ab52d26d3cdd09ca68310c74d62595435d912e9ba30f122aff1af250`;
+biblioteca runtime
+`49c3458c2acb8ff45f0c6d5126403b1c4d19944a2dd098e779987ba49b88acb9`.
+Manifiesto y binarios se conservaron en una carpeta privada; runner/runtime
+106 y su biblioteca `5c3787…67bc` siguen intactos.
+
+El primer intento acabó con código 1 al interrumpir exclusivamente su
+descarga de FFmpeg tras 9.412,85 s, antes de compilar el runner. Sus registros
+y archivo parcial se conservaron. CMake había retirado la copia local porque
+el proyecto no define URL_HASH. El reintento verificó el archivo privado
+existente por SHA-256 y lo extrajo normalmente mediante un guard de su
+script CMake generado; no se cambió la dependencia ni las fuentes C++.
+
+Los cuatro controles de CI del HEAD fuente pasaron en `38487502682`.
+Esto acredita compilación y pruebas; **el control funcional 107 todavía está
+en curso** y la PR 76 sigue en borrador. No se declara corregida la neblina
+OpenGL, cierre normal ni estabilidad prolongada.
+
+### 2026-10-14 — Controles funcionales cerrados del runner 107
+
+Los tres controles siguientes usan el ejecutable completo 107 anterior,
+con tarjeta privada copiada, cuyo SHA-256 permaneció idéntico antes/después
+y al original. Se revisaron registros y capturas. No se encontraron las
+firmas buscadas de excepción, assertion u opcode desconocido; esa búsqueda
+no descarta otros fallos. Los procesos se cerraron por el límite del control,
+**sin acreditar salida normal ni estabilidad prolongada**.
+
+`scripts/probar_menu.ps1 -Segundos 115` terminó en 115,343 s, controlador 0.
+Nueve capturas muestran título, nueva partida, dificultad, introducción de
+Kratos e inicio del barco. El informe alcanza estado 11 a 91,68 s. Este
+script no registró el estado de minimización y no mide FPS presentados.
+
+Control compartido síncrono con VU1 compilada, hilos VU1/frente GS apagados
+y espejo DX11 original Maximum `9f0130…79bb7`: 420,390 s, proceso 1 por
+límite/controlador 0. Primer estado 11 a 50,24 s y último a 410,74 s;
+ventana sin minimización registrada. Los 16 adquiridos y 16 cuadros DX11
+4000..4015 se correlacionan con sus registros, son distintos y tienen
+512×448. Se revisaron los contactos y dos pares completos: aparecen HUD,
+Kratos y enemigos; OpenGL conserva la bruma excesiva y también hay
+diferencias de líneas/pose. El mismo tick no demuestra el mismo prefijo
+de comandos. 520 adquisiciones registradas sin regresiones de secuencia,
+repeticiones inconsistentes, retornos A-B-A o cambios de tamaño; distancia
+hostTick−frameTick máxima 0 en este registro, sin equivalencia con FPS.
+
+Control compartido combinado, FINISH asíncrono e hilos VU1/frente GS
+realmente activados según el registro: 420,046 s, proceso 1 por
+límite/controlador 0, sin minimización registrada. Primer estado 11 a
+35,06 s; el último informe es estado 14 a 416,41 s. **No se acreditan
+420 s de partida sostenida**. Los 16 adquiridos distintos y correlacionados
+512×448, frameTicks 3990..4039, muestran HUD, Kratos y enemigos en la escena
+muestreada. Las 4.096 adquisiciones no tienen regresiones de secuencia,
+repeticiones inconsistentes o cambios de tamaño. Hay 32 retornos A-B-A:
+30 con la misma paridad y dos alternantes, todos con modo de campos
+registrado. No se atribuyen a corrupción o imagen antigua sin investigar
+estado y píxeles. La distancia entre ticks está entre 0 y 22; no son
+milisegundos, cuadros únicos ni una medición de latencia.
+
+Se cierra la validación funcional acotada del cambio CPU COLCLAMP. La
+documentación final y su CI todavía deben incorporarse a la PR 76 antes
+de fusionarla. Estos controles no resuelven la neblina, el encuadre,
+el rendimiento real presentado o una sesión combinada prolongada.
