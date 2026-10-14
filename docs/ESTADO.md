@@ -5812,3 +5812,148 @@ orienta el siguiente control hacia el runtime. Falta repetir el mismo campo
 de comandos de backend, con su estado/VRAM inicial, en CPU y GPU para separar
 interpretación del frontend y rasterización; seguir profundidad, mezcla,
 textura/FOG y pases posteriores. **La neblina no está corregida**.
+
+### Destino recién dibujado, alpha y referencia CPU (2026-10-13)
+
+[#75 fusionada](https://github.com/KIexster/god-of-war-recomp/pull/75),
+merge `9ac5585f1a8400922223e41719e6bc01c7e4e35d`, tras revisión local y
+[cuatro controles CI correctos del HEAD 0f42d7f](https://github.com/KIexster/god-of-war-recomp/actions/runs/38460157286).
+
+Nuevo diagnóstico privado, runner 106 congelado: registra un campo de backend
+después de VSync 4002 y hasta Present/End 4003, con estado/VRAM propios.
+DLL `7bb35c83b832fa1b055e8fc269f1640d1bcd94952b80d67701f28d33d261edb6`;
+patrón 64×64 validado primero, dos repeticiones CPU/compute/hardware con estado
+final e imágenes correctos. Se conserva la DLL anterior y no se cambia el juego.
+Control compartido síncrono, hilos apagados: 450,224 s, detenido mediante STOP
+propio después de completar la captura y 16 muestras; proceso 1/controlador 0,
+tarjeta intacta, primer informe 11 a 55,21 s, último 11 a 442,00 s. No es un
+control completo de 600 s ni un cierre normal. 283 adquisiciones sin anomalías
+buscadas, distancia máxima 0; 16 adquiridos/PCRTC 4003..4018 correlacionados y
+distintos. Sin FPS, estabilidad prolongada o validación del modo combinado.
+
+Registro de 33.391.712 bytes: Initial, 78.181 Submit, 23 TEXFLUSH, 139 CLUT,
+tres transferencias/tres uploads, Present y End. Ningún Submit activa FGE.
+La referencia CPU y el candidato se restauran desde ese mismo estado inicial.
+Dos repeticiones hardware hasta Present tienen diferencias de RGB/VRAM/estado;
+la primera mezcla compute mientras calientan shaders, la segunda registra cero
+tiles. Un replay completo CPU devuelve código 3 al no reproducir el End GPU.
+**No se declara paridad ni se convierte ese código en éxito**.
+
+La imagen PCRTC de 4003 copia FBP0 heredado a FBP208 al comienzo del campo;
+después se dibuja la escena nueva en FBP0. Que CPU repita la bruma al presentar
+FBP208 no excluye un problema previo de GPU. Una sonda cambia únicamente los
+dos DISPFB de Present para leer el destino FBP0 recién dibujado como CT32:
+es una petición de diagnóstico, **no la imagen presentada del juego**.
+CPU/GPU tienen 122.960 píxeles RGB distintos, media absoluta
+9,92/11,71/10,34; dos pasadas hardware calientes tienen el mismo RGB aunque
+su VRAM final difiere en 1.151 bytes. Compute solicitado produce el mismo RGB
+final que hardware en esta sonda. No acredita estabilidad global.
+
+Prefijos independientes con la misma entrada anterior y readback al final
+acotan el contraste de fondo: después del clear 54, RGBA y Z son cero en
+las regiones inspeccionadas; el RGB del fondo permanece igual hasta 76158.
+La diferencia grande aparece en los 64 triángulos 76160..76223, con FGE=0,
+T8 y ALPHA `0x54`, cuya ecuación usa el alpha del destino. Antes de ese pase,
+el alpha del fondo ya difiere: tras 76158, medias CPU 63,43 y GPU 102,24;
+después de 76223, GPU supera CPU en +26,77/+31,78/+27,88 RGB.
+La Z24 leída en las regiones permanece idéntica en los cuatro prefijos
+76076/76142/76158/76223. Son descripciones locales, sin equivalencia global.
+Snapshot experimental por Submit no cambia el RGB de esta sonda; invalidar
+la página de textura CPU por Submit tampoco cambia su resultado.
+
+La divergencia de alpha se introduce en el bloque 75983..76076: preparación
+CT24 en FBP320 y lectura Z16 hacia un destino CT16 en FBP0 con FBMSK `0x3fff`.
+Un primer patrón reducido Z16/CT16/máscara no reproduce todo el desacuerdo de
+la escena y también muestra diferencias con el software original. Por tanto,
+no se adjudica aún a una conversión, máscara o sincronización concretas.
+
+La auditoría identifica entretanto un error de la referencia CPU: aplica
+siempre saturación al resultado de ALPHA, aunque COLCLAMP=0. Cuatro patrones
+procedurales completos 64×64 contrastados con GSRendererSW original y GPU
+coinciden en los esperados wrap/clamp. Por ejemplo, −(32,64,128) envuelto da
+(224,192,128), no cero; (200,220,240)+(80,64,32) envuelto da (24,28,16), no 255.
+CPU 106 falla esos dos controles y pasa los dos de saturación. El espejo
+hardware Maximum falla los dos negativos incluso con saturación, por una
+ruta que conserva el color fuente; no usarlo como autoridad única aquí.
+
+Parche 107 separado `ps2recomp-gs-cpu-colclamp.patch`: CPU selecciona wrap o
+saturación del RGB de ALPHA y conserva alpha/Z y el resto del pipeline.
+Regresión sin juego: CPU 106 falla 2/4, código 2; nuevo objeto CPU con el
+resto de la biblioteca 106 pasa 4/4, código 0. No modifica GLSL. COLCLAMP=0
+aparece en la preparación de la máscara de esta escena: la CPU más oscura
+no certificaba que GPU estuviera equivocada en ese bloque. Se conserva el
+runner/runtime 106 mientras se valida la corrección de la referencia.
+Suite completa incremental reenlazada con CPU/main/regresión/tabla 107 y
+bibliotecas restantes 106: 617/617 normal y 657/657 con controles GPU,
+códigos 0, sin fallos conocidos añadidos. No sustituye el full del juego.
+`scripts/2_compilar.cmd`, CI del HEAD final y control funcional de 107
+siguen pendientes antes de fusionar. **La neblina GPU y
+su fidelidad frente al software original continúan abiertas**.
+
+### 2026-10-14 — Compilación completa de la referencia CPU 107
+
+El full obligatorio `scripts/2_compilar.cmd` terminó con código 0 en
+1.110,174 s, fuente `f76bc46327ca646a1eb5fc6103b4b484d1d9be8b`, 107 parches,
+VU1 compilada y 501 micromemorias privadas. Los 13 archivos `programa0..12`
+se compilaron y enlazaron. Ejecutable de 66.302.464 bytes, SHA-256
+`c19f1d31ab52d26d3cdd09ca68310c74d62595435d912e9ba30f122aff1af250`;
+biblioteca runtime
+`49c3458c2acb8ff45f0c6d5126403b1c4d19944a2dd098e779987ba49b88acb9`.
+Manifiesto y binarios se conservaron en una carpeta privada; runner/runtime
+106 y su biblioteca `5c3787…67bc` siguen intactos.
+
+El primer intento acabó con código 1 al interrumpir exclusivamente su
+descarga de FFmpeg tras 9.412,85 s, antes de compilar el runner. Sus registros
+y archivo parcial se conservaron. CMake había retirado la copia local porque
+el proyecto no define URL_HASH. El reintento verificó el archivo privado
+existente por SHA-256 y lo extrajo normalmente mediante un guard de su
+script CMake generado; no se cambió la dependencia ni las fuentes C++.
+
+Los cuatro controles de CI del HEAD fuente pasaron en `38487502682`.
+Esto acredita compilación y pruebas; **el control funcional 107 todavía está
+en curso** y la PR 76 sigue en borrador. No se declara corregida la neblina
+OpenGL, cierre normal ni estabilidad prolongada.
+
+### 2026-10-14 — Controles funcionales cerrados del runner 107
+
+Los tres controles siguientes usan el ejecutable completo 107 anterior,
+con tarjeta privada copiada, cuyo SHA-256 permaneció idéntico antes/después
+y al original. Se revisaron registros y capturas. No se encontraron las
+firmas buscadas de excepción, assertion u opcode desconocido; esa búsqueda
+no descarta otros fallos. Los procesos se cerraron por el límite del control,
+**sin acreditar salida normal ni estabilidad prolongada**.
+
+`scripts/probar_menu.ps1 -Segundos 115` terminó en 115,343 s, controlador 0.
+Nueve capturas muestran título, nueva partida, dificultad, introducción de
+Kratos e inicio del barco. El informe alcanza estado 11 a 91,68 s. Este
+script no registró el estado de minimización y no mide FPS presentados.
+
+Control compartido síncrono con VU1 compilada, hilos VU1/frente GS apagados
+y espejo DX11 original Maximum `9f0130…79bb7`: 420,390 s, proceso 1 por
+límite/controlador 0. Primer estado 11 a 50,24 s y último a 410,74 s;
+ventana sin minimización registrada. Los 16 adquiridos y 16 cuadros DX11
+4000..4015 se correlacionan con sus registros, son distintos y tienen
+512×448. Se revisaron los contactos y dos pares completos: aparecen HUD,
+Kratos y enemigos; OpenGL conserva la bruma excesiva y también hay
+diferencias de líneas/pose. El mismo tick no demuestra el mismo prefijo
+de comandos. 520 adquisiciones registradas sin regresiones de secuencia,
+repeticiones inconsistentes, retornos A-B-A o cambios de tamaño; distancia
+hostTick−frameTick máxima 0 en este registro, sin equivalencia con FPS.
+
+Control compartido combinado, FINISH asíncrono e hilos VU1/frente GS
+realmente activados según el registro: 420,046 s, proceso 1 por
+límite/controlador 0, sin minimización registrada. Primer estado 11 a
+35,06 s; el último informe es estado 14 a 416,41 s. **No se acreditan
+420 s de partida sostenida**. Los 16 adquiridos distintos y correlacionados
+512×448, frameTicks 3990..4039, muestran HUD, Kratos y enemigos en la escena
+muestreada. Las 4.096 adquisiciones no tienen regresiones de secuencia,
+repeticiones inconsistentes o cambios de tamaño. Hay 32 retornos A-B-A:
+30 con la misma paridad y dos alternantes, todos con modo de campos
+registrado. No se atribuyen a corrupción o imagen antigua sin investigar
+estado y píxeles. La distancia entre ticks está entre 0 y 22; no son
+milisegundos, cuadros únicos ni una medición de latencia.
+
+Se cierra la validación funcional acotada del cambio CPU COLCLAMP. La
+documentación final y su CI todavía deben incorporarse a la PR 76 antes
+de fusionarla. Estos controles no resuelven la neblina, el encuadre,
+el rendimiento real presentado o una sesión combinada prolongada.
