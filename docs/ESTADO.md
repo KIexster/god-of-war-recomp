@@ -4723,9 +4723,14 @@ La issue [#66](https://github.com/KIexster/god-of-war-recomp/issues/66) señaló
 VF0 a `(0, 0, 0, 1)`; las traducciones de VU0 ignoran escrituras al vector cero
 sin quitar otros efectos de la instrucción, y `LQC2` a VF0 no carga memoria. Se
 añadieron regresiones para el contexto y para LQC2, QMTC2, VADD, VITOF y VMFIR.
-El parche se compiló con MSVC 19.44 y Ninja 1.12.1; `ps2x_tests` pasó 622/622
-con cero fallos conocidos. También pasan `tools/ci/parches.py`,
-`tools/ci/validar_config.py` y la aplicación limpia del parche.
+Las rutas de `VI0` ya ignoraban escrituras de `CTC2`, operaciones VI y cargas/
+incrementos de memoria; `VMTIR` aún podía escribirlo. Un parche adicional lo
+trata como destino constante y la regresión comprueba también que los destinos
+VI distintos de cero sigan escribiendo.
+
+Ambos parches se compilaron con MSVC 19.44 y Ninja 1.12.1; `ps2x_tests` pasó
+622/622 con cero fallos conocidos. También pasan `tools/ci/parches.py`,
+`tools/ci/validar_config.py` y la aplicación limpia de los dos parches en orden.
 
 ## PMULTH: compilación completa y regresiones nativas (2026-10-11)
 
