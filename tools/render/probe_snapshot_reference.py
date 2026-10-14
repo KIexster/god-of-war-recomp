@@ -16,9 +16,34 @@ class VideoInfo(c.Structure):
     _fields_ += [(name, c.c_uint64) for name in ('sequence', 'smode1', 'syncv', 'smode2')]
 
 
-def run(module, resources, output=None):
+class StreamInfo(c.Structure):
+    _fields_ = [('size', c.c_uint32), ('flags', c.c_uint32)]
+    _fields_ += [(name, c.c_uint64) for name in
+                ('epoch', 'input_events', 'input_gif_bytes', 'last_vsync_events',
+                 'last_vsync_gif_bytes', 'last_vsync_sequence')]
+    _fields_ += [('last_vsync_field', c.c_uint32), ('reserved', c.c_uint32)]
+
+
+def stream_reader(dll, requested):
+    """Resolver el export sólo si se solicita; DLL anteriores siguen siendo válidas."""
+    if not requested:
+        return None
+    function = dll.gow_gs_read_stream_info
+    function.argtypes, function.restype = [c.c_uint64, c.POINTER(StreamInfo)], c.c_uint32
+    return function
+
+
+def read_stream(function, handle):
+    info = StreamInfo()
+    info.size = c.sizeof(info)
+    require(function(handle, c.byref(info)) == 0, 'Consultar frontera de entrada/VSync')
+    return {name: getattr(info, name) for name, _ in info._fields_}
+
+
+def run(module, resources, output=None, include_stream=False):
     require(c.sizeof(CreateInfo) == c.sizeof(FrameInfo) == 32 and c.sizeof(VideoInfo) == 56,
             'ABI Windows x64 requerido')
+    require(c.sizeof(StreamInfo) == 64, 'Layout de frontera Windows x64 requerido')
     pointer = c.POINTER(c.c_uint8)
     with os.add_dll_directory(str(module.parent)):
         dll = c.WinDLL(str(module))
@@ -32,12 +57,15 @@ def run(module, resources, output=None):
         for name, arguments in signatures.items():
             function = getattr(dll, 'gow_gs_' + name)
             function.argtypes, function.restype = arguments, c.c_uint32
+        cursor_function = stream_reader(dll, include_stream)
         require(dll.gow_gs_abi() == 1, 'ABI inesperada')
         handle = c.c_uint64()
         config = CreateInfo(32, 1, str(resources).encode('utf-8'), 64, 64, 0, 0)
         require(dll.gow_gs_create(c.byref(config), c.byref(handle)) == 0, 'Crear GS original')
-        rows = []
+        rows, stream = [], {}
         try:
+            if cursor_function:
+                stream['initial'] = read_stream(cursor_function, handle)
             pairs = [(1, 0x1a), ((1 << 32) | 256, 0x4e), (0, 0x18),
                      ((63 << 16) | (63 << 48), 0x40), (0x30000, 0x47), (1, 0x46),
                      (6, 0), (1 << 16, 0x4c), (0x80604020 | (0x3f800000 << 32), 1),
@@ -48,12 +76,16 @@ def run(module, resources, output=None):
             raw = struct.pack('<' + 'Q' * len(words), *words)
             packet = (c.c_uint8 * len(raw)).from_buffer_copy(raw)
             require(dll.gow_gs_submit(handle, 3, packet, len(raw)) == 0, 'Enviar patrón CT32 uniforme')
+            if cursor_function:
+                stream['after_submit'] = read_stream(cursor_function, handle)
             registers = bytearray(8192)
             for offset, value in ((0, 0xff21), (0x10, 2 << 13), (0x70, 1 << 9),
                                   (0x80, (25 << 12) | (3 << 23) | (255 << 32) | (63 << 44))):
                 struct.pack_into('<Q', registers, offset, value)
             privileged = (c.c_uint8 * 8192).from_buffer_copy(registers)
             require(dll.gow_gs_vsync(handle, 0, privileged, 8192) == 0, 'VSync progresivo sintético')
+            if cursor_function:
+                stream['after_vsync'] = read_stream(cursor_function, handle)
             video = VideoInfo()
             video.size = c.sizeof(video)
             require(dll.gow_gs_read_video_info(handle, c.byref(video)) == 0, 'Consultar modo efectivo')
@@ -77,11 +109,21 @@ def run(module, resources, output=None):
                     rows.append(dict(aspect=aspect, window=[width, height], image=[frame.width, frame.height],
                                      sequence=frame.sequence, rgba_sha256=hashlib.sha256(data).hexdigest(),
                                      filename=filename if output else None))
+            if cursor_function:
+                stream['after_snapshots'] = read_stream(cursor_function, handle)
+                require(stream['after_snapshots'] == stream['after_vsync'],
+                        'Las consultas/snapshots no deben avanzar ni cambiar el cursor')
         finally:
             require(dll.gow_gs_destroy(handle) == 0, 'Cerrar GS')
-    return dict(module_sha256=hashlib.sha256(module.read_bytes()).hexdigest(), video_info=settings, cases=rows,
+    result = dict(module_sha256=hashlib.sha256(module.read_bytes()).hexdigest(), video_info=settings, cases=rows,
                 limitation='Patrón sintético64x64: opciones y calculador del GS original, con filtro/bandas. '
                            'No establece temporización/encuadre PS2 del juego, frontera del host, FPS ni estabilidad.')
+    if include_stream:
+        result['stream_info'] = stream
+        result['stream_limitation'] = ('Cursores locales de llamadas/bytes aceptados, no hashes de contenido. '
+                                      'Alineación QWORD no implica tag GIF terminado. El último VSync no '
+                                      'acredita composición nueva ni alineación con OpenGL.')
+    return result
 
 
 def main():
@@ -89,6 +131,8 @@ def main():
     parser.add_argument('--module', required=True, type=Path)
     parser.add_argument('--resources', required=True, type=Path)
     parser.add_argument('--output', type=Path, help='Carpeta nueva para JSON y PNG del patrón; opcional')
+    parser.add_argument('--stream-info', action='store_true',
+                        help='Añadir fronteras de entrada/VSync; requiere el export optativo de la DLL')
     args = parser.parse_args()
     if os.name != 'nt':
         parser.error('Requiere Windows x64 y DX11')
@@ -99,7 +143,7 @@ def main():
         if output:
             require(not output.exists(), 'La carpeta de salida debe ser nueva')
             output.mkdir(parents=True)
-        result = run(module, resources, output)
+        result = run(module, resources, output, args.stream_info)
         text = json.dumps(result, ensure_ascii=False, indent=2)
         if output:
             (output / 'result.json').write_text(text, encoding='utf-8')

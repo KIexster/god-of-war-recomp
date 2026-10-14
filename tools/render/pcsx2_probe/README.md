@@ -149,3 +149,12 @@ Estos cursores no son hashes, no demuestran composición nueva/RGB nuevo ni
 alineación con la presentación OpenGL del host. Para comparar hay que acreditar
 el mismo flujo y prefijo, CRTC y opciones efectivos, además de la frontera de
 la imagen compuesta. Las capturas del juego y ráfagas se mantienen privadas.
+
+La sonda `probe_snapshot_reference.py --stream-info` conserva esa metadata en
+`result.json` en cuatro puntos: antes de enviar, después del GIF, después del
+VSync y después de los16snapshots. Requiere el export nuevo sólo si se solicita;
+sin la opción mantiene compatibilidad con DLL antiguas. Un error de consulta
+falla explícitamente y cierra el handle, en lugar de publicar ceros como datos.
+La sonda exige que los snapshots no avancen el cursor. El patrón es sintético;
+los cursores locales y sus límites se guardan junto al resultado, sin declarar
+paridad con el host o fidelidad de una escena.
