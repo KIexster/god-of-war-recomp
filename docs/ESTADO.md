@@ -6533,3 +6533,78 @@ registro del View falla las tres escalas,1/4/código3. Imágenes, fences y
 referencias CPU/DX11 se conservan. Revisión local, sin aprobación externa.
 **Full110, menú115, control funcional y medición del juego siguen pendientes**;
 todavía no hay resultado de tiempos110 ni mejora de rendimiento declarada.
+
+### 2026-10-14 — Full110 y control funcional del diagnóstico
+
+`scripts/2_compilar.cmd` terminó0 en1.079,539s:110parches, VU1 compilada,
+copia privada501micros y13programas0..12 compilados y enlazados. Fuente
+`7d3461c2d42694bbc12dceb437e6a1812c55269a`; ejecutable66.307.584bytes,
+SHA256`533c9cd7e841b7343c34e6cc3ff86ae5615a35969efcd5cec8a4bef6705852cc`.
+Manifiesto privado `transition110_host_timing_vu1c_full/build.json`.
+Bibliotecas106..109 y source raylib compartido intactos después del full;
+la copia instrumentada de rcore es idéntica entre configuraciones sucesivas.
+
+Menú obligatorio115:115,348s/control0/tarjeta copiada intacta, nueve capturas
+512×448 revisadas. Dificultad4, introducción5..6 y barco8;0y7 negras y1..3
+fondo sin opciones. Son lecturas GowPadTest de VRAM actual/CRTC latched,
+no la textura adquirida: no se declara regresión de título por esas capturas.
+Sin firmas buscadas de fallo ni informes del nuevo perfil con diagnóstico OFF.
+La detención por límite del script no acredita cierre normal del juego.
+
+Otro control combinado dura240,186s: FINISH asíncrono configurado, VU1 y
+frente GS en hilos propios confirmados en registro, presentación compartida,
+entradas Start/X y cuadrado. Estado11 en informes35,05..235,65; no estado14.
+Proceso/controlador0; WM_CLOSE de su propia ventana termina0en0,168s,
+sin fallback. Tarjeta intacta, sin minimización registrada ni firmas buscadas.
+No hay línea que contabilice cada FINISH; se distingue configuración de
+esa opción de la confirmación explícita de los hilos.
+
+Los16adquiridos3999..4031 son RGBA distintos512×448, SMODE2=0x21fed1,
+correlacionados exactamente con su registro. Contacto y primera/última
+completas revisados: HUD, Kratos, enemigos y variación de poses; no se
+afirman arcos de ataque ni completar una sección. Las4.096 adquisiciones
+registradas no muestran regresiones, repeticiones inconsistentes, retornos
+A-B-A ni cambios de tamaño. Distancia de ticks0..9, sin traducirla a latencia.
+El logger antiguo omite reusos; el nuevo contador sí los registra.
+Esta pasada con hashes/capturas no se usa como benchmark ni referencia
+visual de otra partida por coincidir sus ticks.
+
+### 2026-10-14 — Espera de swap, limitador y reutilización medidos sin capturas
+
+Control separado con el mismo runner110 identificado, ambos hilos,
+FINISH asíncrono configurado, sin espejo, hashes, capturas, diagnóstico de
+adquisiciones ni perfil GPU. Dura600,150s, proceso/controlador0. WM_CLOSE
+solicitado sólo al hijo11444: salida0en0,141s sin forzar. Tarjeta intacta,
+sin minimización registrada ni firmas buscadas de fallo. El primer plano
+cambia; no fue constante. Estado11 en informes35,07..596,32, sin14 observado.
+No son600s íntegros de partida ni prueba de estabilidad prolongada/final del juego.
+
+119parejas de informes CPU/detalle con t/ventana iguales, cero errores del
+contrato. Cada EndDrawing/envío tiene una llamada de batch/swap/eventos;
+WaitTime sólo cuenta si se ejecuta. Las fases más residual suman end_ms
+dentro del redondeo de printf; ese total sigue incluido en HostWait.
+
+111ventanas tienen estado11 observado en informes consecutivos, sin probar
+estado continuo entre muestras. Host8,51..60/s y Flip18,93..47,60/s.
+En21ventanas con host<20, situadas en45,16..100,73 y341,01..381,75,
+swap registra4.553,40..5.047,23ms, mediana4.917,07; limitador mediana109,31ms.
+En87ventanas con host≥50, swap12,21..1.938,29ms, mediana154,53;
+limitador3.045,12..4.967,29ms, mediana4.819,00. Las ventanas son de unos5s.
+El perfil localiza la espera dentro de swap en el grupo lento y del limitador
+en el rápido; no demuestra por sí solo una fence, trabajo GPU o política del
+driver como causa. Batch mide el primer lote dentro de EndDrawing, no todo
+el dibujo ni los lotes que el overlay pueda haber enviado antes.
+
+En las111ventanas:27.519envíos de textura,19.432cambios de secuencia y8.087
+reutilizaciones, sin blank/fallback/RAM en ese subconjunto. No representan
+27.519RGB distintos ni scanouts físicos. HostWait mediano4.980,18ms conserva
+su alcance anterior; las fases no se vuelven a sumar a él ni a los ámbitos
+de otros hilos como CPU%. No hay referencia visual alineada en esta pasada.
+
+El CI del HEAD fuente7d3461c terminó con cuatroSUCCESS,
+[run38603697064](https://github.com/KIexster/god-of-war-recomp/actions/runs/38603697064).
+Revisión de fuente/evidencia local, sin aprobación externa. Se conservan
+CPU/DX11/SW, fences y el renderer; **no se declara mejora de FPS**.
+Falta CI del HEAD documental final antes de sacar PR83 de borrador/fusionar.
+Sigue pendiente identificar el prefijo común de comandos adquirido/espejo,
+neblina restante, líneas/pose, encuadre y estabilidad prolongada.
