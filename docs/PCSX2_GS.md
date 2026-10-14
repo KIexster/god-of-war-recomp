@@ -500,3 +500,25 @@ un nivel rojo en ALP201; precisión de mezcla permitida por D3D11, sección17.5,
 no una tolerancia global de escena. Fuente y resultados en ESTADO.md.
 El control es progresivo y uniforme: no acredita entrelazado, rectángulos
 distintos, realimentación, imagen adquirida por el host ni estabilidad.
+
+### Compositor109 y controles del título/barco (2026-10-14)
+
+El parche109 mantiene RC1 mezclado con BGCOLOR aunque RC2 esté apagado,
+y redondea la suma ponderada UNORM en CPU/GLSL. Full109 terminado0,
+fuente3fb7148, VU1 compilada/501 micromemorias privadas y13 archivos enlazados.
+Las suites incrementales622/622 y666/666GPU y los negativos/positivos de
+PCRTC están cerrados; la identidad completa y los límites están en ESTADO.md.
+
+El título se contrastó dentro de una misma ejecución con merge DX11,
+shadow109, software original restaurado y adquirido: las cuatro fuentes
+revisadas muestran «New Game». La captura del script de menú descarga
+VRAM actual con CRTC latched; no es la textura adquirida por la ventana.
+Sus muestras sin opciones no acreditan una regresión del título.
+
+En la escena109, Freeze3999..End4015 y el mismo GIF/VSync producen17campos
+SW restaurados. Los16 tríos revisados y los cuartetos completos4004/4015
+contienen HUD/Kratos/enemigos. El fondo queda cercano al software original;
+persisten líneas/pose distintas y no se conserva historia inicial de campos.
+La imagen adquirida no es idéntica al shadow por compartir tick y aún no
+acredita su frontera GIF. No declarar paridad global, una mejora de FPS,
+encuadre PS2 o estabilidad prolongada a partir de estas capturas.

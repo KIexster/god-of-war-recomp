@@ -1051,3 +1051,36 @@ sin espejo DX11 y con captura desactivada. Mantener monitor de ventana,
 resultado de cierre, identidad y tarjeta privada. Los tiempos son transcurridos
 de ámbitos instrumentados; no son porcentajes de CPU. Para referencia visual
 usar otra pasada explícita con espejo/capturas y ambos hilos apagados.
+
+## Captura de diagnóstico y textura adquirida (2026-10-14)
+
+`GowPadTest` usa `GS::copyLatchedHostPresentationFrame`. Con presentación
+compartida, esa función pide un readback de VRAM actual con la solicitud
+CRTC latched; sus píxeles no proceden de la textura adquirida por el host.
+La opción `--capture-acquired`, en cambio, lee el `Frame` adquirido mientras
+su reserva sigue vigente. Las dos capturas tienen límites distintos y
+no deben intercambiarse como prueba de lo presentado por la ventana.
+
+En el menú obligatorio109 varias capturas de diagnóstico no contenían
+opciones. Un control dedicado del título con el mismo runner, solo Start,
+obtuvo 16 adquiridos y las referencias HW/shadow/SW de su propia ejecución.
+Se revisaron completos los cuartetos900/904/908/912: título, «New Game» y
+«Select» aparecen en las cuatro fuentes. Esto acredita esas muestras,
+sin demostrar por qué faltaban opciones en la captura del script de menú.
+No hay corrección de esa ruta ni regresión visual confirmada.
+
+El control cerró por límite en180,172s, tarjeta intacta y sin minimización
+registrada. Adquiridos distintos, 512×448 y metadatos correlacionados.
+Shadow y adquirido no son idénticos por compartir tick: sigue pendiente
+registrar su frontera de comandos. Ninguno de estos controles mide cuadros
+únicos mostrados ni acredita salida normal o estabilidad prolongada.
+
+Además, el registro `[gs-present:shared]` del host se emite cuando cambia
+la secuencia adquirida, con umbral y cupo. Las iteraciones que reutilizan
+la misma secuencia no generan otra fila. Cero repeticiones en el inspector
+no prueba que la ventana nunca reutilice una textura. `host_hz` sí cuenta
+cada `renderFrame/EndDrawing` completado, incluso si reutiliza contenido;
+`guest_flip_hz` cuenta entradas a `vid::Flip`. Faltan contadores y tiempos
+específicos de reutilización/presentación para convertir ese desacuerdo
+en una medida de cuadros distintos enviados, y aun esa medida no sería
+prueba de cuadros físicos mostrados por el monitor.
