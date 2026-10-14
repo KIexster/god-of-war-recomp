@@ -121,6 +121,7 @@ $gsFogMathPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-fog-math.patch'
 $gsZtePatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-zte.patch'
 $gsCpuColclampPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-cpu-colclamp.patch'
 $gsTexaDepthPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-texa-depth.patch'
+$gsPcrtcBlendPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-pcrtc-blend.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -266,6 +267,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $gsFogMathPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsZtePatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsCpuColclampPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsTexaDepthPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsPcrtcBlendPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner

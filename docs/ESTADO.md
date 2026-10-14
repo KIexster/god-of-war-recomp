@@ -6153,3 +6153,206 @@ de código/alcance es local, sin aprobación externa. La PR 77 requiere todavía
 CI verde del HEAD documental final antes de ready/merge. Permanecen abiertas
 la diferencia adquirido/shadow, los detalles frente al software original,
 encuadre, presentación única, desglose de HostWait y estabilidad larga.
+
+### 2026-10-14 — TEXA fusionado; composición PCRTC 109 en validación
+
+La PR 77 quedó fusionada en `80f42145d2e9373d02c23685294de40236deed97`.
+Los cuatro checks del HEAD final `14a70b3` terminaron en SUCCESS,
+run [38498133684](https://github.com/KIexster/god-of-war-recomp/actions/runs/38498133684).
+La revisión final es local y acotada; full, menú y controles108 anteriores
+están cerrados dentro del alcance descrito. Persisten las diferencias de
+detalle y entre la imagen adquirida y el shadow, encuadre y estabilidad larga.
+
+La siguiente sonda usa fuentes CT32 uniformes independientes, páginas0/32,
+salida64×64 progresiva y32 combinaciones EN/MMOD/SLBG/ALP/alpha. CPU y
+OpenGL108 coinciden con el software original en16/32 resultados RGB.
+Cuando solo queda RC1, ambos omiten su mezcla con BGCOLOR; también hay
+errores de un nivel en la aritmética de mezcla. La fuente primaria
+PCSX2 `2954ebe`, `GSDevice11::DoMerge` y `merge.fx`, conserva la mezcla de
+RC1 incluso con RC2 apagado: MMOD selecciona ALP/255 o alpha de RC1×2/255.
+Esto pertenece al compositor de salida, separado del ALPHA del raster.
+
+El candidato109 mezcla también RC1 con BGCOLOR y suma los productos antes
+del redondeo UNORM al entero más cercano, tanto en CPU como en GLSL.
+Los tres modos privados CPU/compute/hardware producen31/32 RGB exactos
+frente al software original. En ALP201, el rojo es232 frente a231; verde61
+y azul120 coinciden. Se mantiene esa diferencia registrada: el modelo
+UNORM ideal da232 y la [especificación D3D11, sección17.5](https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm)
+admite mezcla con precisión igual a la del formato de salida. Es compatible
+con un límite numérico de la referencia, sin demostrar su causa particular
+ni declarar paridad exacta32/32. El espejo hardware original difiere del
+software en cuatro patrones con alpha de framebuffer y tampoco es autoridad
+única. La prueba nueva usa32 esperados del modelo, con el caso201 explicado.
+
+Negativos contra la LIB full108: CPU0/2, exit2, GPU0/4, exit4. Candidato
+CPU2/2 y GPU4/4, exit0, OpenGL efectivo comprobado sin fallback. La suite
+incremental normal termina622/622, exit0,13,871s. La primera suite encontró
+seis fallos en controles que pretendían copiar RGB con alpha bajo y MMOD0;
+siete fixtures de copia/stride/latch ahora solicitan MMOD1/ALP255 de forma
+explícita, conservando sus expectativas. El control GPU de copia opaca
+también requiere esa configuración: modificar un píxel negro para darle
+color con alpha0 lo deja negro al mezclar con el fondo. La nueva matriz
+cubre la mezcla por separado. No se añaden fallos conocidos. Suite GPU,
+full109 obligatorio, menú y contraste funcional del ejecutable pendientes.
+
+Otra sonda de450 filas con PCRTC observado108 coincide HW/SW6/6 y difiere
+en CPU/OpenGL con ambas paridades. Los17 registros del mismo burst108 tienen
+SMODE1=0 y SYNCV=0; la referencia `isReallyInterlaced()` requiere CMOD y
+VFP impar, mientras el port duplica filas a partir de SMODE2. `GsSetCrt`
+del runtime configura SMODE2 y todavía no modela esos registros de
+temporización. No se atribuye la diferencia a una paridad equivocada ni
+se cambia el entrelazado en109: falta establecer la configuración efectiva
+de la referencia y la temporización adecuada del port. Estas sondas no
+prueban una causa única de la imagen del juego, FPS ni estabilidad.
+
+El cierre posterior de las suites del candidato 109 registra **622/622
+normal** (13,523 s) y **666/666 GPU** (46,452 s), exit 0, sin fallos conocidos
+ni fallos nuevos. Exe incremental SHA-256
+`17e8efbd9a101d171da0f5c55d3792c8e4424286de8528921d1db509e868f0cc`:
+objetos CPU/GLSL y pruebas 109, pruebas 107/108, LIB runtime full108 y LIB
+anterior de pruebas. No acredita todavía la compilación completa 109.
+El primer GPU terminó 664/666: sus dos fallos eran el control de copia
+mencionado; el ajuste explícito a copia opaca conserva todos los controles
+previos de VRAM, fuentes y campos. Los resultados fallidos se conservan.
+
+La sonda pública nueva reprodujo los 32 RGBA del software original de las
+sondas privadas, módulo SHA-256
+`3ad27ad874ec7e8bcba35396bb2134f158156261d392965978cc43085587db55`, exit 0.
+Config válida (cuatro avisos históricos, cero errores), sintaxis de 25 scripts
+PowerShell, prueba pad2 y revisión de espacios correctas. Continúan pendientes
+full109, menú y contraste funcional del nuevo runner; la PR permanecerá en
+borrador hasta cerrar esa validación y el CI del HEAD final.
+
+### 2026-10-14 — Full109 cerrado y título contrastado con la imagen adquirida
+
+La compilación obligatoria mediante `scripts/2_compilar.cmd` terminó con
+código 0 en 1.050,312 s. Fuente `3fb71484935a1b6f373eb4f6fa62912250627915`,
+109 parches, VU1 compilada, las 501 micromemorias privadas identificadas y
+los 13 archivos `programa0..12` compilados y enlazados. Ejecutable de
+66.302.976 bytes, SHA-256
+`6af0e4c12f4cf5d8061ed478b41ea48c28d93aa52a560456aa499e0cdd02c552`;
+LIB del runtime
+`4b46443ce6d1f93e006d216b75ebcd554e93437aedc764042063b84e348f361d`.
+Manifiesto y resultados privados en `transition109_pcrtc_blend_vu1c_full`.
+Los cuatro checks de esa fuente finalizaron en SUCCESS,
+[run38552301551](https://github.com/KIexster/god-of-war-recomp/actions/runs/38552301551).
+Esto sustituye el estado pendiente de compilación anterior, sin acreditar
+todavía el CI del HEAD documental final ni todo el comportamiento del juego.
+
+El menú obligatorio terminó por límite en 115,314 s, controlador PowerShell
+0. Tarjeta privada intacta, nueve capturas 512×448 y ninguna firma buscada
+de fallo. Dificultad, introducción y barco/Kratos aparecen en las muestras;
+primer informe 11 a 70,19 s y último a 90,19 s. Las capturas 1..3 mostraban
+fuego/rostro sin opciones, y las 0/7 eran negras. No se atribuye una causa
+a esas imágenes. Este script no registró el estado de la ventana y su
+cierre por límite no demuestra salida normal ni estabilidad prolongada.
+
+Para revisar el título se ejecutó un control separado con solo Start a 5 s,
+pero **las cuatro referencias de ese control reciben la misma ejecución**:
+merge DX11 original, shadow OpenGL ligado a la LIB full109, software original
+restaurado desde su Freeze/GIF/VSync y textura adquirida por el host.
+Duración 180,172 s por límite, proceso 1/controlador 0, tarjeta intacta,
+ventana visible sin minimización registrada y estado 3 hasta 170,81 s.
+Se revisaron los cuartetos completos 900/904/908/912 y el adquirido 900:
+todos muestran el título, «New Game» y «Select». La falta de opciones en
+las capturas del script de menú no demuestra una regresión del compositor.
+
+La captura `GowPadTest` llama a `copyLatchedHostPresentationFrame`: en modo
+compartido descarga VRAM **actual** con la solicitud CRTC latched. No copia
+los píxeles de la textura adquirida por la ventana. Esto limita su uso como
+evidencia de lo presentado, sin demostrar por sí solo la causa del fondo
+sin opciones en las muestras anteriores. No se ha modificado esa ruta.
+
+Ráfaga de título Freeze899..End915, 41.187.493 bytes, 23.084 registros,
+SHA-256 `5a83dee1de5422f044dcca690167ab1b690985f005fbb5a40cd2f4bc0b94e88a`.
+Software original restaurado: 17 campos 899..915, código 0, sin historia
+inicial de desentrelazado serializada. Los 16 adquiridos son distintos,
+se correlacionan exactamente con sus registros, tamaño 512×448 y SMODE2=1.
+En 3.305 adquisiciones registradas no hay regresiones de secuencia,
+repeticiones inconsistentes ni cambios de tamaño; distancia de ticks 0..1.
+Esas cifras no miden latencia ni cuadros únicos por segundo.
+
+Adquirido y shadow siguen sin ser idénticos al mismo tick: la ejecución
+compartida no acredita su misma frontera GIF. Tampoco hay igualdad global
+shadow/software: en 915 la diferencia absoluta media RGB es
+2,7159/1,5433/0,6734, con 194.045 píxeles distintos; DX11/software da
+0,7117/0,5857/0,3457. Son estadísticas descriptivas, sin tolerancia global.
+El módulo de captura full109 se validó primero con TEXA48, FOG64, restauración
+SW frente a referencia fresca y rechazo de End truncado antes de crear GS.
+CPU y referencias originales se conservan; no hay `glFinish` global ni
+fences retiradas. La PR80 sigue en borrador hasta cerrar escena, combinado
+con hilos, revisión local final y CI del HEAD final.
+
+### 2026-10-14 — Escena109: mismo prefijo y comparación separada del host
+
+Control compartido síncrono109, VU1 compilada y ambos hilos apagados:
+433,235 s, STOP propio después de End4015 y los 16 HW/shadow/adquiridos.
+Proceso1/controlador0, tarjeta intacta, ventana sin minimización registrada
+y ninguna firma buscada de fallo. Primer estado11 a55,22 s y último a426,94 s.
+No son600 s completos, salida normal ni prueba de estabilidad prolongada.
+
+Freeze3999..End4015:113.832.837 bytes,94.405 registros, SHA-256
+`c04ee2bd36a0a907942c8728ba6f79bbf0c75e9e7572ea793562affb1828190f`.
+Software original restaura esa entrada y repite17 campos3999..4015, código0.
+La historia inicial de desentrelazado no se conserva. Se revisaron los16
+tríos completos de merge DX11/software/shadow109 en contactos, más los
+cuartetos completos4004/4015 con adquirido. Aparecen HUD, Kratos y enemigos.
+El fondo queda cercano a las referencias originales; persisten diferencias
+de líneas y pose. PMODE constante0x8023, SMODE2=0x21fed1 y fuentes208,
+sin cambiar el entrelazado en109.
+
+En4015, región fija x200..339,y0..79: medias RGB shadow
+35,4516/35,3573/30,6859 y software35,2632/35,1795/30,5835. Incluye mástil
+y cuerdas; no acredita igualdad global. En todo el campo, diferencia
+absoluta media shadow−SW4,0995/3,9323/3,4149 RGB, media firmada
+−0,2999/−0,2906/−0,2419, máximo171 y208.847 píxeles distintos.
+DX11−SW tiene media absoluta0,6197/0,6157/0,5630. No hay tolerancia global
+aceptada ni comparación causal con otra pasada por compartir el tick.
+
+Los16 adquiridos4000..4015,512×448, son distintos y se correlacionan
+exactamente con sus registros. En90 adquisiciones registradas no hay
+regresiones, repeticiones inconsistentes, retornos A-B-A ni cambios de
+tamaño; distancia de ticks0. Ninguno de los16 adquiridos es idéntico al
+shadow del mismo tick. En4015 hay216.932 píxeles distintos y media absoluta
+11,8596/11,3732/9,6050 RGB. **La frontera GIF del host sigue sin acreditarse**:
+ese desacuerdo no demuestra por sí solo un fallo de rasterización o de slots.
+Estas pasadas con espejo y readbacks no miden FPS únicos.
+
+La escena cierra un contraste funcional acotado del ejecutable109. El modo
+combinado con entradas de ataque sigue en validación; PR80 permanece en
+borrador hasta su cierre, revisión final y CI del HEAD documental final.
+
+### 2026-10-14 — Combinado109 con ataques cerrado y revisión local
+
+Presentación compartida, FINISH asíncrono y VU1/frente GS en hilos propios,
+confirmados en el registro de arranque:420,056 s por límite, proceso1 y
+controlador0. Tarjeta privada intacta, sin minimización registrada ni firmas
+buscadas de fallo. Primer informe de estado11 a35,09 s y último a416,33 s;
+no aparece estado14 en los informes. El arranque forma parte de los420 s,
+por lo que no son420 s íntegros de partida ni estabilidad prolongada.
+
+Guion Start/X y cuadrado desde40 s cada0,75 s durante0,35 s. Los128 cambios
+de paquete registrados incluyen ataque/neutral en estado11; su cupo limita
+las lecturas conservadas. Se revisaron los16 adquiridos tardíos11999..12040
+en contacto y los completos primero/último: HUD y Kratos ejecutando ataques
+con arcos de las hojas. Son16 RGBA distintos,512×448, SMODE2=0x21fed1,
+correlacionados exactamente con el registro. No se afirma completar una
+sección del juego ni equivalencia frente a otra ejecución por compartir tick.
+
+Las4.096 adquisiciones registradas no muestran regresiones, repeticiones
+inconsistentes, retornos A-B-A ni cambios de tamaño. Distancia entre ticks
+0..4, sin convertirla en tiempo, latencia o FPS únicos. El logger omite
+iteraciones que reutilizan la misma secuencia; cero filas repetidas no
+descarta reutilización por el host. El proceso se detuvo al alcanzar el
+límite: **no se acredita todavía cierre normal**.
+
+Quedan cerrados el full109 obligatorio, menú, negativos/positivos,
+referencia procedural, título/escena en fronteras comunes y este control
+combinado acotado. La revisión final de fuente y alcance es local, sin
+aprobación externa: factor0..255, suma ponderada acotada antes de dividir255,
+alpha conservado durante mezcla y normalizado después. Las pruebas de
+copia solicitan opacidad explícita y conservan sus expectativas; no se
+añaden fallos conocidos. Referencias CPU/DX11/SW y fences preservadas.
+La PR80 necesita el CI del HEAD documental final antes de ready/merge.
+Siguen abiertos frontera GIF del adquirido, líneas/pose, temporización,
+encuadre, desglose de HostWait, cuadros distintos y estabilidad prolongada.
