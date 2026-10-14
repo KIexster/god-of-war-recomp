@@ -6153,3 +6153,72 @@ de código/alcance es local, sin aprobación externa. La PR 77 requiere todavía
 CI verde del HEAD documental final antes de ready/merge. Permanecen abiertas
 la diferencia adquirido/shadow, los detalles frente al software original,
 encuadre, presentación única, desglose de HostWait y estabilidad larga.
+
+### 2026-10-14 — TEXA fusionado; composición PCRTC 109 en validación
+
+La PR 77 quedó fusionada en `80f42145d2e9373d02c23685294de40236deed97`.
+Los cuatro checks del HEAD final `14a70b3` terminaron en SUCCESS,
+run [38498133684](https://github.com/KIexster/god-of-war-recomp/actions/runs/38498133684).
+La revisión final es local y acotada; full, menú y controles108 anteriores
+están cerrados dentro del alcance descrito. Persisten las diferencias de
+detalle y entre la imagen adquirida y el shadow, encuadre y estabilidad larga.
+
+La siguiente sonda usa fuentes CT32 uniformes independientes, páginas0/32,
+salida64×64 progresiva y32 combinaciones EN/MMOD/SLBG/ALP/alpha. CPU y
+OpenGL108 coinciden con el software original en16/32 resultados RGB.
+Cuando solo queda RC1, ambos omiten su mezcla con BGCOLOR; también hay
+errores de un nivel en la aritmética de mezcla. La fuente primaria
+PCSX2 `2954ebe`, `GSDevice11::DoMerge` y `merge.fx`, conserva la mezcla de
+RC1 incluso con RC2 apagado: MMOD selecciona ALP/255 o alpha de RC1×2/255.
+Esto pertenece al compositor de salida, separado del ALPHA del raster.
+
+El candidato109 mezcla también RC1 con BGCOLOR y suma los productos antes
+del redondeo UNORM al entero más cercano, tanto en CPU como en GLSL.
+Los tres modos privados CPU/compute/hardware producen31/32 RGB exactos
+frente al software original. En ALP201, el rojo es232 frente a231; verde61
+y azul120 coinciden. Se mantiene esa diferencia registrada: el modelo
+UNORM ideal da232 y la [especificación D3D11, sección17.5](https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm)
+admite mezcla con precisión igual a la del formato de salida. Es compatible
+con un límite numérico de la referencia, sin demostrar su causa particular
+ni declarar paridad exacta32/32. El espejo hardware original difiere del
+software en cuatro patrones con alpha de framebuffer y tampoco es autoridad
+única. La prueba nueva usa32 esperados del modelo, con el caso201 explicado.
+
+Negativos contra la LIB full108: CPU0/2, exit2, GPU0/4, exit4. Candidato
+CPU2/2 y GPU4/4, exit0, OpenGL efectivo comprobado sin fallback. La suite
+incremental normal termina622/622, exit0,13,871s. La primera suite encontró
+seis fallos en controles que pretendían copiar RGB con alpha bajo y MMOD0;
+siete fixtures de copia/stride/latch ahora solicitan MMOD1/ALP255 de forma
+explícita, conservando sus expectativas. El control GPU de copia opaca
+también requiere esa configuración: modificar un píxel negro para darle
+color con alpha0 lo deja negro al mezclar con el fondo. La nueva matriz
+cubre la mezcla por separado. No se añaden fallos conocidos. Suite GPU,
+full109 obligatorio, menú y contraste funcional del ejecutable pendientes.
+
+Otra sonda de450 filas con PCRTC observado108 coincide HW/SW6/6 y difiere
+en CPU/OpenGL con ambas paridades. Los17 registros del mismo burst108 tienen
+SMODE1=0 y SYNCV=0; la referencia `isReallyInterlaced()` requiere CMOD y
+VFP impar, mientras el port duplica filas a partir de SMODE2. `GsSetCrt`
+del runtime configura SMODE2 y todavía no modela esos registros de
+temporización. No se atribuye la diferencia a una paridad equivocada ni
+se cambia el entrelazado en109: falta establecer la configuración efectiva
+de la referencia y la temporización adecuada del port. Estas sondas no
+prueban una causa única de la imagen del juego, FPS ni estabilidad.
+
+El cierre posterior de las suites del candidato 109 registra **622/622
+normal** (13,523 s) y **666/666 GPU** (46,452 s), exit 0, sin fallos conocidos
+ni fallos nuevos. Exe incremental SHA-256
+`17e8efbd9a101d171da0f5c55d3792c8e4424286de8528921d1db509e868f0cc`:
+objetos CPU/GLSL y pruebas 109, pruebas 107/108, LIB runtime full108 y LIB
+anterior de pruebas. No acredita todavía la compilación completa 109.
+El primer GPU terminó 664/666: sus dos fallos eran el control de copia
+mencionado; el ajuste explícito a copia opaca conserva todos los controles
+previos de VRAM, fuentes y campos. Los resultados fallidos se conservan.
+
+La sonda pública nueva reprodujo los 32 RGBA del software original de las
+sondas privadas, módulo SHA-256
+`3ad27ad874ec7e8bcba35396bb2134f158156261d392965978cc43085587db55`, exit 0.
+Config válida (cuatro avisos históricos, cero errores), sintaxis de 25 scripts
+PowerShell, prueba pad2 y revisión de espacios correctas. Continúan pendientes
+full109, menú y contraste funcional del nuevo runner; la PR permanecerá en
+borrador hasta cerrar esa validación y el CI del HEAD final.

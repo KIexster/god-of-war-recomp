@@ -479,3 +479,24 @@ Aún requiere compilación obligatoria, CI y control funcional. La CPU más
 oscura antes de esa corrección no probaba
 que su máscara fuera fiel. No se modifica GLSL ni se declara resuelta la
 neblina de GPU. Referencias anteriores, capturas y runner 106 preservados.
+
+### Composición PCRTC progresiva: sonda reproducible (2026-10-14)
+
+`tools/render/probe_pcrtc_reference.py` registra32 patrones uniformes CT32,
+fuentes independientes FBP0/32 y salida64×64. Usa la ABI del módulo original,
+sin assets ni proceso del juego; guardar JSON y registros en una carpeta
+privada nueva. Requiere Windows, recursos originales locales y GPU libre.
+Ejecutar de forma secuencial, preferiblemente con GSRendererSW original:
+
+```powershell
+py -3 tools/render/probe_pcrtc_reference.py --module <DLL-original-SW> --resources <recursos-PCSX2>
+```
+
+La salida contiene identidad SHA-256 y EN/MMOD/SLBG/ALP/alpha/RGBA de cada
+caso. El software sigue usando el compositor DX11 original. En la sonda
+local109, el hardware original difiere del software en cuatro casos con
+alpha de framebuffer. El modelo UNORM ideal coincide con31/32 RGB y difiere
+un nivel rojo en ALP201; precisión de mezcla permitida por D3D11, sección17.5,
+no una tolerancia global de escena. Fuente y resultados en ESTADO.md.
+El control es progresivo y uniforme: no acredita entrelazado, rectángulos
+distintos, realimentación, imagen adquirida por el host ni estabilidad.
