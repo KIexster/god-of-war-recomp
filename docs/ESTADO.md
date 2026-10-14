@@ -4723,9 +4723,9 @@ La issue [#66](https://github.com/KIexster/god-of-war-recomp/issues/66) señaló
 VF0 a `(0, 0, 0, 1)`; las traducciones de VU0 ignoran escrituras al vector cero
 sin quitar otros efectos de la instrucción, y `LQC2` a VF0 no carga memoria. Se
 añadieron regresiones para el contexto y para LQC2, QMTC2, VADD, VITOF y VMFIR.
-La aplicación del parche y las comprobaciones estáticas pasan localmente. Este
-entorno no tiene compilador C++ ni Ninja; la compilación y `ps2x_tests` quedan
-para CI.
+El parche se compiló con MSVC 19.44 y Ninja 1.12.1; `ps2x_tests` pasó 622/622
+con cero fallos conocidos. También pasan `tools/ci/parches.py`,
+`tools/ci/validar_config.py` y la aplicación limpia del parche.
 
 ## PMULTH: compilación completa y regresiones nativas (2026-10-11)
 
