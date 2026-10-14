@@ -1,0 +1,132 @@
+diff --git a/ps2xRecomp/src/lib/code_generator.cpp b/ps2xRecomp/src/lib/code_generator.cpp
+index 68b0984..dd0cf42 100644
+--- a/ps2xRecomp/src/lib/code_generator.cpp
++++ b/ps2xRecomp/src/lib/code_generator.cpp
+@@ -260,7 +260,22 @@ namespace ps2recomp
+ 
+     std::string CodeGenerator::translateVUInstruction(const Instruction &inst)
+     {
+-        return VuTranslator(*this).translate(inst);
++        std::string code = VuTranslator(*this).translate(inst);
++        // GOW-Port: VF0 is immutable. Remove only its generated assignment so other
++        // effects of the same VU instruction (such as ACC updates) are preserved.
++        const std::string vf0Write = "ctx->vu0_vf[0] =";
++        std::size_t write = code.find(vf0Write);
++        while (write != std::string::npos)
++        {
++            const std::size_t end = code.find(';', write);
++            if (end == std::string::npos)
++            {
++                break;
++            }
++            code.replace(write, end - write + 1, "/* VF0 write ignored */;");
++            write = code.find(vf0Write, write + 1);
++        }
++        return code;
+     }
+ 
+     CodeGenerator::AnalysisResult CodeGenerator::collectInternalBranchTargets(
+diff --git a/ps2xRecomp/src/lib/instruction_translator.cpp b/ps2xRecomp/src/lib/instruction_translator.cpp
+index 7684097..6e7721b 100644
+--- a/ps2xRecomp/src/lib/instruction_translator.cpp
++++ b/ps2xRecomp/src/lib/instruction_translator.cpp
+@@ -211,6 +211,10 @@ namespace ps2recomp
+                 inst.rt,
+                 genWrite(32, fmt::format("ADD32(GPR_U32(ctx, {}), {})", inst.rs, inst.simmediate), "bits"));
+         case OPCODE_LDC2:
++            if (inst.rt == 0)
++            {
++                return "{ }";
++            }
+             return fmt::format("ctx->vu0_vf[{}] = _mm_castsi128_ps({});", inst.rt, genRead(128, fmt::format("ADD32(GPR_U32(ctx, {}), {})", inst.rs, inst.simmediate)));
+         case OPCODE_SDC2:
+             return genWrite(128, fmt::format("ADD32(GPR_U32(ctx, {}), {})", inst.rs, inst.simmediate), fmt::format("_mm_castps_si128(ctx->vu0_vf[{}])", inst.rt)) + ";";
+diff --git a/ps2xRuntime/include/ps2_runtime.h b/ps2xRuntime/include/ps2_runtime.h
+index 2ebb64a..f40af7b 100644
+--- a/ps2xRuntime/include/ps2_runtime.h
++++ b/ps2xRuntime/include/ps2_runtime.h
+@@ -151,6 +151,8 @@ struct alignas(16) R5900Context
+ 
+         // Initialize VU0 registers
+         vu0_q = 1.0f; // Q register usually initialized to 1.0
++        // VF0 is the VU constant vector and is not part of the zero-filled context state.
++        vu0_vf[0] = _mm_setr_ps(0.0f, 0.0f, 0.0f, 1.0f);
+ 
+         // Reset COP0 registers
+         cop0_random = 47; // Start at maximum value
+diff --git a/ps2xTest/src/code_generator_tests.cpp b/ps2xTest/src/code_generator_tests.cpp
+index ed78df3..74b3f36 100644
+--- a/ps2xTest/src/code_generator_tests.cpp
++++ b/ps2xTest/src/code_generator_tests.cpp
+@@ -1634,6 +1634,48 @@ void register_code_generator_tests()
+                      "VABS must flush denormal inputs to zero");
+         });
+ 
++        tc.Run("VU0 vector instructions ignore writes to VF0", [](TestCase &t) {
++            CodeGenerator gen({}, {});
++            const auto noVf0Write = [](const std::string &code) {
++                return code.find("ctx->vu0_vf[0] =") == std::string::npos;
++            };
++
++            Instruction load{};
++            load.opcode = OPCODE_LQC2;
++            load.rt = 0;
++            t.IsTrue(noVf0Write(gen.translateInstruction(load)), "LQC2 to VF0 must be ignored");
++
++            Instruction transfer{};
++            transfer.opcode = OPCODE_COP2;
++            transfer.rs = COP2_QMTC2;
++            transfer.rd = 0;
++            transfer.rt = 2;
++            t.IsTrue(noVf0Write(gen.translateInstruction(transfer)), "QMTC2 to VF0 must be ignored");
++
++            Instruction arithmetic{};
++            arithmetic.opcode = OPCODE_COP2;
++            arithmetic.rs = COP2_CO;
++            arithmetic.function = VU0_S1_VADD;
++            arithmetic.sa = 0;
++            t.IsTrue(noVf0Write(gen.translateInstruction(arithmetic)), "VU0 arithmetic to VF0 must be ignored");
++
++            Instruction vitof{};
++            vitof.opcode = OPCODE_COP2;
++            vitof.rs = COP2_CO;
++            vitof.function = 0x3C;
++            vitof.raw = ((VU0_S2_VITOF0 >> 2) << 6) | (VU0_S2_VITOF0 & 0x3u);
++            vitof.rt = 0;
++            t.IsTrue(noVf0Write(gen.translateInstruction(vitof)), "VITOF to VF0 must be ignored");
++
++            Instruction vmfir{};
++            vmfir.opcode = OPCODE_COP2;
++            vmfir.rs = COP2_CO;
++            vmfir.function = 0x3C;
++            vmfir.raw = ((VU0_S2_VMFIR >> 2) << 6) | (VU0_S2_VMFIR & 0x3u);
++            vmfir.rt = 0;
++            t.IsTrue(noVf0Write(gen.translateInstruction(vmfir)), "VMFIR to VF0 must be ignored");
++        });
++
+         tc.Run("JAL to known function emits call and check", [](TestCase &t) {
+             Function func;
+             func.name = "jal_test";
+diff --git a/ps2xTest/src/ps2_runtime_expansion_tests.cpp b/ps2xTest/src/ps2_runtime_expansion_tests.cpp
+index 4870fed..9d30564 100644
+--- a/ps2xTest/src/ps2_runtime_expansion_tests.cpp
++++ b/ps2xTest/src/ps2_runtime_expansion_tests.cpp
+@@ -379,6 +379,18 @@ void register_ps2_runtime_expansion_tests()
+ {
+     MiniTest::Case("PS2RuntimeExpansion", [](TestCase &tc)
+     {
++        tc.Run("R5900Context initializes VU0 VF0 to its constant value", [](TestCase &t)
++        {
++            R5900Context context{};
++            alignas(16) uint32_t lanes[4]{};
++            _mm_store_si128(reinterpret_cast<__m128i *>(lanes), _mm_castps_si128(context.vu0_vf[0]));
++
++            t.Equals(lanes[0], 0u, "VF0.x must be zero");
++            t.Equals(lanes[1], 0u, "VF0.y must be zero");
++            t.Equals(lanes[2], 0u, "VF0.z must be zero");
++            t.Equals(lanes[3], 0x3F800000u, "VF0.w must be one");
++        });
++
+         tc.Run("differential decoder/codegen gpr-write contract for MULT and DIV families", [](TestCase &t)
+         {
+             R5900Decoder decoder;

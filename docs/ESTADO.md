@@ -4716,6 +4716,17 @@ El próximo control activará `GOW_VU1_BUDGET_DIAG=1`, sin aumentar presupuestos
 y examinará magnitudes además de finitud. Primero comprobar PMULTH; las demás
 hipótesis requieren evidencia por separado y no se incorporan arreglos en bloque.
 
+## VF0 constante en VU0 (2026-10-14)
+
+La issue [#66](https://github.com/KIexster/god-of-war-recomp/issues/66) señaló que
+`R5900Context` dejaba `vu0_vf[0]` en cero completo. El constructor ahora inicializa
+VF0 a `(0, 0, 0, 1)`; las traducciones de VU0 ignoran escrituras al vector cero
+sin quitar otros efectos de la instrucción, y `LQC2` a VF0 no carga memoria. Se
+añadieron regresiones para el contexto y para LQC2, QMTC2, VADD, VITOF y VMFIR.
+La aplicación del parche y las comprobaciones estáticas pasan localmente. Este
+entorno no tiene compilador C++ ni Ninja; la compilación y `ps2x_tests` quedan
+para CI.
+
 ## PMULTH: compilación completa y regresiones nativas (2026-10-11)
 
 La cadena 102 termina con código 0 en 959,94 s, regenerando los cuatro sitios
