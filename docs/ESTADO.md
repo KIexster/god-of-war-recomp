@@ -6009,3 +6009,71 @@ nueva captura con CPU/GPU 108 y espejo DX11 dentro de la misma ejecución,
 repetición software original en la misma frontera, y control combinado.
 Neblina restante, encuadre, cuadros únicos presentados y estabilidad
 prolongada siguen abiertos.
+
+### 2026-10-14 — Full 108 terminado; control funcional todavía pendiente
+
+`scripts/2_compilar.cmd` terminó con código 0 en 1.171,305 s, fuente
+`084908442f9640535cbd94bb9dcc216c9e46738d`, 108 parches y VU1 compilada con
+501 micromemorias privadas. Los 13 archivos `programa0..12` se compilaron
+y enlazaron. Ejecutable de 66.302.976 bytes, SHA-256
+`a147193bcf80eb5cdf1c5c68a3cefb201f9f1dcc9ba80eb5f3f509c849e3fd3a`;
+biblioteca runtime
+`116b54c428b5f9d9c85fd7f8c04a3ff4d6dbfdee09634340f0160ea44eff6645`.
+Manifiesto/binarios en carpeta privada separada, sin modificar las
+bibliotecas ni ejecutables 106 y 107. Caché FFmpeg original verificada por
+el mismo SHA-256 del full 107; extracción normal, sin cambiar fuentes.
+
+Los cuatro controles CI de la fuente 0849084 pasaron en `38493899926`.
+Se integró después main mediante merge, conservando la identidad separada
+de la fuente compilada. La PR 76 de COLCLAMP CPU quedó fusionada en
+`4caab4e630b4089e60b884cc3ea782a074249506`, tras revisión local, full,
+controles funcionales y cuatro CI SUCCESS del HEAD documental final
+`60aa5249ad345145a8283d01b197683fda816a0e`, run `38493430447`.
+
+Ampliación del límite del control combinado 107: el **primer** informe de
+estado 14 aparece ya a 100,75 s, además del último a 416,41 s. No se
+adjudica la causa sin captura de esa transición. No se debe tratar el
+intervalo completo como partida sostenida. El futuro control 108 podrá
+entregar ataques con un guion explícito, pero entregar botones por sí
+solo no prueba aceptación del juego ni supervivencia.
+
+La PR 77 de TEXA permanece en borrador. Menú 115, referencia privada
+reenlazada con runtime 108, nueva escena frente a DX11/software en la misma
+frontera y configuración combinada siguen pendientes. El full y su CI no
+acreditan por sí solos fidelidad visual o estabilidad prolongada.
+
+### 2026-10-14 — Menú 108 y referencia reenlazada: controles procedurales cerrados
+
+El menú obligatorio 108 terminó en 115,294 s, controlador 0 por límite.
+Se revisaron las nueve capturas: primera negra durante el arranque,
+título/nueva partida, dificultad, introducción de Kratos e inicio del barco
+con el personaje visible. El informe de 90,87 s muestra estado 11.
+Tarjeta privada intacta antes/después/al original, sin las firmas buscadas
+de excepción/assertion/opcode desconocido. No hay monitoreo de
+minimización en este script, salida normal o prueba de partida prolongada.
+Estas imágenes de otra ejecución no se usan para comparar ticks con 107.
+
+Se construyó una DLL privada nueva con el mismo nativeCore/API Maximum y
+trazado originales, pero frontend/shadow y biblioteca runtime **full 108**
+`116b54…6645`, sin sobrescribir la referencia 106. SHA-256 del módulo:
+`1879c86e9c05189e8d8bc0d9e91c718bd17151a00d1a063def4fde3390d88488`.
+El primer control no pudo crear la referencia porque omitía la carpeta
+obligatoria del trazado; se conservaron los registros y se corrigió la
+configuración del helper, sin cambiar renderer/DLL ni ocultar una diferencia
+de píxeles. El reintento usa carpetas nuevas.
+
+Los 48 patrones TEXA completos pasan en CPU, hardware solicitado y compute
+solicitado del runtime completo 108, y 48/48 en la referencia DX11 original.
+El modo hardware de esta fixture registra 96 primitivas y 12 tiles: es una
+ruta mixta, conservando el alcance de los tests efectivos separados.
+Tres campos FOG 64×64, seis mitades completas, del shadow GPU coinciden
+byte a byte en RGB con software original recién inicializado. Dos campos
+restaurados desde Freeze y el mismo GIF/VSync coinciden exactamente con
+esa referencia software fresca. Un registro sin End se rechaza antes de
+crear dispositivo o directorio de salida. Se conserva el límite conocido
+de FOG de la segunda mitad del hardware original.
+
+Estas comprobaciones validan la herramienta antes de usarla con el juego;
+no son todavía el contraste de escena 108. La PR 77 sigue en borrador:
+faltan nueva escena con las mismas fronteras, control combinado y CI del
+HEAD documental final antes de ready/merge.
