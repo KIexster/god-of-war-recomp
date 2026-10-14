@@ -6496,3 +6496,40 @@ todavía a él toda la espera de EndDrawing ni se derivan FPS físicos.
 Los resultados apoyan continuar con el desglose de loteGL/swap/limitador/
 eventos y con contadores de secuencias enviadas/reutilizadas. No se modifican
 fences, sincronización, bob, paridad o raster para ocultar la diferencia.
+
+### 2026-10-14 — Candidato110: detalle inclusivo de EndDrawing y envíos reales
+
+Parche nuevo `ps2recomp-gs-host-timing.patch`, al final de la cadena110.
+Con `GOW_PERF_DIAG=1`, raylib llama callbacks alrededor del primer loteGL,
+swap, `WaitTime` condicional y eventos. CMake comprueba la huella del source
+raylib5.5 y compila un `rcore.c` instrumentado en su directorio binario;
+no escribe en el source de FetchContent. La copia privada110 y la fuente
+compartida106..109 conservan su SHA original. Las llamadas, condiciones y
+orden de EndDrawing permanecen; no se usa control manual de frames.
+
+`[gow-perf:host]` comparte t/ventana con `[gow-perf]`. Informa end/batch/swap/
+limiter/events/other_ms y llamadas. **HostWait mantiene su significado
+inclusivo**; las cuatro fases son exclusivas entre sí y están incluidas en
+EndDrawing/HostWait, no se suman otra vez como tiempo global ni CPU%.
+`other_ms` conserva lo no atribuido. Sin diagnóstico el callback es nulo;
+se retira al cerrar el consumidor. `GOW_PERF_DIAG=frames` no activa fases.
+
+Cuenta el View devuelto tras EndDrawing: shared_texture/blank/fallback y RAM
+son categorías disjuntas; ram_blank es subconjunto de RAM. shared_changed/
+reused cuentan primera/cambiada o misma secuencia en Acquire efectivo,
+también si es blank. Cambio de modo/reset separa epochs. Una ausencia de
+Acquire no usa metadata antigua como prueba de reutilización. **Cambiar
+secuencia no acredita RGB distinto ni scanout**, y no se añade hash/readback.
+
+Compilación nueva de suite0/127,219s; normal626/626 y GPU671/671 tanto OFF
+como ON, códigos0. Primer normal625/626 se lanzó desde el directorio binario:
+la prueba de mappings VU0 no encontraba su header relativo. Se corrigió sólo
+el directorio del lanzador; el intento fallido se conserva y no se añaden
+fallos conocidos. Cadena110 reaplicada desde pin, diez archivos del tema iguales.
+
+Control aislado5/5 positivo; raylib109 sin callbacks falla sólo el caso de
+hooks reales,4/5/código1. Consumidor real4/4 positivo; omitir únicamente el
+registro del View falla las tres escalas,1/4/código3. Imágenes, fences y
+referencias CPU/DX11 se conservan. Revisión local, sin aprobación externa.
+**Full110, menú115, control funcional y medición del juego siguen pendientes**;
+todavía no hay resultado de tiempos110 ni mejora de rendimiento declarada.

@@ -1,0 +1,561 @@
+diff --git a/ps2xRuntime/CMakeLists.txt b/ps2xRuntime/CMakeLists.txt
+index ffca57d..4d24a52 100644
+--- a/ps2xRuntime/CMakeLists.txt
++++ b/ps2xRuntime/CMakeLists.txt
+@@ -82,6 +82,9 @@ else()
+         GIT_PROGRESS TRUE
+     )
+     FetchContent_MakeAvailable(raylib)
++    # GOW-Port: no mutar dependencias compartidas, ni cambiar el control de frames.
++    include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/GowRaylibEndDrawing.cmake")
++    ps2x_instrument_end_drawing()
+ 
+     if(PS2X_ENABLE_DEBUG_UI AND NOT PS2X_IS_ANDROID)
+         FetchContent_Declare(
+diff --git a/ps2xRuntime/cmake/GowRaylibEndDrawing.cmake b/ps2xRuntime/cmake/GowRaylibEndDrawing.cmake
+new file mode 100644
+index 0000000..e4ee85a
+--- /dev/null
++++ b/ps2xRuntime/cmake/GowRaylibEndDrawing.cmake
+@@ -0,0 +1,62 @@
++# GOW-Port: instrumentar una copia de rcore.c, nunca el source de FetchContent.
++function(ps2x_instrument_end_drawing)
++    get_target_property(ray_source raylib SOURCE_DIR)
++    set(original "${ray_source}/rcore.c")
++    file(READ "${original}" core)
++    string(REPLACE "\r\n" "\n" core "${core}")
++    string(SHA256 digest "${core}")
++    if(NOT digest STREQUAL "cb8d42cb286e9c5fa1666296b3e82d28d4e39469bd588c9b3643ad3564a98d9e")
++        message(FATAL_ERROR "GOW-Port: rcore.c no corresponde al source raylib 5.5 comprobado")
++    endif()
++    # La huella del archivo completo fija también condiciones, orden y anchors.
++    set(hook [=[// GOW-Port: callback opcional del hilo host; sin reloj si es nulo.
++typedef void (*GowEndDrawingPhaseHook)(void *user, int phase, int begin);
++static GowEndDrawingPhaseHook gowEndDrawingPhaseHook = NULL;
++static void *gowEndDrawingPhaseUser = NULL;
++RLAPI void GowSetEndDrawingPhaseHook(GowEndDrawingPhaseHook hook, void *user)
++{
++    gowEndDrawingPhaseHook = hook;
++    gowEndDrawingPhaseUser = user;
++}
++static void GowEndDrawingPhase(int phase, int begin)
++{
++    if (gowEndDrawingPhaseHook != NULL)
++        gowEndDrawingPhaseHook(gowEndDrawingPhaseUser, phase, begin);
++}
++
++]=])
++    string(REPLACE "// End canvas drawing and swap buffers (double buffering)"
++        "${hook}// End canvas drawing and swap buffers (double buffering)" core "${core}")
++    string(REPLACE "void EndDrawing(void)\n{\n    rlDrawRenderBatchActive();      // Update and draw internal render batch"
++        "void EndDrawing(void)\n{\n    GowEndDrawingPhase(0, 1);\n    rlDrawRenderBatchActive();      // Update and draw internal render batch\n    GowEndDrawingPhase(0, 0);" core "${core}")
++    string(REPLACE "    SwapScreenBuffer();                  // Copy back buffer to front buffer (screen)"
++        "    GowEndDrawingPhase(1, 1);\n    SwapScreenBuffer();                  // Copy back buffer to front buffer (screen)\n    GowEndDrawingPhase(1, 0);" core "${core}")
++    string(REPLACE "        WaitTime(CORE.Time.target - CORE.Time.frame);"
++        "        GowEndDrawingPhase(2, 1);\n        WaitTime(CORE.Time.target - CORE.Time.frame);\n        GowEndDrawingPhase(2, 0);" core "${core}")
++    string(REPLACE "    PollInputEvents();      // Poll user events (before next frame update)"
++        "    GowEndDrawingPhase(3, 1);\n    PollInputEvents();      // Poll user events (before next frame update)\n    GowEndDrawingPhase(3, 0);" core "${core}")
++    set(generated "${CMAKE_CURRENT_BINARY_DIR}/gow-raylib/rcore.c")
++    file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/gow-raylib")
++    # configure_file evita recompilar si la copia generada no cambia.
++    set(temporary "${CMAKE_CURRENT_BINARY_DIR}/gow-raylib/rcore.input.c")
++    file(WRITE "${temporary}" "${core}")
++    configure_file("${temporary}" "${generated}" COPYONLY)
++    get_target_property(sources raylib SOURCES)
++    set(replaced 0)
++    set(instrumented)
++    foreach(source IN LISTS sources)
++        get_filename_component(leaf "${source}" NAME)
++        if(leaf STREQUAL "rcore.c")
++            list(APPEND instrumented "${generated}")
++            math(EXPR replaced "${replaced} + 1")
++        else()
++            list(APPEND instrumented "${source}")
++        endif()
++    endforeach()
++    if(NOT replaced EQUAL 1)
++        message(FATAL_ERROR "GOW-Port: se esperaba un solo rcore.c en raylib")
++    endif()
++    set_property(TARGET raylib PROPERTY SOURCES "${instrumented}")
++    target_include_directories(raylib PRIVATE "${ray_source}")
++    message(STATUS "GOW-Port: EndDrawing optativo en copia privada: ${generated}")
++endfunction()
+diff --git a/ps2xRuntime/include/runtime/gs/gs_host_perf.h b/ps2xRuntime/include/runtime/gs/gs_host_perf.h
+new file mode 100644
+index 0000000..63f3d6c
+--- /dev/null
++++ b/ps2xRuntime/include/runtime/gs/gs_host_perf.h
+@@ -0,0 +1,141 @@
++// GOW-Port: subtotales incluidos en HostWait; sólo el hilo host escribe/lee.
++#pragma once
++#include <array>
++#include <cstdint>
++#include <cstdio>
++
++namespace GSHostPerf
++{
++    enum class Phase : uint32_t { Batch, Swap, Limiter, Events, Count };
++    constexpr uint32_t phaseCount = static_cast<uint32_t>(Phase::Count);
++    struct TimingTotals
++    {
++        std::array<uint64_t, phaseCount> nanos{}, calls{};
++        uint64_t endNanos = 0u, endCalls = 0u, otherNanos = 0u, errors = 0u;
++    };
++    // Reloj inyectado por el llamador: no sleeps ni scopes ps2_perf anidados.
++    class Timing
++    {
++        bool running = false;
++        int active = -1, last = -1;
++        uint64_t frameSince = 0u, phaseSince = 0u, charged = 0u;
++        uint64_t elapsed(uint64_t since, uint64_t now)
++        {
++            if (now < since) { ++totals.errors; return 0u; }
++            return now - since;
++        }
++    public:
++        TimingTotals totals;
++        void begin(uint64_t now)
++        {
++            if (running) { ++totals.errors; return; }
++            running = true;
++            active = last = -1;
++            frameSince = now;
++            charged = 0u;
++        }
++        void edge(int phase, bool start, uint64_t now)
++        {
++            if (!running || phase < 0 || phase >= static_cast<int>(phaseCount))
++            { ++totals.errors; return; }
++            if (start)
++            {
++                if (active != -1 || phase <= last) { ++totals.errors; return; }
++                active = phase;
++                phaseSince = now;
++            }
++            else
++            {
++                if (active != phase) { ++totals.errors; return; }
++                const uint64_t value = elapsed(phaseSince, now);
++                totals.nanos[phase] += value;
++                ++totals.calls[phase];
++                charged += value;
++                last = phase;
++                active = -1;
++            }
++        }
++        void end(uint64_t now)
++        {
++            if (!running) { ++totals.errors; return; }
++            if (active != -1)
++            {
++                ++totals.errors;
++                edge(active, false, now);
++            }
++            const uint64_t value = elapsed(frameSince, now);
++            totals.endNanos += value;
++            ++totals.endCalls;
++            if (charged > value) ++totals.errors;
++            else totals.otherNanos += value - charged;
++            running = false;
++        }
++        void reset() { *this = {}; }
++    };
++
++    struct Sends
++    {
++        uint64_t total = 0u, sharedTexture = 0u, sharedBlank = 0u, sharedFallback = 0u;
++        uint64_t changed = 0u, reused = 0u, ram = 0u, ramBlank = 0u, epochs = 0u;
++    };
++    struct Sample
++    {
++        bool shared, acquired, borrowed, blank, frameBlank;
++        uint64_t sequence;
++    };
++    class Sequences
++    {
++        bool known = false;
++        uint64_t previous = 0u;
++    public:
++        Sends totals;
++        void beginEpoch() { known = false; previous = 0u; ++totals.epochs; }
++        void observe(const Sample &sample)
++        {
++            ++totals.total;
++            if (!sample.shared)
++            {
++                ++totals.ram;
++                if (sample.blank) ++totals.ramBlank;
++                return;
++            }
++            if (sample.acquired && sample.sequence != 0u)
++            {
++                if (known && previous == sample.sequence) ++totals.reused;
++                else ++totals.changed;
++                previous = sample.sequence;
++                known = true;
++            }
++            if (sample.acquired && sample.frameBlank) ++totals.sharedBlank;
++            else if (sample.acquired && sample.borrowed && !sample.blank) ++totals.sharedTexture;
++            else ++totals.sharedFallback;
++        }
++        void reset() { *this = {}; }
++    };
++    struct Diagnostics { Timing timing; Sequences sequences; };
++    inline thread_local Diagnostics diagnostics;
++
++    // Misma frontera de report que gow-perf; fases exclusivas ENTRE SÍ e incluidas
++    // en HostWait. Cambios de secuencia no prueban RGB distinto ni scanout físico.
++    inline void report(double t, double window)
++    {
++        static thread_local TimingTotals before;
++        static thread_local Sends old;
++        const auto &a = diagnostics.timing.totals;
++        const auto &s = diagnostics.sequences.totals;
++        std::fprintf(stderr, "[gow-perf:host] t=%.2f window=%.2f end_ms=%.2f batch_ms=%.2f swap_ms=%.2f limiter_ms=%.2f events_ms=%.2f other_ms=%.2f end_calls=%llu batch_calls=%llu swap_calls=%llu limiter_calls=%llu events_calls=%llu errors=%llu sends=%llu shared_texture=%llu shared_blank=%llu shared_fallback=%llu shared_changed=%llu shared_reused=%llu ram=%llu ram_blank=%llu epochs=%llu\n",
++            t, window, (a.endNanos-before.endNanos)*1e-6,
++            (a.nanos[0]-before.nanos[0])*1e-6, (a.nanos[1]-before.nanos[1])*1e-6,
++            (a.nanos[2]-before.nanos[2])*1e-6, (a.nanos[3]-before.nanos[3])*1e-6,
++            (a.otherNanos-before.otherNanos)*1e-6,
++            (unsigned long long)(a.endCalls-before.endCalls),
++            (unsigned long long)(a.calls[0]-before.calls[0]), (unsigned long long)(a.calls[1]-before.calls[1]),
++            (unsigned long long)(a.calls[2]-before.calls[2]), (unsigned long long)(a.calls[3]-before.calls[3]),
++            (unsigned long long)(a.errors-before.errors), (unsigned long long)(s.total-old.total),
++            (unsigned long long)(s.sharedTexture-old.sharedTexture), (unsigned long long)(s.sharedBlank-old.sharedBlank),
++            (unsigned long long)(s.sharedFallback-old.sharedFallback), (unsigned long long)(s.changed-old.changed),
++            (unsigned long long)(s.reused-old.reused), (unsigned long long)(s.ram-old.ram),
++            (unsigned long long)(s.ramBlank-old.ramBlank), (unsigned long long)(s.epochs-old.epochs));
++        before = a; old = s;
++    }
++}
+diff --git a/ps2xRuntime/include/runtime/gs/gs_host_present.h b/ps2xRuntime/include/runtime/gs/gs_host_present.h
+index a8389d9..7d1d6a2 100644
+--- a/ps2xRuntime/include/runtime/gs/gs_host_present.h
++++ b/ps2xRuntime/include/runtime/gs/gs_host_present.h
+@@ -22,6 +22,7 @@ public:
+         bool shared = false;
+         bool borrowed = false;
+         bool blank = true;
++        bool acquired = false; // GOW-Port: Acquire efectivo de esta iteración, no metadata anterior.
+         GSSharedPresent::Frame frame{};
+     };
+ 
+@@ -52,6 +53,7 @@ private:
+     bool lastPreferred = false;
+     bool started = false;
+     bool captureRequested = false;
++    bool timingRequested = false; // GOW-Port: GOW_PERF_DIAG=1, sin reloj en modo desactivado.
+     bool hasLatched = false;
+     bool uploaded = false;
+     bool uploadedBlank = false;
+diff --git a/ps2xRuntime/include/runtime/ps2_perf.h b/ps2xRuntime/include/runtime/ps2_perf.h
+index 04790fe..e1cabef 100644
+--- a/ps2xRuntime/include/runtime/ps2_perf.h
++++ b/ps2xRuntime/include/runtime/ps2_perf.h
+@@ -10,6 +10,7 @@
+ #include <cstdlib>
+ #include <cstdint>
+ #include <cstring>
++#include "runtime/gs/gs_host_perf.h" // GOW-Port: subtotales independientes del scope inclusivo.
+ 
+ namespace ps2_perf
+ {
+@@ -108,6 +109,7 @@ namespace ps2_perf
+             (now - first) * 1e-9, seconds, ms[0], ms[1], ms[2], ms[3], ms[4], ms[5], ms[6],
+             (flips - previousFlips) / seconds, (frames - previousFrames) / seconds);
+         previousFlips = flips; previousFrames = frames; last = now;
++        if (enabled()) GSHostPerf::report((now - first) * 1e-9, seconds);
+     }
+ }
+ #endif
+diff --git a/ps2xRuntime/src/lib/gs/gs_host_present.cpp b/ps2xRuntime/src/lib/gs/gs_host_present.cpp
+index 3e1a2d5..8441ffd 100644
+--- a/ps2xRuntime/src/lib/gs/gs_host_present.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_host_present.cpp
+@@ -11,11 +11,21 @@
+ #include <cstring>
+ #include <iostream>
+ 
++#if !defined(PLATFORM_VITA)
++// GOW-Port: API añadida sólo a la copia compilada del rcore.c comprobado.
++extern "C" RLAPI void GowSetEndDrawingPhaseHook(void (*hook)(void *, int, int), void *user);
++#endif
++
+ namespace
+ {
+     constexpr uint32_t kWidth = 640u;
+     constexpr uint32_t kHeight = 512u;
+     constexpr uint32_t kDisplayHeight = 448u;
++    // GOW-Port: raylib llama sólo desde el hilo host que instaló el callback.
++    void phaseHook(void *user, int phase, int begin)
++    {
++        static_cast<GSHostPerf::Timing *>(user)->edge(phase, begin != 0, ps2_perf::nowNanos());
++    }
+ }
+ 
+ void GSHostPresentation::captureHostContext()
+@@ -23,6 +33,11 @@ void GSHostPresentation::captureHostContext()
+     if (started)
+         return;
+     started = true;
++    timingRequested = ps2_perf::enabled();
++#if !defined(PLATFORM_VITA)
++    if (timingRequested)
++        GowSetEndDrawingPhaseHook(phaseHook, &GSHostPerf::diagnostics.timing);
++#endif
+     const char *setting = std::getenv("PS2X_GS_DIRECT_PRESENT");
+     captureRequested = setting && *setting == '1';
+     if (captureRequested)
+@@ -80,6 +95,7 @@ GSHostPresentation::View GSHostPresentation::prepare(GS &gs, uint64_t vsyncTick)
+         sharedMode = shared;
+         hasLatched = uploaded = uploadedBlank = false;
+         lastSharedSequence = 0u;
++        if (timingRequested) GSHostPerf::diagnostics.sequences.beginEpoch();
+         current = {};
+     }
+     const bool needsLatch = !hasLatched || vsyncTick != lastTick;
+@@ -92,11 +108,13 @@ GSHostPresentation::View GSHostPresentation::prepare(GS &gs, uint64_t vsyncTick)
+     current.shared = shared;
+     if (shared)
+     {
++        current.acquired = false;
+         // GOW-Port: la llamada anterior ya terminó EndDrawing, incluido el batch.
+         // Acquire puede conservar el slot previo; la ruta normal no descarga píxeles.
+         GSSharedPresent::Frame frame;
+         if (GSSharedPresent::Acquire(frame))
+         {
++            current.acquired = true;
+             current.frame = frame;
+             if (frame.sequence != lastSharedSequence)
+             {
+@@ -215,8 +233,13 @@ GSHostPresentation::View GSHostPresentation::renderFrame(GS &gs, uint64_t vsyncT
+         overlay();
+     {
+         ps2_perf::Scope perf(ps2_perf::Bucket::HostWait);
++        if (timingRequested) GSHostPerf::diagnostics.timing.begin(ps2_perf::nowNanos());
+         EndDrawing();
++        if (timingRequested) GSHostPerf::diagnostics.timing.end(ps2_perf::nowNanos());
+     }
++    if (timingRequested)
++        GSHostPerf::diagnostics.sequences.observe({selected.shared, selected.acquired,
++            selected.borrowed, selected.blank, selected.frame.blank, selected.frame.sequence});
+     return selected;
+ }
+ 
+@@ -224,6 +247,10 @@ void GSHostPresentation::shutdown(GS &gs)
+ {
+     if (!started && fallback.id == 0u)
+         return;
++#if !defined(PLATFORM_VITA)
++    if (timingRequested) GowSetEndDrawingPhaseHook(nullptr, nullptr);
++#endif
++    timingRequested = false;
+     // GOW-Port: nullptr crea CPU; drena y destruye el worker/contexto compartido.
+     gs.setRasterBackend(nullptr);
+     restoreHostContext();
+diff --git a/ps2xTest/CMakeLists.txt b/ps2xTest/CMakeLists.txt
+index 7c695bc..45738e8 100644
+--- a/ps2xTest/CMakeLists.txt
++++ b/ps2xTest/CMakeLists.txt
+@@ -49,6 +49,7 @@ add_library(ps2_test_lib STATIC
+     src/ps2_gs_shared_queue_tests.cpp # GOW-Port: FIFO y capturas bajo demanda.
+     src/ps2_gs_host_present_tests.cpp # GOW-Port: consumidor real, escala y cierre.
+     src/ps2_gs_host_diag_window_tests.cpp # GOW-Port: tick de inicio y cupo del registro.
++    src/ps2_gs_host_timing_tests.cpp # GOW-Port: fases inclusivas y envíos sin readback.
+     src/ps2_iop_tests.cpp
+     src/ps2_sif_rpc_tests.cpp
+     src/ps2_sif_dma_tests.cpp
+diff --git a/ps2xTest/src/main.cpp b/ps2xTest/src/main.cpp
+index 1fd16a9..ad7aaba 100644
+--- a/ps2xTest/src/main.cpp
++++ b/ps2xTest/src/main.cpp
+@@ -30,6 +30,7 @@ void runGpuSharedPresentGlTests(); // GOW-Port
+ void runGsSharedQueueTests(); // GOW-Port
+ void runGsHostPresentTests(); // GOW-Port
+ void runGsHostDiagWindowTests(); // GOW-Port
++void runGsHostTimingTests(); // GOW-Port
+ void register_ps2_iop_tests();
+ void register_ps2_sif_rpc_tests();
+ void register_ps2_sif_dma_tests();
+@@ -72,6 +73,7 @@ int main()
+     runGsSharedQueueTests();
+     runGsHostPresentTests();
+     runGsHostDiagWindowTests(); // GOW-Port
++    runGsHostTimingTests(); // GOW-Port
+     register_ps2_iop_tests();
+     register_ps2_sif_rpc_tests();
+     register_ps2_sif_dma_tests();
+diff --git a/ps2xTest/src/ps2_gs_host_present_tests.cpp b/ps2xTest/src/ps2_gs_host_present_tests.cpp
+index 0ade394..14efc9b 100644
+--- a/ps2xTest/src/ps2_gs_host_present_tests.cpp
++++ b/ps2xTest/src/ps2_gs_host_present_tests.cpp
+@@ -12,6 +12,7 @@
+ #include "runtime/gs/ps2_gs_memory.h"
+ #include "runtime/ps2_memory.h"
+ #include "rlgl.h"
++#include "runtime/ps2_perf.h" // GOW-Port: contrato del consumidor con diagnóstico ON/OFF.
+ 
+ #include <algorithm>
+ #include <chrono>
+@@ -216,7 +217,18 @@ namespace
+         t.Equals(view.height, kSourceHeight, "Usa el alto efectivo publicado");
+         t.IsTrue(actual == reference, "Framebuffer escalado, filas, filtro y franjas coinciden exactamente con CPU");
+         Capture retained;
++        const auto timingBefore = GSHostPerf::diagnostics.timing.totals;
++        const auto sendsBefore = GSHostPerf::diagnostics.sequences.totals;
+         const auto again = source.render(t, retained);
++        const auto &timingAfter = GSHostPerf::diagnostics.timing.totals;
++        const auto &sendsAfter = GSHostPerf::diagnostics.sequences.totals;
++        const uint64_t counted = ps2_perf::enabled() ? 1u : 0u;
++        t.Equals(timingAfter.endCalls, timingBefore.endCalls + counted, "EndDrawing contado sólo con diagnóstico");
++        t.Equals(sendsAfter.total, sendsBefore.total + counted, "Sólo cuenta el View después de EndDrawing");
++        t.Equals(sendsAfter.reused, sendsBefore.reused + counted, "El mismo Acquire registra reutilización sin otro readback");
++        for (uint32_t phase : {0u, 1u, 3u})
++            t.Equals(timingAfter.calls[phase], timingBefore.calls[phase] + counted, "Fase real ejecutada una vez, o inactiva");
++        t.Equals(timingAfter.errors, timingBefore.errors, "Callbacks reales sin errores de orden/reentrada");
+         t.Equals(again.frame.sequence, view.frame.sequence, "Sin cambios conserva el mismo frame");
+         t.IsTrue(again.borrowed && retained == reference, "Repetir el cuadro no hace readback ni pierde el slot");
+         const uint32_t borrowedId = view.texture.id;
+diff --git a/ps2xTest/src/ps2_gs_host_timing_tests.cpp b/ps2xTest/src/ps2_gs_host_timing_tests.cpp
+new file mode 100644
+index 0000000..7804cb1
+--- /dev/null
++++ b/ps2xTest/src/ps2_gs_host_timing_tests.cpp
+@@ -0,0 +1,138 @@
++// GOW-Port: regresión del desglose inclusivo, sin depender del reloj real.
++#include "MiniTest.h"
++#include "runtime/gs/gs_host_perf.h"
++#include "runtime/ps2_perf.h"
++#include "raylib.h"
++#include <cstdlib>
++#include <vector>
++
++#if !defined(PLATFORM_VITA)
++extern "C" RLAPI void GowSetEndDrawingPhaseHook(void (*hook)(void *, int, int), void *user);
++#endif
++namespace
++{
++    void phases(TestCase &t)
++    {
++        GSHostPerf::Timing time;
++        time.begin(100u);
++        time.edge(0, true, 101u); time.edge(0, false, 111u);
++        time.edge(1, true, 112u); time.edge(1, false, 132u);
++        time.edge(2, true, 133u); time.edge(2, false, 163u);
++        time.edge(3, true, 164u); time.edge(3, false, 204u);
++        time.end(210u);
++        t.IsTrue(time.totals.nanos == std::array<uint64_t,4>{10u,20u,30u,40u}, "Carga exclusiva de cada fase");
++        t.IsTrue(time.totals.calls == std::array<uint64_t,4>{1u,1u,1u,1u}, "Una llamada por fase ejecutada");
++        t.Equals(time.totals.endNanos, 110u, "Total inclusivo EndDrawing");
++        t.Equals(time.totals.otherNanos, 10u, "Resto no atribuido a cuatro fases");
++        t.Equals(time.totals.errors, 0u, "Secuencia válida sin errores");
++        // Omitir WaitTime conserva el resto, no inventa una llamada de limitador.
++        time.begin(300u);
++        time.edge(0,true,301u); time.edge(0,false,303u);
++        time.edge(1,true,304u); time.edge(1,false,307u);
++        time.edge(3,true,308u); time.edge(3,false,312u);
++        time.end(320u);
++        t.IsTrue(time.totals.calls == std::array<uint64_t,4>{2u,2u,1u,2u}, "WaitTime condicional no cuenta al omitirse");
++        t.Equals(time.totals.endNanos,130u,"Segunda ventana acumula total");
++        t.Equals(time.totals.otherNanos,21u,"Segunda ventana acumula residual");
++    }
++    void invalid(TestCase &t)
++    {
++        GSHostPerf::Timing time;
++        time.edge(0,true,1u); time.end(2u); // Sin frame.
++        time.begin(10u); time.begin(11u); // Reentrada rechazada.
++        time.edge(0,true,12u);
++        time.edge(1,true,13u); time.edge(1,false,14u); // Anidamiento rechazado.
++        time.edge(0,false,15u);
++        time.edge(0,true,16u); // Orden repetido rechazado.
++        time.edge(4,true,17u); // Fuera de rango.
++        time.edge(3,true,18u); time.end(20u); // Fase incompleta cerrada con error.
++        t.Equals(time.totals.errors,8u,"Errores de contrato detectados, sin doble carga");
++        t.Equals(time.totals.endNanos,10u,"Reentrada no reemplaza el comienzo original");
++        t.Equals(time.totals.nanos[0],3u,"Anidamiento no sustrae ni duplica batch");
++        t.Equals(time.totals.nanos[3],2u,"Fase incompleta sólo carga su intervalo");
++        t.Equals(time.totals.otherNanos,5u,"Fases siguen siendo exclusivas");
++        time.reset();
++        t.Equals(time.totals.endCalls,0u,"Reset elimina totales");
++        time.begin(30u); time.edge(0,true,35u); time.edge(0,false,34u); time.end(40u);
++        t.Equals(time.totals.errors,1u,"Reloj hacia atrás detectado");
++        t.Equals(time.totals.nanos[0],0u,"Reloj hacia atrás no desborda");
++    }
++    void inclusive(TestCase &t)
++    {
++        ps2_perf::Accounting old;
++        old.switchTo(ps2_perf::Bucket::HostWait,100u);
++        GSHostPerf::Timing time;
++        time.begin(101u); time.edge(1,true,102u); time.edge(1,false,202u); time.end(209u);
++        const auto charge=old.switchTo(ps2_perf::Bucket::None,210u);
++        t.Equals(charge.bucket,ps2_perf::Bucket::HostWait,"Bucket original sigue activo");
++        t.Equals(charge.nanos,110u,"Swap no sustrae su tiempo de HostWait");
++        t.Equals(time.totals.nanos[1],100u,"Detalle mide el mismo swap por separado");
++    }
++    void sequences(TestCase &t)
++    {
++        GSHostPerf::Sequences count;
++        count.beginEpoch();
++        count.observe({true,true,true,false,false,7u});
++        count.observe({true,true,true,false,false,7u});
++        count.observe({true,true,false,true,true,8u});
++        count.observe({true,true,false,true,true,8u});
++        count.observe({true,false,false,true,false,8u}); // Metadata previa no acredita Acquire.
++        count.observe({true,true,false,true,false,9u}); // Publicación inválida usa fallback.
++        count.beginEpoch();
++        count.observe({false,false,false,false,false,0u});
++        count.observe({false,false,false,true,false,0u});
++        count.beginEpoch();
++        count.observe({true,true,true,false,false,7u}); // Misma secuencia en epoch nueva.
++        const auto &c=count.totals;
++        t.Equals(c.total,9u,"Un envío por View devuelto");
++        t.Equals(c.sharedTexture,3u,"Tres envíos de textura efectiva");
++        t.Equals(c.sharedBlank,2u,"Blank adquirido contado separadamente");
++        t.Equals(c.sharedFallback,2u,"Ausencia y textura inválida usan fallback");
++        t.Equals(c.changed,4u,"Cambio/primero en cada epoch, incluso blank");
++        t.Equals(c.reused,2u,"Reutilización adquirida efectiva");
++        t.Equals(c.ram,2u,"RAM sin confundirla con shared");
++        t.Equals(c.ramBlank,1u,"RAM blank es subconjunto de RAM");
++        t.Equals(c.epochs,3u,"Cambio de modo/reset separa identidades");
++        t.Equals(c.sharedTexture+c.sharedBlank+c.sharedFallback+c.ram,c.total,"Clasificación disjunta suma envíos");
++        count.reset(); t.Equals(count.totals.total,0u,"Reset de contadores");
++    }
++#if !defined(PLATFORM_VITA)
++    void collect(void *user,int phase,int begin)
++    { static_cast<std::vector<int> *>(user)->push_back(phase*2+(begin?0:1)); }
++    void realHooks(TestCase &t)
++    {
++        if(IsWindowReady()) { t.Fail("Se requiere ventana propia"); return; }
++        SetConfigFlags(FLAG_WINDOW_HIDDEN);
++        InitWindow(64,64,"EndDrawing procedural");
++        if(!IsWindowReady()) { t.Fail("No hay contexto host efectivo"); return; }
++        struct Close { ~Close() { GowSetEndDrawingPhaseHook(nullptr,nullptr); CloseWindow(); } } close;
++        std::vector<int> events;
++        GowSetEndDrawingPhaseHook(collect,&events);
++        SetTargetFPS(0); // Sin limitador: conserva la condición original.
++        BeginDrawing(); ClearBackground(RED); EndDrawing();
++        t.IsTrue(events==std::vector<int>{0,1,2,3,6,7},"EndDrawing real llama batch, swap y eventos en orden");
++        events.clear(); SetTargetFPS(10);
++        // Primer BeginDrawing tras la inicialización puede incluir su coste.
++        BeginDrawing(); EndDrawing(); events.clear();
++        BeginDrawing(); EndDrawing();
++        t.IsTrue(events==std::vector<int>{0,1,2,3,4,5,6,7},"WaitTime ejecutado llama ambos edges en su posición");
++        events.clear(); GowSetEndDrawingPhaseHook(nullptr,nullptr);
++        BeginDrawing(); EndDrawing();
++        t.IsTrue(events.empty(),"Hook desactivado no llama al usuario ni a su reloj");
++    }
++#endif
++}
++void runGsHostTimingTests()
++{
++    MiniTest::Case("GS tiempos y envios host",[](TestCase &suite)
++    {
++        suite.Run("Fases y limitador condicional con reloj inyectado",phases);
++        suite.Run("Contrato, reentrada, reloj y reset",invalid);
++        suite.Run("HostWait conserva contabilidad inclusiva",inclusive);
++        suite.Run("View nuevo, reutilizado, blank, fallback y epoch",sequences);
++#if !defined(PLATFORM_VITA)
++        const char *gpu=std::getenv("GOW_GS_GPU_TEST");
++        if(gpu && *gpu=='1') suite.Run("Hooks reales EndDrawing activos y desactivados",realHooks);
++#endif
++    });
++}
