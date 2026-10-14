@@ -4732,6 +4732,14 @@ Ambos parches se compilaron con MSVC 19.44 y Ninja 1.12.1; `ps2x_tests` pasó
 622/622 con cero fallos conocidos. También pasan `tools/ci/parches.py`,
 `tools/ci/validar_config.py` y la aplicación limpia de los dos parches en orden.
 
+Revisión del filtro VF0 (2026-10-14): se retiró la búsqueda de la cadena generada
+`ctx->vu0_vf[0] =` y el borrado hasta el siguiente punto y coma. Los emisores de
+VU0 envían ahora las escrituras a `PS2_VU0_VF_WRITE`, que comprueba el destino y
+no evalúa el valor cuando el destino es VF0; las escrituras a otros VF siguen
+iguales y los efectos laterales, como actualizar R en VRNEXT, se conservan.
+Una regresión verifica el comportamiento de VF0/VF1. La serie VF0+VI0 aplicada
+limpiamente y compilada con Ninja pasó `ps2x_tests` 623/623, sin fallos conocidos.
+
 ## PMULTH: compilación completa y regresiones nativas (2026-10-11)
 
 La cadena 102 termina con código 0 en 959,94 s, regenerando los cuatro sitios
