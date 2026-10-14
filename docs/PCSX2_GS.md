@@ -522,3 +522,33 @@ persisten líneas/pose distintas y no se conserva historia inicial de campos.
 La imagen adquirida no es idéntica al shadow por compartir tick y aún no
 acredita su frontera GIF. No declarar paridad global, una mejora de FPS,
 encuadre PS2 o estabilidad prolongada a partir de estas capturas.
+
+### Snapshot original y modo efectivo: extensión optativa de ABI1
+
+`gow_gs_read_video_info` devuelve el modo reconocido, entrelazado efectivo,
+InterlaceMode, PCRTCAntiBlur y SMODE1/SYNCV/SMODE2 con la secuencia del módulo.
+`video_mode` usa el enum GSVideoMode de la fuente fijada; VESA no equivale
+a confirmar el modo físico de PS2 si faltan registros de temporización.
+
+`gow_gs_read_snapshot` llama a `GSRenderer::SaveSnapshotToMemory` original,
+con Stretch0/Auto1/4:3=2/16:9=3. Primero llamar con nullptr/capacidad0:
+BUFFER_SMALL entrega dimensiones y guarda el snapshot. La lectura posterior
+requiere el mismo handle, secuencia, aspecto y ventana. VSync/reset/cierre
+invalidan la caché; no recalcula otra captura silenciosamente. Ventana0/0
+conserva resolución interna, con expansión de aspecto si se solicita; ambas
+dimensiones deben ser cero o estar en1..2048. Se aplican filtro de transparencia,
+reescalado y bandas originales, por lo que no sustituye el output crudo.
+Los structs/calls anteriores conservan ABI1. Comprobar los nuevos exports
+al cargar DLL antiguas; el cliente del juego sigue usando la interfaz previa.
+
+Control sin assets, Windows/GPU libre, secuencial:
+
+```powershell
+py -3 tools/render/probe_snapshot_reference.py --module <DLL-nueva> --resources <recursos-PCSX2> --output <carpeta-nueva-privada>
+```
+
+Sin `--output` imprime JSON sin PNG y no requiere Pillow. Produce16 casos
+uniformes de aspecto/ventana y modo efectivo; no mide FPS ni establece el
+encuadre del juego. Validación local y límites en ESTADO.md. En la matriz
+de filas se comprobó que PCRTCAntiBlur cambia offsets de la referencia:
+conservar la configuración junto al resultado, además de GIF/VRAM/VSync.

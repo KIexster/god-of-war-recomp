@@ -14,6 +14,7 @@ int main(int argc,char** argv){
     if(!module)return 1;
 #define LOAD(name) auto name=reinterpret_cast<decltype(&gow_gs_##name)>(GetProcAddress(module,"gow_gs_" #name)); if(!name)return 1
     LOAD(create);LOAD(destroy);LOAD(submit);LOAD(vsync);LOAD(read_output);LOAD(write_register);LOAD(reset);
+    LOAD(read_snapshot);LOAD(read_video_info);
 #undef LOAD
     auto require=[](bool value,const char* message){if(!value)std::fprintf(stderr,"DLL GPU: %s\n",message);return value;};
     bool ok=true;
@@ -56,8 +57,53 @@ int main(int argc,char** argv){
         ok&=require(read_output(handle,reinterpret_cast<uint8_t*>(pixels.data()),8192,&info)==GOW_GS_OK,"readback explicito");
         for(unsigned i=0;i<2048;++i)ok&=pixels[i]==(color|0xff000000);
         ok&=require(pixels.back()==0xdeadbeef,"no escribir fuera del frame");
+        // GOW-Port: API original de snapshot y modo efectivo, separada de la textura cruda.
+        GowGsVideoInfo video{};video.size=sizeof(video);
+        ok&=require(read_video_info(handle,&video)==GOW_GS_OK && video.sequence==1 &&
+            video.smode1==regs.SMODE1.U64 && video.syncv==regs.SYNCV.U64 && video.smode2==regs.SMODE2.U64 &&
+            video.really_interlaced==0 && video.interlace_mode==0 && video.pcrtc_anti_blur==1 && video.reserved==0,
+            "modo/opciones/registros originales");
+        ok&=require(read_video_info(handle,nullptr)==GOW_GS_BAD_ARGUMENT,"rechazar info nula");
+        std::thread foreign([&]{threadStatus=read_video_info(handle,&video);});foreign.join();
+        ok&=require(threadStatus==GOW_GS_WRONG_THREAD,"consulta de modo respeta hilo propietario");
+        for(uint32_t aspect=0;aspect<=GOW_GS_ASPECT_16_9 && ok;++aspect){
+            GowGsFrameInfo shot{sizeof(shot),0,0,0,0,0};
+            const uint32_t height=aspect==GOW_GS_ASPECT_STRETCH?32:(aspect==GOW_GS_ASPECT_16_9?36:48);
+            ok&=require(read_snapshot(handle,aspect,0,0,nullptr,0,&shot)==GOW_GS_BUFFER_SMALL &&
+                shot.width==64 && shot.height==height && shot.required_bytes==64u*height*4 && shot.sequence==1,
+                "proporciones originales en resolución interna");
+            std::vector<uint32_t> rgba(64u*height+1,0xdeadbeef);
+            ok&=require(read_snapshot(handle,aspect,0,0,reinterpret_cast<uint8_t*>(rgba.data()),shot.required_bytes-1,&shot)==
+                GOW_GS_BUFFER_SMALL && rgba[0]==0xdeadbeef,"snapshot no escribe buffer insuficiente");
+            ok&=require(read_snapshot(handle,aspect,0,0,reinterpret_cast<uint8_t*>(rgba.data()),shot.required_bytes,&shot)==GOW_GS_OK,
+                "leer snapshot consultado sin recalcular");
+            for(unsigned i=0;i<64u*height;++i)ok&=rgba[i]==(color|0xff000000);
+            ok&=require(rgba.back()==0xdeadbeef,"snapshot respeta fin del buffer");
+        }
+        GowGsFrameInfo shot{sizeof(shot),0,0,0,0,0};
+        ok&=require(read_snapshot(handle,GOW_GS_ASPECT_AUTO,80,80,nullptr,0,&shot)==GOW_GS_BUFFER_SMALL &&
+            shot.width==80 && shot.height==80,"snapshot conserva tamaño de ventana");
+        std::vector<uint32_t> padded(80u*80u);
+        ok&=require(read_snapshot(handle,GOW_GS_ASPECT_AUTO,80,80,reinterpret_cast<uint8_t*>(padded.data()),padded.size()*4,&shot)==GOW_GS_OK,
+            "snapshot con bandas originales");
+        for(unsigned y=0;y<80;++y)for(unsigned x=0;x<80;++x)
+            ok&=padded[y*80+x]==(y>=10 && y<70?(color|0xff000000):0u);
+        ok&=require(read_snapshot(handle,4,0,0,nullptr,0,&shot)==GOW_GS_BAD_ARGUMENT &&
+            read_snapshot(handle,0,80,0,nullptr,0,&shot)==GOW_GS_BAD_ARGUMENT &&
+            read_snapshot(handle,0,2049,80,nullptr,0,&shot)==GOW_GS_BAD_ARGUMENT,"rechazar parámetros de snapshot");
+        ok&=require(read_output(handle,reinterpret_cast<uint8_t*>(pixels.data()),8192,&info)==GOW_GS_OK,
+            "snapshots conservan textura original");
+        for(unsigned i=0;i<2048;++i)ok&=pixels[i]==(color|0xff000000);
+        ok&=require(vsync(handle,1,reinterpret_cast<const uint8_t*>(&regs),sizeof(regs))==GOW_GS_OK &&
+            read_snapshot(handle,GOW_GS_ASPECT_AUTO,80,80,reinterpret_cast<uint8_t*>(padded.data()),padded.size()*4,&shot)==GOW_GS_BAD_ARGUMENT,
+            "VSync invalida snapshot antiguo");
+        ok&=require(read_snapshot(handle,GOW_GS_ASPECT_AUTO,80,80,nullptr,0,&shot)==GOW_GS_BUFFER_SMALL,"consultar segundo snapshot");
         ok&=require(write_register(handle,0x100,0)==GOW_GS_BAD_ARGUMENT,"rechazar direccion de registro");
         ok&=require(reset(handle)==GOW_GS_OK,"reset sin cerrar instancia");
+        ok&=require(vsync(handle,0,reinterpret_cast<const uint8_t*>(&regs),sizeof(regs))==GOW_GS_OK &&
+            vsync(handle,1,reinterpret_cast<const uint8_t*>(&regs),sizeof(regs))==GOW_GS_OK &&
+            read_snapshot(handle,GOW_GS_ASPECT_AUTO,80,80,reinterpret_cast<uint8_t*>(padded.data()),padded.size()*4,&shot)==GOW_GS_BAD_ARGUMENT,
+            "reset/VSync no reutilizan caché anterior aunque vuelva la secuencia");
         ok&=require(destroy(handle)==GOW_GS_OK && destroy(handle)==GOW_GS_BAD_HANDLE,"cierre y handle invalidado");
         old=handle;
     }

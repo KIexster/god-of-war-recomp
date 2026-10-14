@@ -6356,3 +6356,90 @@ añaden fallos conocidos. Referencias CPU/DX11/SW y fences preservadas.
 La PR80 necesita el CI del HEAD documental final antes de ready/merge.
 Siguen abiertos frontera GIF del adquirido, líneas/pose, temporización,
 encuadre, desglose de HostWait, cuadros distintos y estabilidad prolongada.
+
+### 2026-10-14 — PCRTC109 fusionado y control de tiempos sin capturas
+
+PR80 fusionada en `ca6bace6eec3f33432229d357d8f6b2bbffe38ae` después de
+los cuatro SUCCESS del HEAD final `286267264027b181997e1438a7fd48874d8996ea`,
+[run38559090776](https://github.com/KIexster/god-of-war-recomp/actions/runs/38559090776).
+La revisión de fuente y evidencia es local, sin aprobación externa.
+
+Otro control usa el mismo runner109 identificado, presentación compartida,
+FINISH asíncrono y ambos hilos, pero sin espejo, hash, readback ni diagnóstico
+de adquisiciones. `GOW_PERF_DIAG=1`, guion Start/X y ataques, tarjeta copiada.
+Termina por límite en 600,164 s, proceso/controlador0. El controlador envía
+WM_CLOSE únicamente a la ventana del PID hijo: el proceso sale con código0
+en 0,147 s, sin recurrir a terminación forzada. Se acredita **cierre solicitado
+de esa ventana**, no final del juego ni salida espontánea. Tarjeta intacta,
+sin minimización registrada ni firmas buscadas; estado11 en los informes
+35,06..596,22 s. El primer plano cambia durante el control; no fue constante.
+
+119 informes de tiempos; 111 tienen estado11 observado en dos reportes
+consecutivos, sin demostrar estado continuo entre muestras. En ellos,
+Flip25,32..49,07/s y host9,11..60/s. Diez ventanas t50,17..95,67 registran
+host9,11..19,64/s y Flip25,32..41,68/s; cien posteriores t100,69..595,73
+registran host55,66..60/s y Flip41..46,6/s. **Son contadores de operaciones,
+no cuadros únicos mostrados**. No hay capturas de esta pasada para alinear
+su cámara/escena con otro control ni declarar una mejora de rendimiento.
+
+HostWait tiene mediana4.979,41 ms en ventanas de unos5 s, mientras Upload
+tiene mediana5,20 ms. El código mide HostWait alrededor de `EndDrawing`
+entero: loteGL, swap, limitador y eventos. Ese ámbito también domina las
+ventanas de host60/s; no prueba por sí solo espera de GPU, fences o swap.
+Los ámbitos de EE/VU/GS/IOP abarcan hilos distintos y no se suman como tiempo
+exclusivo global o porcentaje de CPU. Falta separar los componentes de
+EndDrawing y contar envíos nuevos/reutilizados sin hash/readback. Este
+control de diez minutos no acredita estabilidad prolongada ni todo el juego.
+
+### 2026-10-14 — Referencia de proporción y límites del procesamiento original
+
+Wrapper privado nuevo con `SaveSnapshotToMemory` original y consulta de modo:
+compilación0, 16 patrones de aspecto/ventana y tres rechazos correctos.
+Repite el mismo Freeze/GIF/VSync de la escena109: los17 campos crudos SW
+son idénticos al módulo SW anterior. En4015, Stretch512×448 conserva RGB
+exacto; Auto/4:3 producen597×448 y16:9 produce796×448. Se revisaron el
+Stretch completo y Auto con ventana640×448. Esto separa proporción de
+textura y configuración de presentación del calculador original, sin
+establecer todavía el encuadre físico PS2 ni cambiar la cámara del port.
+
+La configuración efectiva del original en esa entrada es VESA, Automatic,
+PCRTCAntiBlur activado y `isReallyInterlaced=false`: SMODE1=0, SYNCV=0,
+SMODE2=0x21fed1. Otra matriz sintética usa cuatro condiciones CMOD/VFP y
+cuatro INT/FFMD, seis campos por instancia nueva. Sus96 campos HW/SW son
+RGB idénticos. CPU/SW tienen igual tamaño84/96 y RGB exacto0/96; los dos
+modos GPU tienen igual tamaño60/96 y RGB exacto0/96. Las dimensiones cambian
+según configuración; no se impone una igualdad512×448 a todos los casos.
+Con CMOD2 se reconoce NTSC; solo CMOD2+VFP1 activa reallyInterlaced.
+Las diferencias de INT1/FFMD0 persisten con esos registros sintéticos.
+
+También se contrastó PCRTCAntiBlur ON/OFF en instancias SW independientes
+del mismo patrón de filas. ON conserva sus colores originales; OFF mezcla
+filas adyacentes. GPU mezcla y duplica pares de filas. En el control observado,
+los cinco merge originales antes del desentrelazado son RGB idénticos a
+GetCurrent después; ambos difieren del shadow. En el campo6, media absoluta
+GPU−ON2,6161/6,7411/10,2009 RGB y GPU−OFF2,9174/6,5938/10,0112. No son
+tolerancias de escena ni prueba de una causa única. La primera petición de
+trace desde1 fue rechazada por su límite start>=2; corregida a Freeze1,
+merge2..6/End6, terminó0. Ese rechazo no era un fallo del renderer del juego.
+No se modifica bob, paridad, temporización o fences para igualar el oráculo.
+
+### 2026-10-14 — Snapshot y modo efectivo como extensión optativa del módulo
+
+El módulo aislado permite ahora `gow_gs_read_video_info` y
+`gow_gs_read_snapshot`. Mantiene ABI1 y los structs/calls anteriores; una DLL
+antigua puede carecer de los nuevos exports. Snapshot llama al calculador
+original con Stretch/Auto/4:3/16:9, restaura la configuración de aspecto y
+conserva el output crudo. Consulta y lectura usan la misma captura; VSync,
+reset y cierre invalidan la caché. No cambia el renderer del juego ni requiere
+otra compilación de sus archivos generados: es una herramienta aislada.
+
+Compilación local sobre Core original fijado:0; contratos sin dispositivo y
+control GPU de dos ciclos:0. Proporciones, bandas, buffers insuficientes,
+canarios, hilo propietario, conservación de output y reset con secuencia
+repetida comprobados. Al omitir solo invalidación VSync/reset, falla exactamente
+el control de caché antigua después de reset, código1; positivo intacto0.
+La sonda pública `probe_snapshot_reference.py` obtiene16/16 RGBA idénticos
+a la referencia SW privada de aspectos/ventanas. DLL antigua: error explícito
+de función ausente antes de crear GS. Resultados/binarios privados, sin assets
+publicados. Faltan CI del HEAD final y revisión final de esta extensión antes
+de fusionar; no se presenta como corrección ya validada de encuadre del juego.
