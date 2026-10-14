@@ -6677,3 +6677,43 @@ prueba: acredita el orden posible de la implementación, no su frecuencia en
 la partida, divergencia visual ni causa de neblina. La futura regresión debe
 marcar ese Present como evento abierto/prefijo distinto; contar spans recibidos
 no basta. No se mueve Present bajo stateMutex ni se drena la ruta compartida.
+
+### 2026-10-14 — ResetGraph: corrupción ALPHA reproducida y candidato111
+
+La PR85 de procedencia de snapshots quedó fusionada en
+`4709806ad0594a507f9e311368f420442d55c03c`, después de revisión local y
+cuatroSUCCESS del HEAD `ae43949304f8d2dd72b3496fdb85f4c2f14e87e9`,
+[run38613982328](https://github.com/KIexster/god-of-war-recomp/actions/runs/38613982328).
+
+Una sonda privada del stub real110, con RAM del runtime y sin ejecutar el
+juego, llama `sceGsResetGraph(mode0,interlace1,omode2,ffmode1)`: devuelve0 y
+emite una DMA; PMODE sigue0 y SMODE2 conserva el centinela0x12345678. A la vez,
+ALPHA_1 cambia de0x8000000064 a3. La causa en fuente es el paquete A+D que
+pretende configurar CRTC usando0x41/0x42:0x42 corresponde a ALPHA_1. No se
+atribuye todavía a este fallo la neblina observada en la partida.
+
+El candidato separado111 `ps2recomp-gs-reset-crtc.patch` cambia sólo esa ruta
+mode0 a una actualización del banco privilegiado de PMODE, SMODE2, ambos
+DISPFB/DISPLAY y BGCOLOR bajo el mutex del frontend, compartido con su snapshot. Mantiene los valores calculados, incluido CRTMDbit2 de
+PMODE. No inyecta comandos GIF ni toca ALPHA; no inventa SMODE1/SYNCV ni decide
+el modo efectivo a partir de registros vacíos. La selección completa de modo
+sigue pendiente: no se modifica bob/paridad para igualar el oráculo.
+
+Regresión nueva en ps2xTest: cuatro combinaciones INT/FFMD, registros CRTC,
+conservación ALPHA_1/2 y ausencia de DMA de dibujo. Contra la biblioteca110
+falla0/1, código1, con cuatro comprobaciones por combinación; contra111 pasa
+1/1, código0. La primera variante MMIO pasa627/627 normal y672/672 GPU OFF/ON,
+códigos0, pero se conserva como histórica: antes de full se ajustó esa ruta
+para mantener el bloqueo de snapshot y se vuelven a validar sus fuentes finales.
+Compilación fresca inicial de suite0/121,297s. Al revisar el esperado de
+PMODE se corrigió0x8001 a0x8005 por CRTMDbit2 y se recompiló antes de ejecutar
+la regresión. **Suites completas, full13/501, menú, control funcional y CI final
+siguen pendientes**: no existe runner111 validado ni mejora visual declarada.
+El runtime110, tarjetas, CPU/DX11/SW y diagnósticos anteriores se conservan.
+
+Las fuentes finales bajo stateMutex pasan627/627 normal0/11,858s y672/672
+GPU tanto OFF0/38,039s como ON0/37,706s. SHA de suite final
+`b82957d494261cb28a6902c0ca1acd019f6cd3089f8c3371253bd96566e2ff67`.
+La cadena111 se reaplica desde pin y sus cuatro archivos coinciden con el
+candidato. Configuración/handlers0 y25scriptsPS1sin errores. El full del juego
+se inicia después de congelar el commit fuente; estas pruebas aún no lo sustituyen.

@@ -123,6 +123,7 @@ $gsCpuColclampPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-cpu-colclamp.pat
 $gsTexaDepthPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-texa-depth.patch'
 $gsPcrtcBlendPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-pcrtc-blend.patch'
 $gsHostTimingPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-host-timing.patch'
+$gsResetCrtcPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-reset-crtc.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -270,6 +271,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $gsCpuColclampPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsTexaDepthPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsPcrtcBlendPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsHostTimingPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsResetCrtcPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
