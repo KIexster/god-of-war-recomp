@@ -6649,3 +6649,31 @@ juego: no hay parche/runtime/override modificado. Falta revisión/CI final de
 esta extensión antes de fusionarla. El siguiente paso es correlacionar estos
 cursores con eventos completos de la FIFO del host y la imagen compuesta,
 sin equiparar capturas sólo por tick o drenar la ruta compartida.
+
+### 2026-10-14 — Frontera de referencia fusionada y sonda con procedencia
+
+PR84 fusionada en `9aa3423fb1a3e23670bbb78344bd7626ce2180c8`, revisión local
+sin aprobación externa y cuatroSUCCESS del HEAD `0d34424765ac95b278ca16aeab48bf25ae6c4614`,
+[run38612566788](https://github.com/KIexster/god-of-war-recomp/actions/runs/38612566788).
+La sonda de snapshots añade ahora `--stream-info`: guarda los cursores antes
+del patrón, tras submit, tras VSync y tras las capturas. Sólo resuelve el export
+si se pide; los errores se propagan y el handle creado se cierra por finally.
+
+96 pruebas Python completas:0, incluidos layout64, contadores/handles mayores
+de32bits, ABI ctypes, DLL sin export y error de consulta. Controles GPU reales:
+DLL nueva con opción0/0,809s; antigua sin opción0/0,818s; antigua con opción1/
+0,085s, error explícito antes de crear GS. Los16snapshots son RGBA iguales en
+ambas DLL; cursores0→1→2,192bytes aceptados, sin avance por las capturas. Sin
+cambios de runtime/parches/overrides ni recompilación del juego. Falta CI final
+antes de fusionar la opción de sonda.
+
+Un control privado adicional enlazado al frontend y GSThreadedBackend reales
+reproduce la intercalación con barreras explícitas, sin sleeps ni ejecutar el
+juego. El host termina su snapshot, otro hilo entra al observador con un span
+de80bytes y se detiene antes del parser. Present se encola y ejecuta con cero
+Submit; al liberar el parser, se procesa un Submit. Repite con compact1 y0,
+códigos0/0,069s y0/0,079s. El observador y backend final de ese control son de
+prueba: acredita el orden posible de la implementación, no su frecuencia en
+la partida, divergencia visual ni causa de neblina. La futura regresión debe
+marcar ese Present como evento abierto/prefijo distinto; contar spans recibidos
+no basta. No se mueve Present bajo stateMutex ni se drena la ruta compartida.
