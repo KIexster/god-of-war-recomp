@@ -42,6 +42,7 @@ class FakeWindows:
 
 class FakeChild:
     def __init__(self, returncode=None, interrupt=False, stall_on_stop=False):
+        self.pid = 123
         self.returncode = returncode
         self.interrupt, self.stall_on_stop = interrupt, stall_on_stop
         self.terminated = self.killed = 0
@@ -68,6 +69,44 @@ class FakeChild:
 
 
 class TransitionControlTest(unittest.TestCase):
+    def test_window_close_targets_only_owned_visible_window_and_preserves_failure(self):
+        child = FakeChild(returncode=None)
+        api = FakeWindows()
+        posted = []
+        def close(handle):
+            posted.append(handle)
+            child.returncode = 17
+            return True
+        api.post_close = close
+        with patch.object(control, 'WindowsApi', return_value=api):
+            result = control.request_child_window_close(child)
+        self.assertEqual(posted, [1])
+        self.assertNotIn(('visible', 2), api.detail_reads)
+        self.assertEqual((result['wm_close_sent'], result['forced_fallback'], result['exit_code']), (True, False, 17))
+        self.assertEqual((child.terminated, child.killed), (0, 0))
+
+    def test_window_close_timeout_or_missing_window_falls_back_only_to_child_handle(self):
+        for owned in (True, False):
+            child = FakeChild(stall_on_stop=True)
+            api = FakeWindows()
+            if not owned:
+                child.pid = 789
+            posted = []
+            api.post_close = lambda handle: posted.append(handle) or True
+            with patch.object(control, 'WindowsApi', return_value=api):
+                result = control.request_child_window_close(child)
+            self.assertEqual(posted, [1] if owned else [])
+            self.assertTrue(result['forced_fallback'])
+            self.assertEqual((child.terminated, child.killed), (1, 1))
+
+    def test_finished_child_does_not_access_windows_or_get_forcefully_stopped(self):
+        child = FakeChild(returncode=17)
+        with patch.object(control, 'WindowsApi', side_effect=AssertionError('No consultar ventanas')):
+            result = control.request_child_window_close(child)
+        self.assertFalse(result['attempted'])
+        self.assertEqual(result['exit_code'], 17)
+        self.assertEqual((child.terminated, child.killed), (0, 0))
+
     def fixture(self, root):
         runner, elf, iso, card = (root/name for name in ('runner', 'elf', 'iso', 'card'))
         for path in (runner, elf, iso, card):
@@ -149,6 +188,25 @@ class TransitionControlTest(unittest.TestCase):
         self.assertEqual(settings['PS2X_GS_PRESENT_DIAG'], '1')
         self.assertNotIn('PS2X_FRAME_HASH', settings)
         self.assertNotIn('GOW_PERF_DIAG', settings)
+
+    def test_gpu_profile_is_explicit_and_recorded_without_inherited_flags_or_readback(self):
+        with tempfile.TemporaryDirectory(prefix='gow_transition_test_') as name:
+            args = self.fixture(Path(name))
+            args.gpu_profile, args.gpu_stats, args.request_window_close = True, True, True
+            args.presentation_diagnostics = 'off'
+            with patch.object(control, 'EXPECTED_ELF_SHA256', control.digest(args.elf)):
+                _, _, _, result = control.prepare_case(args)
+            env = control.isolated_environment({'PS2X_FRAME_HASH': '1', 'GOW_GS_REPLAY_TRACE': 'old'}, result['settings'])
+            self.assertEqual((env['PS2X_GS_GPU_PROF'], env['PS2X_GS_GPU_STATS']), ('1', '1'))
+            self.assertNotIn('PS2X_FRAME_HASH', env)
+            self.assertNotIn('GOW_GS_REPLAY_TRACE', env)
+            self.assertEqual(result['measurement']['close_mode'], 'window_then_force')
+            self.assertTrue(result['measurement']['gpu_profile'])
+            self.assertFalse(result['measurement']['acquired_readback'])
+        settings = control.settings_for('async_shared', Path('/case'), Path('/iso'), Path('/cache'))
+        env = control.isolated_environment({'PS2X_GS_GPU_PROF': '1', 'PS2X_GS_GPU_STATS': '1'}, settings)
+        self.assertNotIn('PS2X_GS_GPU_PROF', env)
+        self.assertNotIn('PS2X_GS_GPU_STATS', env)
 
     def test_invalid_profile_modes_fail_before_creating_run(self):
         for key in ('presentation_diagnostics', 'perf'):

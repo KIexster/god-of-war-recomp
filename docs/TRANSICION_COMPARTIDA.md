@@ -1100,3 +1100,29 @@ HostWait tiene mediana4.979,41ms por ventana de unos5s, aun con host60/s:
 incluye loteGL/swap/limitador/eventos de EndDrawing. Antes de atribuir esperas,
 separar esos componentes conservando llamadas/orden/fences. Los ámbitos de
 hilos distintos no representan porcentaje de CPU ni se suman como tiempo global.
+
+## Opciones reproducibles de perfil y cierre
+
+Para repetir los controles sin scripts privados, añadir al comando habitual:
+
+```text
+--perf timing --presentation-diagnostics off --capture-acquired 0 --gpu-profile --gpu-stats --request-window-close
+```
+
+`--gpu-profile` activa timestamps existentes y `--gpu-stats` estadísticas
+del backend; ambas son optativas y quedan registradas en measurement.
+El perfil GPU consulta AVAILABLE antes de leer durante el render y puede
+omitir muestras por su cupo. Su etiqueta «per frame» divide por intentos
+del compositor después de DispatchCompute/antes de PublishShared: **no
+es tiempo por Flip ni por cuadro mostrado**. La última ventana de cierre
+puede recoger trabajo pendiente con pocos intentos. No mezclar sus ventanas
+con las de CPU como si compartieran límites temporales exactos.
+
+`--request-window-close` pide cierre solo al HWND del PID hijo creado por
+el control. Espera hasta15s; si no logra cierre registra forced_fallback y
+detiene únicamente ese hijo con Popen. El resultado incluye envío, fallback,
+código, duración y error de consulta, si hubo. Revisar esos campos antes
+de acreditar cierre sin forzar. El límite o STOP siguen registrados como
+motivo del controlador; no equivalen al final del juego. Sin esa opción
+se conserva el método de detención anterior. Control real75s y pruebas
+procedurales cerrados en ESTADO.md; CI del nuevo HEAD pendiente de confirmar.

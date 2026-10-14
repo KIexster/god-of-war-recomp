@@ -6443,3 +6443,56 @@ a la referencia SW privada de aspectos/ventanas. DLL antigua: error explícito
 de función ausente antes de crear GS. Resultados/binarios privados, sin assets
 publicados. Faltan CI del HEAD final y revisión final de esta extensión antes
 de fusionar; no se presenta como corrección ya validada de encuadre del juego.
+
+### 2026-10-14 — Referencia fusionada; opciones públicas de perfil y cierre
+
+PR81 fusionada en `ec7cd43882d8f58c1208ad5828b1e744bc674a8c` después de
+los cuatro SUCCESS del HEAD `e71ad9c32ac5634ee1062b98247488e3368944ba`,
+[run38562439264](https://github.com/KIexster/god-of-war-recomp/actions/runs/38562439264).
+Compilación aislada, contratos, GPU, negativo de caché y sonda anteriores
+cierran esa extensión de referencia; revisión local, sin aprobación externa.
+
+El lanzador `run_transition_control.py` expone ahora `--gpu-profile`,
+`--gpu-stats` y `--request-window-close`, registradas en measurement/result.
+Las dos primeras activan flags ya existentes; no añaden temporizadores al
+runtime. La tercera envía WM_CLOSE solo a una ventana visible del PID del
+hijo creado por Popen, sin activar ventanas. Si no hay ventana, falla el
+envío o el hijo no termina en15s, registra el fallback y usa el handle de
+ese mismo hijo para detenerlo. Un hijo ya cerrado conserva su código y no
+consulta ventanas. Se mantienen los valores predeterminados anteriores.
+
+26 pruebas propias Windows y91 Python completas pasan0: incluyen selección
+del HWND propio, exclusión de ventanas ajenas, conservación del error17,
+timeout/sin ventana, saneado de flags heredadas y metadatos. Control real de
+75,323s con las tres opciones, runner109 sin recompilar: proceso/controlador0,
+WM_CLOSE0en0,303s sin fallback, tarjeta intacta, sin minimización ni firmas
+buscadas. Estado11 en35,08..70,23; no hay imágenes de esa pasada ni prueba de
+estabilidad prolongada o FPS mostrados. Falta CI del HEAD final del lanzador.
+
+### 2026-10-14 — Timestamps GPU109: raster y denominador comprobados
+
+Control privado anterior de240,172s, mismo ejecutable109, sin espejo/hash/
+readbacks, con perfil CPU y GPU y entradas de ataque: proceso/controlador0,
+cierre solicitado de ventana0en0,159s sin forzar. Tarjeta intacta, sin
+minimización registrada ni firmas buscadas; estado11 en35,09..235,62.
+39 ventanas CPU tienen estado11 observado en informes consecutivos, con
+Flip27,44..46,97/s y host10,72..60/s. No comparar su velocidad con otra
+ejecución por coincidir el guion o tick; no hay referencia visual alineada.
+
+El perfil GPU genera2.613 ventanas:2.612 de cuatro intentos y una al cierre.
+Hay ocho avisos de muestras omitidas. En2.083 ventanas de cuatro sin esos
+avisos, sin línea de tiempos intercalada y con último estado observado11,
+raster registra12,93..103,88ms, mediana19,56; present0,02..0,24ms, mediana0,02.
+CLUT tiene mediana0,03ms. Son tiempos de los ámbitos instrumentados por
+timestamps, sin cubrir toda la GPU ni representar utilización o tiempo de CPU.
+
+Se comprobó el denominador en fuente: `profFrame/endFrame` se llama después
+del DispatchCompute de Present y **antes** de PublishShared. No cuenta Flip,
+VSync, adquisiciones o EndDrawing; las ventanas pueden contener trabajo
+acumulado entre intentos. El cierre puede recoger queries pendientes con
+menos intentos. Las ventanas GPU y CPU carecen de una frontera temporal común
+registrada: raster destaca entre los ámbitos medidos, pero no se atribuye
+todavía a él toda la espera de EndDrawing ni se derivan FPS físicos.
+Los resultados apoyan continuar con el desglose de loteGL/swap/limitador/
+eventos y con contadores de secuencias enviadas/reutilizadas. No se modifican
+fences, sincronización, bob, paridad o raster para ocultar la diferencia.
