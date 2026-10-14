@@ -6077,3 +6077,79 @@ Estas comprobaciones validan la herramienta antes de usarla con el juego;
 no son todavía el contraste de escena 108. La PR 77 sigue en borrador:
 faltan nueva escena con las mismas fronteras, control combinado y CI del
 HEAD documental final antes de ready/merge.
+
+### 2026-10-14 — Escena 108 con fronteras comunes y separación del host
+
+Control compartido síncrono 108, VU1 compilada, hilos VU1/frente GS apagados
+y DLL privada 1879: terminó en 464,471 s mediante STOP propio después de
+completar 16 adquiridos, 16 cuadros DX11, 16 shadow GPU y End4015. Proceso 1,
+controlador 0; **no es un control completo de 600 s ni una salida normal**.
+Tarjeta intacta, sin minimización registrada ni firmas de fallo buscadas;
+primer estado 11 a 55,17 s y último a 457,72 s. Las 251 adquisiciones
+registradas no muestran regresiones, repeticiones inconsistentes, retornos
+A-B-A o cambios de tamaño; distancia máxima entre ticks 0. Las 16 capturas
+acquiridas 512×448, 4000..4015, son distintas y se correlacionan con el registro.
+
+Ráfaga nativa con Freeze3999 y el mismo GIF/VSync hasta End4015:
+113.538.293 bytes, 94.829 registros, SHA-256
+`995df20376de22b04678ed4156c55449b48fd8ece1e8d1a1677364c69df13b51`.
+Software original restaura esa misma entrada y produce 17 campos
+3999..4015, código 0. Se revisaron los 16 tríos de merge DX11/software
+restaurado/shadow108 y los cuadros completos 4004/4015. Aparecen HUD,
+Kratos y enemigos; el fondo del shadow 108 queda cercano a las referencias
+originales. En 4015, región fija de fondo x=200..339, y=0..79, medias RGB
+shadow 35,6946/35,7850/31,2411 y software 35,7638/35,8478/31,3343.
+La región incluye mástil/cuerdas y no acredita igualdad global.
+
+Persisten diferencias de líneas, bordes y pose. En todo 4015, diferencia
+absoluta media shadow−SW 3,8922/3,7271/3,2203 RGB; media firmada
+−0,2818/−0,2830/−0,2386, máximo absoluto 157 y 195.092 píxeles distintos.
+DX11−SW tiene media absoluta 0,6009/0,5978/0,5453. Son estadísticas
+descriptivas, sin tolerancia global aceptada ni equivalencia de estado/VRAM.
+La historia de campos anterior al Freeze no se conserva; los 16 campos
+posteriores se inspeccionan sin presentar esa limitación como resuelta.
+
+La textura adquirida por el host **no es idéntica al shadow en ninguno de
+los 16 ticks**. En 4015 difieren 118.710 píxeles RGB, media absoluta
+3,9683/3,5600/3,0705 frente al shadow. También se revisó el cuarteto completo
+DX11/SW/shadow/adquirido. El fondo adquirido sigue cercano, pero ese tick
+no acredita su misma frontera de comandos: el EE ejecuta en otro hilo,
+notifica VSync antes de despertar callbacks y el host toma/enfila Present
+por separado. Esto ofrece una explicación posible de la diferencia,
+**sin atribuirla todavía a orden, slots, raster o presentación**.
+La comparación común de shadow/DX11/SW no debe convertirse en paridad
+acreditada de la textura del host.
+
+La expansión TEXA tiene negativos/positivos externos, full y control visual
+acotado; quedan abiertos la separación anterior y los detalles de imagen.
+El control combinado 108 con entradas de ataque está en curso. PR 77
+continúa en borrador hasta su cierre/revisión y CI del HEAD documental final.
+
+### 2026-10-14 — Combinado 108 con ataques: control de 420 s cerrado
+
+Control compartido con FINISH asíncrono, VU1/frente GS en sus propios hilos
+realmente activados: 420,059 s, proceso 1 por límite/controlador 0. Tarjeta
+privada intacta, sin minimización registrada ni firmas de fallo buscadas.
+Primer estado 11 a 35,06 s y último a 416,35 s; no aparece estado 14 en
+los informes. Se conservó el arranque Start/X y se añadieron pulsaciones
+de cuadrado desde 40 s, cada 0,75 s durante 0,35 s. Los 128 cambios de
+paquete registrados incluyen `ff7f`/neutral en estado 11. Las 16 capturas
+tardías 11998..12032, distintas y correlacionadas, muestran HUD y Kratos
+ejecutando ataques con los arcos de las hojas. Eso acredita entrega y
+acción visible en esa porción, sin afirmar completar una sección del juego.
+
+Las 4.096 adquisiciones registradas no tienen regresiones de secuencia,
+repeticiones inconsistentes, retornos A-B-A o cambios de tamaño; imágenes
+512×448 y modo de campos registrado. Distancia entre ticks 0..4, sin
+convertirla en milisegundos, latencia o FPS únicos. No se compara esa cifra
+con el combinado 107 como mejora de rendimiento: los guiones/escenas son
+distintos. El arranque forma parte de los 420 s; la permanencia observada
+en estado 11 comprende los informes 35,06..416,35. **No hay salida normal,
+estabilidad prolongada ni cobertura del juego completo**.
+
+Quedan cerrados full, menú, negativos/positivos externos, referencia
+procedural y controles funcionales acotados de TEXA 108. La revisión final
+de código/alcance es local, sin aprobación externa. La PR 77 requiere todavía
+CI verde del HEAD documental final antes de ready/merge. Permanecen abiertas
+la diferencia adquirido/shadow, los detalles frente al software original,
+encuadre, presentación única, desglose de HostWait y estabilidad larga.
