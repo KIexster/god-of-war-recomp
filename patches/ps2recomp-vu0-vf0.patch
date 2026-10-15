@@ -1,8 +1,8 @@
 diff --git a/ps2xRecomp/src/lib/instruction_translator.cpp b/ps2xRecomp/src/lib/instruction_translator.cpp
-index 7684097..6e7721b 100644
+index 40f59b6..f992be5 100644
 --- a/ps2xRecomp/src/lib/instruction_translator.cpp
 +++ b/ps2xRecomp/src/lib/instruction_translator.cpp
-@@ -211,6 +211,10 @@ namespace ps2recomp
+@@ -338,6 +338,10 @@ namespace ps2recomp
                  inst.rt,
                  genWrite(32, fmt::format("ADD32(GPR_U32(ctx, {}), {})", inst.rs, inst.simmediate), "bits"));
          case OPCODE_LDC2:
@@ -24,7 +24,7 @@ index ce41a17..3614679 100644
 -        return fmt::format("{{ __m128 res = PS2_VADD(ctx->vu0_vf[{}], _mm_shuffle_ps(ctx->vu0_vf[{}], ctx->vu0_vf[{}], {})); __m128i mask = _mm_set_epi32({}, {}, {}, {}); ctx->vu0_vf[{}] = _mm_blendv_ps(ctx->vu0_vf[{}], res, _mm_castsi128_ps(mask)); }}", vfs, vft, vft, shuffle_pattern, (dest_mask & 0x1) ? -1 : 0, (dest_mask & 0x2) ? -1 : 0, (dest_mask & 0x4) ? -1 : 0, (dest_mask & 0x8) ? -1 : 0, vfd, vfd);
 +        return fmt::format("{{ __m128 res = PS2_VADD(ctx->vu0_vf[{}], _mm_shuffle_ps(ctx->vu0_vf[{}], ctx->vu0_vf[{}], {})); __m128i mask = _mm_set_epi32({}, {}, {}, {}); PS2_VU0_VF_WRITE(ctx, {}, _mm_blendv_ps(ctx->vu0_vf[{}], res, _mm_castsi128_ps(mask))); }}", vfs, vft, vft, shuffle_pattern, (dest_mask & 0x1) ? -1 : 0, (dest_mask & 0x2) ? -1 : 0, (dest_mask & 0x4) ? -1 : 0, (dest_mask & 0x8) ? -1 : 0, vfd, vfd);
      }
-
+ 
      std::string CodeGenerator::translateVU_VSUB_Field(const Instruction &inst)
 @@ -27,7 +27,7 @@ namespace ps2recomp
          uint8_t dest_mask = inst.vectorInfo.vectorField;
@@ -33,7 +33,7 @@ index ce41a17..3614679 100644
 -        return fmt::format("{{ __m128 res = PS2_VSUB(ctx->vu0_vf[{}], _mm_shuffle_ps(ctx->vu0_vf[{}], ctx->vu0_vf[{}], {})); __m128i mask = _mm_set_epi32({}, {}, {}, {}); ctx->vu0_vf[{}] = _mm_blendv_ps(ctx->vu0_vf[{}], res, _mm_castsi128_ps(mask)); }}", vfs, vft, vft, shuffle_pattern, (dest_mask & 0x1) ? -1 : 0, (dest_mask & 0x2) ? -1 : 0, (dest_mask & 0x4) ? -1 : 0, (dest_mask & 0x8) ? -1 : 0, vfd, vfd);
 +        return fmt::format("{{ __m128 res = PS2_VSUB(ctx->vu0_vf[{}], _mm_shuffle_ps(ctx->vu0_vf[{}], ctx->vu0_vf[{}], {})); __m128i mask = _mm_set_epi32({}, {}, {}, {}); PS2_VU0_VF_WRITE(ctx, {}, _mm_blendv_ps(ctx->vu0_vf[{}], res, _mm_castsi128_ps(mask))); }}", vfs, vft, vft, shuffle_pattern, (dest_mask & 0x1) ? -1 : 0, (dest_mask & 0x2) ? -1 : 0, (dest_mask & 0x4) ? -1 : 0, (dest_mask & 0x8) ? -1 : 0, vfd, vfd);
      }
-
+ 
      std::string CodeGenerator::translateVU_VMUL_Field(const Instruction &inst)
 @@ -38,7 +38,7 @@ namespace ps2recomp
          uint8_t dest_mask = inst.vectorInfo.vectorField;
@@ -42,7 +42,7 @@ index ce41a17..3614679 100644
 -        return fmt::format("{{ __m128 res = PS2_VMUL(ctx->vu0_vf[{}], _mm_shuffle_ps(ctx->vu0_vf[{}], ctx->vu0_vf[{}], {})); __m128i mask = _mm_set_epi32({}, {}, {}, {}); ctx->vu0_vf[{}] = _mm_blendv_ps(ctx->vu0_vf[{}], res, _mm_castsi128_ps(mask)); }}", vfs, vft, vft, shuffle_pattern, (dest_mask & 0x1) ? -1 : 0, (dest_mask & 0x2) ? -1 : 0, (dest_mask & 0x4) ? -1 : 0, (dest_mask & 0x8) ? -1 : 0, vfd, vfd);
 +        return fmt::format("{{ __m128 res = PS2_VMUL(ctx->vu0_vf[{}], _mm_shuffle_ps(ctx->vu0_vf[{}], ctx->vu0_vf[{}], {})); __m128i mask = _mm_set_epi32({}, {}, {}, {}); PS2_VU0_VF_WRITE(ctx, {}, _mm_blendv_ps(ctx->vu0_vf[{}], res, _mm_castsi128_ps(mask))); }}", vfs, vft, vft, shuffle_pattern, (dest_mask & 0x1) ? -1 : 0, (dest_mask & 0x2) ? -1 : 0, (dest_mask & 0x4) ? -1 : 0, (dest_mask & 0x8) ? -1 : 0, vfd, vfd);
      }
-
+ 
      std::string CodeGenerator::translateVU_VADD(const Instruction &inst)
 @@ -47,7 +47,7 @@ namespace ps2recomp
          uint8_t vfs = inst.rd;
@@ -51,7 +51,7 @@ index ce41a17..3614679 100644
 -        return fmt::format("{{ __m128 res = PS2_VADD(ctx->vu0_vf[{}], ctx->vu0_vf[{}]); __m128i mask = _mm_set_epi32({}, {}, {}, {}); ctx->vu0_vf[{}] = PS2_VBLEND(ctx->vu0_vf[{}], res, _mm_castsi128_ps(mask)); }}", vfs, vft, (dest_mask & 0x1) ? -1 : 0, (dest_mask & 0x2) ? -1 : 0, (dest_mask & 0x4) ? -1 : 0, (dest_mask & 0x8) ? -1 : 0, vfd, vfd);
 +        return fmt::format("{{ __m128 res = PS2_VADD(ctx->vu0_vf[{}], ctx->vu0_vf[{}]); __m128i mask = _mm_set_epi32({}, {}, {}, {}); PS2_VU0_VF_WRITE(ctx, {}, PS2_VBLEND(ctx->vu0_vf[{}], res, _mm_castsi128_ps(mask))); }}", vfs, vft, (dest_mask & 0x1) ? -1 : 0, (dest_mask & 0x2) ? -1 : 0, (dest_mask & 0x4) ? -1 : 0, (dest_mask & 0x8) ? -1 : 0, vfd, vfd);
      }
-
+ 
      std::string CodeGenerator::translateVU_VSUB(const Instruction &inst)
 @@ -56,7 +56,7 @@ namespace ps2recomp
          uint8_t vfs = inst.rd;
@@ -60,7 +60,7 @@ index ce41a17..3614679 100644
 -        return fmt::format("{{ __m128 res = PS2_VSUB(ctx->vu0_vf[{}], ctx->vu0_vf[{}]); __m128i mask = _mm_set_epi32({}, {}, {}, {}); ctx->vu0_vf[{}] = PS2_VBLEND(ctx->vu0_vf[{}], res, _mm_castsi128_ps(mask)); }}", vfs, vft, (dest_mask & 0x1) ? -1 : 0, (dest_mask & 0x2) ? -1 : 0, (dest_mask & 0x4) ? -1 : 0, (dest_mask & 0x8) ? -1 : 0, vfd, vfd);
 +        return fmt::format("{{ __m128 res = PS2_VSUB(ctx->vu0_vf[{}], ctx->vu0_vf[{}]); __m128i mask = _mm_set_epi32({}, {}, {}, {}); PS2_VU0_VF_WRITE(ctx, {}, PS2_VBLEND(ctx->vu0_vf[{}], res, _mm_castsi128_ps(mask))); }}", vfs, vft, (dest_mask & 0x1) ? -1 : 0, (dest_mask & 0x2) ? -1 : 0, (dest_mask & 0x4) ? -1 : 0, (dest_mask & 0x8) ? -1 : 0, vfd, vfd);
      }
-
+ 
      std::string CodeGenerator::translateVU_VMUL(const Instruction &inst)
 @@ -65,7 +65,7 @@ namespace ps2recomp
          uint8_t vfs = inst.rd;
@@ -69,7 +69,7 @@ index ce41a17..3614679 100644
 -        return fmt::format("{{ __m128 res = PS2_VMUL(ctx->vu0_vf[{}], ctx->vu0_vf[{}]); __m128i mask = _mm_set_epi32({}, {}, {}, {}); ctx->vu0_vf[{}] = PS2_VBLEND(ctx->vu0_vf[{}], res, _mm_castsi128_ps(mask)); }}", vfs, vft, (dest_mask & 0x1) ? -1 : 0, (dest_mask & 0x2) ? -1 : 0, (dest_mask & 0x4) ? -1 : 0, (dest_mask & 0x8) ? -1 : 0, vfd, vfd);
 +        return fmt::format("{{ __m128 res = PS2_VMUL(ctx->vu0_vf[{}], ctx->vu0_vf[{}]); __m128i mask = _mm_set_epi32({}, {}, {}, {}); PS2_VU0_VF_WRITE(ctx, {}, PS2_VBLEND(ctx->vu0_vf[{}], res, _mm_castsi128_ps(mask))); }}", vfs, vft, (dest_mask & 0x1) ? -1 : 0, (dest_mask & 0x2) ? -1 : 0, (dest_mask & 0x4) ? -1 : 0, (dest_mask & 0x8) ? -1 : 0, vfd, vfd);
      }
-
+ 
      std::string CodeGenerator::translateVU_VDIV(const Instruction &inst)
 @@ -108,7 +108,7 @@ namespace ps2recomp
          return fmt::format("{{ uint32_t tmp = (uint32_t)(int32_t)(int16_t)ctx->vi[{}]; float val; std::memcpy(&val, &tmp, sizeof(val)); "
@@ -108,7 +108,7 @@ index ce41a17..3614679 100644
                             (dest_mask & 0x1) ? -1 : 0, (dest_mask & 0x2) ? -1 : 0,
                             (dest_mask & 0x4) ? -1 : 0, (dest_mask & 0x8) ? -1 : 0,
 @@ -285,7 +285,7 @@ namespace ps2recomp
-
+ 
          return fmt::format("{{ __m128 res = _mm_min_ps(ctx->vu0_vf[{}], _mm_shuffle_ps(ctx->vu0_vf[{}], ctx->vu0_vf[{}], {})); "
                             "__m128i mask = _mm_set_epi32({}, {}, {}, {}); "
 -                           "ctx->vu0_vf[{}] = _mm_blendv_ps(ctx->vu0_vf[{}], res, _mm_castsi128_ps(mask)); }}",
@@ -117,7 +117,7 @@ index ce41a17..3614679 100644
                             (dest_mask & 0x1) ? -1 : 0, (dest_mask & 0x2) ? -1 : 0,
                             (dest_mask & 0x4) ? -1 : 0, (dest_mask & 0x8) ? -1 : 0,
 @@ -304,7 +304,7 @@ namespace ps2recomp
-
+ 
          return fmt::format("{{ __m128 res = _mm_max_ps(ctx->vu0_vf[{}], _mm_shuffle_ps(ctx->vu0_vf[{}], ctx->vu0_vf[{}], {})); "
                             "__m128i mask = _mm_set_epi32({}, {}, {}, {}); "
 -                           "ctx->vu0_vf[{}] = _mm_blendv_ps(ctx->vu0_vf[{}], res, _mm_castsi128_ps(mask)); }}",
@@ -295,7 +295,7 @@ index ce41a17..3614679 100644
 +                           "PS2_VU0_VF_WRITE(ctx, {}, _mm_blendv_ps(ctx->vu0_vf[{}], res, {})); }}",
                             inst.rd, codegen::formatFloatLiteral(scale), inst.rt, inst.rt, codegen::vuMaskExpr(inst.vectorInfo.vectorField));
      }
-
+ 
 @@ -810,7 +810,7 @@ namespace ps2recomp
              if (ft != 0)
              {
@@ -313,7 +313,7 @@ index ce41a17..3614679 100644
 +                           "PS2_VU0_VF_WRITE(ctx, {}, _mm_blendv_ps(ctx->vu0_vf[{}], res, {})); }}",
                             inst.rt, inst.rt, codegen::vuMaskExpr(inst.vectorInfo.vectorField));
      }
-
+ 
 diff --git a/ps2xRecomp/src/lib/vu_translator.cpp b/ps2xRecomp/src/lib/vu_translator.cpp
 index b15696b..4db7475 100644
 --- a/ps2xRecomp/src/lib/vu_translator.cpp
@@ -355,25 +355,25 @@ index b15696b..4db7475 100644
                          (dest_mask & 0x1) ? -1 : 0,
                          (dest_mask & 0x2) ? -1 : 0,
 diff --git a/ps2xRuntime/include/ps2_runtime.h b/ps2xRuntime/include/ps2_runtime.h
-index 2ebb64a..f40af7b 100644
+index 58e57de..7a0f4d6 100644
 --- a/ps2xRuntime/include/ps2_runtime.h
 +++ b/ps2xRuntime/include/ps2_runtime.h
 @@ -151,6 +151,8 @@ struct alignas(16) R5900Context
-
+ 
          // Initialize VU0 registers
          vu0_q = 1.0f; // Q register usually initialized to 1.0
 +        // VF0 is the VU constant vector and is not part of the zero-filled context state.
 +        vu0_vf[0] = _mm_setr_ps(0.0f, 0.0f, 0.0f, 1.0f);
-
+ 
          // Reset COP0 registers
          cop0_random = 47; // Start at maximum value
 diff --git a/ps2xRuntime/include/ps2_runtime_macros.h b/ps2xRuntime/include/ps2_runtime_macros.h
-index 552f5c7..f22b785 100644
+index c95d343..ee0e14e 100644
 --- a/ps2xRuntime/include/ps2_runtime_macros.h
 +++ b/ps2xRuntime/include/ps2_runtime_macros.h
 @@ -13,6 +13,14 @@
  #endif
-
+ 
  #include "ps2_runtime.h"
 +// VU0 VF0 is a constant register. Evaluate the destination once and skip the
 +// value expression for VF0 so generated instruction side effects stay intact.
@@ -383,14 +383,14 @@ index 552f5c7..f22b785 100644
 +        if (ps2_vf_write_reg != 0) \
 +            (ctx)->vu0_vf[ps2_vf_write_reg] = (value); \
 +    } while (false)
-
+ 
  static inline int32_t Ps2ExtractEpi32(__m128i v, int index)
  {
 diff --git a/ps2xTest/src/code_generator_tests.cpp b/ps2xTest/src/code_generator_tests.cpp
-index ed78df3..8c1d2c9 100644
+index c904887..3214023 100644
 --- a/ps2xTest/src/code_generator_tests.cpp
 +++ b/ps2xTest/src/code_generator_tests.cpp
-@@ -1517,7 +1517,7 @@ void register_code_generator_tests()
+@@ -1482,7 +1482,7 @@ void register_code_generator_tests()
              printGeneratedCode("vlqd.xyzw $vf4, (--$vi15)", pop);
              t.IsTrue(pop.find("ctx->vi[15] = static_cast<uint16_t>(ctx->vi[15] - 1u)") != std::string::npos,
                       "VLQD must pre-decrement Is (rd = vi15)");
@@ -399,19 +399,19 @@ index ed78df3..8c1d2c9 100644
                       "VLQD must load into Ft (rt = vf4)");
              t.IsTrue(pop.find("getVU0Data()") != std::string::npos, "VLQD must read VU0 data memory");
              t.IsTrue(pop.find("READ128") == std::string::npos, "VLQD must not read EE RAM");
-@@ -1589,7 +1589,7 @@ void register_code_generator_tests()
+@@ -1554,7 +1554,7 @@ void register_code_generator_tests()
              printGeneratedCode("vrnext.x $vf5, $R", rnext);
              t.IsTrue(rnext.find("((r >> 4) & 1u) ^ ((r >> 22) & 1u)") != std::string::npos, "VRNEXT must step the PS2 LFSR (bits 4 and 22)");
              t.IsTrue(rnext.find("| 0x3F800000u") != std::string::npos, "VRNEXT must keep R in [1, 2)");
 -            t.IsTrue(rnext.find("ctx->vu0_vf[5] = _mm_blendv_ps(ctx->vu0_vf[5], ctx->vu0_r") != std::string::npos,
 +            t.IsTrue(rnext.find("PS2_VU0_VF_WRITE(ctx, 5, _mm_blendv_ps(ctx->vu0_vf[5], ctx->vu0_r") != std::string::npos,
                       "VRNEXT must write the new R to Ft");
-
+ 
              const std::string rinit = gen.translateInstruction(decoder.decodeInstruction(0x1B9570u, 0x4A002C3Eu));
-@@ -1634,6 +1634,48 @@ void register_code_generator_tests()
+@@ -1599,6 +1599,48 @@ void register_code_generator_tests()
                       "VABS must flush denormal inputs to zero");
          });
-
+ 
 +        tc.Run("VU0 vector instructions ignore writes to VF0", [](TestCase &t) {
 +            CodeGenerator gen({}, {});
 +            const auto noVf0Write = [](const std::string &code) {
@@ -458,7 +458,7 @@ index ed78df3..8c1d2c9 100644
              Function func;
              func.name = "jal_test";
 diff --git a/ps2xTest/src/ps2_runtime_expansion_tests.cpp b/ps2xTest/src/ps2_runtime_expansion_tests.cpp
-index 4870fed..1dc0e7f 100644
+index 10e4b2f..68feb1d 100644
 --- a/ps2xTest/src/ps2_runtime_expansion_tests.cpp
 +++ b/ps2xTest/src/ps2_runtime_expansion_tests.cpp
 @@ -379,6 +379,29 @@ void register_ps2_runtime_expansion_tests()

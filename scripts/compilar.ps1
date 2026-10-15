@@ -19,6 +19,11 @@ $funcmap   = Join-Path $RepoRoot 'config\funcmap.csv'
 $waffleRuntimePatch = Join-Path $RepoRoot 'patches\ps2recomp-waffle-runtime.patch'
 # GOW-Port: retira de ps2xTest las pruebas de piezas que el runtime de Waffle565 sustituye por diseño.
 $waffleTestsPatch = Join-Path $RepoRoot 'patches\ps2recomp-waffle-tests.patch'
+# GOW-Port: VF0 y VI0 de VU0 son constantes (PR #79), no incluido en el runtime de Waffle565.
+$vu0Vf0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vf0.patch'
+$vu0Vi0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vi0.patch'
+# GOW-Port: permite pasar tools\vu1\vu1n_heads.txt (entradas extra de la VU1 nativa) desde este repositorio.
+$vu1nHeadsPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1n-heads.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -58,6 +63,9 @@ foreach ($patchFile in Get-ChildItem -LiteralPath (Join-Path $RepoRoot 'patches'
 }
 Run $git @('apply', '--ignore-whitespace', '--verbose', $waffleRuntimePatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $waffleTestsPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu0Vf0Patch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu0Vi0Patch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1nHeadsPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
@@ -92,7 +100,8 @@ $vu1Micro = if ($env:GOW_VU1_MICROCODIGO) { (Resolve-Path -LiteralPath $env:GOW_
 $vu1Gen = if ($vu1Micro) { (Join-Path $RepoRoot 'tools\vu1\generar_vu1.cpp') -replace '\\', '/' } else { '' }
 # GOW-Port: generador de la VU1 nativa (adaptado de Waffle565/God-Of-War-Native-Port); se activa con GOW_VU1_NATIVE=1.
 $vu1nGen = if ($vu1Micro) { (Join-Path $RepoRoot 'tools\vu1\vu1n_gen.py') -replace '\\', '/' } else { '' }
-Run 'cmake' @('-S', $rec, '-B', $bld, "-DPS2X_VU1_MICROCODE_DIR=$vu1Micro", "-DPS2X_VU1_GENERATOR_SOURCE=$vu1Gen", "-DPS2X_VU1N_GEN_OVERRIDE=$vu1nGen")
+$vu1nHeads = if ($vu1Micro) { (Join-Path $RepoRoot 'tools\vu1\vu1n_heads.txt') -replace '\\', '/' } else { '' }
+Run 'cmake' @('-S', $rec, '-B', $bld, "-DPS2X_VU1_MICROCODE_DIR=$vu1Micro", "-DPS2X_VU1_GENERATOR_SOURCE=$vu1Gen", "-DPS2X_VU1N_GEN_OVERRIDE=$vu1nGen", "-DPS2X_VU1N_HEADS_FILE=$vu1nHeads")
 
 Paso 'Compilando el recompilador'
 Run 'cmake' @('--build', $bld, '--target', 'ps2_recomp')
