@@ -107,6 +107,7 @@ $vu1XgkickBulkPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-xgkick-bulk.pat
 $vu1AdvanceEventsPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-advance-events.patch'
 $vu1LowerSpecialsPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-lower-specials.patch'
 $vu1StaticStoresPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-static-stores.patch'
+$vu1StaticTimingPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-static-timing.patch'
 $vu1SimdSpecialsPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-simd-specials.patch'
 $eeCop0CountPatch = Join-Path $RepoRoot 'patches\ps2recomp-ee-cop0-count.patch'
 $gsSourceAddressPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-source-address.patch'
@@ -258,6 +259,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1XgkickBulkPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1AdvanceEventsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1LowerSpecialsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1StaticStoresPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1StaticTimingPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1SimdSpecialsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $eeCop0CountPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsSourceAddressPatch)

@@ -46,6 +46,14 @@ struct VU1CompiledGenerator
         return !p.iBit && p.lowerUsage.pipeline == VU1Interpreter::PipelineBranch;
     }
 
+    static bool hasDynamicWait(const Pair &p)
+    {
+        return p.lowerUsage.waitQ || p.lowerUsage.waitP ||
+               p.lowerUsage.pipeline == VU1Interpreter::PipelineFdiv ||
+               p.lowerUsage.pipeline == VU1Interpreter::PipelineEfu ||
+               p.lowerUsage.pipeline == VU1Interpreter::PipelineXgkick;
+    }
+
     static void usage(std::ostringstream &out, const char *name, const Usage &u)
     {
         const Usage d{};
@@ -255,6 +263,7 @@ int main(int argc, char **argv)
     std::map<uint32_t, std::vector<std::string>> blockCases;
     std::set<std::pair<uint32_t, std::vector<uint32_t>>> seenBlocks;
     size_t blockCount = 0, deadCount = 0, fmacCount = 0, prunedReads = 0, keptReads = 0, prunedPairs = 0;
+    size_t noWaitBlocks = 0, noWaitPairs = 0, noWaitReads = 0;
     for (const Code &code : codes)
     {
         const uint32_t count = static_cast<uint32_t>(code.bytes.size() / 8u);
@@ -432,6 +441,147 @@ int main(int argc, char **argv)
                 }
             }
 
+            struct StaticRead
+            {
+                uint8_t kind, reg, lane; uint16_t offset;
+            };
+            struct FastRun
+            {
+                size_t begin = 0, end = 0;
+                std::vector<StaticRead> reads;
+            };
+            std::vector<FastRun> fastRuns;
+            {
+                struct Writer
+                {
+                    int64_t pair = -1;
+                    uint32_t latency = 0;
+                };
+                Writer vfW[32][4]{}, viW[16]{}, accW[4]{};
+                std::vector<bool> safe(length, true);
+                const auto isReady = [&](const Writer &w, size_t i)
+                {
+                    return w.pair < 0 || static_cast<int64_t>(i) - w.pair >= static_cast<int64_t>(w.latency);
+                };
+                for (size_t i = 0; i < length; ++i)
+                {
+                    const Pair &p = code.pairs[pcs[i] / 8u];
+                    if (VU1CompiledGenerator::hasDynamicWait(p) || VU1CompiledGenerator::isBranch(p) || p.eBit || p.dBit || p.tBit)
+                        safe[i] = false;
+                    for (const VU1CompiledGenerator::Usage *u : {&p.upperUsage, &p.lowerUsage})
+                    {
+                        for (uint32_t n = 0; n < u->vfReadCount && n < 2u; ++n)
+                        {
+                            const VU1CompiledGenerator::VfAccess &a = u->vfRead[n];
+                            for (uint32_t c = 0; c < 4u; ++c)
+                                if ((a.lanes & (8u >> c)) != 0u)
+                                    safe[i] = safe[i] && isReady(vfW[a.reg & 31u][c], i);
+                        }
+                        for (uint32_t r = 1; r < 16u; ++r)
+                            if ((u->viRead & (1u << r)) != 0u)
+                                safe[i] = safe[i] && isReady(viW[r], i);
+                        for (uint32_t c = 0; c < 4u; ++c)
+                            if ((u->accRead & (8u >> c)) != 0u)
+                                safe[i] = safe[i] && isReady(accW[c], i);
+                    }
+                    const VU1CompiledGenerator::VfAccess lw = p.lowerUsage.vfWrite;
+                    if (lw.reg != 0u && p.suppressedLowerVf != lw.reg)
+                    {
+                        const uint32_t lat = p.lowerUsage.vfLatency != 0u ? p.lowerUsage.vfLatency : p.lowerUsage.latency;
+                        for (uint32_t c = 0; c < 4u; ++c)
+                            if ((lw.lanes & (8u >> c)) != 0u)
+                                vfW[lw.reg & 31u][c] = {static_cast<int64_t>(i), lat};
+                    }
+                    const VU1CompiledGenerator::VfAccess uw = p.upperUsage.vfWrite;
+                    if (uw.reg != 0u)
+                    {
+                        const uint32_t lat = p.upperUsage.vfLatency != 0u ? p.upperUsage.vfLatency : p.upperUsage.latency;
+                        for (uint32_t c = 0; c < 4u; ++c)
+                            if ((uw.lanes & (8u >> c)) != 0u)
+                                vfW[uw.reg & 31u][c] = {static_cast<int64_t>(i), lat};
+                    }
+                    for (uint32_t r = 1; r < 16u; ++r)
+                        if ((p.lowerUsage.viWrite & (1u << r)) != 0u)
+                            viW[r] = {static_cast<int64_t>(i), p.lowerUsage.viLatency != 0u ? p.lowerUsage.viLatency : p.lowerUsage.latency};
+                    for (uint32_t c = 0; c < 4u; ++c)
+                        if ((p.upperUsage.accWrite & (8u >> c)) != 0u)
+                            accW[c] = {static_cast<int64_t>(i), VU1CompiledGenerator::kAccLatency};
+                }
+                // GOW-Port: amortiza el guard de entrada sobre varios pares incluso si hay hazards en el bloque.
+                constexpr size_t kMinFastRun = 4u;
+                for (size_t begin = 0; begin < length;)
+                {
+                    while (begin < length && !safe[begin])
+                        ++begin;
+                    size_t end = begin;
+                    while (end < length && safe[end])
+                        ++end;
+                    if (end - begin >= kMinFastRun)
+                    {
+                        FastRun run;
+                        run.begin = begin;
+                        run.end = end;
+                        Writer runVfW[32][4]{}, runViW[16]{}, runAccW[4]{};
+                        std::set<std::tuple<uint8_t, uint8_t, uint8_t>> checked;
+                        const auto addRead = [&](uint8_t kind, uint8_t reg, uint8_t lane, const Writer &w, size_t i)
+                        {
+                            if (w.pair < 0 && checked.insert({kind, reg, lane}).second)
+                                run.reads.push_back({kind, reg, lane, static_cast<uint16_t>(i - begin)});
+                        };
+                        for (size_t i = begin; i < end; ++i)
+                        {
+                            const Pair &p = code.pairs[pcs[i] / 8u];
+                            for (const VU1CompiledGenerator::Usage *u : {&p.upperUsage, &p.lowerUsage})
+                            {
+                                for (uint32_t n = 0; n < u->vfReadCount && n < 2u; ++n)
+                                {
+                                    const VU1CompiledGenerator::VfAccess &a = u->vfRead[n];
+                                    for (uint32_t c = 0; c < 4u; ++c)
+                                        if ((a.lanes & (8u >> c)) != 0u)
+                                            addRead(0u, a.reg, static_cast<uint8_t>(c), runVfW[a.reg & 31u][c], i);
+                                }
+                                for (uint32_t r = 1; r < 16u; ++r)
+                                    if ((u->viRead & (1u << r)) != 0u)
+                                        addRead(1u, static_cast<uint8_t>(r), 0u, runViW[r], i);
+                                for (uint32_t c = 0; c < 4u; ++c)
+                                    if ((u->accRead & (8u >> c)) != 0u)
+                                        addRead(2u, 0u, static_cast<uint8_t>(c), runAccW[c], i);
+                            }
+                            const VU1CompiledGenerator::VfAccess lw = p.lowerUsage.vfWrite;
+                            if (lw.reg != 0u && p.suppressedLowerVf != lw.reg)
+                            {
+                                const uint32_t lat = p.lowerUsage.vfLatency != 0u ? p.lowerUsage.vfLatency : p.lowerUsage.latency;
+                                for (uint32_t c = 0; c < 4u; ++c)
+                                    if ((lw.lanes & (8u >> c)) != 0u)
+                                        runVfW[lw.reg & 31u][c] = {static_cast<int64_t>(i), lat};
+                            }
+                            const VU1CompiledGenerator::VfAccess uw = p.upperUsage.vfWrite;
+                            if (uw.reg != 0u)
+                            {
+                                const uint32_t lat = p.upperUsage.vfLatency != 0u ? p.upperUsage.vfLatency : p.upperUsage.latency;
+                                for (uint32_t c = 0; c < 4u; ++c)
+                                    if ((uw.lanes & (8u >> c)) != 0u)
+                                        runVfW[uw.reg & 31u][c] = {static_cast<int64_t>(i), lat};
+                            }
+                            for (uint32_t r = 1; r < 16u; ++r)
+                                if ((p.lowerUsage.viWrite & (1u << r)) != 0u)
+                                    runViW[r] = {static_cast<int64_t>(i), p.lowerUsage.viLatency != 0u ? p.lowerUsage.viLatency : p.lowerUsage.latency};
+                            for (uint32_t c = 0; c < 4u; ++c)
+                                if ((p.upperUsage.accWrite & (8u >> c)) != 0u)
+                                    runAccW[c] = {static_cast<int64_t>(i), VU1CompiledGenerator::kAccLatency};
+                        }
+                        fastRuns.push_back(std::move(run));
+                    }
+                    begin = end;
+                }
+            }
+            noWaitBlocks += fastRuns.size();
+            for (const FastRun &run : fastRuns)
+            {
+                noWaitPairs += run.end - run.begin;
+                noWaitReads += run.reads.size();
+            }
+
             // El bloque es una sola función con los pasos en línea, en el mismo archivo que sus structs K.
             // Los pares intermedios que no saltan ni terminan ("simples") no comprueban saltos ni finales.
             const std::string name = "b" + hex4(head) + "_" + std::to_string(blockCases[head].size());
@@ -444,8 +594,43 @@ int main(int argc, char **argv)
             body << "};\n"
                  << "        if (!VU1CompiledAccess::block(vu, c, " << head << "u, words, sizeof(words)))\n            return 0;\n"
                  << "        g_blockPairs += " << length << "u;\n";
+            std::vector<int> fastRunForPair(length, -1);
+            for (size_t runIndex = 0; runIndex < fastRuns.size(); ++runIndex)
+            {
+                const FastRun &run = fastRuns[runIndex];
+                const std::string variable = "noWait" + std::to_string(runIndex);
+                body << "        bool " << variable << " = false;\n";
+                if (run.reads.empty())
+                    body << "        // tramo sin lecturas de entrada\n";
+                else
+                {
+                    body << "        static constexpr VU1CompiledAccess::StaticRead staticReads" << runIndex << "[] = {";
+                    for (size_t i = 0; i < run.reads.size(); ++i)
+                    {
+                        const StaticRead &r = run.reads[i];
+                        body << (i ? ", " : "") << "{" << unsigned(r.kind) << "u, " << unsigned(r.reg)
+                             << "u, " << unsigned(r.lane) << "u, " << unsigned(r.offset) << "u}";
+                    }
+                    body << "};\n";
+                }
+                for (size_t i = run.begin; i < run.end; ++i)
+                    fastRunForPair[i] = static_cast<int>(runIndex);
+            }
             for (size_t i = 0; i < length; ++i)
             {
+                if (fastRunForPair[i] >= 0 &&
+                    (i == 0u || fastRunForPair[i - 1u] != fastRunForPair[i]))
+                {
+                    const size_t runIndex = static_cast<size_t>(fastRunForPair[i]);
+                    const FastRun &run = fastRuns[runIndex];
+                    const std::string variable = "noWait" + std::to_string(runIndex);
+                    if (run.reads.empty())
+                        body << "        " << variable << " = true;\n";
+                    else
+                        body << "        " << variable << " = VU1CompiledAccess::noWait(vu, staticReads" << runIndex
+                             << ", sizeof(staticReads" << runIndex << ") / sizeof(staticReads" << runIndex << "[0]));\n";
+                    body << "        if (" << variable << ") ++g_noWaitBlocks; else ++g_noWaitMisses;\n";
+                }
                 const Pair &p = code.pairs[pcs[i] / 8u];
                 const bool plain = i + 1u < length && !VU1CompiledGenerator::isBranch(p) && !p.eBit && !p.dBit && !p.tBit;
                 const std::string k = kStruct(code, pcs[i], part);
@@ -472,7 +657,9 @@ int main(int argc, char **argv)
                 // GOW-Port: los pares que no abren el bloque se saltan las comprobaciones de entrada (Chained).
                 // stepPairT solo consulta las lecturas en readyCycleT, así que R sustituye a K sin más cambios.
                 body << "        if (!VU1CompiledAccess::step<" << r << ", " << (dead[i] ? "true" : "false") << ", "
-                     << (plain ? "true" : "false") << ", " << (i > 0u ? "true" : "false") << ">(vu, c))\n            return 2;\n";
+                     << (plain ? "true" : "false") << ", " << (i > 0u ? "true" : "false") << ">(vu, c, "
+                     << (fastRunForPair[i] >= 0 ? "noWait" + std::to_string(fastRunForPair[i]) : "false")
+                     << "))\n            return 2;\n";
                 if (i + 1u < length && !plain)
                     body << "        if (VU1CompiledAccess::pc(vu) != " << pcs[i + 1u] << "u)\n            return 1;\n";
             }
@@ -490,7 +677,7 @@ int main(int argc, char **argv)
         "// Mismo modo de coma flotante que el intérprete de VU (MSVC no expande en línea entre modos distintos).\n"
         "#if defined(_MSC_VER)\n#pragma float_control(precise, on, push)\n#pragma fp_contract(off)\n#endif\n\n"
         "using P = VU1CompiledAccess::P;\nusing C = VU1CompiledAccess::C;\n\n"
-        "namespace vu1c_gen\n{\n    inline unsigned long long g_blockPairs = 0;\n}\n\n"
+        "namespace vu1c_gen\n{\n    inline unsigned long long g_blockPairs = 0;\n    inline unsigned long long g_noWaitBlocks = 0;\n    inline unsigned long long g_noWaitMisses = 0;\n}\n\n"
         "// Sin comprobaciones de desbordamiento de pila (/GS): los arreglos locales son de tamaño fijo.\n"
         "#if defined(_MSC_VER)\n#define VU1C_FAST __declspec(safebuffers)\n#else\n#define VU1C_FAST\n#endif\n\n";
     const std::string footer = "\n#if defined(_MSC_VER)\n#pragma float_control(pop)\n#endif\n";
@@ -518,7 +705,7 @@ int main(int argc, char **argv)
         << "    // GOW_VU1C_SIN_BLOQUES: sin bloques (solo pares sueltos).\n"
         << "    struct Stats\n    {\n        unsigned long long compiled = 0, interpreted = 0;\n"
         << "        ~Stats()\n        {\n            if (std::getenv(\"GOW_VU1C_DIAG\"))\n"
-        << "                std::fprintf(stderr, \"[vu1c] compilados=%llu interpretados=%llu\\n\", compiled + vu1c_gen::g_blockPairs, interpreted);\n        }\n    } g_stats;\n"
+        << "                std::fprintf(stderr, \"[vu1c] compilados=%llu interpretados=%llu no_wait=%llu no_wait_miss=%llu\\n\", compiled + vu1c_gen::g_blockPairs, interpreted, vu1c_gen::g_noWaitBlocks, vu1c_gen::g_noWaitMisses);\n        }\n    } g_stats;\n"
         << "    struct Range\n    {\n        uint32_t lo = 0, hi = 0xFFFFFFFFu;\n        bool blocks = true;\n        Range()\n        {\n"
         << "            if (const char *v = std::getenv(\"GOW_VU1C_RANGO\"))\n            {\n"
         << "                char *end = nullptr;\n                lo = static_cast<uint32_t>(std::strtoul(v, &end, 16));\n"
@@ -609,8 +796,8 @@ int main(int argc, char **argv)
         << "static const bool g_registered = (VU1Interpreter::registerCompiledProgram(&vu1c_gen::run), true);\n"
         << footer;
     writeIfChanged(base + "/programa0.cpp", out.str());
-    std::printf("[generar_vu1] %zu funciones de par, %zu bloques, %zu de %zu FMAC con flags muertos, %zu imagenes\n",
-                pairFns.size(), blockCount, deadCount, fmacCount, codes.size());
+    std::printf("[generar_vu1] %zu funciones de par, %zu bloques (%zu tramos rapidos, %zu pares, %zu lecturas externas), %zu de %zu FMAC con flags muertos, %zu imagenes\n",
+                pairFns.size(), blockCount, noWaitBlocks, noWaitPairs, noWaitReads, deadCount, fmacCount, codes.size());
     std::printf("[generar_vu1] esperas imposibles: %zu de %zu lecturas en bloques, %zu pares con struct R\n",
                 prunedReads, prunedReads + keptReads, prunedPairs);
     return 0;

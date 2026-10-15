@@ -1,0 +1,76 @@
+diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime/ps2_vu1.h
+--- a/ps2xRuntime/include/runtime/ps2_vu1.h
++++ b/ps2xRuntime/include/runtime/ps2_vu1.h
+@@ -398,5 +398,5 @@ private:
+     template <class T>
+     uint64_t readyCycleT() const;
+     template <class T, bool DeadFlags, bool Plain = false, bool Chained = false>
+-    bool stepPairT(StepContext &context);
++    bool stepPairT(StepContext &context, bool skipReadyChecks = false);
+     bool blockPreconditions(StepContext &context, uint32_t pc, const uint32_t *words, size_t bytes) const;
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_compiled.inl
+@@ -1068,3 +1068,3 @@
+ template <class T, bool DeadFlags, bool Plain, bool Chained>
+-VU1_STEP_INLINE bool VU1Interpreter::stepPairT(StepContext &context)
++VU1_STEP_INLINE bool VU1Interpreter::stepPairT(StepContext &context, bool skipReadyChecks)
+ {
+@@ -1094,18 +1094,18 @@
+-    uint64_t readyCycle = readyCycleT<T>();
+-    if (readyCycle > m_cycle)
++    if (!skipReadyChecks)
+     {
+-        while (readyCycle > m_cycle)
++        uint64_t readyCycle = readyCycleT<T>();
++        while (readyCycle > m_cycle)
+         {
+             if (readyCycle >= context.budgetEnd)
+             {
+                 advanceTo(context.budgetEnd);
+                 break;
+             }
+             advanceTo(readyCycle);
+             readyCycle = readyCycleT<T>();
+         }
+         if (m_cycle >= context.budgetEnd)
+             return false;
+     }
+ 
+     constexpr uint32_t viWrites = k.lowerUsage.viWrite & 0xFFFEu;
+@@ -1279,8 +1279,34 @@ struct VU1CompiledAccess
+     using C = VU1Interpreter::StepContext;
+     using Pipeline = VU1Interpreter::Pipeline;
++    struct StaticRead
++    {
++        uint8_t kind, reg, lane;
++        uint16_t offset;
++    };
+     template <class T, bool DeadFlags, bool Plain = false, bool Chained = false>
+-    static VU1_STEP_INLINE bool step(VU1Interpreter &vu, C &c) { return vu.stepPairT<T, DeadFlags, Plain, Chained>(c); }
++    static VU1_STEP_INLINE bool step(VU1Interpreter &vu, C &c, bool skipReadyChecks = false)
++    {
++        return vu.stepPairT<T, DeadFlags, Plain, Chained>(c, skipReadyChecks);
++    }
+     static bool interpret(VU1Interpreter &vu, C &c) { return vu.stepInterpreted(c); }
+     static uint32_t pc(const VU1Interpreter &vu) { return vu.m_state.pc; }
++    static bool noWait(const VU1Interpreter &vu, const StaticRead *reads, size_t count)
++    {
++        const uint64_t cycle = vu.m_cycle;
++        for (size_t i = 0; i < count; ++i)
++        {
++            const StaticRead &r = reads[i];
++            uint64_t ready = 0;
++            if (r.kind == 0u)
++                ready = vu.m_vfReady[r.reg & 31u][r.lane & 3u];
++            else if (r.kind == 1u)
++                ready = vu.m_viReady[r.reg & 15u];
++            else
++                ready = vu.m_accReady[r.lane & 3u];
++            if (ready > cycle + r.offset)
++                return false;
++        }
++        return true;
++    }
+     static VU1_STEP_INLINE bool block(const VU1Interpreter &vu, C &c, uint32_t pc, const uint32_t *words, size_t bytes)
+     {
