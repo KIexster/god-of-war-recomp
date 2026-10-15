@@ -6937,6 +6937,35 @@ Pendiente: decidir cómo tratar el déficit de muestras (estiramiento temporal o
 ritmo de audio) cuando la emulación no llega a tiempo real; es una decisión de
 salida de audio, no de coste del SPU2.
 
+## Perfil por muestreo `GOW_SAMPLER`: reparto del hilo EE en el barco (2026-10-15)
+
+`patches/ps2recomp-sampler.patch` (solo Windows x64). `GOW_SAMPLER=inicio:fin` en segundos, o `1` para
+toda la ejecución. Un hilo propio suspende los hilos EE, VU1 y frontend GS unas 1000 veces por segundo,
+copia su pila (RIP más `RtlVirtualUnwind`) en un búfer preasignado, sin reservar memoria mientras el hilo
+está suspendido, y lo reanuda. Al cerrar simboliza con DbgHelp (`ps2EntryRunner.pdb` junto al exe) e
+imprime `[gow-sampler]` con las 40 funciones con más muestras propias e inclusivas por hilo. Son muestras
+de tiempo de reloj del hilo, incluidas las esperas, no uso exclusivo de CPU.
+
+Primera medición: `main` `ed181a8` más el muestreador, exe `20e87cea…`, VU1 compilada, guion y
+configuración de los controles anteriores, `GOW_PERF_DIAG=frames` (sin relojes por subsistema),
+muestreo de 50 a 145 s en estado 11. Resultado: 51.059 muestras por hilo, intervalo real 1,86 ms,
+ninguna fallida. Hilo EE, porcentaje de muestras:
+
+| Inclusivo | % | Lectura |
+|---|---|---|
+| `GS::notifyExternalVSync` → `RtlSleepConditionVariableSRW` | 28,5 | el EE espera al GS en cada VBlank |
+| `PS2Runtime::advanceIopEeCycles` | 31,9 | emulación del IOP; `runCycles` 27,1, `serviceSpu2` 9,7 |
+| `PS2Memory::advanceEeTimers` | 9,4 | propio: recorre los 4 temporizadores en cada punto de control |
+| `ps2_stall::enabled` + `ps2_perf::enabled` | 2,9 | propio: guarda de estáticas locales sin inlinear |
+| Código del juego (`sub_…`) y resto | ~27 | p. ej. `sub_00162F18` 6,9 incl., `sub_0017A1D0` 6,6 |
+
+- Hecho: más del 40 % del hilo EE se va en avanzar el IOP y los temporizadores desde cada punto de
+  control (`checkpointDue`, 43 % inclusivo), y casi todo es comprobar que no hay nada que hacer.
+  `executeInstruction` del IOP solo suma un 2,4 % propio.
+- Hecho: el 28,5 % del hilo EE está bloqueado esperando al GS dentro de `notifyExternalVSync` (área de
+  GS/presentación). Se documenta para quien lleva esa área; aquí no se toca.
+- `ps2_stall::enabled` (1,6 %) lo introdujo el diagnóstico de atascos (#87): se corrige en el parche
+  siguiente, junto con el camino rápido del IOP y los temporizadores.
 ## Punto de control del EE más barato: IOP ocioso exacto y temporizadores perezosos (2026-10-15)
 
 `patches/ps2recomp-checkpoint-fast.patch`, a partir del reparto medido con `GOW_SAMPLER` (sección anterior):
