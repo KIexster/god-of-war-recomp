@@ -1,0 +1,429 @@
+diff --git a/ps2xRuntime/CMakeLists.txt b/ps2xRuntime/CMakeLists.txt
+index 1bf7507..6e855fd 100644
+--- a/ps2xRuntime/CMakeLists.txt
++++ b/ps2xRuntime/CMakeLists.txt
+@@ -401,6 +401,7 @@ add_library(ps2_runtime STATIC
+     src/lib/ps2_vfs.cpp
+     src/lib/ps2_runtime.cpp
+     src/lib/ps2_stall_diag.cpp
++    src/lib/ps2_sampler.cpp
+     src/lib/ps2_vif1_interpreter.cpp
+     src/lib/vu/ps2_vu1_core.cpp
+     src/lib/vu/ps2_vu1_upper.cpp
+diff --git a/ps2xRuntime/include/runtime/ps2_sampler.h b/ps2xRuntime/include/runtime/ps2_sampler.h
+new file mode 100644
+index 0000000..5b0549c
+--- /dev/null
++++ b/ps2xRuntime/include/runtime/ps2_sampler.h
+@@ -0,0 +1,22 @@
++#ifndef PS2_SAMPLER_H
++#define PS2_SAMPLER_H
++
++// GOW-Port: perfilador opcional por muestreo (solo Windows). GOW_SAMPLER=inicio:fin (segundos desde el
++// arranque del vigía, por ejemplo "50:145") o GOW_SAMPLER=1 (toda la ejecución). Un hilo propio suspende
++// cada hilo registrado unas 1000 veces por segundo, copia su pila (RIP + desenrollado x64) en un búfer
++// preasignado sin reservar memoria y lo reanuda. Al terminar simboliza con DbgHelp (PDB junto al exe) e
++// imprime "[gow-sampler]" con las funciones con más muestras propias e inclusivas por hilo.
++// Las muestras son tiempo de reloj del hilo (incluye esperas), no uso exclusivo de CPU. Suspender el hilo
++// tiene un coste propio pequeño; se informa el intervalo real conseguido.
++
++namespace ps2_sampler
++{
++    bool enabled();
++    // Registrar el hilo actual con un nombre literal. Sin GOW_SAMPLER no hace nada.
++    void registerCurrentThread(const char *name);
++    void start();
++    // Detiene el muestreo e imprime el informe. Idempotente.
++    void stopAndReport();
++}
++
++#endif
+diff --git a/ps2xRuntime/src/lib/ps2_memory.cpp b/ps2xRuntime/src/lib/ps2_memory.cpp
+index 780406b..62e606d 100644
+--- a/ps2xRuntime/src/lib/ps2_memory.cpp
++++ b/ps2xRuntime/src/lib/ps2_memory.cpp
+@@ -1,4 +1,5 @@
+ #include "runtime/ps2_memory.h"
++#include "runtime/ps2_sampler.h"
+ #include "runtime/ps2_address.h"
+ #include "runtime/gs/gs_frontend.h"
+ #include "ps2_log.h"
+@@ -313,10 +314,10 @@ bool PS2Memory::vu1WorkerEnabled()
+         if (const char *front = std::getenv("PS2X_GS_FRENTE"); front && front[0] == '1')
+         {
+             g_vu1Worker->front = std::make_unique<Vu1Worker::Front>();
+-            g_vu1Worker->front->thread = std::thread([this] { gsFrontLoop(); });
++            g_vu1Worker->front->thread = std::thread([this] { ps2_sampler::registerCurrentThread("GS-frente"); gsFrontLoop(); }); // GOW-Port: GOW_SAMPLER.
+             std::fprintf(stderr, "[gs-frente] paquetes GIF de VU1 en un hilo propio\n");
+         }
+-        g_vu1Worker->thread = std::thread([this] { vu1WorkerLoop(); });
++        g_vu1Worker->thread = std::thread([this] { ps2_sampler::registerCurrentThread("VU1"); vu1WorkerLoop(); }); // GOW-Port: GOW_SAMPLER.
+         g_vu1Worker->id = g_vu1Worker->thread.get_id();
+         std::fprintf(stderr, "[vu1-hilo] VIF1/VU1 en un hilo propio\n");
+     }
+diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
+index 199961f..994bf7c 100644
+--- a/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -3,6 +3,7 @@
+ #include "ps2_log.h"
+ #include "runtime/ps2_perf.h"
+ #include "runtime/ps2_stall_diag.h"
++#include "runtime/ps2_sampler.h"
+ #include "ps2_stubs.h"
+ #include "ps2_syscalls.h"
+ #include "game_overrides.h"
+@@ -2540,9 +2541,11 @@ void PS2Runtime::run()
+         ps2_stall::start(std::move(sources));
+     }
+ 
++    ps2_sampler::start(); // GOW-Port: GOW_SAMPLER.
+     std::thread gameThread([&]()
+                            {
+         ThreadNaming::SetCurrentThreadName("GameThread");
++        ps2_sampler::registerCurrentThread("EE"); // GOW-Port: GOW_SAMPLER.
+         try
+         {
+             m_eeScheduler->reset(m_memory.getRDRAM(), m_cpuContext);
+@@ -2637,6 +2640,7 @@ void PS2Runtime::run()
+         gameThread.join();
+     }
+     ps2_stall::stop(); // GOW-Port: GOW_STALL_DIAG.
++    ps2_sampler::stopAndReport(); // GOW-Port: GOW_SAMPLER.
+ 
+     if (m_debugUiInitialized && m_debugUiShutdownCallback)
+     {
+diff --git a/ps2xRuntime/src/lib/ps2_sampler.cpp b/ps2xRuntime/src/lib/ps2_sampler.cpp
+new file mode 100644
+index 0000000..21dd496
+--- /dev/null
++++ b/ps2xRuntime/src/lib/ps2_sampler.cpp
+@@ -0,0 +1,299 @@
++// GOW-Port: perfilador opcional por muestreo. Ver runtime/ps2_sampler.h.
++#include "runtime/ps2_sampler.h"
++
++#include <algorithm>
++#include <atomic>
++#include <chrono>
++#include <cstdint>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <mutex>
++#include <string>
++#include <thread>
++#include <unordered_map>
++#include <unordered_set>
++#include <utility>
++#include <vector>
++
++#if defined(_WIN32)
++#ifndef NOMINMAX
++#define NOMINMAX
++#endif
++#include <windows.h>
++#include <dbghelp.h>
++#pragma comment(lib, "dbghelp.lib")
++#pragma comment(lib, "winmm.lib")
++#endif
++
++namespace ps2_sampler
++{
++    namespace
++    {
++        struct Window
++        {
++            bool on = false;
++            double begin = 0.0;
++            double end = 1e30;
++        };
++
++        Window window()
++        {
++            static const Window value = []
++            {
++                Window w;
++                const char *text = std::getenv("GOW_SAMPLER");
++                if (!text || !*text || std::strcmp(text, "0") == 0)
++                    return w;
++                w.on = true;
++                if (const char *colon = std::strchr(text, ':'))
++                {
++                    w.begin = std::atof(text);
++                    w.end = std::atof(colon + 1);
++                }
++                return w;
++            }();
++            return value;
++        }
++    }
++
++    bool enabled()
++    {
++        return window().on;
++    }
++}
++
++#if defined(_WIN32) && defined(_M_X64)
++
++namespace ps2_sampler
++{
++    namespace
++    {
++        constexpr size_t kMaxFrames = 24u;
++        constexpr size_t kMaxSamplesPerThread = 400000u; // ~400 s a 1 kHz
++
++        struct Target
++        {
++            const char *name = "";
++            HANDLE handle = nullptr;
++            DWORD id = 0;
++            std::vector<uint64_t> frames; // kMaxFrames por muestra; 0 = fin de pila
++            size_t samples = 0;
++            size_t failed = 0;
++        };
++
++        std::mutex g_mutex;
++        std::vector<Target *> g_targets;
++        std::thread g_thread;
++        std::atomic<bool> g_stop{false};
++        bool g_reported = false;
++        std::chrono::steady_clock::time_point g_origin;
++        double g_firstSample = -1.0, g_lastSample = -1.0;
++        uint64_t g_ticks = 0;
++
++        // Desenrollado x64 del hilo suspendido. Sin reservas de memoria ni bloqueos de DbgHelp.
++        size_t unwind(CONTEXT context, uint64_t *out)
++        {
++            size_t count = 0;
++            __try
++            {
++                while (count < kMaxFrames && context.Rip != 0)
++                {
++                    out[count++] = context.Rip;
++                    DWORD64 imageBase = 0;
++                    PRUNTIME_FUNCTION function = RtlLookupFunctionEntry(context.Rip, &imageBase, nullptr);
++                    if (!function)
++                    {
++                        context.Rip = *reinterpret_cast<const DWORD64 *>(context.Rsp);
++                        context.Rsp += 8;
++                        continue;
++                    }
++                    PVOID handlerData = nullptr;
++                    DWORD64 establisher = 0;
++                    RtlVirtualUnwind(UNW_FLAG_NHANDLER, imageBase, context.Rip, function, &context, &handlerData,
++                                     &establisher, nullptr);
++                }
++            }
++            __except (EXCEPTION_EXECUTE_HANDLER)
++            {
++            }
++            return count;
++        }
++
++        void sampleLoop()
++        {
++            timeBeginPeriod(1);
++            while (!g_stop.load(std::memory_order_acquire))
++            {
++                Sleep(1);
++                const double now = std::chrono::duration<double>(std::chrono::steady_clock::now() - g_origin).count();
++                if (now < window().begin)
++                    continue;
++                if (now > window().end)
++                    break;
++                std::lock_guard lock(g_mutex);
++                ++g_ticks;
++                if (g_firstSample < 0.0)
++                    g_firstSample = now;
++                g_lastSample = now;
++                for (Target *target : g_targets)
++                {
++                    if (target->samples >= kMaxSamplesPerThread)
++                        continue;
++                    if (SuspendThread(target->handle) == static_cast<DWORD>(-1))
++                    {
++                        ++target->failed;
++                        continue;
++                    }
++                    CONTEXT context{};
++                    context.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
++                    uint64_t *out = target->frames.data() + target->samples * kMaxFrames;
++                    if (GetThreadContext(target->handle, &context))
++                    {
++                        const size_t count = unwind(context, out);
++                        if (count < kMaxFrames)
++                            out[count] = 0;
++                        ++target->samples;
++                    }
++                    else
++                    {
++                        ++target->failed;
++                    }
++                    ResumeThread(target->handle);
++                }
++            }
++            timeEndPeriod(1);
++        }
++
++        std::string symbolName(uint64_t address, std::unordered_map<uint64_t, std::string> &cache)
++        {
++            if (auto it = cache.find(address); it != cache.end())
++                return it->second;
++            alignas(SYMBOL_INFO) char buffer[sizeof(SYMBOL_INFO) + 512] = {};
++            auto *symbol = reinterpret_cast<SYMBOL_INFO *>(buffer);
++            symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
++            symbol->MaxNameLen = 511;
++            DWORD64 displacement = 0;
++            std::string name;
++            if (SymFromAddr(GetCurrentProcess(), address, &displacement, symbol))
++            {
++                name = symbol->Name;
++            }
++            else
++            {
++                char module[MAX_PATH] = "?";
++                HMODULE handle = nullptr;
++                if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
++                                       reinterpret_cast<LPCSTR>(address), &handle))
++                {
++                    GetModuleFileNameA(handle, module, MAX_PATH);
++                    const char *slash = std::strrchr(module, '\\');
++                    name = std::string("[") + (slash ? slash + 1 : module) + "]";
++                }
++                else
++                {
++                    name = "[desconocido]";
++                }
++            }
++            cache.emplace(address, name);
++            return name;
++        }
++
++        void printTop(const char *label, const std::unordered_map<std::string, size_t> &counts, size_t samples)
++        {
++            std::vector<std::pair<size_t, std::string>> sorted;
++            sorted.reserve(counts.size());
++            for (const auto &[name, count] : counts)
++                sorted.push_back({count, name});
++            std::sort(sorted.begin(), sorted.end(), [](const auto &a, const auto &b) { return a.first > b.first; });
++            for (size_t i = 0; i < sorted.size() && i < 40u; ++i)
++                std::fprintf(stderr, "[gow-sampler]   %s %6.2f%% %7zu %s\n", label,
++                             100.0 * static_cast<double>(sorted[i].first) / static_cast<double>(samples),
++                             sorted[i].first, sorted[i].second.c_str());
++        }
++    }
++
++    void registerCurrentThread(const char *name)
++    {
++        if (!enabled())
++            return;
++        auto *target = new Target();
++        target->name = name;
++        target->id = GetCurrentThreadId();
++        target->handle = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE,
++                                    target->id);
++        target->frames.assign(kMaxSamplesPerThread * kMaxFrames, 0u);
++        std::lock_guard lock(g_mutex);
++        g_targets.push_back(target);
++    }
++
++    void start()
++    {
++        if (!enabled() || g_thread.joinable())
++            return;
++        g_origin = std::chrono::steady_clock::now();
++        g_thread = std::thread(sampleLoop);
++        std::fprintf(stderr, "[gow-sampler] activo: ventana %.1f..%.1f s, ~1 kHz\n", window().begin, window().end);
++    }
++
++    void stopAndReport()
++    {
++        if (!enabled())
++            return;
++        g_stop.store(true, std::memory_order_release);
++        if (g_thread.joinable())
++            g_thread.join();
++        std::lock_guard lock(g_mutex);
++        if (g_reported)
++            return;
++        g_reported = true;
++        const HANDLE process = GetCurrentProcess();
++        SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS);
++        SymInitialize(process, nullptr, TRUE);
++        std::unordered_map<uint64_t, std::string> cache;
++        const double span = g_lastSample - g_firstSample;
++        std::fprintf(stderr, "[gow-sampler] ventana real %.2f..%.2f s, %llu ticks, intervalo medio %.3f ms\n",
++                     g_firstSample, g_lastSample, static_cast<unsigned long long>(g_ticks),
++                     g_ticks > 1 ? span * 1000.0 / static_cast<double>(g_ticks - 1) : 0.0);
++        for (Target *target : g_targets)
++        {
++            std::unordered_map<std::string, size_t> self, inclusive;
++            for (size_t s = 0; s < target->samples; ++s)
++            {
++                const uint64_t *frames = target->frames.data() + s * kMaxFrames;
++                std::unordered_set<std::string> seen;
++                for (size_t f = 0; f < kMaxFrames && frames[f] != 0; ++f)
++                {
++                    const std::string name = symbolName(frames[f], cache);
++                    if (f == 0)
++                        ++self[name];
++                    if (seen.insert(name).second)
++                        ++inclusive[name];
++                }
++            }
++            std::fprintf(stderr, "[gow-sampler] hilo=%s muestras=%zu fallidas=%zu\n", target->name, target->samples,
++                         target->failed);
++            if (target->samples == 0)
++                continue;
++            printTop("propio", self, target->samples);
++            printTop("inclusivo", inclusive, target->samples);
++        }
++        SymCleanup(process);
++        std::fflush(stderr);
++    }
++}
++
++#else
++
++namespace ps2_sampler
++{
++    void registerCurrentThread(const char *) {}
++    void start()
++    {
++        if (enabled())
++            std::fprintf(stderr, "[gow-sampler] solo disponible en Windows x64\n");
++    }
++    void stopAndReport() {}
++}
++
++#endif
+diff --git a/ps2xTest/src/ps2_iop_tests.cpp b/ps2xTest/src/ps2_iop_tests.cpp
+index 09bdca6..f793778 100644
+--- a/ps2xTest/src/ps2_iop_tests.cpp
++++ b/ps2xTest/src/ps2_iop_tests.cpp
+@@ -7,6 +7,7 @@
+ #include "../../ps2xIOP/src/emulator/core/iop_memory.h"
+ #include "../../ps2xIOP/src/emulator/services/iop_rpc.h"
+ #include "runtime/ps2_stall_diag.h"
++#include "runtime/ps2_sampler.h"
+ 
+ #include <string>
+ 
+@@ -87,6 +88,16 @@ void register_ps2_iop_tests()
+             t.IsTrue(text.back() == '\n', "describe output must end each line with a newline");
+         });
+ 
++        // GOW-Port: el muestreador solo actúa con GOW_SAMPLER; sin la variable no registra ni suspende hilos.
++        tc.Run("sampler stays inert while GOW_SAMPLER is unset", [](TestCase &t)
++        {
++            t.IsFalse(ps2_sampler::enabled(), "the test environment must not enable GOW_SAMPLER");
++            ps2_sampler::registerCurrentThread("test");
++            ps2_sampler::start();
++            ps2_sampler::stopAndReport();
++            t.IsFalse(ps2_sampler::enabled(), "calls without GOW_SAMPLER must remain no-ops");
++        });
++
+         tc.Run("stall diagnostic counters stay untouched while GOW_STALL_DIAG is off", [](TestCase &t)
+         {
+             t.IsFalse(ps2_stall::enabled(), "the test environment must not enable GOW_STALL_DIAG");

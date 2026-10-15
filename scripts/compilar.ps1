@@ -129,6 +129,7 @@ $vu0Vi0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vi0.patch'
 $stallDiagPatch = Join-Path $RepoRoot 'patches\ps2recomp-stall-diag.patch'
 $spu2PerfPatch = Join-Path $RepoRoot 'patches\ps2recomp-spu2-perf.patch'
 $mpegSyncCallbacksPatch = Join-Path $RepoRoot 'patches\ps2recomp-mpeg-sync-callbacks.patch'
+$samplerPatch = Join-Path $RepoRoot 'patches\ps2recomp-sampler.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -282,6 +283,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $vu0Vi0Patch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $stallDiagPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $spu2PerfPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $mpegSyncCallbacksPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $samplerPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
