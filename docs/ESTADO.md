@@ -6966,6 +6966,47 @@ ninguna fallida. Hilo EE, porcentaje de muestras:
   GS/presentación). Se documenta para quien lleva esa área; aquí no se toca.
 - `ps2_stall::enabled` (1,6 %) lo introdujo el diagnóstico de atascos (#87): se corrige en el parche
   siguiente, junto con el camino rápido del IOP y los temporizadores.
+## Punto de control del EE más barato: IOP ocioso exacto y temporizadores perezosos (2026-10-15)
+
+`patches/ps2recomp-checkpoint-fast.patch`, a partir del reparto medido con `GOW_SAMPLER` (sección anterior):
+
+- **IOP ocioso:** `IopEmulator::runEeCycles` solo suma ciclos mientras el IOP no tenga hilos listos y el
+  objetivo quede por debajo del primer evento posible: despertar de un hilo, fin de DMA, callback,
+  evento de temporizador del IOP o siguiente muestra del SPU2. Es exactamente lo que haría `runCycles` en
+  ese tramo. El límite se invalida con cualquier entrada externa (RPC, SIF, carga de módulos, escrituras
+  de memoria) y con un cambio de versión del núcleo IOP.
+- **Temporizadores del EE perezosos:** `advanceEeTimers` acumula ciclos hasta la próxima interrupción
+  posible (`cyclesUntilNextEeTimerInterrupt`) y los aplica antes de cualquier lectura o escritura de sus
+  registros. Aplicarlos de una vez o a trozos da la misma cuenta y el mismo resto del reloj.
+- `ps2_stall::enabled` y `ps2_perf::enabled/countFrames` leen globales `inline const` en vez de
+  estáticas locales con guarda (2,9 % del hilo EE en el muestreo).
+- Regresiones: un IOP ocioso avanzado en 200.000 pasos irregulares conserva ciclos y muestras tras cada
+  paso; temporizadores perezosos frente a aplicación inmediata en 300.000 pasos (mismas interrupciones,
+  cuentas y plazo). Ambas fallan con una mutación del límite (comprobado).
+
+Medición en el barco (exe A `20e87cea…` = `main` más el muestreador; exe B `9e61941e…` = A más este
+parche; 3 rondas de 150 s por lado alternas A/B, ventanas de 5 s con t=50..145, `GOW_PERF_DIAG=frames`,
+`GOW_SPU2_PERF=1`, `GOW_DELTA_DIAG=1`):
+
+| Métrica (mediana [mín..máx]) | A | B |
+|---|---|---|
+| velocidad de juego (`[gow-delta]`, 1,00 = tiempo real) | 0,91 [0,60..1,76] | 1,00 [0,84..1,10] |
+| muestras de SPU2 por segundo | 44.365 [34.295..83.716] | 49.436 [48.295..50.331] |
+| entradas a `vid::Flip` por segundo | 30,1 [16,3..101,6] | 30,3 [17,5..60,2] |
+
+- Hecho: con el parche el juego mantiene la velocidad real y el SPU2 produce las muestras de tiempo
+  real. El déficit de ~28 % de silencio medido antes desaparece. Las muestras quedan ~3 % por encima de
+  48 kHz; se vigila.
+- Hecho: los flips medianos no cambian (~30, dos VBlank por cuadro). La mejora es de regularidad y
+  velocidad, no de FPS. `guest_flip_hz` no son FPS físicos. `host_hz` fue bimodal (17 en dos rondas B,
+  60 en una) y no se atribuye.
+- Muestreo de B (`sampler_cpfast`): el hilo EE espera el 57 % del tiempo (antes 28 %); `checkpointDue`
+  pasa de 43 a 21,7 % inclusivo, el IOP de 31,9 a 14,1 %, la espera en `notifyExternalVSync` de 28,5 a
+  10,1 %, y `advanceEeTimers` queda en 5,9 % propio. El bucle `0x17A2A0` lee T0 en cada vuelta y fuerza
+  la aplicación; el siguiente paso sería un reloj nativo para los temporizadores sin eventos.
+- Anomalía (área de presentación): en una ronda A el hilo del host dejó de iterar hacia t≈5..10 s
+  (solo una línea `[gow-perf]`, la ventana no atendió `WM_CLOSE` y hubo que terminarla), mientras el
+  juego seguía en estado 11. Sus FPS no se usan; su audio y velocidad sí.
 
 ## Portes de Waffle565: NAX del SPU2 y accesos rápidos del EE (2026-10-15)
 
