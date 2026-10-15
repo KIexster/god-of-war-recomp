@@ -138,6 +138,7 @@ $eeFastAccessPatch = Join-Path $RepoRoot 'patches\ps2recomp-ee-fast-access.patch
 $vu1NativePatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-native.patch'
 $samplerThreadsPatch = Join-Path $RepoRoot 'patches\ps2recomp-sampler-threads.patch'
 $gsVsyncUnlockedPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-vsync-unlocked.patch'
+$gsNativePatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-native.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -300,6 +301,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1NativePatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsP4RowRunsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $samplerThreadsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsVsyncUnlockedPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsNativePatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
