@@ -1,0 +1,129 @@
+diff --git a/ps2xIOP/src/emulator/core/spu2.cpp b/ps2xIOP/src/emulator/core/spu2.cpp
+index e02f2d0..2d159d5 100644
+--- a/ps2xIOP/src/emulator/core/spu2.cpp
++++ b/ps2xIOP/src/emulator/core/spu2.cpp
+@@ -207,10 +207,12 @@ namespace ps2x::iop::detail
+             {
+                 const uint32_t index = (local - RegVoiceAddr) / 0xCu;
+                 const uint32_t field = (local - RegVoiceAddr) % 0xCu;
++                // GOW-Port: NAX as PCSX2 reports NextA (inside the playing block). 989snd's polled streams kill
++                // the stream (error 0x35) when NAX falls outside both ring halves.
+                 if (field == 8u)
+-                    return static_cast<uint16_t>(m_voices[core][index].nax >> 16u);
++                    return static_cast<uint16_t>(naxRegister(m_voices[core][index]) >> 16u);
+                 if (field == 10u)
+-                    return static_cast<uint16_t>(m_voices[core][index].nax);
++                    return static_cast<uint16_t>(naxRegister(m_voices[core][index]));
+             }
+             else if (local == RegEndx)
+                 return static_cast<uint16_t>(m_endx[core]);
+@@ -220,6 +222,19 @@ namespace ps2x::iop::detail
+         return reg(offset);
+     }
+ 
++    // GOW-Port: value read from the NAX register pair. PCSX2 (Mixer.cpp DecodeSamples/IncrementNextA) keeps NextA
++    // in [block + 1, block + 7] and jumps to LoopStartA as soon as a loop-end block finishes, so NAX never points
++    // past the end of a block. Here 'nax' is the next block to decode, which during the last block of a streaming
++    // half equals the first address after that half; 989snd (989NOMID.IRX 0x13258) then sees NAX outside both
++    // ring halves and aborts the stream (error 0x35), so the music restarts every few seconds.
++    uint32_t Spu2::naxRegister(const VoiceState &v) noexcept
++    {
++        if (!v.playStarted)
++            return (v.playBlock | 1u) & (RamHalfwords - 1u);
++        const uint32_t played = std::min<uint32_t>(v.decodedIndex, 27u) / 4u; // 0..6 (4 samples per halfword)
++        return (v.playBlock + 1u + played) & (RamHalfwords - 1u);
++    }
++
+     void Spu2::write16(uint32_t physical, uint16_t value)
+     {
+         const uint32_t offset = (physical - RegBase) & 0x7FEu;
+@@ -274,6 +289,8 @@ namespace ps2x::iop::detail
+             else if (field == 8u || field == 10u)
+             {
+                 v.nax = reg32(voiceAddrReg(core, index, 8u)) & ~7u;
++                v.playBlock = v.nax; // GOW-Port: reads back as written (| 1) until the next block is decoded
++                v.playStarted = false;
+             }
+         }
+     }
+@@ -331,6 +348,7 @@ namespace ps2x::iop::detail
+             v.active = true;
+             v.nax = ssa;
+             v.lsa = ssa;
++            v.playBlock = ssa; // GOW-Port: NAX reads SSA | 1 until the first block is decoded (PCSX2 Start())
+             v.phase = VoiceState::Phase::Attack;
+             m_endx[core] &= ~(1u << index);
+         }
+@@ -400,6 +418,8 @@ namespace ps2x::iop::detail
+         checkIrqAddress(block);
+         v.decodedIndex = 0;
+         v.nax = (block + 8u) & (RamHalfwords - 1u);
++        v.playBlock = block; // GOW-Port: see naxRegister()
++        v.playStarted = true;
+     }
+ 
+     void Spu2::stepEnvelope(uint32_t core, uint32_t index)
+diff --git a/ps2xIOP/src/emulator/core/spu2.h b/ps2xIOP/src/emulator/core/spu2.h
+index 42b8dc2..a1933b3 100644
+--- a/ps2xIOP/src/emulator/core/spu2.h
++++ b/ps2xIOP/src/emulator/core/spu2.h
+@@ -75,6 +75,11 @@ namespace ps2x::iop::detail
+         {
+             bool active = false;
+             uint32_t nax = 0;          // siguiente bloque ADPCM (medias palabras)
++            // GOW-Port: block currently being played and whether it has been decoded yet. The NAX register reads
++            // from these (like PCSX2's NextA: always inside the playing block), not from 'nax', which already points
++            // past the block (lazy decode) and, after a half's last block, lies outside the stream ring.
++            uint32_t playBlock = 0;
++            bool playStarted = false;
+             uint32_t lsa = 0;          // inicio del bucle
+             bool lsaFromRegister = false;
+             uint32_t pitchCounter = 0; // 4.12
+@@ -94,6 +99,7 @@ namespace ps2x::iop::detail
+         [[nodiscard]] uint16_t &reg(uint32_t offset) noexcept { return m_regs[(offset & 0x7FFu) >> 1u]; }
+         [[nodiscard]] uint16_t reg(uint32_t offset) const noexcept { return m_regs[(offset & 0x7FFu) >> 1u]; }
+         [[nodiscard]] uint32_t reg32(uint32_t offset) const noexcept; // par alto/bajo (direccion de 20 bits)
++        [[nodiscard]] static uint32_t naxRegister(const VoiceState &v) noexcept;
+         void setReg32(uint32_t offset, uint32_t value) noexcept;
+         [[nodiscard]] uint32_t voiceReg(uint32_t core, uint32_t voice, uint32_t field) const noexcept
+         {
+diff --git a/ps2xTest/src/ps2_spu2_tests.cpp b/ps2xTest/src/ps2_spu2_tests.cpp
+index f1c2bd7..b6d63bd 100644
+--- a/ps2xTest/src/ps2_spu2_tests.cpp
++++ b/ps2xTest/src/ps2_spu2_tests.cpp
+@@ -146,6 +146,35 @@ void register_ps2_spu2_tests()
+             t.Equals(spu.read16(kBase + Spu2::RegEndx), static_cast<uint16_t>(0u), "writing ENDX should clear it");
+         });
+ 
++        // GOW-Port: adaptado de Waffle565/God-Of-War-Native-Port runtime@65e1d79 (con permiso del autor). 989snd
++        // sondea NAX de las voces en streaming y aborta el flujo si cae fuera de las dos mitades del anillo: NAX
++        // debe quedar dentro del bloque que suena, nunca en el bloque siguiente.
++        tc.Run("NAX reads inside the playing block, never the next one", [](TestCase &t)
++        {
++            Spu2 spu;
++            // Anillo de dos bloques: el segundo vuelve al primero (fin + repetir).
++            writeBlock(spu, 0x6000u, 0u, 0u, 0x04u, std::vector<uint8_t>(28u, 1u));
++            writeBlock(spu, 0x6008u, 0u, 0u, 0x03u, std::vector<uint8_t>(28u, 1u));
++            setupVoice0(spu, 0x6000u);
++            spu.write16(kBase + Spu2::RegKon, 0x0001u);
++            const auto nax = [&] {
++                return (static_cast<uint32_t>(spu.read16(kBase + Spu2::RegVoiceAddr + 8u)) << 16u) |
++                       spu.read16(kBase + Spu2::RegVoiceAddr + 10u);
++            };
++            t.Equals(nax(), 0x6001u, "before decoding, NAX reads the start block | 1");
++            size_t outside = 0;
++            for (int i = 0; i < 28 * 6; ++i)
++            {
++                spu.step();
++                const uint32_t value = nax();
++                const bool inFirst = value >= 0x6001u && value <= 0x6007u;
++                const bool inSecond = value >= 0x6009u && value <= 0x600Fu;
++                if (!inFirst && !inSecond)
++                    ++outside;
++            }
++            t.Equals(outside, static_cast<size_t>(0u), "NAX must stay inside the playing block of the ring");
++        });
++
+         tc.Run("ADSR attacks to full level and releases to silence after KOFF", [](TestCase &t)
+         {
+             Spu2 spu;
