@@ -1,6 +1,6 @@
 # Perfil reproducible: cuenta vid::Flip y presentaciones, sin volcados ni capturas del juego.
 param(
-    [int]$Segundos = 150,
+    [ValidateScript({ $_ -gt 0 })][int]$Segundos = 150,
     [switch]$SoloCuadros,
     [switch]$Vu1Hilo,
     [switch]$GsFrente,

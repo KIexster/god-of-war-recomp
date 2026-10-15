@@ -137,6 +137,12 @@ try {
     try { & (Join-Path $testRoot 'scripts/probar_rendimiento.ps1') -GsFrente -Renderer opengl }
     catch { $caught = $_ }
     Assert-Guard ($null -ne $caught -and $global:GowPerfGuardFixture.starts -eq $startsBefore) 'Se acepto GS frontal sin hilo VU1'
+    foreach ($duration in @(0, -1)) {
+        $caught = $null
+        try { & (Join-Path $testRoot 'scripts/probar_rendimiento.ps1') -Segundos $duration }
+        catch { $caught = $_ }
+        Assert-Guard ($null -ne $caught -and $global:GowPerfGuardFixture.starts -eq $startsBefore) "Se acepto una duracion invalida: $duration"
+    }
     $startsBefore = $global:GowPerfGuardFixture.starts
     $caught = $null
     try { & (Join-Path $testRoot 'scripts/probar_rendimiento.ps1') -Renderer cpu -Presentacion compartida }
