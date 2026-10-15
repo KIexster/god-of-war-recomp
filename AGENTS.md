@@ -77,8 +77,11 @@ La suite se puede reproducir en Linux (o WSL): aplica los parches como arriba y 
 cmake -S PS2Recomp -B PS2Recomp/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPS2X_BUILD_STUDIO=OFF \
   -DCMAKE_C_FLAGS=-march=x86-64-v2 -DCMAKE_CXX_FLAGS=-march=x86-64-v2
 ninja -C PS2Recomp/build ps2x_tests
-PS2Recomp/build/ps2xTest/ps2x_tests 2>/dev/null | python3 tools/ci/comprobar_pruebas.py tests/fallos_conocidos.txt
+(cd PS2Recomp && ./build/ps2xTest/ps2x_tests 2>/dev/null) | python3 tools/ci/comprobar_pruebas.py tests/fallos_conocidos.txt
 ```
+
+La suite se ejecuta desde `PS2Recomp/`, como en la CI: algunas pruebas leen fuentes con rutas relativas
+(por ejemplo `VU0 macro mappings cover all S1/S2 enums`) y fallan si se lanzan desde la raíz.
 
 (paquetes de Ubuntu: los de "Instalar dependencias" en `pruebas.yml`).
 
