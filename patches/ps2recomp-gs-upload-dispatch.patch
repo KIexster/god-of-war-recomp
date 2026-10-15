@@ -1,0 +1,32 @@
+diff --git a/ps2xRuntime/src/lib/gs/gpu/gs_gpu_backend.cpp b/ps2xRuntime/src/lib/gs/gpu/gs_gpu_backend.cpp
+index f4da4d9..a231ddd 100644
+--- a/ps2xRuntime/src/lib/gs/gpu/gs_gpu_backend.cpp
++++ b/ps2xRuntime/src/lib/gs/gpu/gs_gpu_backend.cpp
+@@ -1485,9 +1485,16 @@ struct GSGpuBackend::Impl
+             uploadWords.insert(uploadWords.end(), uploadData_.begin(), uploadData_.end());
+             uploadData(uploadWords.data(), uploadWords.size() * sizeof(uint32_t));
+             gl().UseProgram(upload.id);
+-            gl().Uniform4ui(upload.loc[0], mapOffset, 0u, 0u, 0u);
+             const GLuint profUpload = profBegin();
+-            gl().DispatchCompute(static_cast<GLuint>(uploadGroups.size() / 5u), 1u, 1u);
++            // GOW-Port: GL solo garantiza 65535 grupos por dimensión. Las subidas P4 por filas (ps2recomp-gs-p4-row-runs)
++            // pueden pasar de ese número con imágenes estrechas; se lanza por tramos moviendo el inicio del mapa.
++            constexpr uint32_t kMaxGroupsPerDispatch = 65535u;
++            const uint32_t totalGroups = static_cast<uint32_t>(uploadGroups.size() / 5u);
++            for (uint32_t first = 0u; first < totalGroups; first += kMaxGroupsPerDispatch)
++            {
++                gl().Uniform4ui(upload.loc[0], mapOffset + first * 5u, 0u, 0u, 0u);
++                gl().DispatchCompute(std::min(kMaxGroupsPerDispatch, totalGroups - first), 1u, 1u);
++            }
+             profEnd(2u, profUpload);
+             barrier();
+             uploadWords.clear();
+@@ -2368,7 +2375,7 @@ struct GSGpuBackend::Impl
+                                    transfer.trxpos.dsax, transfer.trxpos.dsay, static_cast<uint32_t>(dataStart)};
+         uploadWords.insert(uploadWords.end(), words, words + 9);
+         const bool packed4 = dpsm == GS_PSM_T4 || dpsm == GS_PSM_T4HL || dpsm == GS_PSM_T4HH;
+-        if (packed4)
++        if (packed4 && transfer.trxreg.rrw != 0u) // GOW-Port: sin ancho no hay filas que partir (evita dividir por 0)
+         {
+             // GOW-Port: cada workgroup cubre un tramo de una sola fila P4. La division y
+             // el modulo para hallar x/y se calculan aqui una vez por tramo, no por pixel.
