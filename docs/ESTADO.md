@@ -6936,3 +6936,95 @@ guion); medianas [mín..máx], 19-20 ventanas por ronda:
 Pendiente: decidir cómo tratar el déficit de muestras (estiramiento temporal o
 ritmo de audio) cuando la emulación no llega a tiempo real; es una decisión de
 salida de audio, no de coste del SPU2.
+
+## Perfil por muestreo `GOW_SAMPLER`: reparto del hilo EE en el barco (2026-10-15)
+
+`patches/ps2recomp-sampler.patch` (solo Windows x64). `GOW_SAMPLER=inicio:fin` en segundos, o `1` para
+toda la ejecución. Un hilo propio suspende los hilos EE, VU1 y frontend GS unas 1000 veces por segundo,
+copia su pila (RIP más `RtlVirtualUnwind`) en un búfer preasignado, sin reservar memoria mientras el hilo
+está suspendido, y lo reanuda. Al cerrar simboliza con DbgHelp (`ps2EntryRunner.pdb` junto al exe) e
+imprime `[gow-sampler]` con las 40 funciones con más muestras propias e inclusivas por hilo. Son muestras
+de tiempo de reloj del hilo, incluidas las esperas, no uso exclusivo de CPU.
+
+Primera medición: `main` `ed181a8` más el muestreador, exe `20e87cea…`, VU1 compilada, guion y
+configuración de los controles anteriores, `GOW_PERF_DIAG=frames` (sin relojes por subsistema),
+muestreo de 50 a 145 s en estado 11. Resultado: 51.059 muestras por hilo, intervalo real 1,86 ms,
+ninguna fallida. Hilo EE, porcentaje de muestras:
+
+| Inclusivo | % | Lectura |
+|---|---|---|
+| `GS::notifyExternalVSync` → `RtlSleepConditionVariableSRW` | 28,5 | el EE espera al GS en cada VBlank |
+| `PS2Runtime::advanceIopEeCycles` | 31,9 | emulación del IOP; `runCycles` 27,1, `serviceSpu2` 9,7 |
+| `PS2Memory::advanceEeTimers` | 9,4 | propio: recorre los 4 temporizadores en cada punto de control |
+| `ps2_stall::enabled` + `ps2_perf::enabled` | 2,9 | propio: guarda de estáticas locales sin inlinear |
+| Código del juego (`sub_…`) y resto | ~27 | p. ej. `sub_00162F18` 6,9 incl., `sub_0017A1D0` 6,6 |
+
+- Hecho: más del 40 % del hilo EE se va en avanzar el IOP y los temporizadores desde cada punto de
+  control (`checkpointDue`, 43 % inclusivo), y casi todo es comprobar que no hay nada que hacer.
+  `executeInstruction` del IOP solo suma un 2,4 % propio.
+- Hecho: el 28,5 % del hilo EE está bloqueado esperando al GS dentro de `notifyExternalVSync` (área de
+  GS/presentación). Se documenta para quien lleva esa área; aquí no se toca.
+- `ps2_stall::enabled` (1,6 %) lo introdujo el diagnóstico de atascos (#87): se corrige en el parche
+  siguiente, junto con el camino rápido del IOP y los temporizadores.
+## Punto de control del EE más barato: IOP ocioso exacto y temporizadores perezosos (2026-10-15)
+
+`patches/ps2recomp-checkpoint-fast.patch`, a partir del reparto medido con `GOW_SAMPLER` (sección anterior):
+
+- **IOP ocioso:** `IopEmulator::runEeCycles` solo suma ciclos mientras el IOP no tenga hilos listos y el
+  objetivo quede por debajo del primer evento posible: despertar de un hilo, fin de DMA, callback,
+  evento de temporizador del IOP o siguiente muestra del SPU2. Es exactamente lo que haría `runCycles` en
+  ese tramo. El límite se invalida con cualquier entrada externa (RPC, SIF, carga de módulos, escrituras
+  de memoria) y con un cambio de versión del núcleo IOP.
+- **Temporizadores del EE perezosos:** `advanceEeTimers` acumula ciclos hasta la próxima interrupción
+  posible (`cyclesUntilNextEeTimerInterrupt`) y los aplica antes de cualquier lectura o escritura de sus
+  registros. Aplicarlos de una vez o a trozos da la misma cuenta y el mismo resto del reloj.
+- `ps2_stall::enabled` y `ps2_perf::enabled/countFrames` leen globales `inline const` en vez de
+  estáticas locales con guarda (2,9 % del hilo EE en el muestreo).
+- Regresiones: un IOP ocioso avanzado en 200.000 pasos irregulares conserva ciclos y muestras tras cada
+  paso; temporizadores perezosos frente a aplicación inmediata en 300.000 pasos (mismas interrupciones,
+  cuentas y plazo). Ambas fallan con una mutación del límite (comprobado).
+
+Medición en el barco (exe A `20e87cea…` = `main` más el muestreador; exe B `9e61941e…` = A más este
+parche; 3 rondas de 150 s por lado alternas A/B, ventanas de 5 s con t=50..145, `GOW_PERF_DIAG=frames`,
+`GOW_SPU2_PERF=1`, `GOW_DELTA_DIAG=1`):
+
+| Métrica (mediana [mín..máx]) | A | B |
+|---|---|---|
+| velocidad de juego (`[gow-delta]`, 1,00 = tiempo real) | 0,91 [0,60..1,76] | 1,00 [0,84..1,10] |
+| muestras de SPU2 por segundo | 44.365 [34.295..83.716] | 49.436 [48.295..50.331] |
+| entradas a `vid::Flip` por segundo | 30,1 [16,3..101,6] | 30,3 [17,5..60,2] |
+
+- Hecho: con el parche el juego mantiene la velocidad real y el SPU2 produce las muestras de tiempo
+  real. El déficit de ~28 % de silencio medido antes desaparece. Las muestras quedan ~3 % por encima de
+  48 kHz; se vigila.
+- Hecho: los flips medianos no cambian (~30, dos VBlank por cuadro). La mejora es de regularidad y
+  velocidad, no de FPS. `guest_flip_hz` no son FPS físicos. `host_hz` fue bimodal (17 en dos rondas B,
+  60 en una) y no se atribuye.
+- Muestreo de B (`sampler_cpfast`): el hilo EE espera el 57 % del tiempo (antes 28 %); `checkpointDue`
+  pasa de 43 a 21,7 % inclusivo, el IOP de 31,9 a 14,1 %, la espera en `notifyExternalVSync` de 28,5 a
+  10,1 %, y `advanceEeTimers` queda en 5,9 % propio. El bucle `0x17A2A0` lee T0 en cada vuelta y fuerza
+  la aplicación; el siguiente paso sería un reloj nativo para los temporizadores sin eventos.
+- Anomalía (área de presentación): en una ronda A el hilo del host dejó de iterar hacia t≈5..10 s
+  (solo una línea `[gow-perf]`, la ventana no atendió `WM_CLOSE` y hubo que terminarla), mientras el
+  juego seguía en estado 11. Sus FPS no se usan; su audio y velocidad sí.
+
+## Portes de Waffle565: NAX del SPU2 y accesos rápidos del EE (2026-10-15)
+
+[Waffle565/God-Of-War-Native-Port](https://github.com/Waffle565/God-Of-War-Native-Port) partió de la pila de
+parches de este repositorio el 2026-10-09. Su autor dio permiso para copiar su código (comunicado por el
+propietario de este repositorio). Se portan, con su atribución en los parches y en los commits:
+
+- `ps2recomp-spu2-nax.patch` (runtime@65e1d79): el registro NAX se lee dentro del bloque que suena, como
+  `NextA` en PCSX2. Nuestro NAX apuntaba al bloque siguiente; en el último bloque de una mitad del anillo
+  de streaming quedaba fuera de las dos mitades y 989snd (989NOMID.IRX 0x13258) abortaba el flujo (error
+  0x35): la música se reiniciaba cada pocos segundos. Regresión: NAX dentro del bloque en un anillo de dos
+  bloques; falla con el código anterior (comprobado). El hash de referencia del SPU2 no cambia.
+- `ps2recomp-ee-fast-access.patch` (runtime@96f61ab y la parte de macros de runtime@e96ee58): las macros
+  `READ*`/`WRITE*` acceden al scratchpad directamente cuando el acceso está alineado, y `SET_GPR_*` escriben
+  los 64 bits bajos con un solo almacenamiento. Regresiones para el scratchpad (y su alias `0xF0000000`) y
+  para la semántica de GPR (extensión de signo, 64 bits altos intactos, `$zero`).
+
+Validación: `ps2x_tests` 640/640 con los dos parches y la VU1 nativa encima. Compilación completa local
+(exe `ad179aa4…`): el barco llega al estado 11 y cierra con `WM_CLOSE`, código 0, con la VU1 nativa
+desactivada. No se ha medido de oído el arreglo de la música; el efecto descrito es el del proyecto de
+origen.
