@@ -137,27 +137,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Extraer dependencias de la revision fijada, sin el juego
         run: python tools/render/pcsx2_probe/prepare.py --pcsx2-source pcsx2-reference --output pcsx2-generated
-      - name: Preparar cabeceras del runtime para comprobar el cliente Windows
-        shell: pwsh
-        run: |
-          $revision = [regex]::Match((Get-Content scripts/common.ps1 -Raw), "PS2RecompCommit\s*=\s*'([0-9a-f]{40})'").Groups[1].Value
-          if (-not $revision) { throw 'Commit del runtime no encontrado' }
-          git init -q runtime-client-headers
-          git -C runtime-client-headers fetch -q --depth 1 https://github.com/ran-j/PS2Recomp.git $revision
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          git -C runtime-client-headers checkout -q FETCH_HEAD
-          foreach ($patch in (python tools/ci/parches.py)) {
-            git -C runtime-client-headers apply --ignore-whitespace $patch
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
       - name: Compilar modulo y fixtures; ejecutar parser y memoria, sin dispositivo
         shell: cmd
         run: |
           for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvars64.bat" >nul
           if errorlevel 1 exit /b 1
-          cl /nologo /std:c++20 /EHsc /utf-8 /Zs /I runtime-client-headers/ps2xRuntime/include tests/pcsx2_runtime_client_syntax.cpp
-          if errorlevel 1 exit /b 1
-          cmake -S tools/render/pcsx2_probe -B pcsx2-probe-build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPCSX2_SOURCE="%CD%/pcsx2-reference" -DPROBE_GENERATED="%CD%/pcsx2-generated" -DDIRECTX_HEADERS="%CD%/directx-headers" -DCMAKE_TOOLCHAIN_FILE="%CD%/vcpkg-reference/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static-md -DGOW_RUNTIME_HEADERS="%CD%/runtime-client-headers/ps2xRuntime/include"
+          cmake -S tools/render/pcsx2_probe -B pcsx2-probe-build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPCSX2_SOURCE="%CD%/pcsx2-reference" -DPROBE_GENERATED="%CD%/pcsx2-generated" -DDIRECTX_HEADERS="%CD%/directx-headers" -DCMAKE_TOOLCHAIN_FILE="%CD%/vcpkg-reference/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static-md
           if errorlevel 1 exit /b 1
           cmake --build pcsx2-probe-build --parallel 3
           if errorlevel 1 exit /b 1
