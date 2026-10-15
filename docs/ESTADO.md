@@ -6717,3 +6717,70 @@ GPU tanto OFF0/38,039s como ON0/37,706s. SHA de suite final
 La cadena111 se reaplica desde pin y sus cuatro archivos coinciden con el
 candidato. Configuración/handlers0 y25scriptsPS1sin errores. El full del juego
 se inicia después de congelar el commit fuente; estas pruebas aún no lo sustituyen.
+
+### 2026-10-14/15 — Runner111 completo y validación acotada de ResetGraph
+
+La compilación completa `scripts/2_compilar.cmd` de la fuente
+`8c5cefe2dfb297187970da037463731fd54d33de` terminó con código 0 en 1.067,821 s:
+111 parches, VU1 compilada, 13 unidades programa0..12 enlazadas y 501 micromemorias
+privadas. El manifiesto final está en
+`E:/gowgpuprof/transition111_reset_graph_vu1c_full/build.json` y sustituye las
+notas históricas de actividad. EXE SHA-256
+`63c3bae7f275e8638a83618f2f8864f4230436f65f2153ff54c3414fb42b62e6`,
+66.307.584 bytes; biblioteca
+`b94efacbfa991f246a47443c31d69a7dd4413abd065b34c61153636c489e015b`.
+Ambas identidades se verificaron después de terminar. Se conservaron los
+runtimes previos, CPU/DX11/SW, tarjetas de origen y micromemorias.
+
+Las fuentes finales bajo `stateMutex` pasan 627/627 pruebas normales y 672/672
+con GPU, tanto con `GOW_PERF_DIAG` desactivado como activado, todos con código 0.
+El nuevo caso incluye cuatro combinaciones INT/FFMD. La regresión contra110
+falla 0/1, código 1; el caso pasa en las fuentes finales dentro de 627/627.
+La variante MMIO previa también pasó 1/1 aislada, sin sustituir la suite final
+bajo mutex. Cadena111 desde pin, configuración, handlers y sintaxis PowerShell
+correctos. CI de fuente8c: cuatro SUCCESS,
+[run38616693562](https://github.com/KIexster/god-of-war-recomp/actions/runs/38616693562).
+
+Menú obligatorio `scripts/probar_menu.ps1 -Segundos 115`: código del script 0,
+115,375 s y nueve capturas de 512×448. Revisión del contacto y captura completa:
+rostro/fuego, dificultad Hero, escena con Kratos y barco con personaje. Las
+muestras 0 y 7 son negras en inicio/transición; el registro llega a estado11
+sin errores del patrón revisado. Tarjeta privada y origen conservan SHA-256
+`47ebe237a3987f843fc19b0f801ce1edc1690768ef6b18e4b03a12ca6b298358`.
+El script detiene al límite: su código 0 no acredita salida normal. Estas
+capturas son GowPadTest (VRAM actual/CRTC latched), no textura adquirida.
+
+Control combinado privado `visual_reset111_a`: 240,170 s, código 0, VU1 y frente
+GS en hilos, FINISH asíncrono y presentación compartida activados. Estado11
+muestreado entre 35,06 y 236,73 s, lecturas reales del guion de mando y tarjeta
+intacta. Sin minimización registrada; el primer plano varió. Las 16 capturas
+adquiridas de 512×448 son RGBA distintas y correlacionan con el registro del
+host: ticks 3999..4030 y SMODE2=0x21fed1. Se revisaron el contacto completo y
+el último cuadro: HUD, Kratos, enemigos, cambios de pose y efecto de ataque
+en el barco. No hay referencia DX11 alineada en esta pasada.
+
+El inspector de 4.096 registros con cupo no encuentra regresión de secuencia
+ni repetición inconsistente; no certifica iteraciones no registradas ni
+ausencia global de reutilización. Sin errores del patrón revisado. WM_CLOSE
+al HWND del PID hijo cierra con código 0 en 0,163 s, sin terminación forzada.
+El límite de 240 s sigue siendo motivo del controlador, no final del juego.
+La pasada contiene hash, readback y perfil: no es un benchmark.
+Artefactos privados en `transition111_reset_graph_vu1c_full/runs/`:
+`menu115_reset111` y `visual_reset111_a`, con resultados, registros y capturas.
+
+Alcance contrastado con el ELF comercial: el ResetGraph original también
+ordena CSR.RESET/FLUSH y tiene rutas de modo que el stub todavía aproxima.
+Esta PR sólo corrige la programación CRTC de mode0 que emitía una escritura
+ALPHA_1 indebida por GIF. Conservar ALPHA en su test caracteriza esa operación
+acotada, no el estado del hardware después de RESET. No valida ResetGraph
+completo, todas las escrituras CRTC/MMIO ni el ABI comercial de GParam.
+No se modifica bob/paridad/SMODE1/SYNCV para forzar una referencia visual.
+
+Siguen pendientes la frontera de comandos entre adquirido y espejo original,
+la neblina restante, el encuadre PS2 y la estabilidad prolongada. Estos
+controles no miden cuadros físicos ni FPS únicos, ni prueban final de nivel.
+No se compararon otras ejecuciones por igualdad de tick.
+
+Revisión local de código, regresión, alcance original y evidencia funcional
+completada, sin aprobación externa. La fusión exige CI del HEAD documental
+final; no hubo cambios de fuente tras el full.
