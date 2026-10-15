@@ -28,6 +28,7 @@ $spu2OutputPatch = Join-Path $RepoRoot 'patches\ps2recomp-spu2-output.patch'
 $sio2Patch = Join-Path $RepoRoot 'patches\ps2recomp-sio2.patch'
 $perfPatch = Join-Path $RepoRoot 'patches\ps2recomp-perf.patch'
 $gsOpenGlPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-opengl.patch'
+$gsP4RowRunsPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-p4-row-runs.patch'
 $eeFixesPatch = Join-Path $RepoRoot 'patches\ps2recomp-ee-fixes.patch'
 $gsPresentationPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-presentation.patch'
 $vifDirectPatch = Join-Path $RepoRoot 'patches\ps2recomp-vif-direct.patch'
@@ -107,6 +108,7 @@ $vu1XgkickBulkPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-xgkick-bulk.pat
 $vu1AdvanceEventsPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-advance-events.patch'
 $vu1LowerSpecialsPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-lower-specials.patch'
 $vu1StaticStoresPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-static-stores.patch'
+$vu1StaticTimingPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-static-timing.patch'
 $vu1SimdSpecialsPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-simd-specials.patch'
 $eeCop0CountPatch = Join-Path $RepoRoot 'patches\ps2recomp-ee-cop0-count.patch'
 $gsSourceAddressPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-source-address.patch'
@@ -267,6 +269,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1XgkickBulkPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1AdvanceEventsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1LowerSpecialsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1StaticStoresPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1StaticTimingPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1SimdSpecialsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $eeCop0CountPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsSourceAddressPatch)
@@ -294,6 +297,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $checkpointFastPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $spu2NaxPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $eeFastAccessPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1NativePatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsP4RowRunsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $samplerThreadsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsVsyncUnlockedPatch)
 Pop-Location

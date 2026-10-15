@@ -1,0 +1,108 @@
+diff --git a/ps2xRuntime/src/lib/gs/gpu/gs_gpu_backend.cpp b/ps2xRuntime/src/lib/gs/gpu/gs_gpu_backend.cpp
+index 60f04cc..f4da4d9 100644
+--- a/ps2xRuntime/src/lib/gs/gpu/gs_gpu_backend.cpp
++++ b/ps2xRuntime/src/lib/gs/gpu/gs_gpu_backend.cpp
+@@ -1487,7 +1487,7 @@ struct GSGpuBackend::Impl
+             gl().UseProgram(upload.id);
+             gl().Uniform4ui(upload.loc[0], mapOffset, 0u, 0u, 0u);
+             const GLuint profUpload = profBegin();
+-            gl().DispatchCompute(static_cast<GLuint>(uploadGroups.size()), 1u, 1u);
++            gl().DispatchCompute(static_cast<GLuint>(uploadGroups.size() / 5u), 1u, 1u);
+             profEnd(2u, profUpload);
+             barrier();
+             uploadWords.clear();
+@@ -2367,8 +2367,43 @@ struct GSGpuBackend::Impl
+         const uint32_t words[9] = {transfer.bitbltbuf.dbp, dbw, dpsm, transfer.trxreg.rrw, transferState.copiedPixels, count,
+                                    transfer.trxpos.dsax, transfer.trxpos.dsay, static_cast<uint32_t>(dataStart)};
+         uploadWords.insert(uploadWords.end(), words, words + 9);
+-        for (uint32_t group = 0; group < (count + 255u) / 256u; ++group)
+-            uploadGroups.push_back(descriptor | (group << 16u));
++        const bool packed4 = dpsm == GS_PSM_T4 || dpsm == GS_PSM_T4HL || dpsm == GS_PSM_T4HH;
++        if (packed4)
++        {
++            // GOW-Port: cada workgroup cubre un tramo de una sola fila P4. La division y
++            // el modulo para hallar x/y se calculan aqui una vez por tramo, no por pixel.
++            uint32_t offset = 0u;
++            const uint32_t rowWidth = transfer.trxreg.rrw;
++            while (offset < count)
++            {
++                const uint32_t pixel = transferState.copiedPixels + offset;
++                const uint32_t column = pixel % rowWidth;
++                const uint32_t rowCount = std::min(count - offset, rowWidth - column);
++                const uint32_t rowX = transfer.trxpos.dsax + column;
++                const uint32_t rowY = transfer.trxpos.dsay + pixel / rowWidth;
++                for (uint32_t rowOffset = 0u; rowOffset < rowCount; rowOffset += 256u)
++                {
++                    const uint32_t groupCount = std::min(256u, rowCount - rowOffset);
++                    uploadGroups.push_back(descriptor);
++                    uploadGroups.push_back(offset + rowOffset);
++                    uploadGroups.push_back(groupCount);
++                    uploadGroups.push_back(rowX + rowOffset);
++                    uploadGroups.push_back(rowY);
++                }
++                offset += rowCount;
++            }
++        }
++        else
++        {
++            for (uint32_t group = 0u; group < (count + 255u) / 256u; ++group)
++            {
++                uploadGroups.push_back(descriptor);
++                uploadGroups.push_back(group * 256u);
++                uploadGroups.push_back(count);
++                uploadGroups.push_back(0u);
++                uploadGroups.push_back(0u);
++            }
++        }
+         pendingWritePages |= transferPages;
+ 
+         transferState.copiedPixels = std::min<uint32_t>(transferState.totalPixels, transferState.copiedPixels + count);
+diff --git a/ps2xRuntime/src/lib/gs/gpu/gs_gpu_shaders.cpp b/ps2xRuntime/src/lib/gs/gpu/gs_gpu_shaders.cpp
+index 3c94684..299e8d9 100644
+--- a/ps2xRuntime/src/lib/gs/gpu/gs_gpu_shaders.cpp
++++ b/ps2xRuntime/src/lib/gs/gpu/gs_gpu_shaders.cpp
+@@ -977,18 +977,35 @@ uint dataByte(uint base, uint index)
+ 
+ void main()
+ {
+-    uint entry = data[uUpload.x + gl_WorkGroupID.x];
+-    uint d = (entry & 0xFFFFu) * 9u;
+-    uint i = (entry >> 16u) * 256u + gl_LocalInvocationID.x;
+-    if (i >= data[d + 5u])
+-        return;
++    uint map = uUpload.x + gl_WorkGroupID.x * 5u;
++    uint d = data[map] * 9u;
++    uint lane = gl_LocalInvocationID.x;
+     uint dbp = data[d];
+     uint dbw = data[d + 1u];
+     uint dpsm = data[d + 2u];
+-    uint rrw = data[d + 3u];
+-    uint pixel = data[d + 4u] + i;
+-    uint x = data[d + 6u] + pixel % rrw;
+-    uint y = data[d + 7u] + pixel / rrw;
++    uint i;
++    uint x;
++    uint y;
++    bool packed4 = dpsm == 0x14u || dpsm == 0x24u || dpsm == 0x2Cu;
++    if (packed4)
++    {
++        uint count = data[map + 2u];
++        if (lane >= count)
++            return;
++        i = data[map + 1u] + lane;
++        x = data[map + 3u] + lane;
++        y = data[map + 4u];
++    }
++    else
++    {
++        i = data[map + 1u] + lane;
++        if (i >= data[d + 5u])
++            return;
++        uint rrw = data[d + 3u];
++        uint pixel = data[d + 4u] + i;
++        x = data[d + 6u] + pixel % rrw;
++        y = data[d + 7u] + pixel / rrw;
++    }
+     uint base = data[d + 8u];
+     uint value;
+     switch (dpsm)
