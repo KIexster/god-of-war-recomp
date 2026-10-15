@@ -1,0 +1,49 @@
+diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime/ps2_vu1.h
+index ee9d3f1..b8c9e18 100644
+--- a/ps2xRuntime/include/runtime/ps2_vu1.h
++++ b/ps2xRuntime/include/runtime/ps2_vu1.h
+@@ -5,6 +5,7 @@
+ #include <cmath>
+ #include <cstring>
+ #include <limits>
++#include <memory>
+ #include <vector>
+ #include <cstdint>
+ 
+@@ -340,7 +341,9 @@ private:
+     // it returns when the program ended or when the current pc has no native block (the caller then steps the exact
+     // engine). commitEverythingNow retires every in-flight pipeline entry without advancing the cycle counter.
+     struct NativeState;
+-    NativeState *m_native = nullptr;
++    // GOW-Port: propiedad compartida (antes un puntero crudo que nunca se liberaba: cada VU1Interpreter perdía su
++    // NativeState, cientos de MB en las pruebas que crean uno por caso). Las copias comparten el estado, como antes.
++    std::shared_ptr<NativeState> m_native;
+     bool runNative(StepContext &context);
+     void nativeTiming(const uint8_t *code, uint32_t pc, uint32_t count, std::vector<uint8_t> &cyc);
+     void commitEverythingNow();
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+index 44641af..ee0c637 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+@@ -1959,7 +1959,7 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
+         }
+     };
+     if (m_unit == Unit::VU1 && !m_native)
+-        m_native = new NativeState();
++        m_native = std::make_shared<NativeState>();
+     if (m_unit == Unit::VU1 && m_native && m_native->enabled && vuData && codeSize == PS2_VU1_CODE_SIZE)
+         VU1NativeAccess::recordReplay(*this, &context, maxCycles);
+     if (m_unit == Unit::VU1 && m_native && m_native->enabled && m_native->verifyLeft != 0u && vuData && codeSize == PS2_VU1_CODE_SIZE)
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_native.inl b/ps2xRuntime/src/lib/vu/ps2_vu1_native.inl
+index f653e90..9b820dc 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_native.inl
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_native.inl
+@@ -704,7 +704,7 @@ bool VU1Interpreter::runNative(StepContext &context)
+     if (m_unit != Unit::VU1 || context.vuData == nullptr || context.codeSize != PS2_VU1_CODE_SIZE)
+         return false;
+     if (!m_native)
+-        m_native = new NativeState();
++        m_native = std::make_shared<NativeState>();
+     NativeState &ns = *m_native;
+     if (!ns.enabled)
+         return false;

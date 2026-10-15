@@ -12,7 +12,7 @@ Gerado por `tools/estado/generar.py` a partir de `docs/estado/datos.toml` e `con
 | `libipu` | 5 | 🔧 Parcial | sceIpuInit corrigido; a rota MPEG por software funciona, mas a cobertura completa das operações da IPU não foi verificada |
 | `libgraph` | 7 | ✅ Funciona |  |
 | `libdma` | 8 | ✅ Funciona |  |
-| `libcdvd` | 10 | ✅ Funciona | Lê a ISO original |
+| `libcdvd` | 10 | ✅ Funciona | Lê os arquivos do disco extraídos ao lado do ELF (.disc_layout); a ISO só com GOW_ISO |
 | `libdbc` | 11 | 🔧 Parcial | RPC de dbcman e SIO2 verificados ao carregar e salvar no cartão; os controles SIO2 ainda aparecem desconectados |
 | `libpad2` | 13 | 🔧 Parcial | HLE da primeira porta (teclado ou gamepad); pressões 0/255 |
 | `libvib` | 2 | ⏳ Pendente | Sem vibração: o HLE não anuncia atuadores |

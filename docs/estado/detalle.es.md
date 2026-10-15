@@ -12,7 +12,7 @@ Generado por `tools/estado/generar.py` a partir de `docs/estado/datos.toml` y `c
 | `libipu` | 5 | 🔧 Parcial | sceIpuInit corregido; la ruta MPEG por software funciona, sin verificar todas las operaciones de la IPU |
 | `libgraph` | 7 | ✅ Funciona |  |
 | `libdma` | 8 | ✅ Funciona |  |
-| `libcdvd` | 10 | ✅ Funciona | Lee la ISO original |
+| `libcdvd` | 10 | ✅ Funciona | Lee los archivos del disco extraídos junto al ELF (.disc_layout); la ISO solo con GOW_ISO |
 | `libdbc` | 11 | 🔧 Parcial | RPC de dbcman y SIO2 verificados al cargar y guardar en tarjeta; los mandos SIO2 aún se ven desconectados |
 | `libpad2` | 13 | 🔧 Parcial | HLE del primer puerto (teclado o gamepad); presiones 0/255 |
 | `libvib` | 2 | ⏳ Pendiente | Sin vibración: el HLE no anuncia actuadores |

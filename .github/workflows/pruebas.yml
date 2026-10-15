@@ -137,27 +137,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Extraer dependencias de la revision fijada, sin el juego
         run: python tools/render/pcsx2_probe/prepare.py --pcsx2-source pcsx2-reference --output pcsx2-generated
-      - name: Preparar cabeceras del runtime para comprobar el cliente Windows
-        shell: pwsh
-        run: |
-          $revision = [regex]::Match((Get-Content scripts/common.ps1 -Raw), "PS2RecompCommit\s*=\s*'([0-9a-f]{40})'").Groups[1].Value
-          if (-not $revision) { throw 'Commit del runtime no encontrado' }
-          git init -q runtime-client-headers
-          git -C runtime-client-headers fetch -q --depth 1 https://github.com/ran-j/PS2Recomp.git $revision
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          git -C runtime-client-headers checkout -q FETCH_HEAD
-          foreach ($patch in (python tools/ci/parches.py)) {
-            git -C runtime-client-headers apply --ignore-whitespace $patch
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
       - name: Compilar modulo y fixtures; ejecutar parser y memoria, sin dispositivo
         shell: cmd
         run: |
           for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvars64.bat" >nul
           if errorlevel 1 exit /b 1
-          cl /nologo /std:c++20 /EHsc /utf-8 /Zs /I runtime-client-headers/ps2xRuntime/include tests/pcsx2_runtime_client_syntax.cpp
-          if errorlevel 1 exit /b 1
-          cmake -S tools/render/pcsx2_probe -B pcsx2-probe-build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPCSX2_SOURCE="%CD%/pcsx2-reference" -DPROBE_GENERATED="%CD%/pcsx2-generated" -DDIRECTX_HEADERS="%CD%/directx-headers" -DCMAKE_TOOLCHAIN_FILE="%CD%/vcpkg-reference/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static-md -DGOW_RUNTIME_HEADERS="%CD%/runtime-client-headers/ps2xRuntime/include"
+          cmake -S tools/render/pcsx2_probe -B pcsx2-probe-build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPCSX2_SOURCE="%CD%/pcsx2-reference" -DPROBE_GENERATED="%CD%/pcsx2-generated" -DDIRECTX_HEADERS="%CD%/directx-headers" -DCMAKE_TOOLCHAIN_FILE="%CD%/vcpkg-reference/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static-md
           if errorlevel 1 exit /b 1
           cmake --build pcsx2-probe-build --parallel 3
           if errorlevel 1 exit /b 1
@@ -209,7 +194,7 @@ jobs:
             libgl1-mesa-dev libavcodec-dev libavformat-dev libavutil-dev libswresample-dev libswscale-dev
 
       # -march=x86-64-v2: el runtime usa intrinsecos SSE4.1 que GCC solo acepta con ese objetivo
-      - name: Compilar ps2x_tests y los controles procedurales GS y VU1
+      - name: Compilar ps2x_tests y los controles de FINISH y VU1
         working-directory: PS2Recomp
         run: |
           cat >> CMakeLists.txt <<'CMAKE'
@@ -219,7 +204,7 @@ jobs:
           CMAKE
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPS2X_BUILD_STUDIO=OFF \
             -DCMAKE_C_FLAGS=-march=x86-64-v2 -DCMAKE_CXX_FLAGS=-march=x86-64-v2
-          ninja -C build ps2x_tests gow_gs_replay_test gow_gs_replay gow_gs_replay_checkpoints_test gow_gs_finish_async_test gow_gs_feedback_generator gow_gs_feedback_dump_test gow_vu1_compiled_test gow_vu1_fmac_test
+          ninja -C build ps2x_tests gow_gs_finish_async_test gow_vu1_compiled_test gow_vu1_fmac_test
 
       # src/gow_overrides.cpp solo se compila de verdad junto al codigo generado del juego (Windows). Aqui se
       # comprueba contra las cabeceras del runtime ya parcheado, declarando las sub_* que usa.
@@ -232,26 +217,12 @@ jobs:
             grep -ho 'sub_[0-9A-F]\{8\}_0x[0-9a-f]\+' gow/src/*.cpp | sort -u |
               sed 's/.*/void &(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime);/'
           } > generado/ps2_recompiled_functions.h
-          for f in gow/src/*.cpp gow/tools/render/repetir_gs.cpp gow/tools/render/comparar_feedback_gs.cpp gow/tools/render/generar_feedback_gs.cpp gow/tools/render/generar_oraculos_gs.cpp gow/tests/gs_replay_test.cpp gow/tests/gs_frame_pixels_test.cpp gow/tests/gs_feedback_dump_test.cpp; do
+          for f in gow/src/*.cpp; do
             echo "$f"
             g++ -std=c++20 -march=x86-64-v2 -fsyntax-only \
               -IPS2Recomp/ps2xRuntime/include -IPS2Recomp/ps2xRuntime/src/lib -IPS2Recomp/ps2xIOP/include \
               -IPS2Recomp/build/_deps/raylib-src/src -Igenerado -Igow/src "$f"
           done
-
-      - name: Probar captura, opciones, frontera TEXFLUSH y replay CPU sin el juego
-        run: PS2Recomp/build/gow_gs_replay_test PS2Recomp/build/gow_gs_replay_synthetic.bin
-
-      - name: Probar la CLI de controles sincronizados GS
-        run: |
-          PS2Recomp/build/gow_gs_replay_checkpoints_test
-          python3 gow/tests/gs_replay_cli_test.py PS2Recomp/build/gow_gs_replay PS2Recomp/build/gow_gs_replay_synthetic.bin
-
-      - name: Probar alturas y fronteras de los patrones GS procedurales
-        run: python3 gow/tests/gs_feedback_height_cli_test.py PS2Recomp/build/gow_gs_feedback_generator PS2Recomp/build/gow_gs_feedback_dump_test
-
-      - name: Probar persistencia y reemplazo de la cache de textura GS
-        run: python3 gow/tests/gs_texture_cache_causality_test.py PS2Recomp/build/gow_gs_feedback_generator PS2Recomp/build/gow_gs_replay
 
       - name: Probar el generador VU1 y los pares compilados con microcodigo procedural
         run: python3 gow/tests/vu1_compiled_cli_test.py PS2Recomp/build/gow_vu1_compiled_test
@@ -262,7 +233,8 @@ jobs:
           timeout 30 PS2Recomp/build/gow_gs_finish_async_test async
 
       - name: Probar todas las FMAC de VU1 compiladas frente al interprete con valores limite
-        run: PS2Recomp/build/gow_vu1_fmac_test 200
+        # GOW-Port: la VU1 nativa va primero en el runtime de Waffle565; se apaga para comparar la compilada.
+        run: GOW_VU1_NATIVE_OFF=1 PS2Recomp/build/gow_vu1_fmac_test 200
 
       - name: Ejecutar la suite
         working-directory: PS2Recomp

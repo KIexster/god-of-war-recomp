@@ -7104,3 +7104,45 @@ rondas alternas de 150 s en el barco, ventanas de t=50..145 s, `GOW_PERF_DIAG=fr
 Cuando la GPU no da abasto, el juego ya no se ralentiza: conserva la velocidad real y el audio, y pierde
 cuadros. Una ronda B tuvo una ráfaga de recuperación (máximo 3,33) que pudo coincidir con una compilación
 de pruebas lanzada en paralelo. La saturación de la GPU sigue: es el siguiente objetivo (renderizador).
+
+## Migración a la base de Waffle565 (2026-10-15)
+
+Decisión del usuario: adoptar como base el runtime de **Waffle565/God-Of-War-Native-Port** (con permiso del autor)
+para ejecutar el juego como su port. Detalle de los parches en [`ARQUITECTURA.md`](ARQUITECTURA.md#base-del-runtime-waffle565).
+
+**Hecho (verificado):**
+- Suite `ps2x_tests` 439/439 en Windows (MSVC) y en Linux (GCC, WSL Ubuntu 24.04), con 89 casos retirados de piezas
+  sustituidas por diseño (lista en `patches/ps2recomp-waffle-tests.patch`).
+- Dos defectos del runtime de Waffle corregidos en parches propios: no enlazaba con GCC (`inline` en funciones de
+  PCSX2 llamadas desde otra unidad) y la VU1 nativa perdía su `NativeState` con cada `VU1Interpreter`
+  (`gow_vu1_fmac_test` pasaba de 7,6 GB; ahora 47 MB).
+- Compilación completa en Windows y ejecución con el disco extraído (`tools/iso_extract.py --layout`), valores de
+  `play.cmd` (`PS2X_GS_WORKER=1`, `GOW_GS_FINISH_ASINCRONO=1`) y guion de partida nueva (`logs/tools/correr_w.py`,
+  privado): menú de dificultad, barco, combate, HUD y sangre correctos en las capturas (1024×894, resolución
+  interna 2x). La ventana responde a WM_CLOSE.
+- IOP nativo: una ejecución con `PS2X_IOP_DUMP_MODULES` vuelca los 8 IRX; con `GOW_IOP_MODULOS` y recompilación
+  los 8 corren como código nativo. Inicio de la partida (`[gow-pad2:test] gameplay start`): 33,6 s con el
+  intérprete, 21,1 s con el IOP nativo y `GOW_FAST_BOOT=1` (Waffle documenta ~20 s).
+- VU1: `GOW_VU1_STATS=1` da 0 pasos interpretados (todo bloque nativo), ~2,7 s de VU1 por ventana de 5 s.
+
+**Medición (escena del barco con combate, 150 s, ventanas finales, `guest_flip_hz` = llamadas a `vid::Flip`, no FPS
+físicos; velocidad del juego con `GOW_DELTA_DIAG`):**
+
+| Ejecutable | Rondas | `guest_flip_hz` mediana (mín–máx por ronda) | velocidad |
+|---|---|---|---|
+| PR #101 (`bin\gsn`, base anterior, GS y VU1 nativos, `GOW_PERF_DIAG=frames`) | 3 | 59,98 / 60,00 / 60,00 (59,79–60,20) | 1,00 |
+| Base Waffle (`bin\waffle2`, IOP nativo, `GOW_PERF_DIAG=frames`) | 2 | 44,17 / 48,53 (42,75–60,16) | 1,00 |
+| Base Waffle (`GOW_PERF_DIAG=1`, más caro) | 3 | 47,54 / 44,34 / 44,80 | 1,00 |
+
+Hecho: en esta escena la base de Waffle da menos flips por segundo que la PR #101, sin perder velocidad de juego.
+Desglose de la base de Waffle (`GOW_PERF_DIAG=1`, ventana de 5 s): EE 2,6 s, espera de VBlank del EE 2,1 s, VU1
+2,8 s (hilo del trabajador), GS 1,9 s (hilo stage); el EE apenas espera al trabajador (`PS2X_GS_WORKER_DIAG=1`:
+~15 ms por ventana en `mmio 0x12001000`). Inferencia: por cuadro, EE (~12 ms) + VU1 (~13 ms) supera los 16,7 ms
+y parte de los cuadros pierde el VBlank. Hipótesis: faltan las mejoras del EE posteriores a la bifurcación de
+Waffle (checkpoint-fast #94, VBlank sin mutex #100), que no aplican tal cual sobre su runtime.
+Observación aparte: el ejecutable de la PR #101 con `GOW_PERF_DIAG=1` se quedó colgado a los ~60 s
+(`runs\abw_perfA`), otra aparición del atasco intermitente de la base anterior.
+
+**Próximos pasos:** portar checkpoint-fast y el VBlank sin bloqueo a la base de Waffle y medir A/B; tabla `[mmio]`
+del reproductor de vídeo (13 entradas de Waffle, privadas); diagnósticos `GOW_SAMPLER`, `GOW_STALL_DIAG`,
+`GOW_SPU2_PERF`.

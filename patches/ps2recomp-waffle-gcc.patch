@@ -1,0 +1,172 @@
+diff --git a/ps2xRuntime/CMakeLists.txt b/ps2xRuntime/CMakeLists.txt
+index a6a20be..9849872 100644
+--- a/ps2xRuntime/CMakeLists.txt
++++ b/ps2xRuntime/CMakeLists.txt
+@@ -430,6 +430,13 @@ src/lib/gs/gpu/gs_texture_store.cpp
+     src/lib/games_database.cpp
+ )
+ 
++# GOW-Port: las fuentes de PCSX2 incluyen "common/..." relativo a su carpeta. MSVC lo encuentra buscando en la
++# carpeta del archivo que incluye; GCC y Clang no, así que se añade como ruta de inclusión solo para ellas.
++set_source_files_properties(
++    src/lib/ee_ref/ee_diff.cpp src/lib/ee_ref/eeref.cpp src/lib/ee_ref/R5900OpcodeImpl.cpp
++    src/lib/ee_ref/R5900OpcodeTables.cpp src/lib/ee_ref/MMI.cpp src/lib/ee_ref/FPU.cpp
++    PROPERTIES INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/src/lib/ee_ref")
++
+ if(PS2X_ENABLE_RUNTIME_LOGS)
+     target_compile_definitions(ps2_runtime PUBLIC
+         PS2_RUNTIME_LOGS=1
+diff --git a/ps2xRuntime/src/lib/vu_pcsx2/VUflags.cpp b/ps2xRuntime/src/lib/vu_pcsx2/VUflags.cpp
+index e10ad5d..51957a2 100644
+--- a/ps2xRuntime/src/lib/vu_pcsx2/VUflags.cpp
++++ b/ps2xRuntime/src/lib/vu_pcsx2/VUflags.cpp
+@@ -1,6 +1,8 @@
+ // SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
+ // SPDX-License-Identifier: GPL-3.0+
+ 
++// GOW-Port: sin __fi/__ri en las funciones no estáticas de este archivo: otras unidades las llaman (extern) y en GCC
++// __fi/__ri son "inline", que no emite una definición externa (fallo de enlace en Linux). MSVC sí la emitía.
+ #include "Common.h"
+ 
+ #include <cmath>
+@@ -46,47 +48,47 @@ static __ri u32 VU_MAC_UPDATE( int shift, VURegs * VU, float f )
+ 	}
+ }
+ 
+-__fi u32 VU_MACx_UPDATE(VURegs * VU, float x)
++u32 VU_MACx_UPDATE(VURegs * VU, float x)
+ {
+ 	return VU_MAC_UPDATE(3, VU, x);
+ }
+ 
+-__fi u32 VU_MACy_UPDATE(VURegs * VU, float y)
++u32 VU_MACy_UPDATE(VURegs * VU, float y)
+ {
+ 	return VU_MAC_UPDATE(2, VU, y);
+ }
+ 
+-__fi u32 VU_MACz_UPDATE(VURegs * VU, float z)
++u32 VU_MACz_UPDATE(VURegs * VU, float z)
+ {
+ 	return VU_MAC_UPDATE(1, VU, z);
+ }
+ 
+-__fi u32 VU_MACw_UPDATE(VURegs * VU, float w)
++u32 VU_MACw_UPDATE(VURegs * VU, float w)
+ {
+ 	return VU_MAC_UPDATE(0, VU, w);
+ }
+ 
+-__fi void VU_MACx_CLEAR(VURegs * VU)
++void VU_MACx_CLEAR(VURegs * VU)
+ {
+ 	VU->macflag&= ~(0x1111<<3);
+ }
+ 
+-__fi void VU_MACy_CLEAR(VURegs * VU)
++void VU_MACy_CLEAR(VURegs * VU)
+ {
+ 	VU->macflag&= ~(0x1111<<2);
+ }
+ 
+-__fi void VU_MACz_CLEAR(VURegs * VU)
++void VU_MACz_CLEAR(VURegs * VU)
+ {
+ 	VU->macflag&= ~(0x1111<<1);
+ }
+ 
+-__fi void VU_MACw_CLEAR(VURegs * VU)
++void VU_MACw_CLEAR(VURegs * VU)
+ {
+ 	VU->macflag&= ~(0x1111<<0);
+ }
+ 
+-__ri void VU_STAT_UPDATE(VURegs * VU) {
++void VU_STAT_UPDATE(VURegs * VU) {
+ 	int newflag = 0 ;
+ 	if (VU->macflag & 0x000F) newflag = 0x1;
+ 	if (VU->macflag & 0x00F0) newflag |= 0x2;
+diff --git a/ps2xRuntime/src/lib/vu_pcsx2/VUops.cpp b/ps2xRuntime/src/lib/vu_pcsx2/VUops.cpp
+index a23deee..424eb6f 100644
+--- a/ps2xRuntime/src/lib/vu_pcsx2/VUops.cpp
++++ b/ps2xRuntime/src/lib/vu_pcsx2/VUops.cpp
+@@ -1,6 +1,8 @@
+ // SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
+ // SPDX-License-Identifier: GPL-3.0+
+ 
++// GOW-Port: sin __fi/__ri en las funciones no estáticas de este archivo: otras unidades las llaman (extern) y en GCC
++// __fi/__ri son "inline", que no emite una definición externa (fallo de enlace en Linux). MSVC sí la emitía.
+ #include "Common.h"
+ #include "VUops.h"
+ #include "GS.h"
+@@ -185,7 +187,7 @@ void _vuFlushAll(VURegs* VU)
+ 	}
+ }
+ 
+-__fi void _vuTestPipes(VURegs* VU)
++void _vuTestPipes(VURegs* VU)
+ {
+ 	bool flushed;
+ 
+@@ -295,7 +297,7 @@ static __fi void _vuTestALUStalls(VURegs* VU, _VURegsNum* VUregsn)
+ 	}
+ }
+ 
+-__fi void _vuTestUpperStalls(VURegs* VU, _VURegsNum* VUregsn)
++void _vuTestUpperStalls(VURegs* VU, _VURegsNum* VUregsn)
+ {
+ 	switch (VUregsn->pipe) {
+ 	case VUPIPE_FMAC: _vuTestFMACStalls(VU, VUregsn); break;
+@@ -303,7 +305,7 @@ __fi void _vuTestUpperStalls(VURegs* VU, _VURegsNum* VUregsn)
+ }
+ 
+ 
+-__fi void _vuTestLowerStalls(VURegs* VU, _VURegsNum* VUregsn)
++void _vuTestLowerStalls(VURegs* VU, _VURegsNum* VUregsn)
+ {
+ 	switch (VUregsn->pipe)
+ 	{
+@@ -314,7 +316,7 @@ __fi void _vuTestLowerStalls(VURegs* VU, _VURegsNum* VUregsn)
+ 	}
+ }
+ 
+-__fi void _vuClearFMAC(VURegs* VU)
++void _vuClearFMAC(VURegs* VU)
+ {
+ 	int i = VU->fmacwritepos;
+ 
+@@ -399,14 +401,14 @@ static __fi void _vuAddEFUStalls(VURegs* VU, _VURegsNum* VUregsn)
+ 		_vuEFUAdd(VU, VUregsn->cycles);
+ }
+ 
+-__fi void _vuAddUpperStalls(VURegs* VU, _VURegsNum* VUregsn)
++void _vuAddUpperStalls(VURegs* VU, _VURegsNum* VUregsn)
+ {
+ 	switch (VUregsn->pipe) {
+ 	case VUPIPE_FMAC: _vuAddFMACStalls(VU, VUregsn, true); break;
+ 	}
+ }
+ 
+-__fi void _vuAddLowerStalls(VURegs* VU, _VURegsNum* VUregsn)
++void _vuAddLowerStalls(VURegs* VU, _VURegsNum* VUregsn)
+ {
+ 	switch (VUregsn->pipe)
+ 	{
+@@ -417,7 +419,7 @@ __fi void _vuAddLowerStalls(VURegs* VU, _VURegsNum* VUregsn)
+ 	}
+ }
+ 
+-__fi void _vuBackupVI(VURegs* VU, u32 reg)
++void _vuBackupVI(VURegs* VU, u32 reg)
+ {
+ #ifdef VI_BACKUP
+ 	if (VU->VIBackupCycles && reg == VU->VIRegNumber)
+@@ -1132,7 +1134,7 @@ static __fi void _vuMR32(VURegs* VU)
+ //  Load / Store Instructions (VU Interpreter)
+ // --------------------------------------------------------------------------------------
+ 
+-__fi u32* GET_VU_MEM(VURegs* VU, u32 addr) // non-static, also used by sVU for now.
++u32* GET_VU_MEM(VURegs* VU, u32 addr) // non-static, also used by sVU for now.
+ {
+ 	if (VU == &vuRegs[1])
+ 		return (u32*)(vuRegs[1].Mem + (addr & 0x3fff));

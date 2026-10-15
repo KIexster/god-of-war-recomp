@@ -1,5 +1,5 @@
 diff --git a/ps2xRecomp/src/lib/vu_translation_helpers.cpp b/ps2xRecomp/src/lib/vu_translation_helpers.cpp
-index ce41a17..fdd6b49 100644
+index 3614679..af5535e 100644
 --- a/ps2xRecomp/src/lib/vu_translation_helpers.cpp
 +++ b/ps2xRecomp/src/lib/vu_translation_helpers.cpp
 @@ -98,6 +98,11 @@ namespace ps2recomp
@@ -15,10 +15,10 @@ index ce41a17..fdd6b49 100644
          return fmt::format("{{ uint32_t bits; float src = _mm_cvtss_f32(_mm_shuffle_ps(ctx->vu0_vf[{}], ctx->vu0_vf[{}], _MM_SHUFFLE(0,0,0,{}))); std::memcpy(&bits, &src, sizeof(bits)); ctx->vi[{}] = (uint16_t)(bits & 0xFFFF); }}", inst.rd, inst.rd, fsf, inst.rt);
      }
 diff --git a/ps2xTest/src/code_generator_tests.cpp b/ps2xTest/src/code_generator_tests.cpp
-index 74b3f36..f09f536 100644
+index 3214023..eccf335 100644
 --- a/ps2xTest/src/code_generator_tests.cpp
 +++ b/ps2xTest/src/code_generator_tests.cpp
-@@ -1555,6 +1555,14 @@ void register_code_generator_tests()
+@@ -1520,6 +1520,14 @@ void register_code_generator_tests()
              t.IsTrue(gen.translateVU_VISUB(inst).find("ctx->vi[0]") == std::string::npos, "VISUB must not write vi0");
              t.IsTrue(gen.translateVU_VIAND(inst).find("ctx->vi[0]") == std::string::npos, "VIAND must not write vi0");
              t.IsTrue(gen.translateVU_VIOR(inst).find("ctx->vi[0]") == std::string::npos, "VIOR must not write vi0");

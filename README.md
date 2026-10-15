@@ -141,19 +141,17 @@ need further checks. See [performance](docs/RENDIMIENTO.md), [rendering](docs/CO
 
 ## Building and running
 
-**1. Get the game files.** Copy the executable from your disc/ISO to `game\SCUS_973.99`
-(or point the `GOW_ELF` environment variable at it).
+**1. Extract the disc.** As in Waffle565's port, the game reads its data from the extracted disc files,
+each at its original sector (the ISO is not read). With Python 3:
 
-Place the disc's **`.IRX` modules** (`SMPD_IOP.IRX`, `989NOMID.IRX`, `LIBSD.IRX`…) next to the ELF: the IOP
-emulator runs the originals, and `scripts\ejecutar.ps1` copies them into `IOP_MOD\` on first run.
-Reading the game data requires the **original ISO**: name it `God of War.iso` and put it in the folder
-above the ELF's folder, or set the `GOW_ISO` environment variable to its path.
-
-To also extract the data on the second layer of the DVD:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File tools\extraer_capa2.ps1 -Iso "D:\God of War.iso" -Salida "D:\GOW ISO extraida"
+```bat
+python tools\iso_extract.py "D:\God of War.iso" game --layout
 ```
+
+This leaves the executable `SCUS_973.99`, the `.IRX` modules, `PART1.PAK`/`PART2.PAK` (both DVD layers) and the
+`.disc_layout` index in `game\`. If the ELF is somewhere else, point `GOW_ELF` at it; the disc files must sit next
+to it. `scripts\ejecutar.ps1` extracts the disc by itself on first run if it finds `God of War.iso` in the folder
+above the ELF's, and `GOW_ISO=<path>` makes the runtime read the image directly.
 
 **2. Install the tools** (first time only):
 
@@ -182,6 +180,18 @@ scripts\3_ejecutar.cmd          :: 60 seconds, output in logs\
 scripts\3_ejecutar_manual.cmd   :: no time limit
 ```
 
+**5. Native IOP (optional, as in Waffle565's port).** Compiles the game's 8 IRX modules ahead of time and
+shortens loading (gameplay starts at ~21 s instead of ~34 s). One run dumps the modules and the next build
+uses them:
+
+```bat
+set PS2X_IOP_DUMP_MODULES=%CD%\logs\iop_modulos
+scripts\3_ejecutar.cmd
+set PS2X_IOP_DUMP_MODULES=
+set GOW_IOP_MODULOS=%CD%\logs\iop_modulos
+scripts\2_compilar.cmd
+```
+
 ## How it works
 
 ```mermaid
@@ -195,7 +205,7 @@ flowchart LR
     P["PS2Recomp runtime<br/>+ patches/*.patch"] --> E
     E --> F[ps2EntryRunner.exe]
     I[Original IRX modules] --> G[IOP emulator<br/>R3000A]
-    ISO[God of War.iso] --> G
+    ISO["Extracted disc<br/>.disc_layout"] --> G
     F <--> G
 ```
 
@@ -215,7 +225,7 @@ The technical documentation is currently written in Spanish:
 ## Credits and license
 
 - [**PS2Recomp**](https://github.com/ran-j/PS2Recomp) by ran-j and contributors — recompiler and runtime (GPL-3.0).
-- [**PCSX2**](https://github.com/PCSX2/pcsx2) contributors — original GS used by the optional DX11 diagnostic module (GPL-3.0+).
+- [**PCSX2**](https://github.com/PCSX2/pcsx2) contributors — original GS used by the optional DX11 diagnostic module, and the EE interpreter and VU operations of the runtime (`ee_ref/`, `vu_pcsx2/`, brought in with Waffle565's runtime) (GPL-3.0+).
 - [**Urban Reign recomp**](https://github.com/thiagordsfx/urban-reign-recomp) by thiagordsfx — shared GS integration reference; helped identify the VSync field convention in our diagnostic mirror ([review and scope](docs/REVISION_URBAN_REIGN.md)).
 - [**SotC runtime fork**](https://github.com/LightVelox/PS2Recomp/tree/ac9efa070638ad3b3accd284de6f898d5ab271d1) by Taylor N. Albarnaz / LightVelox — OpenGL GS backend and command queue, and EE fixes (FPU, 64-bit branches, LQ/SQ, tail jumps, VU0 macro mode and long DMA chains) (GPL-3.0, `ac9efa0`).
 - *God of War* © Sony Interactive Entertainment / Santa Monica Studio. This project is not affiliated with
