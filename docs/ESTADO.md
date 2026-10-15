@@ -6808,3 +6808,55 @@ No se compararon otras ejecuciones por igualdad de tick.
 Revisión local de código, regresión, alcance original y evidencia funcional
 completada, sin aprobación externa. La fusión exige CI del HEAD documental
 final; no hubo cambios de fuente tras el full.
+
+## Atasco intermitente tras la carga del menú: relectura y diagnóstico `GOW_STALL_DIAG` (2026-10-14)
+
+**Relectura del intento bloqueado del runner 105** (registros privados
+`profile_fog105_review_20261013` y su repetición `_repeat_`, misma
+configuración salvo la ruta de la tarjeta; comparación línea a línea sin las
+cachés de shaders). Hechos observados:
+
+- No fue un atasco de arranque: ambos registros son idénticos hasta t≈20 s.
+  Los ocho IRX iniciales se cargaron, el 989snd respondió a 113 órdenes y el
+  juego estuvo en estado 3 a ~47 entradas de `vid::Flip` por segundo.
+- La divergencia aparece tras la pulsación X del guion en t=20 s. En la
+  ejecución correcta llega `[gow-fmv] skipped Semo01` en t≈22 s, luego estado 4
+  (`levelReady=1`) y estado 11 en t≈35 s. En la bloqueada no aparece esa línea,
+  el juego deja de leer el mando y de emitir `[gow-pad2:state]`, y
+  `guest_flip_hz`, `vu_ms` y `gs_ms` caen a cero desde la ventana t=25..30 s.
+- Durante los ~90 s restantes, cada ventana de 5 s reparte el hilo EE en
+  `ee_ms≈3360` e `iop_ms≈1640` (suma ≈5000 ms), con `guest_wait_ms=0`. El
+  host siguió refrescando a 60 Hz.
+
+Inferencia: el EE no está bloqueado en una espera del kernel (no hay tiempo de
+`GuestWait`), sino ejecutando código del juego mientras el IOP avanza por
+porciones; es compatible con un sondeo que espera algo que no llega antes de
+la llamada a la carga del vídeo (0x188CA0). Hipótesis aún sin comprobar: una
+petición asíncrona al IOP (carga o flujo) que no completa. La pareja no
+demuestra relación con `ResetGraph`, el perfil o el guion.
+
+**Diagnóstico nuevo** (`patches/ps2recomp-stall-diag.patch` y
+`src/gow_overrides.cpp`), activado con `GOW_STALL_DIAG=1`, etiqueta
+`[gow-stall]`, tiempos de `steady_clock` comunes a todos los hilos:
+
+- `hito`: primera vez de `ee_run`, `sif_init_rpc`, cada `sif_bind_rpc` (por
+  SID), primera `sif_call_rpc`, primer `sif_dma`, cada `irx`/`irx_buffer`
+  (id y resultado de arranque), primeros datos VIF1, `primer_flip`,
+  `fmv_saltado` y cada estado nuevo del juego observado en `vid::Flip`
+  (`estado_juego`) o por el vigía (`estado_juego_vigia`). Máximo 512 hitos.
+- `latido` cada 5 s desde un hilo vigía propio: incrementos de flips, VBlank,
+  alarmas, llamadas y binds RPC, DMA SIF, porciones IOP, bloques VIF1,
+  señales/esperas/sondeos de semáforos y wakeups del EE, la PC/RA del último
+  despacho EE y las palabras de estado del juego.
+- `volcado` cuando no hay flips durante 3 s tras el primero (a los 3, 10, 30
+  s y luego cada 60 s, máximo 8): hilos EE con estado, motivo e id de espera;
+  semáforos y flags con esperas; histograma de PC/RA de despacho muestreado
+  durante 200 ms; las 12 últimas operaciones SIF RPC con su tiempo; y hilos,
+  semáforos y flags del IOP. El IOP se describe en el hilo EE, en la siguiente
+  porción IOP, a petición del vigía: no se leen estructuras del IOP desde otro
+  hilo.
+
+Límites: la PC es la del último despacho (entrada de función o cabecera de
+bucle), no la instrucción exacta; un bucle interno sin despachos aparece como
+su función. El vigía no cambia esperas, plazos ni el orden del planificador;
+sin la variable, los contadores no se tocan (regresión en `ps2xTest`).
