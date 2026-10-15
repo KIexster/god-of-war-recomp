@@ -141,19 +141,17 @@ need further checks. See [performance](docs/RENDIMIENTO.md), [rendering](docs/CO
 
 ## Building and running
 
-**1. Get the game files.** Copy the executable from your disc/ISO to `game\SCUS_973.99`
-(or point the `GOW_ELF` environment variable at it).
+**1. Extract the disc.** As in Waffle565's port, the game reads its data from the extracted disc files,
+each at its original sector (the ISO is not read). With Python 3:
 
-Place the disc's **`.IRX` modules** (`SMPD_IOP.IRX`, `989NOMID.IRX`, `LIBSD.IRX`…) next to the ELF: the IOP
-emulator runs the originals, and `scripts\ejecutar.ps1` copies them into `IOP_MOD\` on first run.
-Reading the game data requires the **original ISO**: name it `God of War.iso` and put it in the folder
-above the ELF's folder, or set the `GOW_ISO` environment variable to its path.
-
-To also extract the data on the second layer of the DVD:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File tools\extraer_capa2.ps1 -Iso "D:\God of War.iso" -Salida "D:\GOW ISO extraida"
+```bat
+python tools\iso_extract.py "D:\God of War.iso" game --layout
 ```
+
+This leaves the executable `SCUS_973.99`, the `.IRX` modules, `PART1.PAK`/`PART2.PAK` (both DVD layers) and the
+`.disc_layout` index in `game\`. If the ELF is somewhere else, point `GOW_ELF` at it; the disc files must sit next
+to it. `scripts\ejecutar.ps1` extracts the disc by itself on first run if it finds `God of War.iso` in the folder
+above the ELF's, and `GOW_ISO=<path>` makes the runtime read the image directly.
 
 **2. Install the tools** (first time only):
 

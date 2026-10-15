@@ -140,19 +140,17 @@ quedan diferencias CPU/OpenGL y cobertura gráfica por comprobar. Ver [rendimien
 
 ## Compilar y ejecutar
 
-**1. Obtén los archivos del juego.** Copia el ejecutable de tu disco/ISO a `game\SCUS_973.99`
-(o define la variable de entorno `GOW_ELF` con su ruta).
+**1. Extrae el disco.** Como en el port de Waffle565, el juego lee sus datos de los archivos del disco
+extraídos, cada uno en su sector original (sin leer la ISO). Con Python 3:
 
-Junto al ELF deben estar también los **módulos `.IRX`** del disco (`SMPD_IOP.IRX`, `989NOMID.IRX`,
-`LIBSD.IRX`…): el emulador del IOP ejecuta los originales y `scripts\ejecutar.ps1` los copia a `IOP_MOD\`
-la primera vez. Para leer los datos del juego hace falta la **ISO original**: llámala `God of War.iso` y
-ponla en la carpeta superior a la del ELF, o indica su ruta con la variable de entorno `GOW_ISO`.
-
-Si además quieres los datos de la segunda capa del DVD:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File tools\extraer_capa2.ps1 -Iso "D:\God of War.iso" -Salida "D:\GOW ISO extraida"
+```bat
+python tools\iso_extract.py "D:\God of War.iso" game --layout
 ```
+
+Eso deja en `game\` el ejecutable `SCUS_973.99`, los módulos `.IRX`, `PART1.PAK`/`PART2.PAK` (las dos capas del
+DVD) y el índice `.disc_layout`. Si el ELF está en otra carpeta, define `GOW_ELF` con su ruta; los archivos del
+disco deben estar junto a él. `scripts\ejecutar.ps1` extrae el disco por su cuenta la primera vez si encuentra
+`God of War.iso` en la carpeta superior a la del ELF, y `GOW_ISO=<ruta>` hace que se lea la imagen directamente.
 
 **2. Instala las herramientas** (solo la primera vez):
 

@@ -19,6 +19,8 @@ $funcmap   = Join-Path $RepoRoot 'config\funcmap.csv'
 $waffleRuntimePatch = Join-Path $RepoRoot 'patches\ps2recomp-waffle-runtime.patch'
 # GOW-Port: retira de ps2xTest las pruebas de piezas que el runtime de Waffle565 sustituye por diseño.
 $waffleTestsPatch = Join-Path $RepoRoot 'patches\ps2recomp-waffle-tests.patch'
+# GOW-Port: el runtime de Waffle565 se compila con MSVC; esto lo deja compilar y enlazar con GCC (CI de Linux).
+$waffleGccPatch = Join-Path $RepoRoot 'patches\ps2recomp-waffle-gcc.patch'
 # GOW-Port: VF0 y VI0 de VU0 son constantes (PR #79), no incluido en el runtime de Waffle565.
 $vu0Vf0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vf0.patch'
 $vu0Vi0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vi0.patch'
@@ -66,6 +68,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $waffleTestsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu0Vf0Patch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu0Vi0Patch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1nHeadsPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $waffleGccPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
