@@ -180,6 +180,18 @@ scripts\3_ejecutar.cmd          :: 60 seconds, output in logs\
 scripts\3_ejecutar_manual.cmd   :: no time limit
 ```
 
+**5. Native IOP (optional, as in Waffle565's port).** Compiles the game's 8 IRX modules ahead of time and
+shortens loading (gameplay starts at ~21 s instead of ~34 s). One run dumps the modules and the next build
+uses them:
+
+```bat
+set PS2X_IOP_DUMP_MODULES=%CD%\logs\iop_modulos
+scripts\3_ejecutar.cmd
+set PS2X_IOP_DUMP_MODULES=
+set GOW_IOP_MODULOS=%CD%\logs\iop_modulos
+scripts\2_compilar.cmd
+```
+
 ## How it works
 
 ```mermaid
@@ -193,7 +205,7 @@ flowchart LR
     P["PS2Recomp runtime<br/>+ patches/*.patch"] --> E
     E --> F[ps2EntryRunner.exe]
     I[Original IRX modules] --> G[IOP emulator<br/>R3000A]
-    ISO[God of War.iso] --> G
+    ISO["Extracted disc<br/>.disc_layout"] --> G
     F <--> G
 ```
 

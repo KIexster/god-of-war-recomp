@@ -40,7 +40,7 @@ estado = "ok"
 nombre = "libcdvd"
 inicio = 0x0027A340
 estado = "ok"
-nota = { es = "Lee la ISO original", en = "Reads the original ISO", pt = "Lê a ISO original" }
+nota = { es = "Lee los archivos del disco extraídos junto al ELF (.disc_layout); la ISO solo con GOW_ISO", en = "Reads the disc files extracted next to the ELF (.disc_layout); the ISO only with GOW_ISO", pt = "Lê os arquivos do disco extraídos ao lado do ELF (.disc_layout); a ISO só com GOW_ISO" }
 
 [[librerias.grupo]]
 nombre = "libdbc"

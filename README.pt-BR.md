@@ -181,6 +181,18 @@ scripts\3_ejecutar.cmd          :: 60 segundos, saída em logs\
 scripts\3_ejecutar_manual.cmd   :: sem limite
 ```
 
+**5. IOP nativo (opcional, como no port do Waffle565).** Compila antecipadamente os 8 módulos IRX do jogo
+e encurta o carregamento (a partida começa em ~21 s em vez de ~34 s). Uma execução extrai os módulos e a
+compilação seguinte os usa:
+
+```bat
+set PS2X_IOP_DUMP_MODULES=%CD%\logs\iop_modulos
+scripts\3_ejecutar.cmd
+set PS2X_IOP_DUMP_MODULES=
+set GOW_IOP_MODULOS=%CD%\logs\iop_modulos
+scripts\2_compilar.cmd
+```
+
 ## Como funciona
 
 ```mermaid
@@ -194,7 +206,7 @@ flowchart LR
     P["Runtime do PS2Recomp<br/>+ patches/*.patch"] --> E
     E --> F[ps2EntryRunner.exe]
     I[Módulos IRX originais] --> G[Emulador do IOP<br/>R3000A]
-    ISO[God of War.iso] --> G
+    ISO["Disco extraído<br/>.disc_layout"] --> G
     F <--> G
 ```
 
