@@ -6860,3 +6860,25 @@ Límites: la PC es la del último despacho (entrada de función o cabecera de
 bucle), no la instrucción exacta; un bucle interno sin despachos aparece como
 su función. El vigía no cambia esperas, plazos ni el orden del planificador;
 sin la variable, los contadores no se tocan (regresión en `ps2xTest`).
+
+Controles con el juego (compilación completa local de 114 parches, VU1
+compilada con 501 micromemorias, exe SHA-256 `3e375c2d…f301`, 66.339.328 B),
+misma configuración que el intento bloqueado (hilo VU1, frontend GS, FINISH
+asíncrono, presentación directa, `GOW_SKIP_FMV=1`, mismo guion, tarjeta
+intacta copiada por intento) más `GOW_STALL_DIAG=1`:
+
+- Primer intento descartado como comparación: caché de shaders vacía; el
+  backend GPU compiló durante la partida (`gs_ms≈ee_ms≈6 s` por ventana de 5
+  s, `host_hz<1`). El vigía volcó a los 3 s sin flips y luego registró la
+  reanudación; la petición al IOP expiró porque el hilo EE estaba dentro del
+  GS. Sirve como prueba de que el volcado se dispara y se recupera.
+- Once intentos con la caché caliente (uno de 120 s y diez de 60 s), todos
+  correctos: estado 4 en 22,03..22,16 s, `fmv_saltado` en 23,77..23,93 s y
+  estado 11 en 35,36..35,68 s; ~47 entradas a `vid::Flip`/s en estado 3, igual
+  que el registro original. Cierre por `WM_CLOSE`, código 0, tarjeta intacta.
+- **No se reprodujo el atasco** (0 de 11). No hay comparación correcta/bloqueada
+  con el diagnóstico; la causa sigue sin identificar.
+
+Próximo paso: dejar `GOW_STALL_DIAG=1` en los controles largos habituales.
+Si el atasco reaparece, el volcado dirá qué hilo EE corre o espera, la PC de
+despacho, la última RPC y el estado de los hilos del IOP.
