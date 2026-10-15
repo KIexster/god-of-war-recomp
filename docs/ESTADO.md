@@ -7073,3 +7073,34 @@ ejecuciones (estado, memoria de datos y paquetes GIF; enteros exactos, floats co
   dificultad, el primer plano de Kratos y el combate en el barco, con texto del menú, HUD y contador de
   golpes correctos. No se ven diferencias de texturas; el combate difiere por la variación normal entre
   ejecuciones. No se midió rendimiento.
+
+## El VBlank del EE ya no espera al mutex del GS (2026-10-15)
+
+Con `GOW_SAMPLER` registrando también el hilo del host y el trabajador GPU
+(`ps2recomp-sampler-threads.patch`), y la VU1 nativa activa (`sampler_gs_n`):
+
+- El trabajador GPU está ocupado el 87 % del tiempo; el 73 % es `GSGpuBackend::Impl::prepareTarget`, y
+  dentro de él, ~62 % es la espera de las barreras del anillo de subidas (`GSGpuUpload::Ring::put`,
+  `WaitOnAddress` en el controlador). El host pasa el 91 % en `SwapBuffers`. Inferencia: la GPU está
+  saturada con este renderizador.
+- El frontend GS espera hueco en esa cola (`GSThreadedBackend::PublishLocked`, 65 %) **dentro de
+  `processGIFPacket`, con `GS::m_stateMutex` tomado**. El EE espera ese mutex en
+  `GS::notifyExternalVSync` (58 %) al procesar cada VBlank, así que los VBlank llegan tarde y la
+  velocidad del juego cae (0,58).
+
+`ps2recomp-gs-vsync-unlocked.patch`: `notifyExternalVSync` solo toma el mutex si hay observador externo
+(el espejo PCSX2 opcional); sin él no lee ni escribe estado del GS. Regresión: un backend que bloquea
+`Submit` con el mutex tomado; la notificación debe volver. Falla sin el cambio (comprobado).
+
+Medición (exe A `a075fcc7…` sin el cambio, exe B `02e81c90…` con él; ambos con `GOW_VU1_NATIVE=1`, 3+3
+rondas alternas de 150 s en el barco, ventanas de t=50..145 s, `GOW_PERF_DIAG=frames`):
+
+| mediana [mín..máx] | A | B |
+|---|---|---|
+| velocidad de juego | 0,63 [0,36..0,96] | 1,00 [0,33..3,33] (rondas: 1,00 / 0,99 / 1,00) |
+| muestras de SPU2 por segundo | 29.272 | 49.160 |
+| entradas a `vid::Flip` por segundo | 33,2 | 31,8 |
+
+Cuando la GPU no da abasto, el juego ya no se ralentiza: conserva la velocidad real y el audio, y pierde
+cuadros. Una ronda B tuvo una ráfaga de recuperación (máximo 3,33) que pudo coincidir con una compilación
+de pruebas lanzada en paralelo. La saturación de la GPU sigue: es el siguiente objetivo (renderizador).

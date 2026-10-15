@@ -1,0 +1,126 @@
+diff --git a/ps2xRuntime/include/runtime/gs/gs_frontend.h b/ps2xRuntime/include/runtime/gs/gs_frontend.h
+index 07c8020..7c28e56 100644
+--- a/ps2xRuntime/include/runtime/gs/gs_frontend.h
++++ b/ps2xRuntime/include/runtime/gs/gs_frontend.h
+@@ -1,6 +1,7 @@
+ #ifndef PS2_GS_FRONTEND_H
+ #define PS2_GS_FRONTEND_H
+ 
++#include <atomic>
+ #include <array>
+ #include <cstddef>
+ #include <cstdint>
+@@ -288,6 +289,10 @@ private:
+     bool m_debugHistoryPaused = true;
+ 
+     std::shared_ptr<GSExternalObserver> m_externalObserver; // GOW-Port: vida independiente de los callbacks.
++    // GOW-Port: hay observador externo. notifyExternalVSync solo toma m_stateMutex si lo hay: sin él no lee ni
++    // escribe estado del GS, y esperar el mutex dejaba al EE bloqueado en cada VBlank mientras el frontend GS lo
++    // retenía esperando hueco en la cola de la GPU.
++    std::atomic<bool> m_externalObserverActive{false};
+     std::unique_ptr<GSRasterBackend> m_backend;
+ };
+ 
+diff --git a/ps2xRuntime/src/lib/gs/gs_frontend.cpp b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+index 9d1a506..8c8d65c 100644
+--- a/ps2xRuntime/src/lib/gs/gs_frontend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+@@ -162,6 +162,7 @@ void GS::setExternalObserver(std::shared_ptr<GSExternalObserver> observer)
+ {
+     std::lock_guard<std::recursive_mutex> lock(m_stateMutex);
+     m_externalObserver = std::move(observer);
++    m_externalObserverActive.store(static_cast<bool>(m_externalObserver), std::memory_order_release);
+ }
+ 
+ bool GS::hasExternalObserver() const
+@@ -187,6 +188,8 @@ void GS::setDisplayRegisters(const GSPresentationRequest &request)
+ 
+ void GS::notifyExternalVSync(uint64_t tick, uint32_t field)
+ {
++    if (!m_externalObserverActive.load(std::memory_order_acquire))
++        return; // GOW-Port: sin observador no hay nada que ordenar con el flujo GIF
+     std::lock_guard<std::recursive_mutex> lock(m_stateMutex);
+     if (m_externalObserver && m_privRegs && field <= 1u)
+         m_externalObserver->vsync(*m_privRegs, tick, field);
+diff --git a/ps2xTest/src/ps2_gs_backend_tests.cpp b/ps2xTest/src/ps2_gs_backend_tests.cpp
+index c405afe..06978f9 100644
+--- a/ps2xTest/src/ps2_gs_backend_tests.cpp
++++ b/ps2xTest/src/ps2_gs_backend_tests.cpp
+@@ -8,6 +8,10 @@
+ #include "runtime/gs/ps2_gs_memory.h"
+ #include "runtime/ps2_memory.h"
+ #include <algorithm>
++#include <atomic>
++#include <chrono>
++#include <condition_variable>
++#include <mutex>
+ #include <cstdlib>
+ #include <cstring>
+ #include <memory>
+@@ -1419,6 +1423,66 @@ void register_ps2_gs_backend_tests()
+ {
+     MiniTest::Case("GOW GS backends", [](TestCase &t) {
+         t.Run("display copy compares FRAME pages with TEX0 blocks", preferredSourceDrawAddressUnits);
++        // GOW-Port: sin observador externo, el VBlank del EE no espera al mutex del GS. El frontend lo retiene
++        // mientras su backend espera hueco en la cola de la GPU, y el EE quedaba bloqueado en cada VBlank.
++        t.Run("VSync notification without an observer does not wait for the GS state mutex", [](TestCase &t) {
++            struct BlockingBackend final : GSRasterBackend
++            {
++                std::mutex m; std::condition_variable cv; bool inside = false, release = false;
++                void Initialize(uint8_t *, uint32_t) override {}
++                void Reset() override {}
++                void Submit(const GSPrimitiveBatch &) override
++                {
++                    std::unique_lock<std::mutex> lock(m);
++                    inside = true; cv.notify_all();
++                    cv.wait(lock, [&] { return release; });
++                }
++                void LoadClut(const GSTex0Reg &, const GSTexClutReg &) override {}
++                void BeginTransfer(const GSTransferCommand &) override {}
++                void UploadImage(const uint8_t *, uint32_t) override {}
++                void Flush() override {}
++                void TextureFlush() override {}
++                void Sync(GSSyncReason) override {}
++                PresentationFrame Present(const GSPresentationRequest &) override { return {}; }
++                bool ClearFramebuffer(const GSContext &, uint32_t) override { return true; }
++                uint32_t ConsumeLocalToHostBytes(uint8_t *, uint32_t) override { return 0; }
++                uint32_t ReadVram(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t) const override { return 0; }
++                void WriteVram(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t) override {}
++                void SnapshotVram(std::vector<uint8_t> &out) const override { out.clear(); }
++                GSTransferSnapshot GetTransferSnapshot() const override { return {}; }
++            };
++            std::vector<uint8_t> vram(GSSwizzle::kMemorySize, 0u);
++            GSRegisters regs{};
++            GS gs;
++            gs.init(vram.data(), static_cast<uint32_t>(vram.size()), &regs);
++            auto owned = std::make_unique<BlockingBackend>();
++            BlockingBackend *backend = owned.get();
++            gs.setRasterBackend(std::move(owned));
++            gs.writeRegister(GS_REG_FRAME_1, 10ull << 16);
++            gs.writeRegister(GS_REG_SCISSOR_1, (63ull << 16) | (63ull << 48));
++            gs.writeRegister(GS_REG_PRIM, uint64_t(GS_PRIM_SPRITE));
++            gs.writeRegister(GS_REG_RGBAQ, 0x80808080ull);
++            gs.writeRegister(GS_REG_XYZ2, 0u);
++            // El segundo vértice cierra el sprite: Submit se bloquea con el mutex del GS tomado.
++            std::thread drawer([&] { gs.writeRegister(GS_REG_XYZ2, (16ull * 16) | ((16ull * 16) << 16)); });
++            {
++                std::unique_lock<std::mutex> lock(backend->m);
++                backend->cv.wait(lock, [&] { return backend->inside; });
++            }
++            std::atomic<bool> returned{false};
++            std::thread vsync([&] { gs.notifyExternalVSync(1u, 0u); returned.store(true); });
++            for (int i = 0; i < 200 && !returned.load(); ++i)
++                std::this_thread::sleep_for(std::chrono::milliseconds(5));
++            const bool didReturn = returned.load();
++            {
++                std::lock_guard<std::mutex> lock(backend->m);
++                backend->release = true;
++            }
++            backend->cv.notify_all();
++            drawer.join();
++            vsync.join();
++            t.IsTrue(didReturn, "notifyExternalVSync must return while a draw holds the GS mutex");
++        });
+         t.Run("presentation source without TBW compares physical addresses", preferredSourcePresentAddressUnits);
+         t.Run("CPU drawing is independent of caller SSE rounding",[](TestCase &t) {cpuRoundingIndependent(t,false);});
+         t.Run("Threaded CPU drawing is independent of producer SSE rounding",[](TestCase &t) {cpuRoundingIndependent(t,true);});
