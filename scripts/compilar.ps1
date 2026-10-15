@@ -133,6 +133,7 @@ $samplerPatch = Join-Path $RepoRoot 'patches\ps2recomp-sampler.patch'
 $checkpointFastPatch = Join-Path $RepoRoot 'patches\ps2recomp-checkpoint-fast.patch'
 $spu2NaxPatch = Join-Path $RepoRoot 'patches\ps2recomp-spu2-nax.patch'
 $eeFastAccessPatch = Join-Path $RepoRoot 'patches\ps2recomp-ee-fast-access.patch'
+$vu1NativePatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-native.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -290,6 +291,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $samplerPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $checkpointFastPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $spu2NaxPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $eeFastAccessPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1NativePatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
@@ -315,7 +317,9 @@ Run 'cmake' @('-S', $rec, '-B', $bld, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release
 # GOW_VU1_CAPTURA. Sin ella (o vacía) el juego usa el intérprete. Ver docs\RENDIMIENTO.md.
 $vu1Micro = if ($env:GOW_VU1_MICROCODIGO) { (Resolve-Path -LiteralPath $env:GOW_VU1_MICROCODIGO).Path -replace '\\', '/' } else { '' }
 $vu1Gen = if ($vu1Micro) { (Join-Path $RepoRoot 'tools\vu1\generar_vu1.cpp') -replace '\\', '/' } else { '' }
-Run 'cmake' @('-S', $rec, '-B', $bld, "-DPS2X_VU1_MICROCODE_DIR=$vu1Micro", "-DPS2X_VU1_GENERATOR_SOURCE=$vu1Gen")
+# GOW-Port: generador de la VU1 nativa (adaptado de Waffle565/God-Of-War-Native-Port); se activa con GOW_VU1_NATIVE=1.
+$vu1nGen = if ($vu1Micro) { (Join-Path $RepoRoot 'tools\vu1\vu1n_gen.py') -replace '\\', '/' } else { '' }
+Run 'cmake' @('-S', $rec, '-B', $bld, "-DPS2X_VU1_MICROCODE_DIR=$vu1Micro", "-DPS2X_VU1_GENERATOR_SOURCE=$vu1Gen", "-DPS2X_VU1N_GEN_OVERRIDE=$vu1nGen")
 
 Paso 'Compilando el recompilador'
 Run 'cmake' @('--build', $bld, '--target', 'ps2_recomp')

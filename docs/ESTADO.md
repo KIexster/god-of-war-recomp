@@ -7028,3 +7028,36 @@ Validación: `ps2x_tests` 640/640 con los dos parches y la VU1 nativa encima. Co
 (exe `ad179aa4…`): el barco llega al estado 11 y cierra con `WM_CLOSE`, código 0, con la VU1 nativa
 desactivada. No se ha medido de oído el arreglo de la música; el efecto descrito es el del proyecto de
 origen.
+
+## VU1 nativa de Waffle565, opcional con `GOW_VU1_NATIVE=1` (2026-10-15)
+
+`patches/ps2recomp-vu1-native.patch` reúne, con `cherry-pick` sobre la serie actual, los commits de su
+rama `runtime` 61052ee, 5cea74e, af18417, 0055349, 994a514, 6358428 (solo la parte VU1), 71fb632, ef2692f
+y 1d9d563, más dos ajustes de compilación (`<vector>` y `m_verifySilent`, de runtime@8af9676). Copiado
+con permiso del autor. `tools/vu1/vu1n_gen.py` (de su `main`) genera, a partir de las micromemorias
+capturadas, bloques en C++ con semántica inmediata y latencia de flags entre bloques. El motor exacto
+sigue de respaldo para cualquier bloque que falte y como oráculo: `GOW_VU1N_VERIFY=<n>` compara n
+ejecuciones (estado, memoria de datos y paquetes GIF; enteros exactos, floats con tolerancia relativa
+2e-4). `GOW_VU1N_RECORD/REPLAY` graba y repite para comparar versiones del generador. Aquí queda
+**desactivada por defecto**; en el proyecto de origen está activa.
+
+- Generación con las 501 micromemorias de este repositorio: 1302 bloques distintos, 1302 generados, 0
+  sin soporte.
+- Verificación con el juego (barco, 120 s, `GOW_VU1N_VERIFY=3000`): **2000 ejecuciones comparadas, 0
+  discrepancias** frente al motor exacto. Estado 11 alcanzado y cierre con `WM_CLOSE`, código 0.
+- Rendimiento: mismo exe (`ad179aa4…`) alternando `GOW_VU1_NATIVE=0/1`, 3+3 rondas de 150 s,
+  `GOW_PERF_DIAG=1`. `vu_ms` por ventana de 5 s: 4066 y 3630 (exacta) frente a 1474, 1477 y 1647 (nativa),
+  un −60 %. La velocidad de juego no mejora (0,76 y 0,66 frente a 0,58, 0,57 y 0,73), y con
+  `GOW_PERF_DIAG=1` ningún lado llega a 1,00. Este modo de perfil tiene un coste propio apreciable; con
+  `frames`, la rama `checkpoint-fast` da 1,00.
+- Por qué no mejora (muestreo `sampler_vu1n`, nativa activa, `GOW_PERF_DIAG=frames`): EE, VU1 y frontend
+  GS esperan el 52, 66 y 87 % del tiempo. El 52 % del EE está entero dentro de `GS::notifyExternalVSync`,
+  esperando `GS::m_stateMutex` (`std::recursive_mutex`) para llamar al observador de VSync; en la base
+  medida antes eran el 28,5 %. Inferencia: otro hilo, probablemente el de presentación/GPU, retiene ese
+  mutex durante mucho tiempo, y cuanto antes llega el EE al VBlank, más espera. Es área de
+  GS/presentación: se deja documentado para quien la lleva. Hasta resolverlo, acelerar EE, IOP o VU1 no
+  se traduce en velocidad de juego.
+- El atasco intermitente volvió a aparecer en una ronda con la VU1 exacta (`vu1ab_1A`): estado 4 a ~22
+  s, sin flips desde t≈36..40 s, justo antes del paso a estado 11; EE ≈3800 ms e IOP ≈1200 ms por
+  ventana, sin VU ni GS. Es la misma firma que en el runner 105, pero en otra transición de carga. Esa
+  ronda tenía `GOW_STALL_DIAG=0`; se lanza una serie con el diagnóstico para capturarlo.
