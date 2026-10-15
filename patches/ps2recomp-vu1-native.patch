@@ -42,10 +42,18 @@ index 6e855fd..9f4c1e0 100644
          message(STATUS "VU1 compilada: ${PS2X_VU1_IMAGE_COUNT} micromemorias en ${PS2X_VU1_MICROCODE_DIR}")
      endif()
 diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime/ps2_vu1.h
-index 0709f01..3963d2d 100644
+index 0709f01..f036721 100644
 --- a/ps2xRuntime/include/runtime/ps2_vu1.h
 +++ b/ps2xRuntime/include/runtime/ps2_vu1.h
-@@ -112,6 +112,7 @@ private:
+@@ -6,6 +6,7 @@
+ #include <cstring>
+ #include <limits>
+ #include <cstdint>
++#include <vector>
+ 
+ // GOW-Port: las funciones en línea de VU1 usan el mismo modo de coma flotante que ps2_vu1_*.cpp (sin
+ // /fp:fast); MSVC no las expande en línea si los modos no coinciden.
+@@ -112,6 +113,7 @@ private:
      friend struct VU1CompiledProgram;
      friend struct VU1CompiledGenerator;
      friend struct VU1CompiledAccess;
@@ -53,7 +61,7 @@ index 0709f01..3963d2d 100644
  
      enum Pipeline : uint8_t
      {
-@@ -328,6 +329,14 @@ private:
+@@ -328,6 +330,15 @@ private:
      bool m_pendingHaltD = false;
      bool m_pendingHaltT = false;
      bool m_lastRunHitBudget = false; // GOW-Port: PR #12
@@ -62,6 +70,7 @@ index 0709f01..3963d2d 100644
 +    // engine). commitEverythingNow retires every in-flight pipeline entry without advancing the cycle counter.
 +    struct NativeState;
 +    NativeState *m_native = nullptr;
++    bool m_verifySilent = false; // GOW-Port: la pasada de verificación no envía paquetes XGKICK al GIF (runtime@8af9676)
 +    bool runNative(StepContext &context);
 +    void nativeTiming(const uint8_t *code, uint32_t pc, uint32_t count, std::vector<uint8_t> &cyc);
 +    void commitEverythingNow();
