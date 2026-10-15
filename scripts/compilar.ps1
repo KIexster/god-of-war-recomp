@@ -131,6 +131,8 @@ $spu2PerfPatch = Join-Path $RepoRoot 'patches\ps2recomp-spu2-perf.patch'
 $mpegSyncCallbacksPatch = Join-Path $RepoRoot 'patches\ps2recomp-mpeg-sync-callbacks.patch'
 $samplerPatch = Join-Path $RepoRoot 'patches\ps2recomp-sampler.patch'
 $checkpointFastPatch = Join-Path $RepoRoot 'patches\ps2recomp-checkpoint-fast.patch'
+$spu2NaxPatch = Join-Path $RepoRoot 'patches\ps2recomp-spu2-nax.patch'
+$eeFastAccessPatch = Join-Path $RepoRoot 'patches\ps2recomp-ee-fast-access.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -286,6 +288,8 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $spu2PerfPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $mpegSyncCallbacksPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $samplerPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $checkpointFastPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $spu2NaxPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $eeFastAccessPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner

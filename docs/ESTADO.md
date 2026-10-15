@@ -7007,3 +7007,24 @@ parche; 3 rondas de 150 s por lado alternas A/B, ventanas de 5 s con t=50..145, 
 - Anomalía (área de presentación): en una ronda A el hilo del host dejó de iterar hacia t≈5..10 s
   (solo una línea `[gow-perf]`, la ventana no atendió `WM_CLOSE` y hubo que terminarla), mientras el
   juego seguía en estado 11. Sus FPS no se usan; su audio y velocidad sí.
+
+## Portes de Waffle565: NAX del SPU2 y accesos rápidos del EE (2026-10-15)
+
+[Waffle565/God-Of-War-Native-Port](https://github.com/Waffle565/God-Of-War-Native-Port) partió de la pila de
+parches de este repositorio el 2026-10-09. Su autor dio permiso para copiar su código (comunicado por el
+propietario de este repositorio). Se portan, con su atribución en los parches y en los commits:
+
+- `ps2recomp-spu2-nax.patch` (runtime@65e1d79): el registro NAX se lee dentro del bloque que suena, como
+  `NextA` en PCSX2. Nuestro NAX apuntaba al bloque siguiente; en el último bloque de una mitad del anillo
+  de streaming quedaba fuera de las dos mitades y 989snd (989NOMID.IRX 0x13258) abortaba el flujo (error
+  0x35): la música se reiniciaba cada pocos segundos. Regresión: NAX dentro del bloque en un anillo de dos
+  bloques; falla con el código anterior (comprobado). El hash de referencia del SPU2 no cambia.
+- `ps2recomp-ee-fast-access.patch` (runtime@96f61ab y la parte de macros de runtime@e96ee58): las macros
+  `READ*`/`WRITE*` acceden al scratchpad directamente cuando el acceso está alineado, y `SET_GPR_*` escriben
+  los 64 bits bajos con un solo almacenamiento. Regresiones para el scratchpad (y su alias `0xF0000000`) y
+  para la semántica de GPR (extensión de signo, 64 bits altos intactos, `$zero`).
+
+Validación: `ps2x_tests` 640/640 con los dos parches y la VU1 nativa encima. Compilación completa local
+(exe `ad179aa4…`): el barco llega al estado 11 y cierra con `WM_CLOSE`, código 0, con la VU1 nativa
+desactivada. No se ha medido de oído el arreglo de la música; el efecto descrito es el del proyecto de
+origen.

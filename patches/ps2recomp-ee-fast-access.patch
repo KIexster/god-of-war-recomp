@@ -1,0 +1,261 @@
+diff --git a/ps2xRuntime/include/ps2_runtime_macros.h b/ps2xRuntime/include/ps2_runtime_macros.h
+index f22b785..8927fd7 100644
+--- a/ps2xRuntime/include/ps2_runtime_macros.h
++++ b/ps2xRuntime/include/ps2_runtime_macros.h
+@@ -509,6 +509,42 @@ static inline void Ps2FastWrite128(uint8_t *rdram, uint32_t addr, __m128i value)
+     std::memcpy(rdram + offset, &value, sizeof(value));
+ }
+ 
++// GOW-Port: the scratchpad (16 KB at 0x70000000, alias 0xF0000000) is plain memory with no side effects, so aligned
++// accesses go straight to it instead of through runtime->Load/Store (37-156 M accesses per zone run; see
++// docs/performance.md). Unaligned ones still take the runtime path, which raises the address error.
++static inline uint8_t *Ps2ScratchpadFastPtr(uint32_t addr, uint32_t bytes)
++{
++    const uint32_t offset = (addr & 0x7FFFFFFFu) - PS2_SCRATCHPAD_BASE;
++    if (offset >= PS2_SCRATCHPAD_SIZE || (addr & (bytes - 1u)) != 0u)
++        return nullptr;
++    uint8_t *base = ps2GetScratchpadHostPtr();
++    return base ? base + offset : nullptr;
++}
++
++// Special-address read: the scratchpad directly, anything else through `slow` (runtime->LoadN).
++template <typename T, typename Slow>
++static inline T Ps2ReadSpecial(uint32_t addr, Slow &&slow)
++{
++    if (const uint8_t *p = Ps2ScratchpadFastPtr(addr, sizeof(T)))
++    {
++        T value;
++        std::memcpy(&value, p, sizeof(T));
++        return value;
++    }
++    return slow();
++}
++
++// Special-address write: the scratchpad directly (returns true), anything else is left to the caller.
++template <typename T>
++static inline bool Ps2WriteScratchpad(uint32_t addr, const T &value)
++{
++    uint8_t *p = Ps2ScratchpadFastPtr(addr, sizeof(T));
++    if (!p)
++        return false;
++    std::memcpy(p, &value, sizeof(T));
++    return true;
++}
++
+ #define FAST_READ8(addr) Ps2FastRead8(rdram, (uint32_t)(addr))
+ #define FAST_READ16(addr) Ps2FastRead16(rdram, (uint32_t)(addr))
+ #define FAST_READ32(addr) Ps2FastRead32(rdram, (uint32_t)(addr))
+@@ -521,34 +557,45 @@ static inline void Ps2FastWrite128(uint8_t *rdram, uint32_t addr, __m128i value)
+ #define FAST_WRITE64(addr, val) Ps2FastWrite64(rdram, (uint32_t)(addr), (uint64_t)(val))
+ #define FAST_WRITE128(addr, val) Ps2FastWrite128(rdram, (uint32_t)(addr), (val))
+ 
++#define PS2_READ_SPECIAL(T, N, _addr) \
++    Ps2ReadSpecial<T>(_addr, [&]() -> T { return runtime->Load##N(rdram, ctx, _addr); })
++
++#define PS2_STORE_SPECIAL(T, N, _addr, val)                               \
++    do                                                                    \
++    {                                                                     \
++        const T _sprValue = (T)(val);                                            \
++        if (!Ps2WriteScratchpad<T>(_addr, _sprValue))                            \
++            runtime->Store##N(rdram, ctx, _addr, _sprValue);                     \
++    } while (0)
++
+ #define READ8(addr) ([&]() -> uint8_t {                       \
+     uint32_t _addr = (uint32_t)(addr);                        \
+     return PS2Runtime::isSpecialAddress(_addr)                \
+-        ? runtime->Load8(rdram, ctx, _addr)                   \
++        ? PS2_READ_SPECIAL(uint8_t, 8, _addr)                 \
+         : FAST_READ8(_addr); }())
+ 
+ #define READ16(addr) ([&]() -> uint16_t {                     \
+     uint32_t _addr = (uint32_t)(addr);                        \
+     return PS2Runtime::isSpecialAddress(_addr)                \
+-        ? runtime->Load16(rdram, ctx, _addr)                  \
++        ? PS2_READ_SPECIAL(uint16_t, 16, _addr)               \
+         : FAST_READ16(_addr); }())
+ 
+ #define READ32(addr) ([&]() -> uint32_t {                     \
+     uint32_t _addr = (uint32_t)(addr);                        \
+     return PS2Runtime::isSpecialAddress(_addr)                \
+-        ? runtime->Load32(rdram, ctx, _addr)                  \
++        ? PS2_READ_SPECIAL(uint32_t, 32, _addr)               \
+         : FAST_READ32(_addr); }())
+ 
+ #define READ64(addr) ([&]() -> uint64_t {                     \
+     uint32_t _addr = (uint32_t)(addr);                        \
+     return PS2Runtime::isSpecialAddress(_addr)                \
+-        ? runtime->Load64(rdram, ctx, _addr)                  \
++        ? PS2_READ_SPECIAL(uint64_t, 64, _addr)               \
+         : FAST_READ64(_addr); }())
+ 
+ #define READ128(addr) ([&]() -> __m128i {                     \
+     uint32_t _addr = (uint32_t)(addr) & ~0xFu;                \
+     return PS2Runtime::isSpecialAddress(_addr)                \
+-        ? runtime->Load128(rdram, ctx, _addr)                 \
++        ? PS2_READ_SPECIAL(__m128i, 128, _addr)               \
+         : FAST_READ128(_addr); }())
+ 
+ #define WRITE8(addr, val)                                                            \
+@@ -556,7 +603,7 @@ static inline void Ps2FastWrite128(uint8_t *rdram, uint32_t addr, __m128i value)
+     {                                                                                \
+         uint32_t _addr = (addr);                                                     \
+         if (PS2Runtime::isSpecialAddress(_addr))                                     \
+-            runtime->Store8(rdram, ctx, _addr, (val));                               \
++            PS2_STORE_SPECIAL(uint8_t, 8, _addr, (val));                               \
+         else                                                                         \
+         {                                                                            \
+             ps2TraceGuestWrite(rdram, _addr, 1u, (uint8_t)(val), 0u, "WRITE8", ctx); \
+@@ -569,7 +616,7 @@ static inline void Ps2FastWrite128(uint8_t *rdram, uint32_t addr, __m128i value)
+     {                                                                                  \
+         uint32_t _addr = (addr);                                                       \
+         if (PS2Runtime::isSpecialAddress(_addr))                                       \
+-            runtime->Store16(rdram, ctx, _addr, (val));                                \
++            PS2_STORE_SPECIAL(uint16_t, 16, _addr, (val));                                \
+         else                                                                           \
+         {                                                                              \
+             ps2TraceGuestWrite(rdram, _addr, 2u, (uint16_t)(val), 0u, "WRITE16", ctx); \
+@@ -582,7 +629,7 @@ static inline void Ps2FastWrite128(uint8_t *rdram, uint32_t addr, __m128i value)
+     {                                                                                  \
+         uint32_t _addr = (addr);                                                       \
+         if (PS2Runtime::isSpecialAddress(_addr))                                       \
+-            runtime->Store32(rdram, ctx, _addr, (val));                                \
++            PS2_STORE_SPECIAL(uint32_t, 32, _addr, (val));                                \
+         else                                                                           \
+         {                                                                              \
+             ps2TraceGuestWrite(rdram, _addr, 4u, (uint32_t)(val), 0u, "WRITE32", ctx); \
+@@ -595,7 +642,7 @@ static inline void Ps2FastWrite128(uint8_t *rdram, uint32_t addr, __m128i value)
+     {                                                                                  \
+         uint32_t _addr = (addr);                                                       \
+         if (PS2Runtime::isSpecialAddress(_addr))                                       \
+-            runtime->Store64(rdram, ctx, _addr, (val));                                \
++            PS2_STORE_SPECIAL(uint64_t, 64, _addr, (val));                                \
+         else                                                                           \
+         {                                                                              \
+             ps2TraceGuestWrite(rdram, _addr, 8u, (uint64_t)(val), 0u, "WRITE64", ctx); \
+@@ -609,7 +656,7 @@ static inline void Ps2FastWrite128(uint8_t *rdram, uint32_t addr, __m128i value)
+         uint32_t _addr = (uint32_t)(addr) & ~0xFu;                                   \
+         __m128i _value = (val);                                                      \
+         if (PS2Runtime::isSpecialAddress(_addr))                                     \
+-            runtime->Store128(rdram, ctx, _addr, _value);                            \
++            PS2_STORE_SPECIAL(__m128i, 128, _addr, _value);                            \
+         else                                                                         \
+         {                                                                            \
+             const uint64_t _lo = static_cast<uint64_t>(PS2_EXTRACT_EPI64_0(_value)); \
+@@ -985,47 +1032,25 @@ static inline void Ps2SetGprLow64(R5900Context *ctx, int reg, __m128i new_low)
+     }
+ }
+ 
+-#define SET_GPR_U32(ctx_ptr, reg_idx, val)                                \
+-    do                                                                    \
+-    {                                                                     \
+-        if ((reg_idx) != 0)                                               \
+-        {                                                                 \
+-            __m128i _newVal = _mm_cvtsi64_si128((int64_t)(int32_t)(val)); \
+-                                                                          \
+-            Ps2SetGprLow64(ctx_ptr, reg_idx, _newVal);                    \
+-        }                                                                 \
+-    } while (0)
++// Writes the low 64 bits of a GPR with one scalar store; the upper 64 bits stay untouched in memory.
++// Same result as Ps2SetGprLow64 without the 128-bit load/merge/store (and without NEON lane inserts on ARM).
++// Little-endian hosts only (x86-64, AArch64), like the rest of the runtime.
++static inline void Ps2SetGprLow64Bits(R5900Context *ctx, int reg, uint64_t new_low)
++{
++    if (reg != 0)
++    {
++        std::memcpy(reinterpret_cast<unsigned char *>(&ctx->r[reg]), &new_low, sizeof(new_low));
++    }
++}
+ 
++#define SET_GPR_U32(ctx_ptr, reg_idx, val) do { if ((reg_idx) != 0) Ps2SetGprLow64Bits(ctx_ptr, (reg_idx), static_cast<uint64_t>((int64_t)(int32_t)(val))); } while (0)
+ 
+-#define SET_GPR_ZE32(ctx_ptr, reg_idx, val)                               \
+-    do                                                                    \
+-    {                                                                     \
+-        if ((reg_idx) != 0)                                               \
+-        {                                                                 \
+-            __m128i _newVal = _mm_cvtsi64_si128((int64_t)(uint32_t)(val)); \
+-            Ps2SetGprLow64(ctx_ptr, reg_idx, _newVal);                    \
+-        }                                                                 \
+-    } while (0)
+ 
+-#define SET_GPR_S32(ctx_ptr, reg_idx, val)                                \
+-    do                                                                    \
+-    {                                                                     \
+-        if ((reg_idx) != 0)                                               \
+-        {                                                                 \
+-            __m128i _newVal = _mm_cvtsi64_si128((int64_t)(int32_t)(val)); \
+-            Ps2SetGprLow64(ctx_ptr, reg_idx, _newVal);                    \
+-        }                                                                 \
+-    } while (0)
++#define SET_GPR_ZE32(ctx_ptr, reg_idx, val) do { if ((reg_idx) != 0) Ps2SetGprLow64Bits(ctx_ptr, (reg_idx), static_cast<uint64_t>((int64_t)(uint32_t)(val))); } while (0)
+ 
+-#define SET_GPR_U64(ctx_ptr, reg_idx, val)                       \
+-    do                                                           \
+-    {                                                            \
+-        if ((reg_idx) != 0)                                      \
+-        {                                                        \
+-            __m128i _newVal = _mm_cvtsi64_si128((int64_t)(val)); \
+-            Ps2SetGprLow64(ctx_ptr, reg_idx, _newVal);           \
+-        }                                                        \
+-    } while (0)
++#define SET_GPR_S32(ctx_ptr, reg_idx, val) do { if ((reg_idx) != 0) Ps2SetGprLow64Bits(ctx_ptr, (reg_idx), static_cast<uint64_t>((int64_t)(int32_t)(val))); } while (0)
++
++#define SET_GPR_U64(ctx_ptr, reg_idx, val) do { if ((reg_idx) != 0) Ps2SetGprLow64Bits(ctx_ptr, (reg_idx), static_cast<uint64_t>((int64_t)(val))); } while (0)
+ 
+ #define SET_GPR_S64(ctx_ptr, reg_idx, val) SET_GPR_U64(ctx_ptr, reg_idx, val)
+ 
+diff --git a/ps2xTest/src/ps2_runtime_expansion_tests.cpp b/ps2xTest/src/ps2_runtime_expansion_tests.cpp
+index b277ef4..77f241d 100644
+--- a/ps2xTest/src/ps2_runtime_expansion_tests.cpp
++++ b/ps2xTest/src/ps2_runtime_expansion_tests.cpp
+@@ -423,6 +423,50 @@ void register_ps2_runtime_expansion_tests()
+ {
+     MiniTest::Case("PS2RuntimeExpansion", [](TestCase &tc)
+     {
++        // GOW-Port: adaptado de Waffle565/God-Of-War-Native-Port runtime@96f61ab (con permiso del autor). Las
++        // macros de acceso escriben y leen el scratchpad directamente; deben ver lo mismo que la ruta del runtime.
++        tc.Run("access macros reach the scratchpad directly and agree with the runtime path", [](TestCase &t)
++        {
++            PS2Runtime runtimeObject;
++            PS2Runtime *runtime = &runtimeObject;
++            t.IsTrue(runtime->memory().initialize(), "memory initialize should succeed");
++            uint8_t *rdram = runtime->memory().getRDRAM();
++            R5900Context context{};
++            R5900Context *ctx = &context;
++            WRITE32(0x70000010u, 0x12345678u);
++            t.Equals(runtime->memory().read32(0x70000010u), 0x12345678u, "a macro store must land in the scratchpad");
++            runtime->memory().write64(0x70000020u, 0x1122334455667788ull);
++            t.Equals(READ64(0x70000020u), 0x1122334455667788ull, "a macro load must read the scratchpad");
++            t.Equals(READ32(0xF0000010u), 0x12345678u, "the 0xF0000000 alias must reach the same scratchpad bytes");
++            WRITE16(0x70003FFEu, 0xBEEFu);
++            t.Equals(runtime->memory().read16(0x70003FFEu), static_cast<uint16_t>(0xBEEFu), "the last halfword of the scratchpad");
++            (void)ctx;
++        });
++
++        // GOW-Port: adaptado de Waffle565/God-Of-War-Native-Port runtime@e96ee58 (con permiso del autor). Las
++        // escrituras de GPR de 32/64 bits son un único almacenamiento de 8 bytes: los 64 bits altos no cambian.
++        tc.Run("scalar GPR stores keep the upper 64 bits and never write $zero", [](TestCase &t)
++        {
++            R5900Context context{};
++            R5900Context *ctx = &context;
++            for (int r = 0; r < 32; ++r)
++                ctx->r[r] = _mm_set_epi64x(0x0123456789ABCDEFll, 0x7766554433221100ll);
++            SET_GPR_U32(ctx, 5, 0x80000000u);
++            SET_GPR_ZE32(ctx, 6, 0x80000000u);
++            SET_GPR_S32(ctx, 7, -2);
++            SET_GPR_U64(ctx, 8, 0xFEDCBA9876543210ull);
++            SET_GPR_U32(ctx, 0, 0xFFFFFFFFu);
++            const auto lo = [&](int r) { return static_cast<uint64_t>(_mm_cvtsi128_si64(ctx->r[r])); };
++            const auto hi = [&](int r) { return static_cast<uint64_t>(_mm_cvtsi128_si64(_mm_unpackhi_epi64(ctx->r[r], ctx->r[r]))); };
++            t.Equals(lo(5), 0xFFFFFFFF80000000ull, "SET_GPR_U32 sign-extends into the low 64 bits");
++            t.Equals(lo(6), 0x0000000080000000ull, "SET_GPR_ZE32 zero-extends");
++            t.Equals(lo(7), 0xFFFFFFFFFFFFFFFEull, "SET_GPR_S32 sign-extends");
++            t.Equals(lo(8), 0xFEDCBA9876543210ull, "SET_GPR_U64 writes 64 bits");
++            for (int r : {5, 6, 7, 8})
++                t.Equals(hi(r), 0x0123456789ABCDEFull, "the upper 64 bits must stay untouched");
++            t.Equals(lo(0), 0x7766554433221100ull, "$zero must never be written");
++        });
++
+         tc.Run("R5900Context initializes VU0 VF0 to its constant value", [](TestCase &t)
+         {
+             R5900Context context{};
