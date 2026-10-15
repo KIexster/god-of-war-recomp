@@ -12,7 +12,7 @@ index 3e4548b..02c4b46 100644
          // GOW-Port: salida del SPU2 emulado, estereo intercalado a 48 kHz. Puede llamarse desde el hilo de audio del
          // host. Si hay mas de maxLatencyFrames acumulados, se descartan los mas antiguos.
 diff --git a/ps2xIOP/src/emulator/core/iop_kernel.cpp b/ps2xIOP/src/emulator/core/iop_kernel.cpp
-index e48d1f4..a77b64d 100644
+index e48d1f4..b019c13 100644
 --- a/ps2xIOP/src/emulator/core/iop_kernel.cpp
 +++ b/ps2xIOP/src/emulator/core/iop_kernel.cpp
 @@ -4,9 +4,38 @@
@@ -32,7 +32,7 @@ index e48d1f4..a77b64d 100644
 +        {
 +            const auto state = static_cast<size_t>(thread.state);
 +            std::snprintf(line, sizeof(line),
-+                          "[gow-stall]   iop hilo=%d %s prio=%u pc=%08x ra=%08x espera=%d bits=%x despertar=%llu wakeups=%d actual=%d\n",
++                          "[gow-stall]   iop hilo=%d %s prio=%u pc=%08x ra=%08x espera=%d bits=%x despertar=%llu wakeups=%d actual=%d\n",
 +                          id, state < std::size(states) ? states[state] : "?", thread.priority, thread.cpu.pc,
 +                          thread.cpu.gpr[31], thread.waitId, thread.waitBits,
 +                          static_cast<unsigned long long>(thread.wakeCycle), thread.wakeupCount,
@@ -41,12 +41,12 @@ index e48d1f4..a77b64d 100644
 +        }
 +        for (const auto &[id, sema] : m_semaphores)
 +        {
-+            std::snprintf(line, sizeof(line), "[gow-stall]   iop sema=%d cuenta=%d/%d\n", id, sema.current, sema.maximum);
++            std::snprintf(line, sizeof(line), "[gow-stall]   iop sema=%d cuenta=%d/%d\n", id, sema.current, sema.maximum);
 +            out += line;
 +        }
 +        for (const auto &[id, flag] : m_eventFlags)
 +        {
-+            std::snprintf(line, sizeof(line), "[gow-stall]   iop evf=%d bits=%08x\n", id, flag.bits);
++            std::snprintf(line, sizeof(line), "[gow-stall]   iop evf=%d bits=%08x\n", id, flag.bits);
 +            out += line;
 +        }
 +    }
@@ -76,7 +76,7 @@ index b20f870..1014799 100644
          [[nodiscard]] bool hasReadyThread() const noexcept
          {
 diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_emulator.cpp
-index 3911d71..3024c50 100644
+index 3911d71..425c501 100644
 --- a/ps2xIOP/src/emulator/iop_emulator.cpp
 +++ b/ps2xIOP/src/emulator/iop_emulator.cpp
 @@ -1021,6 +1021,15 @@ namespace ps2x::iop::detail
@@ -86,7 +86,7 @@ index 3911d71..3024c50 100644
 +    void IopEmulator::describe(std::string &out) const
 +    {
 +        char line[128];
-+        std::snprintf(line, sizeof(line), "[gow-stall]   iop ciclos=%llu instrucciones=%llu\n",
++        std::snprintf(line, sizeof(line), "[gow-stall]   iop ciclos=%llu instrucciones=%llu\n",
 +                      static_cast<unsigned long long>(cycles()), static_cast<unsigned long long>(instructions()));
 +        out += line;
 +        m_impl->kernel.describe(out);
