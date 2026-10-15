@@ -4716,6 +4716,30 @@ El próximo control activará `GOW_VU1_BUDGET_DIAG=1`, sin aumentar presupuestos
 y examinará magnitudes además de finitud. Primero comprobar PMULTH; las demás
 hipótesis requieren evidencia por separado y no se incorporan arreglos en bloque.
 
+## VF0 constante en VU0 (2026-10-14)
+
+La issue [#66](https://github.com/KIexster/god-of-war-recomp/issues/66) señaló que
+`R5900Context` dejaba `vu0_vf[0]` en cero completo. El constructor ahora inicializa
+VF0 a `(0, 0, 0, 1)`; las traducciones de VU0 ignoran escrituras al vector cero
+sin quitar otros efectos de la instrucción, y `LQC2` a VF0 no carga memoria. Se
+añadieron regresiones para el contexto y para LQC2, QMTC2, VADD, VITOF y VMFIR.
+Las rutas de `VI0` ya ignoraban escrituras de `CTC2`, operaciones VI y cargas/
+incrementos de memoria; `VMTIR` aún podía escribirlo. Un parche adicional lo
+trata como destino constante y la regresión comprueba también que los destinos
+VI distintos de cero sigan escribiendo.
+
+Ambos parches se compilaron con MSVC 19.44 y Ninja 1.12.1; `ps2x_tests` pasó
+622/622 con cero fallos conocidos. También pasan `tools/ci/parches.py`,
+`tools/ci/validar_config.py` y la aplicación limpia de los dos parches en orden.
+
+Revisión del filtro VF0 (2026-10-14): se retiró la búsqueda de la cadena generada
+`ctx->vu0_vf[0] =` y el borrado hasta el siguiente punto y coma. Los emisores de
+VU0 envían ahora las escrituras a `PS2_VU0_VF_WRITE`, que comprueba el destino y
+no evalúa el valor cuando el destino es VF0; las escrituras a otros VF siguen
+iguales y los efectos laterales, como actualizar R en VRNEXT, se conservan.
+Una regresión verifica el comportamiento de VF0/VF1. La serie VF0+VI0 aplicada
+limpiamente y compilada con Ninja pasó `ps2x_tests` 623/623, sin fallos conocidos.
+
 ## PMULTH: compilación completa y regresiones nativas (2026-10-11)
 
 La cadena 102 termina con código 0 en 959,94 s, regenerando los cuatro sitios
