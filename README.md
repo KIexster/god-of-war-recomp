@@ -213,7 +213,7 @@ The technical documentation is currently written in Spanish:
 ## Credits and license
 
 - [**PS2Recomp**](https://github.com/ran-j/PS2Recomp) by ran-j and contributors — recompiler and runtime (GPL-3.0).
-- [**PCSX2**](https://github.com/PCSX2/pcsx2) contributors — original GS used by the optional DX11 diagnostic module (GPL-3.0+).
+- [**PCSX2**](https://github.com/PCSX2/pcsx2) contributors — original GS used by the optional DX11 diagnostic module, and the EE interpreter and VU operations of the runtime (`ee_ref/`, `vu_pcsx2/`, brought in with Waffle565's runtime) (GPL-3.0+).
 - [**Urban Reign recomp**](https://github.com/thiagordsfx/urban-reign-recomp) by thiagordsfx — shared GS integration reference; helped identify the VSync field convention in our diagnostic mirror ([review and scope](docs/REVISION_URBAN_REIGN.md)).
 - [**SotC runtime fork**](https://github.com/LightVelox/PS2Recomp/tree/ac9efa070638ad3b3accd284de6f898d5ab271d1) by Taylor N. Albarnaz / LightVelox — OpenGL GS backend and command queue, and EE fixes (FPU, 64-bit branches, LQ/SQ, tail jumps, VU0 macro mode and long DMA chains) (GPL-3.0, `ac9efa0`).
 - *God of War* © Sony Interactive Entertainment / Santa Monica Studio. This project is not affiliated with
