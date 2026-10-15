@@ -63,6 +63,24 @@ python tools/rendimiento/resumir.py logs/perf_ram_1.log --partida --desde 100 --
 python tools/rendimiento/resumir.py logs/perf_compartida_1.log --partida --desde 100 --hasta 220
 ```
 
+El perfilador fija también las opciones de concurrencia y las deja desactivadas por defecto,
+aunque el proceso padre las tenga activadas. Para comparar el camino base con VU1/GS en hilos,
+usa el mismo renderer, escena y ejecutable en ambas pasadas:
+
+```powershell
+.\scripts\probar_rendimiento.ps1 -Renderer opengl -Presentacion compartida -SoloCuadros -Segundos 150 -Etiqueta base
+.\scripts\probar_rendimiento.ps1 -Renderer opengl -Presentacion compartida -SoloCuadros -Vu1Hilo -GsFrente -FinishAsync -Segundos 150 -Etiqueta hilos
+python tools/rendimiento/resumir.py logs/perf_base.log --partida --desde 50 --hasta 140
+python tools/rendimiento/resumir.py logs/perf_hilos.log --partida --desde 50 --hasta 140
+```
+
+`-GsFrente` requiere `-Vu1Hilo`. El script restaura las variables heredadas al terminar y muestra
+el modo usado al inicio. Usa el mismo hash del ejecutable en ambas pasadas.
+
+Para diagnosticar carga GPU se puede activar `-GpuProfile -HardwareLog`. El profiler usa timestamps
+de GPU y cambia el ritmo de la partida; este modo sirve para localizar raster/compute y tiempos de
+compilación de variantes, no para medir FPS. Ambos diagnósticos se restauran al valor heredado.
+
 Usar el mismo ejecutable y estado inicial de tarjeta en todas las pasadas,
 conservar su SHA-256 y alternar el orden al repetir. `-SoloCuadros` reduce el
 coste del perfil; `guest_flip_hz` cuenta entradas reales en `vid::Flip`, mientras
