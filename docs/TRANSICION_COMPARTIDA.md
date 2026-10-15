@@ -1051,3 +1051,78 @@ sin espejo DX11 y con captura desactivada. Mantener monitor de ventana,
 resultado de cierre, identidad y tarjeta privada. Los tiempos son transcurridos
 de ámbitos instrumentados; no son porcentajes de CPU. Para referencia visual
 usar otra pasada explícita con espejo/capturas y ambos hilos apagados.
+
+## Captura de diagnóstico y textura adquirida (2026-10-14)
+
+`GowPadTest` usa `GS::copyLatchedHostPresentationFrame`. Con presentación
+compartida, esa función pide un readback de VRAM actual con la solicitud
+CRTC latched; sus píxeles no proceden de la textura adquirida por el host.
+La opción `--capture-acquired`, en cambio, lee el `Frame` adquirido mientras
+su reserva sigue vigente. Las dos capturas tienen límites distintos y
+no deben intercambiarse como prueba de lo presentado por la ventana.
+
+En el menú obligatorio109 varias capturas de diagnóstico no contenían
+opciones. Un control dedicado del título con el mismo runner, solo Start,
+obtuvo 16 adquiridos y las referencias HW/shadow/SW de su propia ejecución.
+Se revisaron completos los cuartetos900/904/908/912: título, «New Game» y
+«Select» aparecen en las cuatro fuentes. Esto acredita esas muestras,
+sin demostrar por qué faltaban opciones en la captura del script de menú.
+No hay corrección de esa ruta ni regresión visual confirmada.
+
+El control cerró por límite en180,172s, tarjeta intacta y sin minimización
+registrada. Adquiridos distintos, 512×448 y metadatos correlacionados.
+Shadow y adquirido no son idénticos por compartir tick: sigue pendiente
+registrar su frontera de comandos. Ninguno de estos controles mide cuadros
+únicos mostrados ni acredita salida normal o estabilidad prolongada.
+
+Además, el registro `[gs-present:shared]` del host se emite cuando cambia
+la secuencia adquirida, con umbral y cupo. Las iteraciones que reutilizan
+la misma secuencia no generan otra fila. Cero repeticiones en el inspector
+no prueba que la ventana nunca reutilice una textura. `host_hz` sí cuenta
+cada `renderFrame/EndDrawing` completado, incluso si reutiliza contenido;
+`guest_flip_hz` cuenta entradas a `vid::Flip`. Faltan contadores y tiempos
+específicos de reutilización/presentación para convertir ese desacuerdo
+en una medida de cuadros distintos enviados, y aun esa medida no sería
+prueba de cuadros físicos mostrados por el monitor.
+
+## Tiempos109 y cierre solicitado de ventana (2026-10-14)
+
+Pasada combinada600,164s sin espejo/hash/readbacks/diagGS, con tarjeta copiada:
+estado11 observado35,06..596,22, sin minimización registrada. Se envió WM_CLOSE
+solo al HWND del PID hijo y el proceso cerró0en0,147s, sin terminación forzada.
+Esto valida ese cierre solicitado; no final del juego ni estabilidad prolongada.
+El primer plano varió; no atribuir diferencias de velocidad a una sola condición.
+
+Dentro de la misma pasada hay ventanas de partida con host9,11..19,64/s y
+otras posteriores55,66..60/s. Flip y host cuentan operaciones diferentes.
+No hay referencia visual de esa pasada para alinear cámaras con otras por tick.
+HostWait tiene mediana4.979,41ms por ventana de unos5s, aun con host60/s:
+incluye loteGL/swap/limitador/eventos de EndDrawing. Antes de atribuir esperas,
+separar esos componentes conservando llamadas/orden/fences. Los ámbitos de
+hilos distintos no representan porcentaje de CPU ni se suman como tiempo global.
+
+## Opciones reproducibles de perfil y cierre
+
+Para repetir los controles sin scripts privados, añadir al comando habitual:
+
+```text
+--perf timing --presentation-diagnostics off --capture-acquired 0 --gpu-profile --gpu-stats --request-window-close
+```
+
+`--gpu-profile` activa timestamps existentes y `--gpu-stats` estadísticas
+del backend; ambas son optativas y quedan registradas en measurement.
+El perfil GPU consulta AVAILABLE antes de leer durante el render y puede
+omitir muestras por su cupo. Su etiqueta «per frame» divide por intentos
+del compositor después de DispatchCompute/antes de PublishShared: **no
+es tiempo por Flip ni por cuadro mostrado**. La última ventana de cierre
+puede recoger trabajo pendiente con pocos intentos. No mezclar sus ventanas
+con las de CPU como si compartieran límites temporales exactos.
+
+`--request-window-close` pide cierre solo al HWND del PID hijo creado por
+el control. Espera hasta15s; si no logra cierre registra forced_fallback y
+detiene únicamente ese hijo con Popen. El resultado incluye envío, fallback,
+código, duración y error de consulta, si hubo. Revisar esos campos antes
+de acreditar cierre sin forzar. El límite o STOP siguen registrados como
+motivo del controlador; no equivalen al final del juego. Sin esa opción
+se conserva el método de detención anterior. Control real75s y pruebas
+procedurales cerrados en ESTADO.md; CI del nuevo HEAD pendiente de confirmar.

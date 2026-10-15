@@ -121,6 +121,8 @@ $gsFogMathPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-fog-math.patch'
 $gsZtePatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-zte.patch'
 $gsCpuColclampPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-cpu-colclamp.patch'
 $gsTexaDepthPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-texa-depth.patch'
+$gsPcrtcBlendPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-pcrtc-blend.patch'
+$gsHostTimingPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-host-timing.patch'
 $vu0Vf0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vf0.patch'
 $vu0Vi0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vi0.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
@@ -268,6 +270,8 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $gsFogMathPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsZtePatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsCpuColclampPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsTexaDepthPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsPcrtcBlendPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsHostTimingPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu0Vf0Patch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu0Vi0Patch)
 Pop-Location
