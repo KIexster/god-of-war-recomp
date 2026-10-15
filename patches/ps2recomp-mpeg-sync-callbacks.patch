@@ -1,0 +1,207 @@
+--- a/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
++++ b/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
+@@ -1627,16 +1627,64 @@
+             runtime->eeScheduler().queueInvocation(std::move(invocation));
+         }
+ 
++        // GOW-Port: libmpeg runs the stream callbacks inside sceMpegDemuxPss[Ring], before it returns.
++        // God of War copies the video ES into its own ring from that callback and, right after the first
++        // demux, reads the sequence header there to size the picture buffer. Queued (deferred) callbacks
++        // left the ring empty, the size became 0x0, and every sceMpegGetPicture then wrote a 640x480
++        // picture over the DMA packet and heap allocated after that zero-sized buffer (intro movie garbage).
++        // Called from a guest thread, the callbacks run now and the caller resumes with returnValue.
+         void dispatchStreamCallbacks(uint8_t *rdram,
+                                      R5900Context *ctx,
+                                      PS2Runtime *runtime,
+-                                     const std::vector<MpegStreamCallbackEvent> &events)
++                                     const std::vector<MpegStreamCallbackEvent> &events,
++                                     int32_t returnValue)
+         {
+             if (events.empty())
+             {
+                 return;
+             }
+ 
++            if (rdram && ctx && runtime && runtime->eeScheduler().currentThreadId() != 0)
++            {
++                std::vector<GuestInvocation> invocations;
++                for (const MpegStreamCallbackEvent &event : events)
++                {
++                    for (const MpegRegisteredCallback &callback : event.callbacks)
++                    {
++                        if (callback.func == 0u || !runtime->hasFunction(callback.func))
++                            continue;
++                        const uint32_t cbDataAddr = runtime->guestMalloc(kMpegCallbackDataSize, 16u);
++                        if (cbDataAddr == 0u)
++                            continue;
++                        if (!writeMpegCallbackData(rdram, cbDataAddr, event))
++                        {
++                            runtime->guestFree(cbDataAddr);
++                            continue;
++                        }
++                        GuestInvocation invocation{};
++                        invocation.kind = GuestInvocationKind::HleCall;
++                        invocation.context = *ctx;
++                        invocation.context.pc = callback.func;
++                        SET_GPR_U32(&invocation.context, 4, event.mpegAddr);
++                        SET_GPR_U32(&invocation.context, 5, cbDataAddr);
++                        SET_GPR_U32(&invocation.context, 6, callback.data);
++                        SET_GPR_U32(&invocation.context, 7, 0u);
++                        SET_GPR_U32(&invocation.context, 29, 0u);
++                        SET_GPR_U32(&invocation.context, 31, 0u);
++                        invocation.onComplete = [runtime, cbDataAddr, returnValue](const R5900Context &, R5900Context &parent)
++                        {
++                            runtime->guestFree(cbDataAddr);
++                            setReturnS32(&parent, returnValue);
++                        };
++                        invocations.push_back(std::move(invocation));
++                    }
++                }
++                if (invocations.empty())
++                    return;
++                setReturnS32(ctx, returnValue);
++                runtime->eeScheduler().invokeCurrentSequence(std::move(invocations));
++            }
++
+             for (const MpegStreamCallbackEvent &event : events)
+             {
+                 for (const MpegRegisteredCallback &callback : event.callbacks)
+@@ -1649,14 +1697,15 @@
+         void dispatchStreamCallbacksUnlocked(uint8_t *rdram,
+                                              R5900Context *ctx,
+                                              PS2Runtime *runtime,
+-                                             const std::vector<MpegStreamCallbackEvent> &events)
++                                             const std::vector<MpegStreamCallbackEvent> &events,
++                                             int32_t returnValue)
+         {
+             if (events.empty())
+             {
+                 return;
+             }
+ 
+-            dispatchStreamCallbacks(rdram, ctx, runtime, events);
++            dispatchStreamCallbacks(rdram, ctx, runtime, events, returnValue);
+         }
+ 
+         void writeBlankMpegFrame(uint8_t *rdram, uint32_t destAddr, uint32_t width, uint32_t height)
+@@ -2173,7 +2222,7 @@
+             });
+         }
+ 
+-        dispatchStreamCallbacksUnlocked(rdram, ctx, runtime, callbackEvents);
++        dispatchStreamCallbacksUnlocked(rdram, ctx, runtime, callbackEvents, static_cast<int32_t>(consumed));
+         setReturnS32(ctx, static_cast<int32_t>(consumed));
+     }
+ 
+@@ -2268,7 +2317,7 @@
+             });
+         }
+ 
+-        dispatchStreamCallbacksUnlocked(rdram, ctx, runtime, callbackEvents);
++        dispatchStreamCallbacksUnlocked(rdram, ctx, runtime, callbackEvents, static_cast<int32_t>(consumed));
+         setReturnS32(ctx, static_cast<int32_t>(consumed));
+     }
+ 
+--- a/ps2xTest/src/ps2_runtime_expansion_tests.cpp
++++ b/ps2xTest/src/ps2_runtime_expansion_tests.cpp
+@@ -279,6 +279,50 @@
+         ctx->pc = ::getRegU32(ctx, 31);
+     }
+ 
++    // GOW-Port: libmpeg runs stream callbacks inside sceMpegDemuxPssRing. The guest caller must see the
++    // callback's work (God of War: video ES copied to its ring) as soon as the call returns.
++    constexpr uint32_t kSyncDemuxMainPc = 0x00125300u;
++    constexpr uint32_t kSyncDemuxResumePc = 0x00125310u;
++    constexpr uint32_t kSyncDemuxCallbackPc = 0x00125320u;
++    constexpr uint32_t kSyncDemuxHandle = 0x00124800u;
++    constexpr uint32_t kSyncDemuxPacket = 0x00133000u;
++    std::atomic<uint32_t> gSyncDemuxPacketSize{0u};
++    std::atomic<uint32_t> gSyncDemuxCallbacks{0u};
++    std::atomic<int32_t> gSyncDemuxSeenAtReturn{-1};
++    std::atomic<int32_t> gSyncDemuxResult{-999};
++
++    void testSyncDemuxMain(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
++    {
++        setRegU32(*ctx, 4, kSyncDemuxHandle);
++        setRegU32(*ctx, 5, kSyncDemuxPacket);
++        setRegU32(*ctx, 6, gSyncDemuxPacketSize.load(std::memory_order_acquire));
++        setRegU32(*ctx, 7, 0u);
++        setRegU32(*ctx, 8, 0xFFFFFFFFu);
++        ctx->pc = kSyncDemuxResumePc;
++        ps2_stubs::sceMpegDemuxPssRing(rdram, ctx, runtime);
++        // Plain return: the caller continues here, as generated code does after a stub call.
++        int32_t unset = -1;
++        gSyncDemuxSeenAtReturn.compare_exchange_strong(
++            unset, static_cast<int32_t>(gSyncDemuxCallbacks.load(std::memory_order_acquire)));
++    }
++
++    void testSyncDemuxResume(uint8_t *, R5900Context *ctx, PS2Runtime *runtime)
++    {
++        int32_t unset = -1;
++        gSyncDemuxSeenAtReturn.compare_exchange_strong(
++            unset, static_cast<int32_t>(gSyncDemuxCallbacks.load(std::memory_order_acquire)));
++        gSyncDemuxResult.store(getRegS32(*ctx, 2), std::memory_order_release);
++        ctx->pc = 0u;
++        runtime->requestStop();
++    }
++
++    void testSyncDemuxCallback(uint8_t *, R5900Context *ctx, PS2Runtime *)
++    {
++        gSyncDemuxCallbacks.fetch_add(1u, std::memory_order_acq_rel);
++        setRegU32(*ctx, 2, 1u);
++        ctx->pc = ::getRegU32(ctx, 31);
++    }
++
+     void testNodataVsync(uint8_t *, R5900Context *ctx, PS2Runtime *runtime)
+     {
+         // Simula el siguiente VSync mientras GetPicture espera tras un callback sin datos.
+@@ -885,6 +929,49 @@
+             runtime.requestStop();
+         });
+ 
++        tc.Run("sceMpegDemuxPssRing runs stream callbacks before its guest caller continues", [](TestCase &t)
++        {
++            PS2Runtime runtime;
++            std::vector<uint8_t> rdram(PS2_RAM_SIZE, 0u);
++            ps2_stubs::resetMpegStubState();
++            ps2_stubs::notifyMpegCdStreamStart();
++            runtime.registerFunction(kSyncDemuxMainPc, testSyncDemuxMain);
++            runtime.registerFunction(kSyncDemuxResumePc, testSyncDemuxResume);
++            runtime.registerFunction(kSyncDemuxCallbackPc, testSyncDemuxCallback);
++            gSyncDemuxCallbacks.store(0u, std::memory_order_release);
++            gSyncDemuxSeenAtReturn.store(-1, std::memory_order_release);
++            gSyncDemuxResult.store(-999, std::memory_order_release);
++
++            const std::vector<uint8_t> payload = {0x00u, 0x00u, 0x01u, 0xB3u, 0x28u, 0x01u, 0xE0u, 0x13u};
++            const uint16_t packetLen = static_cast<uint16_t>(payload.size() + 3u);
++            std::vector<uint8_t> packet = {0x00u, 0x00u, 0x01u, 0xE0u, static_cast<uint8_t>(packetLen >> 8u),
++                                           static_cast<uint8_t>(packetLen & 0xFFu), 0x80u, 0x00u, 0x00u};
++            packet.insert(packet.end(), payload.begin(), payload.end());
++            std::memcpy(rdram.data() + kSyncDemuxPacket, packet.data(), packet.size());
++            gSyncDemuxPacketSize.store(static_cast<uint32_t>(packet.size()), std::memory_order_release);
++
++            R5900Context addCtx{};
++            setRegU32(addCtx, 4, kSyncDemuxHandle);
++            setRegU32(addCtx, 5, 0u); // sceMpegStrM2V
++            setRegU32(addCtx, 6, 0u);
++            setRegU32(addCtx, 7, kSyncDemuxCallbackPc);
++            setRegU32(addCtx, 8, 0u);
++            ps2_stubs::sceMpegAddStrCallback(rdram.data(), &addCtx, &runtime);
++
++            R5900Context mainContext{};
++            mainContext.pc = kSyncDemuxMainPc;
++            EeScheduler &ee = runtime.eeScheduler();
++            ee.reset(rdram.data(), mainContext);
++            ee.run();
++
++            t.Equals(gSyncDemuxSeenAtReturn.load(std::memory_order_acquire), 1,
++                     "the video stream callback should have run when sceMpegDemuxPssRing returns to its caller");
++            t.Equals(gSyncDemuxCallbacks.load(std::memory_order_acquire), 1u,
++                     "the video stream callback should run exactly once");
++            t.Equals(gSyncDemuxResult.load(std::memory_order_acquire), static_cast<int32_t>(packet.size()),
++                     "the caller should get the consumed byte count after the callbacks");
++        });
++
+         tc.Run("sceMpegGetPicture blocks as a typed scheduler wait and resumes on EOF", [](TestCase &t)
+         {
+             PS2Runtime runtime;
