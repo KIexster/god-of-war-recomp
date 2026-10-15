@@ -29,6 +29,7 @@ $sio2Patch = Join-Path $RepoRoot 'patches\ps2recomp-sio2.patch'
 $perfPatch = Join-Path $RepoRoot 'patches\ps2recomp-perf.patch'
 $gsOpenGlPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-opengl.patch'
 $gsP4RowRunsPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-p4-row-runs.patch'
+$gsUploadDispatchPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-upload-dispatch.patch'
 $eeFixesPatch = Join-Path $RepoRoot 'patches\ps2recomp-ee-fixes.patch'
 $gsPresentationPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-presentation.patch'
 $vifDirectPatch = Join-Path $RepoRoot 'patches\ps2recomp-vif-direct.patch'
@@ -298,6 +299,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $spu2NaxPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $eeFastAccessPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1NativePatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsP4RowRunsPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsUploadDispatchPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $samplerThreadsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsVsyncUnlockedPatch)
 Pop-Location
