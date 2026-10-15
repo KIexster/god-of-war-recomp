@@ -1,0 +1,368 @@
+diff --git a/ps2xIOP/src/emulator/core/spu2.cpp b/ps2xIOP/src/emulator/core/spu2.cpp
+index 5883746..e128552 100644
+--- a/ps2xIOP/src/emulator/core/spu2.cpp
++++ b/ps2xIOP/src/emulator/core/spu2.cpp
+@@ -1,6 +1,12 @@
+ #include "spu2.h"
+ 
+ #include <algorithm>
++#include <array>
++#include <atomic>
++#include <chrono>
++#include <cstdio>
++#include <cstdlib>
++#include <intrin.h>
+ 
+ namespace ps2x::iop::detail
+ {
+@@ -16,6 +22,85 @@ namespace ps2x::iop::detail
+ 
+         // Volumen de voz o de nucleo. Modo fijo (bit 15 = 0): 15 bits con signo. El barrido (bit 15 = 1) aun no se
+         // emula: se aplica de inmediato su destino (maximo si sube, 0 si baja).
++        // GOW-Port: GOW_SPU2_PERF=1 mide en el hilo que avanza el IOP el tiempo transcurrido de las muestras
++        // (advanceTo), las DMA y, en el hilo de audio, el drenado. GOW_SPU2_PERF=2 añade ciclos TSC por sección
++        // (voces, envolventes, decodificación ADPCM y salida), calibrados con el tiempo de advanceTo. Son tiempos
++        // transcurridos de un hilo, no uso exclusivo de CPU; el nivel 2 tiene un sobrecoste propio por voz.
++        int perfLevel() noexcept
++        {
++            static const int level = []
++            {
++                const char *value = std::getenv("GOW_SPU2_PERF");
++                return value ? std::atoi(value) : 0;
++            }();
++            return level;
++        }
++
++        struct PerfCounters
++        {
++            std::atomic<uint64_t> samples{0}, advanceCalls{0}, stepNs{0}, activeVoiceSteps{0}, decodedBlocks{0};
++            std::atomic<uint64_t> dmaNs{0}, dmaBytes{0}, dmaCalls{0};
++            std::atomic<uint64_t> drainNs{0}, drainLockNs{0}, drainCalls{0}, requestedFrames{0}, deliveredFrames{0};
++            std::atomic<uint64_t> latencyDroppedFrames{0}, bufferDroppedFrames{0};
++            std::atomic<uint64_t> stepTicks{0}, voiceTicks{0}, envelopeTicks{0}, decodeTicks{0}, outputTicks{0};
++            std::atomic<uint64_t> outputLockTicks{0};
++        };
++        PerfCounters g_perf;
++
++        uint64_t perfNow() noexcept
++        {
++            return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
++                std::chrono::steady_clock::now().time_since_epoch()).count());
++        }
++
++        uint64_t perfTicks() noexcept { return __rdtsc(); }
++
++        // Una línea cada 5 s, desde el hilo que avanza el IOP (el único que produce muestras).
++        void perfReport(uint64_t now)
++        {
++            static uint64_t first = now, last = now;
++            static std::array<uint64_t, 21> before{};
++            if (now - last < 5000000000ull)
++                return;
++            const double window = static_cast<double>(now - last) * 1e-9;
++            const std::array<uint64_t, 21> current = {
++                g_perf.samples.load(), g_perf.advanceCalls.load(), g_perf.stepNs.load(), g_perf.activeVoiceSteps.load(),
++                g_perf.decodedBlocks.load(), g_perf.dmaNs.load(), g_perf.dmaBytes.load(), g_perf.dmaCalls.load(),
++                g_perf.drainNs.load(), g_perf.drainLockNs.load(), g_perf.drainCalls.load(), g_perf.requestedFrames.load(),
++                g_perf.deliveredFrames.load(), g_perf.latencyDroppedFrames.load(), g_perf.bufferDroppedFrames.load(),
++                g_perf.stepTicks.load(), g_perf.voiceTicks.load(), g_perf.envelopeTicks.load(), g_perf.decodeTicks.load(),
++                g_perf.outputTicks.load(), g_perf.outputLockTicks.load()};
++            std::array<uint64_t, 21> d{};
++            for (size_t i = 0; i < d.size(); ++i)
++                d[i] = current[i] - before[i];
++            before = current;
++            last = now;
++            const double samples = static_cast<double>(d[0]);
++            std::fprintf(stderr,
++                         "[gow-spu2-perf] t=%.2f ventana=%.2f muestras=%llu muestras_s=%.0f step_ms=%.2f us_muestra=%.3f "
++                         "advance_con_muestras=%llu voces_activas_med=%.2f bloques_adpcm=%llu dma_ms=%.3f dma_kb=%.1f "
++                         "dma_llamadas=%llu drenado_ms=%.3f drenado_espera_mutex_ms=%.3f drenado_llamadas=%llu pedidas=%llu "
++                         "entregadas=%llu faltantes=%llu descartadas_latencia=%llu descartadas_buffer=%llu\n",
++                         (now - first) * 1e-9, window, static_cast<unsigned long long>(d[0]), samples / window, d[2] * 1e-6,
++                         samples > 0.0 ? d[2] * 1e-3 / samples : 0.0, static_cast<unsigned long long>(d[1]),
++                         samples > 0.0 ? d[3] / samples : 0.0, static_cast<unsigned long long>(d[4]), d[5] * 1e-6,
++                         d[6] / 1024.0, static_cast<unsigned long long>(d[7]), d[8] * 1e-6, d[9] * 1e-6,
++                         static_cast<unsigned long long>(d[10]), static_cast<unsigned long long>(d[11]),
++                         static_cast<unsigned long long>(d[12]),
++                         static_cast<unsigned long long>(d[11] > d[12] ? d[11] - d[12] : 0u),
++                         static_cast<unsigned long long>(d[13]), static_cast<unsigned long long>(d[14]));
++            if (perfLevel() >= 2 && d[15] != 0u)
++            {
++                // Ciclos TSC a ms con la relación de esta ventana (tiempo de advanceTo / ciclos de step).
++                const double msPerTick = d[2] * 1e-6 / static_cast<double>(d[15]);
++                const double voices = d[16] * msPerTick, envelope = d[17] * msPerTick, decode = d[18] * msPerTick;
++                std::fprintf(stderr,
++                             "[gow-spu2-perf] secciones voces_ms=%.2f envolvente_ms=%.2f decodificacion_ms=%.2f "
++                             "tono_interpolacion_mezcla_ms=%.2f salida_ms=%.2f salida_espera_mutex_ms=%.3f\n",
++                             voices, envelope, decode, voices - envelope - decode, d[19] * msPerTick, d[20] * msPerTick);
++            }
++        }
++
+         int32_t volumeFromRegister(uint16_t value) noexcept
+         {
+             if ((value & 0x8000u) == 0u)
+@@ -186,10 +271,17 @@ namespace ps2x::iop::detail
+         const uint32_t base = core * 0x400u;
+         if ((reg(base + RegAdmas) & (core + 1u)) != 0u)
+             return false;
++        const uint64_t start = perfLevel() ? perfNow() : 0u;
+         uint32_t tsa = reg32(base + RegTsa);
+         for (size_t i = 0; i + 1u < bytes; i += 2u)
+             writeRam(tsa++, static_cast<uint16_t>(source[i] | (source[i + 1u] << 8u)));
+         setReg32(base + RegTsa, tsa);
++        if (start != 0u)
++        {
++            g_perf.dmaNs.fetch_add(perfNow() - start, std::memory_order_relaxed);
++            g_perf.dmaBytes.fetch_add(bytes, std::memory_order_relaxed);
++            g_perf.dmaCalls.fetch_add(1u, std::memory_order_relaxed);
++        }
+         return true;
+     }
+ 
+@@ -267,6 +359,8 @@ namespace ps2x::iop::detail
+         if (!v.active)
+             return;
+ 
++        if (perfLevel())
++            g_perf.decodedBlocks.fetch_add(1u, std::memory_order_relaxed);
+         const uint32_t block = v.nax & (RamHalfwords - 1u);
+         const uint16_t header = ram(block);
+         uint32_t shift = header & 0xFu;
+@@ -380,6 +474,9 @@ namespace ps2x::iop::detail
+         VoiceState &v = m_voices[core][index];
+         if (!v.active)
+             return 0;
++        const int level = perfLevel();
++        if (level)
++            g_perf.activeVoiceSteps.fetch_add(1u, std::memory_order_relaxed);
+ 
+         // Tono 4.12 (0x1000 = 48 kHz). Interpolacion lineal entre las dos ultimas muestras (el hardware usa una
+         // gaussiana de 4 puntos).
+@@ -388,7 +485,12 @@ namespace ps2x::iop::detail
+         {
+             v.pitchCounter -= 0x1000u;
+             if (v.decodedIndex >= 28u)
++            {
++                const uint64_t decodeStart = level >= 2 ? perfTicks() : 0u;
+                 decodeBlock(core, index);
++                if (decodeStart != 0u)
++                    g_perf.decodeTicks.fetch_add(perfTicks() - decodeStart, std::memory_order_relaxed);
++            }
+             if (!v.active)
+                 break;
+             v.prev[1] = v.prev[0];
+@@ -399,13 +501,18 @@ namespace ps2x::iop::detail
+ 
+         const int32_t fraction = static_cast<int32_t>(v.pitchCounter & 0xFFFu);
+         const int32_t sample = v.prev[1] + (((v.prev[0] - v.prev[1]) * fraction) >> 12);
++        const uint64_t envelopeStart = level >= 2 ? perfTicks() : 0u;
+         stepEnvelope(core, index);
++        if (envelopeStart != 0u)
++            g_perf.envelopeTicks.fetch_add(perfTicks() - envelopeStart, std::memory_order_relaxed);
+         v.lastOutput = clamp16((sample * v.envelope) >> 15);
+         return v.lastOutput;
+     }
+ 
+     void Spu2::step()
+     {
++        const bool sections = perfLevel() >= 2;
++        const uint64_t stepStart = sections ? perfTicks() : 0u;
+         int32_t coreOut[2][2] = {};
+         for (uint32_t core = 0; core < 2u; ++core)
+         {
+@@ -436,7 +543,9 @@ namespace ps2x::iop::detail
+         {
+             return volumeFromRegister(reg(RegMvolBase + core * RegMvolStride + side * 2u));
+         };
+-        std::lock_guard<std::mutex> lock(m_outputMutex);
++        const uint64_t outputStart = sections ? perfTicks() : 0u;
++        std::unique_lock<std::mutex> lock(m_outputMutex);
++        const uint64_t locked = sections ? perfTicks() : 0u;
+         for (uint32_t side = 0; side < 2u; ++side)
+         {
+             const int32_t core0 = (coreOut[0][side] * master(0u, side)) >> 14;
+@@ -444,7 +553,21 @@ namespace ps2x::iop::detail
+             m_output.push_back(clamp16(mixed));
+         }
+         if (m_output.size() > kMaxBufferedFrames * 2u)
+-            m_output.erase(m_output.begin(), m_output.begin() + static_cast<std::ptrdiff_t>(m_output.size() / 2u & ~size_t{1}));
++        {
++            const size_t dropped = m_output.size() / 2u & ~size_t{1};
++            m_output.erase(m_output.begin(), m_output.begin() + static_cast<std::ptrdiff_t>(dropped));
++            if (perfLevel())
++                g_perf.bufferDroppedFrames.fetch_add(dropped / 2u, std::memory_order_relaxed);
++        }
++        lock.unlock();
++        if (sections)
++        {
++            const uint64_t end = perfTicks();
++            g_perf.voiceTicks.fetch_add(outputStart - stepStart, std::memory_order_relaxed);
++            g_perf.outputTicks.fetch_add(end - outputStart, std::memory_order_relaxed);
++            g_perf.outputLockTicks.fetch_add(locked - outputStart, std::memory_order_relaxed);
++            g_perf.stepTicks.fetch_add(end - stepStart, std::memory_order_relaxed);
++        }
+     }
+ 
+     void Spu2::advanceTo(uint64_t iopCycle)
+@@ -452,9 +575,18 @@ namespace ps2x::iop::detail
+         if (iopCycle <= m_lastCycle)
+             return;
+         const uint64_t samples = (iopCycle - m_lastCycle) / CyclesPerSample;
++        const uint64_t start = samples != 0u && perfLevel() ? perfNow() : 0u;
+         for (uint64_t i = 0; i < samples; ++i)
+             step();
+         m_lastCycle += samples * CyclesPerSample;
++        if (start != 0u)
++        {
++            const uint64_t end = perfNow();
++            g_perf.stepNs.fetch_add(end - start, std::memory_order_relaxed);
++            g_perf.samples.fetch_add(samples, std::memory_order_relaxed);
++            g_perf.advanceCalls.fetch_add(1u, std::memory_order_relaxed);
++            perfReport(end);
++        }
+     }
+ 
+     size_t Spu2::pendingFrames() const
+@@ -465,16 +597,28 @@ namespace ps2x::iop::detail
+ 
+     size_t Spu2::drainOutput(int16_t *stereo, size_t maxFrames, size_t maxLatencyFrames)
+     {
++        const uint64_t start = perfLevel() ? perfNow() : 0u;
+         std::lock_guard<std::mutex> lock(m_outputMutex);
++        const uint64_t locked = start != 0u ? perfNow() : 0u;
+         const size_t available = m_output.size() / 2u;
++        size_t dropped = 0u;
+         if (maxLatencyFrames != SIZE_MAX && available > maxFrames + maxLatencyFrames)
+         {
+-            const size_t drop = available - maxFrames - maxLatencyFrames;
+-            m_output.erase(m_output.begin(), m_output.begin() + static_cast<std::ptrdiff_t>(drop * 2u));
++            dropped = available - maxFrames - maxLatencyFrames;
++            m_output.erase(m_output.begin(), m_output.begin() + static_cast<std::ptrdiff_t>(dropped * 2u));
+         }
+         const size_t frames = std::min(maxFrames, m_output.size() / 2u);
+         std::copy_n(m_output.begin(), frames * 2u, stereo);
+         m_output.erase(m_output.begin(), m_output.begin() + static_cast<std::ptrdiff_t>(frames * 2u));
++        if (start != 0u)
++        {
++            g_perf.drainNs.fetch_add(perfNow() - start, std::memory_order_relaxed);
++            g_perf.drainLockNs.fetch_add(locked - start, std::memory_order_relaxed);
++            g_perf.drainCalls.fetch_add(1u, std::memory_order_relaxed);
++            g_perf.requestedFrames.fetch_add(maxFrames, std::memory_order_relaxed);
++            g_perf.deliveredFrames.fetch_add(frames, std::memory_order_relaxed);
++            g_perf.latencyDroppedFrames.fetch_add(dropped, std::memory_order_relaxed);
++        }
+         return frames;
+     }
+ }
+diff --git a/ps2xTest/src/ps2_spu2_tests.cpp b/ps2xTest/src/ps2_spu2_tests.cpp
+index 3ff7e65..0792857 100644
+--- a/ps2xTest/src/ps2_spu2_tests.cpp
++++ b/ps2xTest/src/ps2_spu2_tests.cpp
+@@ -6,6 +6,7 @@
+ #include "ps2x/iop/iop_subsystem.h"
+ 
+ #include <cstdint>
++#include <cstdio>
+ #include <vector>
+ 
+ using ps2x::iop::detail::IopMemory;
+@@ -178,6 +179,99 @@ void register_ps2_spu2_tests()
+             t.Equals(spu.pendingFrames(), static_cast<size_t>(0u), "drained frames should be removed");
+         });
+ 
++        // GOW-Port: referencia de la salida observable. Varias voces en ambos núcleos con tonos, ADSR, bucles y
++        // KON/KOFF a mitad; el hash FNV-1a cubre cada muestra estéreo y ENVX final. Un cambio de rendimiento del
++        // SPU2 debe conservarlo; si se cambia a propósito la emulación, actualizar el valor y explicar el motivo.
++        tc.Run("multi-voice mix keeps its reference output hash", [](TestCase &t)
++        {
++            Spu2 spu;
++            uint32_t seed = 0x12345678u;
++            const auto next = [&seed] { seed = seed * 1664525u + 1013904223u; return seed >> 8u; };
++            for (uint32_t block = 0; block < 64u; ++block)
++            {
++                std::vector<uint8_t> nibbles(28u);
++                for (auto &nibble : nibbles)
++                    nibble = static_cast<uint8_t>(next() & 0xFu);
++                const uint8_t flags = (block % 8u == 0u) ? 0x04u : (block % 8u == 7u) ? 0x03u : 0x00u;
++                writeBlock(spu, 0x10000u + block * 8u, static_cast<uint8_t>(next() % 13u),
++                           static_cast<uint8_t>(next() % 5u), flags, nibbles);
++            }
++            constexpr uint16_t pitches[6] = {0x0400u, 0x0800u, 0x1000u, 0x1555u, 0x2000u, 0x3FFFu};
++            constexpr uint16_t adsr1[6] = {0x000Fu, 0x80FFu, 0x3F48u, 0x0A03u, 0xFF00u, 0x1F7Fu};
++            constexpr uint16_t adsr2[6] = {0x0000u, 0x5FC5u, 0x1F0Au, 0xC0E3u, 0x4040u, 0x9F7Fu};
++            for (uint32_t core = 0; core < 2u; ++core)
++            {
++                const uint32_t base = core * 0x400u;
++                for (uint32_t v = 0; v < 6u; ++v)
++                {
++                    const uint32_t voice = v * 3u + core;
++                    setAddr(spu, base + Spu2::RegVoiceAddr + voice * 0xCu, 0x10000u + ((v * 5u + core * 3u) % 8u) * 64u);
++                    spu.write16(kBase + base + voice * 0x10u + 0x0u, static_cast<uint16_t>(0x1000u + v * 0x0400u));
++                    spu.write16(kBase + base + voice * 0x10u + 0x2u, static_cast<uint16_t>(0x3FFFu - v * 0x0500u));
++                    spu.write16(kBase + base + voice * 0x10u + 0x4u, pitches[(v + core) % 6u]);
++                    spu.write16(kBase + base + voice * 0x10u + 0x6u, adsr1[v]);
++                    spu.write16(kBase + base + voice * 0x10u + 0x8u, adsr2[(v + core) % 6u]);
++                }
++                spu.write16(kBase + base + Spu2::RegVmixL, 0xFFFFu);
++                spu.write16(kBase + base + Spu2::RegVmixL + 2u, 0x00FFu);
++                spu.write16(kBase + base + Spu2::RegVmixR, 0xAAAAu);
++                spu.write16(kBase + base + Spu2::RegVmixR + 2u, 0x0055u);
++                spu.write16(kBase + Spu2::RegMvolBase + core * Spu2::RegMvolStride, 0x3000u);
++                spu.write16(kBase + Spu2::RegMvolBase + core * Spu2::RegMvolStride + 2u, 0x2800u);
++            }
++
++            uint64_t hash = 0xCBF29CE484222325ull;
++            const auto mix = [&hash](uint16_t value)
++            {
++                for (uint32_t shift = 0; shift < 16u; shift += 8u)
++                {
++                    hash ^= static_cast<uint8_t>(value >> shift);
++                    hash *= 0x100000001B3ull;
++                }
++            };
++            std::vector<int16_t> out(2u * 4096u);
++            uint64_t cycle = 0;
++            size_t frames = 0;
++            size_t audible = 0;
++            for (uint32_t chunk = 0; chunk < 64u; ++chunk)
++            {
++                if (chunk == 0u)
++                {
++                    spu.write16(kBase + Spu2::RegKon, 0x0249u);
++                    spu.write16(kBase + 0x400u + Spu2::RegKon, 0x0492u);
++                }
++                if (chunk == 12u)
++                {
++                    spu.write16(kBase + Spu2::RegKon + 2u, 0x0001u);
++                    spu.write16(kBase + 0x400u + Spu2::RegKon, 0x8000u);
++                }
++                if (chunk == 40u)
++                {
++                    spu.write16(kBase + Spu2::RegKoff, 0x0049u);
++                    spu.write16(kBase + 0x400u + Spu2::RegKoff, 0x0402u);
++                }
++                cycle += Spu2::CyclesPerSample * (37u + next() % 160u) + next() % Spu2::CyclesPerSample;
++                spu.advanceTo(cycle);
++                const size_t drained = spu.drainOutput(out.data(), 4096u);
++                frames += drained;
++                for (size_t i = 0; i < drained * 2u; ++i)
++                {
++                    mix(static_cast<uint16_t>(out[i]));
++                    audible += out[i] != 0 ? 1u : 0u;
++                }
++            }
++            for (uint32_t core = 0; core < 2u; ++core)
++                for (uint32_t voice = 0; voice < Spu2::VoicesPerCore; ++voice)
++                    mix(spu.read16(kBase + core * 0x400u + voice * 0x10u + 0xAu));
++
++            char message[96];
++            std::snprintf(message, sizeof(message), "SPU2 reference hash changed: 0x%016llx",
++                          static_cast<unsigned long long>(hash));
++            t.IsTrue(frames > 6000u, "the scenario should produce several thousand frames");
++            t.IsTrue(audible > frames / 2u, "most of the reference output should be audible, not silence");
++            t.Equals(hash, static_cast<uint64_t>(0xa97415b49fd7d37cull), message);
++        });
++
+         tc.Run("draining with a latency limit drops the oldest frames", [](TestCase &t)
+         {
+             Spu2 spu;
