@@ -7104,3 +7104,22 @@ rondas alternas de 150 s en el barco, ventanas de t=50..145 s, `GOW_PERF_DIAG=fr
 Cuando la GPU no da abasto, el juego ya no se ralentiza: conserva la velocidad real y el audio, y pierde
 cuadros. Una ronda B tuvo una ráfaga de recuperación (máximo 3,33) que pudo coincidir con una compilación
 de pruebas lanzada en paralelo. La saturación de la GPU sigue: es el siguiente objetivo (renderizador).
+
+## GS nativo de Waffle565, opcional con `PS2X_GS_HW=1` (2026-10-15)
+
+`patches/ps2recomp-gs-native.patch`: renderizador con render targets reales a escala interna 2×
+(`GSHwBackend`), texturas con paleta en la GPU, almacén de texturas/CLUT y presentación por textura
+compartida, con sus correcciones de fidelidad (Z invertida, líneas, sombras con `COLCLAMP=0`, muestreo
+exacto a 2×, ZTE=0 sin prueba de profundidad). Aplicado con `cherry-pick` de la rama `runtime` de
+Waffle565 (con permiso del autor). Algunos commits se aplican solo en parte (c122cad, 045f491, ccd2480,
+7d55ae5) para no borrar nada del renderizador actual. Sin la variable, todo sigue igual.
+
+`c25562c` cambia el frontend común: PACKED ST solo fija Q en el siguiente PACKED RGBAQ, como PCSX2.
+
+Pruebas con el juego (exe `37baf246…`, barco, guion de siempre):
+- `PS2X_GS_HW=1` sola: título, dificultad, Kratos, HUD, lluvia y combate correctos en las 10 capturas
+  (cuadros de 1024×894). `host_hz` 60 constante. Unos 20 flips/s en el barco, limitados por la VU1
+  exacta.
+- **`PS2X_GS_HW=1` + `GOW_VU1_NATIVE=1`** (150 s): **~60 entradas a `vid::Flip`/s** en las ventanas de
+  t=50..145 s (mediana 59,98, mínimo 53,2), `host_hz` ~60, velocidad de juego media 1,01, SPU2 49.941
+  muestras/s. Antes, ~30 flips/s con la GPU saturada. Cierre con `WM_CLOSE`, código 0.
