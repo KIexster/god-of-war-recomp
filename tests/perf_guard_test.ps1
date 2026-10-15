@@ -4,7 +4,8 @@ $testRepo = Split-Path -Parent $PSScriptRoot
 $testTempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
 $testRoot = Join-Path $testTempRoot ('gow-perf-guard-' + [Guid]::NewGuid().ToString('N'))
 $testPrevious = @{}
-foreach ($name in @('GOW_WORK','GOW_ELF','GOW_PERF_DIAG','PS2X_GS_GPU_PROF','PS2X_GS_DIRECT_PRESENT','GOW_GS_REPLAY_STATE','GOW_CAMERA_DIAG')) {
+foreach ($name in @('GOW_WORK','GOW_ELF','GOW_PERF_DIAG','PS2X_GS_GPU_PROF','PS2X_GS_DIRECT_PRESENT','GOW_GS_REPLAY_STATE','GOW_CAMERA_DIAG',
+                    'PS2X_VU1_HILO','PS2X_GS_FRENTE','GOW_GS_FINISH_ASINCRONO','PS2X_GS_HW_LOG')) {
     $testPrevious[$name] = [Environment]::GetEnvironmentVariable($name,'Process')
 }
 function Assert-Guard([bool]$condition,[string]$message) {
@@ -31,6 +32,11 @@ function global:Start-Process {
     $global:GowPerfGuardFixture.actualPresentation = $env:PS2X_GS_DIRECT_PRESENT
     $global:GowPerfGuardFixture.actualCaptureState = $env:GOW_GS_REPLAY_STATE
     $global:GowPerfGuardFixture.actualCameraDiag = $env:GOW_CAMERA_DIAG
+    $global:GowPerfGuardFixture.actualVu1Thread = $env:PS2X_VU1_HILO
+    $global:GowPerfGuardFixture.actualGsFrontThread = $env:PS2X_GS_FRENTE
+    $global:GowPerfGuardFixture.actualFinishAsync = $env:GOW_GS_FINISH_ASINCRONO
+    $global:GowPerfGuardFixture.actualGpuProfile = $env:PS2X_GS_GPU_PROF
+    $global:GowPerfGuardFixture.actualHardwareLog = $env:PS2X_GS_HW_LOG
     Set-Content -LiteralPath $RedirectStandardOutput -Value 'proceso simulado'
     Set-Content -LiteralPath $RedirectStandardError -Value '[gow-perf] t=20.00 window=5.00 guest_flip_hz=10.00'
     $global:GowPerfGuardFixture.process
@@ -53,6 +59,10 @@ try {
     $env:PS2X_GS_DIRECT_PRESENT = '1'
     $env:GOW_GS_REPLAY_STATE = '4'
     $env:GOW_CAMERA_DIAG = '1'
+    $env:PS2X_VU1_HILO = '1'
+    $env:PS2X_GS_FRENTE = '1'
+    $env:GOW_GS_FINISH_ASINCRONO = '1'
+    $env:PS2X_GS_HW_LOG = '1'
     New-Item -ItemType Directory -Path (Join-Path $env:GOW_WORK 'PS2Recomp/out/build') -Force | Out-Null
     New-Item -ItemType File -Path $env:GOW_ELF | Out-Null
     New-Item -ItemType File -Path (Join-Path $env:GOW_WORK 'PS2Recomp/out/build/ps2EntryRunner.exe') | Out-Null
@@ -76,10 +86,16 @@ try {
         Assert-Guard ($env:PS2X_GS_DIRECT_PRESENT -eq '1') 'No se restauro la presentacion previa'
         Assert-Guard ($env:GOW_GS_REPLAY_STATE -eq '4') 'No se restauro el estado de captura previo'
         Assert-Guard ($env:GOW_CAMERA_DIAG -eq '1') 'No se restauro el diagnostico de camara'
+        Assert-Guard ($env:PS2X_VU1_HILO -eq '1' -and $env:PS2X_GS_FRENTE -eq '1') 'No se restauraron los hilos previos'
+        Assert-Guard ($env:GOW_GS_FINISH_ASINCRONO -eq '1') 'No se restauro FINISH asincrono previo'
+        Assert-Guard ($env:PS2X_GS_HW_LOG -eq '1') 'No se restauro el registro de hardware previo'
         if ($global:GowPerfGuardFixture.starts -gt 0) {
             Assert-Guard ($global:GowPerfGuardFixture.actualPresentation -eq '0') 'La presentacion RAM heredo el entorno anterior'
             Assert-Guard ([string]::IsNullOrEmpty($global:GowPerfGuardFixture.actualCaptureState)) 'El perfil heredo el estado de captura'
             Assert-Guard ([string]::IsNullOrEmpty($global:GowPerfGuardFixture.actualCameraDiag)) 'El perfil heredo el diagnostico de camara'
+            Assert-Guard ($global:GowPerfGuardFixture.actualVu1Thread -eq '0' -and $global:GowPerfGuardFixture.actualGsFrontThread -eq '0') 'El perfil base heredo hilos activos'
+            Assert-Guard ($global:GowPerfGuardFixture.actualFinishAsync -eq '0') 'El perfil base heredo FINISH asincrono'
+            Assert-Guard ($global:GowPerfGuardFixture.actualGpuProfile -eq '0' -and $global:GowPerfGuardFixture.actualHardwareLog -eq '0') 'El perfil base heredo diagnosticos GPU'
         }
         $destination = Join-Path $testRoot "logs/perf_$scenario.log"
         if ($scenario -eq 'startup') {
@@ -103,9 +119,21 @@ try {
     $global:GowPerfGuardFixture.process.HasExited = $false
     $global:GowPerfGuardFixture.process.waits = 0
     $global:GowPerfGuardFixture.snapshots = 0
-    & (Join-Path $testRoot 'scripts/probar_rendimiento.ps1') -Segundos 5 -Renderer opengl -Presentacion compartida -Etiqueta shared
+    & (Join-Path $testRoot 'scripts/probar_rendimiento.ps1') -Segundos 5 -Renderer opengl -Presentacion compartida `
+        -Vu1Hilo -GsFrente -FinishAsync -GpuProfile -HardwareLog -Etiqueta shared
     Assert-Guard ($global:GowPerfGuardFixture.actualPresentation -eq '1') 'La presentacion compartida heredo RAM'
+    Assert-Guard ($global:GowPerfGuardFixture.actualVu1Thread -eq '1' -and $global:GowPerfGuardFixture.actualGsFrontThread -eq '1') 'No se activaron los hilos solicitados'
+    Assert-Guard ($global:GowPerfGuardFixture.actualFinishAsync -eq '1') 'No se activo FINISH asincrono solicitado'
+    Assert-Guard ($global:GowPerfGuardFixture.actualGpuProfile -eq '1' -and $global:GowPerfGuardFixture.actualHardwareLog -eq '1') 'No se activaron los diagnosticos GPU solicitados'
     Assert-Guard ($env:PS2X_GS_DIRECT_PRESENT -eq '0') 'No se restauro RAM tras la opcion compartida'
+    Assert-Guard ($env:PS2X_VU1_HILO -eq '1' -and $env:PS2X_GS_FRENTE -eq '1') 'No se restauraron los hilos tras la opcion compartida'
+    Assert-Guard ($env:GOW_GS_FINISH_ASINCRONO -eq '1') 'No se restauro FINISH tras la opcion compartida'
+    Assert-Guard ($env:PS2X_GS_GPU_PROF -eq 'diagnostico_previo' -and $env:PS2X_GS_HW_LOG -eq '1') 'No se restauraron los diagnosticos GPU tras la opcion compartida'
+    $startsBefore = $global:GowPerfGuardFixture.starts
+    $caught = $null
+    try { & (Join-Path $testRoot 'scripts/probar_rendimiento.ps1') -GsFrente -Renderer opengl }
+    catch { $caught = $_ }
+    Assert-Guard ($null -ne $caught -and $global:GowPerfGuardFixture.starts -eq $startsBefore) 'Se acepto GS frontal sin hilo VU1'
     $startsBefore = $global:GowPerfGuardFixture.starts
     $caught = $null
     try { & (Join-Path $testRoot 'scripts/probar_rendimiento.ps1') -Renderer cpu -Presentacion compartida }
