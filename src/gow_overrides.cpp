@@ -11,6 +11,7 @@
 #include "gow_model_probe.h"
 #include "gow_skin_probe.h"
 #include "runtime/gs/gs_host_present_diag.h" // GOW-Port: parser de tick uint64 del parche de ventana.
+#include "runtime/ps2_stall_diag.h" // GOW-Port: GOW_STALL_DIAG (patches/ps2recomp-stall-diag.patch).
 #include <ps2_recompiled_functions.h>
 #include <cstdio>
 #include <cstdlib>
@@ -372,6 +373,7 @@ namespace
     {
         const auto *name = padBuffer(rdram, GPR_U32(ctx, 4), 128);
         std::fprintf(stderr, "[gow-fmv] skipped %.127s\n", name ? reinterpret_cast<const char *>(name) : "<invalid>");
+        ps2_stall::milestone("fmv_saltado", GPR_U32(ctx, 4));
         writeGuest32(rdram, 0x0029C838u, 0u);
         writeGuest32(rdram, 0x0029C870u, 0u);
         writeGuest32(rdram, 0x0029C840u, 0u);
@@ -379,6 +381,37 @@ namespace
     }
 
     void gowSkipMovieReady(uint8_t *, R5900Context *ctx, PS2Runtime *) { padReturn(ctx, 1u); }
+
+    // GOW_STALL_DIAG: palabras de estado del juego (las mismas que [gow-pad2:state]). Las lee el
+    // hilo vigía del runtime sin detener al EE; son lecturas alineadas de 32 bits.
+    uint32_t gowStallState(const uint8_t *rdram, char *buffer, size_t size)
+    {
+        const uint32_t state = readGuest32(rdram, 0x29E560u), pending = readGuest32(rdram, 0x29E574u);
+        const uint32_t stage = readGuest32(rdram, 0x29E5A0u), levelReady = readGuest32(rdram, 0x29E584u);
+        const uint32_t flashReady = readGuest32(rdram, 0x29CAB4u), movie = readGuest32(rdram, 0x29C838u);
+        std::snprintf(buffer, size, "estado=%u pending=%u stage=%u levelReady=%u flashReady=%u movie=%x",
+                      state, pending, stage, levelReady, flashReady, movie);
+        return (state & 0xFFu) | ((pending & 0xFFu) << 8) | ((levelReady & 0xFFu) << 16) | ((flashReady & 0xFFu) << 24);
+    }
+
+    // GOW_STALL_DIAG: cuenta las entradas a vid::Flip (GOW_PERF_FRAME_PC=0x1837B8) y registra el primer
+    // flip y cada estado nuevo del juego en el instante en que se observa.
+    void gowStallFlip(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+    {
+        if (ctx->pc == 0x001837B8u)
+        {
+            ps2_stall::count(ps2_stall::Counter::Flip);
+            static std::atomic<bool> first{false};
+            ps2_stall::milestoneOnce(first, "primer_flip");
+            static uint32_t lastState = 0xFFFFFFFFu;
+            if (const uint32_t state = readGuest32(rdram, 0x29E560u); state != lastState)
+            {
+                lastState = state;
+                ps2_stall::milestone("estado_juego", state, readGuest32(rdram, 0x29E574u));
+            }
+        }
+        sub_001837B8_0x1837b8(rdram, ctx, runtime);
+    }
     void gowSkipMovieNoop(uint8_t *, R5900Context *ctx, PS2Runtime *) { padReturn(ctx, 0u); }
 
     void gowDiagFlashReady(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
@@ -1121,6 +1154,11 @@ namespace
             runtime.replaceFunction(0x001B2390u, gowDiagFlashReady);
             runtime.replaceFunction(0x00100C50u, gowDiagAnimationTime);
             runtime.replaceFunction(0x00100BF0u, gowDiagAnimationDuration);
+        }
+        if (ps2_stall::enabled())
+        {
+            runtime.replaceFunction(0x001837B8u, gowStallFlip);
+            ps2_stall::setStateProvider(gowStallState);
         }
         if (const char *skip = std::getenv("GOW_SKIP_FMV"); skip && std::strcmp(skip, "1") == 0)
         {

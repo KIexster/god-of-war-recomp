@@ -126,6 +126,7 @@ $gsHostTimingPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-host-timing.patch
 $gsResetCrtcPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-reset-crtc.patch'
 $vu0Vf0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vf0.patch'
 $vu0Vi0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vi0.patch'
+$stallDiagPatch = Join-Path $RepoRoot 'patches\ps2recomp-stall-diag.patch'
 $spu2PerfPatch = Join-Path $RepoRoot 'patches\ps2recomp-spu2-perf.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
@@ -277,6 +278,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $gsHostTimingPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsResetCrtcPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu0Vf0Patch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu0Vi0Patch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $stallDiagPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $spu2PerfPatch)
 Pop-Location
 
