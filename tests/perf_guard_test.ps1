@@ -66,6 +66,8 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $env:GOW_WORK 'PS2Recomp/out/build') -Force | Out-Null
     New-Item -ItemType File -Path $env:GOW_ELF | Out-Null
     New-Item -ItemType File -Path (Join-Path $env:GOW_WORK 'PS2Recomp/out/build/ps2EntryRunner.exe') | Out-Null
+    $captureFixture = Join-Path $env:GOW_WORK 'PS2Recomp/out/build/gow_pad_test_preserve.ppm'
+    Set-Content -LiteralPath $captureFixture -Value 'captura preexistente'
     foreach ($scenario in @('startup','cl','ps2EntryRunner','quiet')) {
         $process = [pscustomobject]@{Id=4242;ProcessName='ps2EntryRunner';HasExited=$false;waits=0}
         $process | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value {
@@ -86,6 +88,7 @@ try {
         Assert-Guard ($env:PS2X_GS_DIRECT_PRESENT -eq '1') 'No se restauro la presentacion previa'
         Assert-Guard ($env:GOW_GS_REPLAY_STATE -eq '4') 'No se restauro el estado de captura previo'
         Assert-Guard ($env:GOW_CAMERA_DIAG -eq '1') 'No se restauro el diagnostico de camara'
+        Assert-Guard (Test-Path -LiteralPath $captureFixture) 'El perfil sin capturas borro una captura existente'
         Assert-Guard ($env:PS2X_VU1_HILO -eq '1' -and $env:PS2X_GS_FRENTE -eq '1') 'No se restauraron los hilos previos'
         Assert-Guard ($env:GOW_GS_FINISH_ASINCRONO -eq '1') 'No se restauro FINISH asincrono previo'
         Assert-Guard ($env:PS2X_GS_HW_LOG -eq '1') 'No se restauro el registro de hardware previo'
