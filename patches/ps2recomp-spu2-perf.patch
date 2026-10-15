@@ -1,8 +1,8 @@
 diff --git a/ps2xIOP/src/emulator/core/spu2.cpp b/ps2xIOP/src/emulator/core/spu2.cpp
-index 5883746..e128552 100644
+index 5883746..e02f2d0 100644
 --- a/ps2xIOP/src/emulator/core/spu2.cpp
 +++ b/ps2xIOP/src/emulator/core/spu2.cpp
-@@ -1,6 +1,12 @@
+@@ -1,6 +1,16 @@
  #include "spu2.h"
  
  #include <algorithm>
@@ -11,11 +11,15 @@ index 5883746..e128552 100644
 +#include <chrono>
 +#include <cstdio>
 +#include <cstdlib>
++#if defined(_MSC_VER)
 +#include <intrin.h>
++#elif defined(__x86_64__) || defined(__i386__)
++#include <x86intrin.h>
++#endif
  
  namespace ps2x::iop::detail
  {
-@@ -16,6 +22,85 @@ namespace ps2x::iop::detail
+@@ -16,6 +26,93 @@ namespace ps2x::iop::detail
  
          // Volumen de voz o de nucleo. Modo fijo (bit 15 = 0): 15 bits con signo. El barrido (bit 15 = 1) aun no se
          // emula: se aplica de inmediato su destino (maximo si sube, 0 si baja).
@@ -50,7 +54,15 @@ index 5883746..e128552 100644
 +                std::chrono::steady_clock::now().time_since_epoch()).count());
 +        }
 +
-+        uint64_t perfTicks() noexcept { return __rdtsc(); }
++        // Ciclos TSC en x86; en otras arquitecturas, nanosegundos (se calibran igual contra advanceTo).
++        uint64_t perfTicks() noexcept
++        {
++#if defined(_MSC_VER) || defined(__x86_64__) || defined(__i386__)
++            return __rdtsc();
++#else
++            return perfNow();
++#endif
++        }
 +
 +        // Una línea cada 5 s, desde el hilo que avanza el IOP (el único que produce muestras).
 +        void perfReport(uint64_t now)
@@ -101,7 +113,7 @@ index 5883746..e128552 100644
          int32_t volumeFromRegister(uint16_t value) noexcept
          {
              if ((value & 0x8000u) == 0u)
-@@ -186,10 +271,17 @@ namespace ps2x::iop::detail
+@@ -186,10 +283,17 @@ namespace ps2x::iop::detail
          const uint32_t base = core * 0x400u;
          if ((reg(base + RegAdmas) & (core + 1u)) != 0u)
              return false;
@@ -119,7 +131,7 @@ index 5883746..e128552 100644
          return true;
      }
  
-@@ -267,6 +359,8 @@ namespace ps2x::iop::detail
+@@ -267,6 +371,8 @@ namespace ps2x::iop::detail
          if (!v.active)
              return;
  
@@ -128,7 +140,7 @@ index 5883746..e128552 100644
          const uint32_t block = v.nax & (RamHalfwords - 1u);
          const uint16_t header = ram(block);
          uint32_t shift = header & 0xFu;
-@@ -380,6 +474,9 @@ namespace ps2x::iop::detail
+@@ -380,6 +486,9 @@ namespace ps2x::iop::detail
          VoiceState &v = m_voices[core][index];
          if (!v.active)
              return 0;
@@ -138,7 +150,7 @@ index 5883746..e128552 100644
  
          // Tono 4.12 (0x1000 = 48 kHz). Interpolacion lineal entre las dos ultimas muestras (el hardware usa una
          // gaussiana de 4 puntos).
-@@ -388,7 +485,12 @@ namespace ps2x::iop::detail
+@@ -388,7 +497,12 @@ namespace ps2x::iop::detail
          {
              v.pitchCounter -= 0x1000u;
              if (v.decodedIndex >= 28u)
@@ -151,7 +163,7 @@ index 5883746..e128552 100644
              if (!v.active)
                  break;
              v.prev[1] = v.prev[0];
-@@ -399,13 +501,18 @@ namespace ps2x::iop::detail
+@@ -399,13 +513,18 @@ namespace ps2x::iop::detail
  
          const int32_t fraction = static_cast<int32_t>(v.pitchCounter & 0xFFFu);
          const int32_t sample = v.prev[1] + (((v.prev[0] - v.prev[1]) * fraction) >> 12);
@@ -170,7 +182,7 @@ index 5883746..e128552 100644
          int32_t coreOut[2][2] = {};
          for (uint32_t core = 0; core < 2u; ++core)
          {
-@@ -436,7 +543,9 @@ namespace ps2x::iop::detail
+@@ -436,7 +555,9 @@ namespace ps2x::iop::detail
          {
              return volumeFromRegister(reg(RegMvolBase + core * RegMvolStride + side * 2u));
          };
@@ -181,7 +193,7 @@ index 5883746..e128552 100644
          for (uint32_t side = 0; side < 2u; ++side)
          {
              const int32_t core0 = (coreOut[0][side] * master(0u, side)) >> 14;
-@@ -444,7 +553,21 @@ namespace ps2x::iop::detail
+@@ -444,7 +565,21 @@ namespace ps2x::iop::detail
              m_output.push_back(clamp16(mixed));
          }
          if (m_output.size() > kMaxBufferedFrames * 2u)
@@ -204,7 +216,7 @@ index 5883746..e128552 100644
      }
  
      void Spu2::advanceTo(uint64_t iopCycle)
-@@ -452,9 +575,18 @@ namespace ps2x::iop::detail
+@@ -452,9 +587,18 @@ namespace ps2x::iop::detail
          if (iopCycle <= m_lastCycle)
              return;
          const uint64_t samples = (iopCycle - m_lastCycle) / CyclesPerSample;
@@ -223,7 +235,7 @@ index 5883746..e128552 100644
      }
  
      size_t Spu2::pendingFrames() const
-@@ -465,16 +597,28 @@ namespace ps2x::iop::detail
+@@ -465,16 +609,28 @@ namespace ps2x::iop::detail
  
      size_t Spu2::drainOutput(int16_t *stereo, size_t maxFrames, size_t maxLatencyFrames)
      {
