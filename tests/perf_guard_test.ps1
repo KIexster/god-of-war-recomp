@@ -4,7 +4,7 @@ $testRepo = Split-Path -Parent $PSScriptRoot
 $testTempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
 $testRoot = Join-Path $testTempRoot ('gow-perf-guard-' + [Guid]::NewGuid().ToString('N'))
 $testPrevious = @{}
-foreach ($name in @('GOW_WORK','GOW_ELF','GOW_PERF_DIAG','PS2X_GS_GPU_PROF','PS2X_GS_DIRECT_PRESENT','GOW_GS_REPLAY_STATE','GOW_CAMERA_DIAG',
+foreach ($name in @('GOW_WORK','GOW_ELF','GOW_PERF_DIAG','GOW_PAD_TEST','GOW_PAD_TEST_NO_CAPTURE','PS2X_GS_GPU_PROF','PS2X_GS_DIRECT_PRESENT','GOW_GS_REPLAY_STATE','GOW_CAMERA_DIAG',
                     'PS2X_VU1_HILO','PS2X_GS_FRENTE','GOW_GS_FINISH_ASINCRONO','PS2X_GS_HW_LOG')) {
     $testPrevious[$name] = [Environment]::GetEnvironmentVariable($name,'Process')
 }
@@ -143,6 +143,17 @@ try {
     catch { $caught = $_ }
     Assert-Guard ($null -ne $caught -and $global:GowPerfGuardFixture.starts -eq $startsBefore) 'Se acepto presentacion compartida con CPU'
     Write-Host 'Controles de presentacion: RAM, compartida y CPU incompatible OK'
+
+    # GOW-Port: las pruebas con captura deben seguir descartando archivos antiguos.
+    $staleCapture = Join-Path $env:GOW_WORK 'PS2Recomp/out/build/gow_pad_test_stale.ppm'
+    Set-Content -LiteralPath $staleCapture -Value 'captura antigua'
+    $env:GOW_PAD_TEST = '1'
+    Remove-Item Env:GOW_PAD_TEST_NO_CAPTURE -ErrorAction SilentlyContinue
+    $global:GowPerfGuardFixture.process.HasExited = $false
+    $global:GowPerfGuardFixture.process.waits = 0
+    & (Join-Path $testRoot 'scripts/ejecutar.ps1') -Segundos 5
+    Assert-Guard (-not (Test-Path -LiteralPath $staleCapture)) 'La prueba con capturas no limpio la captura antigua'
+    Write-Host 'Limpieza de capturas para pruebas con captura habilitada OK'
 }
 finally {
     foreach ($name in $testPrevious.Keys) {
