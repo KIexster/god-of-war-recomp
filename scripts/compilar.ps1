@@ -134,6 +134,8 @@ $checkpointFastPatch = Join-Path $RepoRoot 'patches\ps2recomp-checkpoint-fast.pa
 $spu2NaxPatch = Join-Path $RepoRoot 'patches\ps2recomp-spu2-nax.patch'
 $eeFastAccessPatch = Join-Path $RepoRoot 'patches\ps2recomp-ee-fast-access.patch'
 $vu1NativePatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-native.patch'
+$samplerThreadsPatch = Join-Path $RepoRoot 'patches\ps2recomp-sampler-threads.patch'
+$gsVsyncUnlockedPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-vsync-unlocked.patch'
 $overrides = Join-Path $RepoRoot 'src\gow_overrides.cpp'
 
 $git = 'git'
@@ -292,6 +294,8 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $checkpointFastPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $spu2NaxPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $eeFastAccessPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1NativePatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $samplerThreadsPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsVsyncUnlockedPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
