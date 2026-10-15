@@ -6882,3 +6882,57 @@ intacta copiada por intento) más `GOW_STALL_DIAG=1`:
 Próximo paso: dejar `GOW_STALL_DIAG=1` en los controles largos habituales.
 Si el atasco reaparece, el volcado dirá qué hilo EE corre o espera, la PC de
 despacho, la última RPC y el estado de los hilos del IOP.
+
+## SPU2: perfil `GOW_SPU2_PERF` y coste medido en el barco (2026-10-15)
+
+`patches/ps2recomp-spu2-perf.patch` (solo `spu2.cpp` y su prueba):
+
+- `GOW_SPU2_PERF=1`: una línea `[gow-spu2-perf]` cada 5 s con el tiempo
+  transcurrido de `advanceTo` (muestras), las voces activas por muestra, los
+  bloques ADPCM, DMA (ms y KB), el drenado del hilo de audio (ms, espera de
+  mutex, cuadros pedidos, entregados y faltantes) y los descartes.
+- `GOW_SPU2_PERF=2`: añade los ciclos TSC por sección (envolvente,
+  decodificación, tono/interpolación/mezcla, salida y espera de su mutex),
+  calibrados con el tiempo de `advanceTo` de la misma ventana. Tiene su propio
+  sobrecoste por voz: sirve para repartir, no para medir el total.
+- Regresión `multi-voice mix keeps its reference output hash`: 12 voces en dos
+  núcleos con tonos, ADSR, bucles y KON/KOFF a mitad. El hash FNV-1a
+  `0xa97415b49fd7d37c` coincide con `spu2.cpp` sin instrumentar. Fija la
+  salida observable para futuras optimizaciones.
+
+Medición (exe local de 115 parches, SHA-256 `1b8d2112…07a5`, VU1 compilada,
+misma configuración y guion que los controles de atasco, 150 s por ronda, 20 s
+de pausa, máquina sin compilaciones ni otros juegos; rondas 0/1/0/1/2/2).
+Ventanas de 5 s con t=50..145 s, todas en estado 11 (barco con ataques del
+guion); medianas [mín..máx], 19-20 ventanas por ronda:
+
+| Ronda | `step_ms` | % de la ventana | µs/muestra | muestras/s | voces activas |
+|---|---|---|---|---|---|
+| 2 (nivel 1) | 146,7 [77,0..176,9] | 2,93 [1,54..3,54] | 0,83 | 34.696 | 37,4 |
+| 4 (nivel 1) | 150,6 [77,7..174,6] | 3,01 [1,55..3,49] | 0,87 | 34.698 | 38,9 |
+| 5 (nivel 2) | 166,3 [108,2..187,4] | 3,33 | 1,21 | 26.528 | 39,5 |
+| 6 (nivel 2) | 169,5 [103,1..185,0] | 3,39 | 1,30 | 26.189 | 42,0 |
+
+- Hecho: con el nivel 1, el SPU2 ocupa ≈3 % del tiempo transcurrido del hilo EE
+  (que también ejecuta el IOP). DMA ≈0,37 ms y drenado ≈0,17 ms por ventana.
+  No hay descartes por latencia ni por búfer.
+- Hecho (nivel 2, rondas 5 y 6): del tiempo de voces, la envolvente ≈39 %, el
+  tono/interpolación/mezcla ≈54 % y la decodificación ADPCM ≈7 %. La salida
+  (mezcla maestra y cola) 4,1-4,3 ms por ventana, con 2,3 ms de espera de mutex.
+- Hecho: solo se producen ~34.700 muestras/s de 48.000 (nivel 1). El reloj del
+  SPU2 sigue a los ciclos del IOP, que siguen al EE, y este va por debajo del
+  tiempo real. El hilo de audio pide 48 kHz y recibe de menos: ~66.500 cuadros
+  faltantes por ventana (~28 %), que `ps2_runtime.cpp` rellena con silencio.
+  Inferencia: los cortes de audio en el barco vienen de la velocidad global de
+  la emulación, no del coste del SPU2.
+- Los flips medianos varían mucho entre rondas sin relación con el nivel
+  (nivel 0: 37,4 y 28,7; nivel 1: 41,0 y 40,1; nivel 2: 29,8 y 27,7). Con esta
+  dispersión no se puede cuantificar el sobrecoste del nivel 1. `guest_flip_hz`
+  no son FPS físicos.
+- La estimación antigua del 5 % queda sustituida por estas mediciones. El SPU2
+  no es un cuello de botella: optimizar la envolvente ahorraría como mucho ~1 %
+  del hilo. No se ha hecho ninguna optimización.
+
+Pendiente: decidir cómo tratar el déficit de muestras (estiramiento temporal o
+ritmo de audio) cuando la emulación no llega a tiempo real; es una decisión de
+salida de audio, no de coste del SPU2.
