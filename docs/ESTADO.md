@@ -7061,3 +7061,15 @@ ejecuciones (estado, memoria de datos y paquetes GIF; enteros exactos, floats co
   s, sin flips desde t≈36..40 s, justo antes del paso a estado 11; EE ≈3800 ms e IOP ≈1200 ms por
   ventana, sin VU ni GS. Es la misma firma que en el runner 105, pero en otra transición de carga. Esa
   ronda tenía `GOW_STALL_DIAG=0`; se lanza una serie con el diagnóstico para capturarlo.
+
+## Integración de #91 y #97 (2026-10-15)
+
+- #91 (menos comprobaciones de espera en bloques VU1): fusionada. Con las 501 micromemorias del juego solo 1
+  de 1294 bloques cumple las condiciones del camino rápido; el efecto en el juego es despreciable. Ejecución
+  de 60 s en el barco: estado 11, cierre con `WM_CLOSE`.
+- #97 (subidas P4 por filas): conflicto de orden en `compilar.ps1` resuelto (el parche va al final). La serie
+  de 123 parches aplica limpia. Compilación completa local (exe `0cddf7cf…`) y comparación visual con un exe
+  sin #97 (`02e81c90…`): 10 capturas en los mismos instantes (4..110 s) del título, la elección de
+  dificultad, el primer plano de Kratos y el combate en el barco, con texto del menú, HUD y contador de
+  golpes correctos. No se ven diferencias de texturas; el combate difiere por la variación normal entre
+  ejecuciones. No se midió rendimiento.
