@@ -1,0 +1,429 @@
+diff --git a/ps2xIOP/src/emulator/core/iop_kernel.h b/ps2xIOP/src/emulator/core/iop_kernel.h
+index 1014799..5b9637f 100644
+--- a/ps2xIOP/src/emulator/core/iop_kernel.h
++++ b/ps2xIOP/src/emulator/core/iop_kernel.h
+@@ -74,6 +74,8 @@ namespace ps2x::iop::detail
+         void setOutsideThreadWait(OutsideThreadWait wait) { m_outsideThreadWait = std::move(wait); }
+ 
+         [[nodiscard]] size_t threadCount() const noexcept { return m_threads.size(); }
++        // GOW-Port: cambia con cualquier operación que pueda alterar los hilos (lo usa el camino ocioso del IOP).
++        [[nodiscard]] uint64_t version() const noexcept { return m_version; }
+         // GOW-Port: hilos, semáforos y flags con esperas, para GOW_STALL_DIAG (una línea por objeto).
+         void describe(std::string &out) const;
+         // GOW-Port: hay algun hilo listo para ejecutar (lo usa IopRpcBridge tras cada RPC).
+diff --git a/ps2xIOP/src/emulator/core/spu2.h b/ps2xIOP/src/emulator/core/spu2.h
+index 341e652..42b8dc2 100644
+--- a/ps2xIOP/src/emulator/core/spu2.h
++++ b/ps2xIOP/src/emulator/core/spu2.h
+@@ -59,6 +59,8 @@ namespace ps2x::iop::detail
+ 
+         // Avanza hasta el ciclo indicado del IOP (una muestra cada CyclesPerSample ciclos).
+         void advanceTo(uint64_t iopCycle);
++        // GOW-Port: primer ciclo del IOP en el que advanceTo producirá otra muestra.
++        [[nodiscard]] uint64_t nextSampleCycle() const noexcept { return m_lastCycle + CyclesPerSample; }
+         void step(); // una muestra de 48 kHz
+         [[nodiscard]] bool takeInterrupt() noexcept;
+ 
+diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_emulator.cpp
+index 425c501..de2bde6 100644
+--- a/ps2xIOP/src/emulator/iop_emulator.cpp
++++ b/ps2xIOP/src/emulator/iop_emulator.cpp
+@@ -762,13 +762,43 @@ namespace ps2x::iop::detail
+                         ++totalCycles;
+                 }
+                 serviceSpu2(); // GOW-Port: al dia tambien tras saltar ciclos ociosos hasta el final
++                updateIdleFastPath();
+             }
+             catch (...)
+             {
+                 // Runtime scheduling must never throw through EeScheduler::accountCycles().
++                idleUntil = 0;
+             }
+         }
+ 
++        // GOW-Port: el EE avanza el IOP ~1 millón de veces por segundo, casi siempre sin hilos listos. Con el IOP
++        // ocioso, runCycles solo comprueba SPU2, DMA, callbacks, temporizadores y despertares antes de saltar
++        // ciclos; hasta el primero de esos eventos el resultado es sumar los ciclos. idleUntil guarda ese primer
++        // evento (incluida la siguiente muestra del SPU2) y idleKernelVersion la versión del núcleo con la que se
++        // calculó; cualquier entrada externa lo invalida. Por debajo de idleUntil runEeCycles solo suma ciclos.
++        void updateIdleFastPath() noexcept
++        {
++            idleUntil = 0;
++            if (servicingSpu2Interrupt || servicingDmaInterrupts || servicingGuestCallbacks || callDepth != 0u ||
++                kernel.hasReadyThread())
++                return;
++            uint64_t until = kernel.nextWakeCycle(UINT64_MAX);
++            for (const auto &[irq, completionCycle] : pendingDmaInterrupts)
++                until = std::min(until, completionCycle);
++            if (!pendingGuestCallbacks.empty())
++                until = std::min(until, pendingGuestCallbacks.begin()->first);
++            until = timrman.nextEventCycle(until);
++            until = std::min(until, memory.spu2().nextSampleCycle());
++            idleUntil = until;
++            idleKernelVersion = kernel.version();
++        }
++
++        // Verdadero si avanzar hasta target no ejecuta ningún evento: el llamador solo suma ciclos.
++        [[nodiscard]] bool idleFastPath(uint64_t target) const noexcept
++        {
++            return target < idleUntil && kernel.version() == idleKernelVersion;
++        }
++
+         ModuleLoadResult loadImage(std::string path, std::span<const uint8_t> image, const void *arguments, uint32_t argumentSize)
+         {
+             ModuleLoadResult result{true, -1, -1};
+@@ -911,6 +941,8 @@ namespace ps2x::iop::detail
+         uint64_t totalCycles = 0;
+         uint64_t totalInstructions = 0;
+         uint64_t eeCycleCarry = 0;
++        uint64_t idleUntil = 0;         // GOW-Port: camino ocioso de runEeCycles (0 = desactivado)
++        uint64_t idleKernelVersion = 0;
+         CpuState *activeCpu = nullptr;
+         std::string lastError;
+         bool servicingDmaInterrupts = false;
+@@ -928,23 +960,28 @@ namespace ps2x::iop::detail
+ 
+     IopEmulator::~IopEmulator() = default;
+ 
++    // GOW-Port: toda entrada externa que pueda cambiar hilos, DMA, callbacks o memoria invalida el camino ocioso.
+     void IopEmulator::reset()
+     {
++        m_impl->idleUntil = 0;
+         m_impl->reset();
+     }
+ 
+     ModuleLoadResult IopEmulator::loadModule(std::string_view path, const void *arguments, uint32_t argumentSize)
+     {
++        m_impl->idleUntil = 0;
+         return m_impl->loadModule(path, arguments, argumentSize);
+     }
+ 
+     ModuleLoadResult IopEmulator::loadModuleBuffer(uint32_t guestAddress, const void *arguments, uint32_t argumentSize)
+     {
++        m_impl->idleUntil = 0;
+         return m_impl->loadModuleBuffer(guestAddress, arguments, argumentSize);
+     }
+ 
+     bool IopEmulator::stopModule(int32_t moduleId, int32_t *result)
+     {
++        m_impl->idleUntil = 0;
+         return m_impl->stopModule(moduleId, result);
+     }
+ 
+@@ -953,12 +990,20 @@ namespace ps2x::iop::detail
+         const uint64_t total = m_impl->eeCycleCarry + eeCycles;
+         const uint64_t iopCycles = total / 8u;
+         m_impl->eeCycleCarry = total % 8u;
+-        if (iopCycles)
+-            m_impl->runCycles(iopCycles);
++        if (!iopCycles)
++            return;
++        const uint64_t target = m_impl->totalCycles + iopCycles;
++        if (m_impl->idleFastPath(target))
++        {
++            m_impl->totalCycles = target; // GOW-Port: lo mismo que runCycles sin eventos hasta target
++            return;
++        }
++        m_impl->runCycles(iopCycles);
+     }
+ 
+     RpcResult IopEmulator::handleRpc(const RpcRequest &request)
+     {
++        m_impl->idleUntil = 0;
+         return m_impl->rpc.handleRpc(request, *m_impl);
+     }
+ 
+@@ -969,6 +1014,7 @@ namespace ps2x::iop::detail
+ 
+     void IopEmulator::onSifTransfer(const SifTransfer &transfer)
+     {
++        m_impl->idleUntil = 0;
+         m_impl->rpc.onSifTransfer(transfer);
+     }
+ 
+@@ -990,12 +1036,14 @@ namespace ps2x::iop::detail
+ 
+     bool IopEmulator::writeMemory(uint32_t address, const void *source, size_t size)
+     {
++        m_impl->idleUntil = 0;
+         return isMemoryRange(address, size) &&
+                m_impl->memory.writeRam(address, source, size);
+     }
+ 
+     bool IopEmulator::zeroMemory(uint32_t address, size_t size)
+     {
++        m_impl->idleUntil = 0;
+         return isMemoryRange(address, size) &&
+                m_impl->memory.zeroRam(address, size);
+     }
+diff --git a/ps2xRuntime/include/runtime/ps2_memory.h b/ps2xRuntime/include/runtime/ps2_memory.h
+index ce4ee29..6fa8914 100644
+--- a/ps2xRuntime/include/runtime/ps2_memory.h
++++ b/ps2xRuntime/include/runtime/ps2_memory.h
+@@ -312,6 +312,8 @@ public:
+     // returned mask uses bits 0..3 for newly raised TIM0..TIM3 interrupts.
+     uint32_t advanceEeTimers(uint64_t eeCycles) noexcept;
+     [[nodiscard]] uint64_t cyclesUntilNextEeTimerInterrupt() const noexcept;
++    // GOW-Port: aplica los ciclos acumulados (antes de leer o escribir los registros de los temporizadores).
++    uint32_t flushEeTimers() noexcept;
+     void resetEeTimers() noexcept;
+ 
+     using GifPacketCallback = std::function<void(const uint8_t *, uint32_t)>;
+@@ -474,6 +476,13 @@ public:
+     // GOW-Port: GIF_STAT en m_ioRegisters (los elementos de unordered_map no se mueven; solo clear() lo
+     // invalida). advanceEeTimers lo usa ~1,5 millones de veces por segundo.
+     uint32_t *m_gifStatSlot = nullptr;
++    // GOW-Port: temporizadores del EE perezosos. advanceEeTimers suma ciclos en m_eeTimerPendingCycles y solo los
++    // aplica al llegar a m_eeTimerSafeCycles (ciclos hasta la próxima interrupción posible; 0 = recalcular) o al
++    // acceder a sus registros. Aplicar de una vez o a trozos da la misma cuenta y el mismo resto del reloj.
++    uint64_t m_eeTimerPendingCycles = 0;
++    uint64_t m_eeTimerSafeCycles = 0;
++    uint32_t applyEeTimerCycles(uint64_t eeCycles) noexcept;
++    [[nodiscard]] uint64_t computeCyclesUntilNextEeTimerInterrupt() const noexcept;
+     bool tryProcessScratchpadDma(uint32_t channelBase, uint32_t chcr);
+     bool processScratchpadChain(uint32_t channelBase, uint32_t chcr); // GOW-Port
+     void completeDmacChannel(uint32_t channelBase, uint32_t cause);
+diff --git a/ps2xRuntime/include/runtime/ps2_perf.h b/ps2xRuntime/include/runtime/ps2_perf.h
+index e1cabef..19c2ea4 100644
+--- a/ps2xRuntime/include/runtime/ps2_perf.h
++++ b/ps2xRuntime/include/runtime/ps2_perf.h
+@@ -33,21 +33,23 @@ namespace ps2_perf
+         }
+     };
+ 
+-    inline bool enabled()
++    // GOW-Port: globales leídas una vez al arrancar; con estáticas locales cada Scope pagaba la comprobación de
++    // la guarda (~1,2 % del hilo EE medido con GOW_SAMPLER).
++    inline const bool g_enabled = [] {
++        const char *value = std::getenv("GOW_PERF_DIAG");
++        return value && std::strcmp(value, "1") == 0;
++    }();
++    inline const bool g_countFrames = [] {
++        const char *value = std::getenv("GOW_PERF_DIAG");
++        return value && (std::strcmp(value, "1") == 0 || std::strcmp(value, "frames") == 0);
++    }();
++    inline bool enabled() noexcept
+     {
+-        static const bool on = [] {
+-            const char *value = std::getenv("GOW_PERF_DIAG");
+-            return value && std::strcmp(value, "1") == 0;
+-        }();
+-        return on;
++        return g_enabled;
+     }
+-    inline bool countFrames()
++    inline bool countFrames() noexcept
+     {
+-        static const bool on = [] {
+-            const char *value = std::getenv("GOW_PERF_DIAG");
+-            return value && (std::strcmp(value, "1") == 0 || std::strcmp(value, "frames") == 0);
+-        }();
+-        return on;
++        return g_countFrames;
+     }
+     inline std::array<std::atomic<uint64_t>, bucketCount> nanos{};
+     inline std::atomic<uint64_t> guestFlips{0}, hostFrames{0};
+diff --git a/ps2xRuntime/include/runtime/ps2_stall_diag.h b/ps2xRuntime/include/runtime/ps2_stall_diag.h
+index 3732283..d3281a4 100644
+--- a/ps2xRuntime/include/runtime/ps2_stall_diag.h
++++ b/ps2xRuntime/include/runtime/ps2_stall_diag.h
+@@ -37,13 +37,15 @@ namespace ps2_stall
+     };
+     constexpr size_t counterCount = static_cast<size_t>(Counter::Count);
+ 
+-    inline bool enabled()
++    // GOW-Port: global leída una vez al arrancar; una estática local añadía la comprobación de su guarda en
++    // cada porción del IOP (~1,6 % del hilo EE medido con GOW_SAMPLER).
++    inline const bool g_enabled = [] {
++        const char *value = std::getenv("GOW_STALL_DIAG");
++        return value && std::strcmp(value, "1") == 0;
++    }();
++    inline bool enabled() noexcept
+     {
+-        static const bool on = [] {
+-            const char *value = std::getenv("GOW_STALL_DIAG");
+-            return value && std::strcmp(value, "1") == 0;
+-        }();
+-        return on;
++        return g_enabled;
+     }
+ 
+     inline std::array<std::atomic<uint64_t>, counterCount> counters{};
+diff --git a/ps2xRuntime/src/lib/ps2_memory.cpp b/ps2xRuntime/src/lib/ps2_memory.cpp
+index 62e606d..bff8829 100644
+--- a/ps2xRuntime/src/lib/ps2_memory.cpp
++++ b/ps2xRuntime/src/lib/ps2_memory.cpp
+@@ -655,6 +655,8 @@ bool PS2Memory::initialize(size_t ramSize)
+ void PS2Memory::resetEeTimers() noexcept
+ {
+     m_eeTimers = {};
++    m_eeTimerPendingCycles = 0u; // GOW-Port: temporizadores perezosos
++    m_eeTimerSafeCycles = 0u;
+ }
+ 
+ namespace
+@@ -700,6 +702,25 @@ uint32_t PS2Memory::advanceEeTimers(uint64_t eeCycles) noexcept
+     if (m_gifStatSlot != nullptr)
+         *m_gifStatSlot &= ~kGifFqcMask;
+ 
++    // GOW-Port: hasta la próxima interrupción posible solo se acumulan ciclos (~9 % del hilo EE con GOW_SAMPLER
++    // cuando se recorrían los cuatro temporizadores en cada punto de control).
++    m_eeTimerPendingCycles += eeCycles;
++    if (m_eeTimerPendingCycles < m_eeTimerSafeCycles)
++        return 0u;
++    return flushEeTimers();
++}
++
++uint32_t PS2Memory::flushEeTimers() noexcept
++{
++    const uint64_t pending = m_eeTimerPendingCycles;
++    m_eeTimerPendingCycles = 0u;
++    const uint32_t interruptMask = pending != 0u ? applyEeTimerCycles(pending) : 0u;
++    m_eeTimerSafeCycles = computeCyclesUntilNextEeTimerInterrupt();
++    return interruptMask;
++}
++
++uint32_t PS2Memory::applyEeTimerCycles(uint64_t eeCycles) noexcept
++{
+     uint32_t interruptMask = 0u;
+     for (size_t index = 0; index < m_eeTimers.size(); ++index)
+     {
+@@ -791,6 +812,18 @@ uint32_t PS2Memory::advanceEeTimers(uint64_t eeCycles) noexcept
+ }
+ 
+ uint64_t PS2Memory::cyclesUntilNextEeTimerInterrupt() const noexcept
++{
++    // GOW-Port: con ciclos acumulados, el límite guardado menos lo ya acumulado (sin pasar de 1).
++    if (m_eeTimerSafeCycles != 0u)
++    {
++        if (m_eeTimerSafeCycles == std::numeric_limits<uint64_t>::max())
++            return m_eeTimerSafeCycles;
++        return m_eeTimerSafeCycles > m_eeTimerPendingCycles ? m_eeTimerSafeCycles - m_eeTimerPendingCycles : 1u;
++    }
++    return computeCyclesUntilNextEeTimerInterrupt();
++}
++
++uint64_t PS2Memory::computeCyclesUntilNextEeTimerInterrupt() const noexcept
+ {
+     uint64_t nearest = std::numeric_limits<uint64_t>::max();
+     for (const EeTimer &timer : m_eeTimers)
+@@ -1443,6 +1476,10 @@ bool PS2Memory::writeIORegister(uint32_t address, uint32_t value)
+     uint32_t timerOffset = 0u;
+     if (decodeEeTimerRegister(address, timerIndex, timerOffset))
+     {
++        // GOW-Port: aplicar lo acumulado antes de cambiar el temporizador y recalcular el límite después. Lo
++        // acumulado queda por debajo de la próxima interrupción, así que aquí no se pierde ninguna.
++        (void)flushEeTimers();
++        m_eeTimerSafeCycles = 0u;
+         EeTimer &timer = m_eeTimers[timerIndex];
+         switch (timerOffset)
+         {
+@@ -2805,6 +2842,7 @@ uint32_t PS2Memory::readIORegister(uint32_t address)
+     uint32_t timerOffset = 0u;
+     if (decodeEeTimerRegister(address, timerIndex, timerOffset))
+     {
++        (void)flushEeTimers(); // GOW-Port: la cuenta visible incluye los ciclos acumulados
+         const EeTimer &timer = m_eeTimers[timerIndex];
+         switch (timerOffset)
+         {
+diff --git a/ps2xTest/src/ps2_memory_tests.cpp b/ps2xTest/src/ps2_memory_tests.cpp
+index 92986a7..db67c12 100644
+--- a/ps2xTest/src/ps2_memory_tests.cpp
++++ b/ps2xTest/src/ps2_memory_tests.cpp
+@@ -262,6 +262,58 @@ void register_ps2_memory_tests()
+             t.Equals(mem.readIORegister(kTimerBases[1] + 0x30u), 0x3456u, "Timer1 HOLD should be 16-bit");
+         });
+ 
++        // GOW-Port: temporizadores perezosos. "eager" lee la cuenta tras cada paso (obliga a aplicar los ciclos
++        // como antes); "lazy" solo acumula. Deben informar las interrupciones en los mismos pasos y acabar igual.
++        tc.Run("lazy EE timers raise interrupts at the same step as eager advancement", [](TestCase &t)
++        {
++            PS2Memory eager, lazy;
++            t.IsTrue(eager.initialize() && lazy.initialize(), "PS2Memory initialize should succeed");
++            constexpr uint32_t kBases[] = {0x10000000u, 0x10000800u, 0x10001000u, 0x10001800u};
++            constexpr uint32_t kCue = 1u << 7u, kCmpe = 1u << 8u, kOvfe = 1u << 9u, kZret = 1u << 6u;
++            // BUSCLK, /16, /256 con y sin ZRET, comparación e interrupción de desbordamiento.
++            constexpr uint32_t kModes[] = {0u | kCue | kCmpe | kZret, 1u | kCue | kCmpe | kOvfe, 2u | kCue | kOvfe,
++                                           1u | kCue | kCmpe | kOvfe | kZret};
++            constexpr uint32_t kCompare[] = {0x0400u, 0x3000u, 0x0010u, 0x0002u};
++            for (PS2Memory *mem : {&eager, &lazy})
++                for (uint32_t i = 0; i < 4u; ++i)
++                {
++                    mem->writeIORegister(kBases[i], 0x100u * i);
++                    mem->writeIORegister(kBases[i] + 0x20u, kCompare[i]);
++                    mem->writeIORegister(kBases[i] + 0x10u, kModes[i]);
++                }
++            uint32_t seed = 0x13579BDFu;
++            size_t interrupts = 0, mismatches = 0;
++            for (int step = 0; step < 300000; ++step)
++            {
++                seed = seed * 1664525u + 1013904223u;
++                const uint64_t cycles = 1u + ((seed >> 8u) % 700u);
++                const uint32_t a = eager.advanceEeTimers(cycles);
++                for (uint32_t i = 0; i < 4u; ++i)
++                    (void)eager.readIORegister(kBases[i]);
++                const uint32_t b = lazy.advanceEeTimers(cycles);
++                if (a != b)
++                    ++mismatches;
++                if (a != 0u)
++                {
++                    ++interrupts;
++                    // Limpiar los flags en ambos (escribir uno), como haría el manejador.
++                    for (PS2Memory *mem : {&eager, &lazy})
++                        for (uint32_t i = 0; i < 4u; ++i)
++                            if ((a & (1u << i)) != 0u)
++                                mem->writeIORegister(kBases[i] + 0x10u, mem->readIORegister(kBases[i] + 0x10u));
++                }
++            }
++            t.Equals(mismatches, static_cast<size_t>(0u), "lazy timers must report interrupts at the same steps");
++            t.IsTrue(interrupts > 1000u, "the scenario should raise many interrupts");
++            for (uint32_t i = 0; i < 4u; ++i)
++            {
++                t.Equals(lazy.readIORegister(kBases[i]), eager.readIORegister(kBases[i]), "final COUNT must match");
++                t.Equals(lazy.readIORegister(kBases[i] + 0x10u), eager.readIORegister(kBases[i] + 0x10u), "final MODE must match");
++            }
++            t.Equals(lazy.cyclesUntilNextEeTimerInterrupt(), eager.cyclesUntilNextEeTimerInterrupt(),
++                     "the scheduler deadline must match");
++        });
++
+         tc.Run("EE Timer2 compare and overflow flags raise INTC_TIM2 and clear on write-one", [](TestCase &t)
+         {
+             PS2Memory mem;
+diff --git a/ps2xTest/src/ps2_spu2_tests.cpp b/ps2xTest/src/ps2_spu2_tests.cpp
+index 0792857..f1c2bd7 100644
+--- a/ps2xTest/src/ps2_spu2_tests.cpp
++++ b/ps2xTest/src/ps2_spu2_tests.cpp
+@@ -283,6 +283,33 @@ void register_ps2_spu2_tests()
+                      "frames beyond the latency limit should be discarded, keeping the newest");
+         });
+ 
++        // GOW-Port: camino ocioso de runEeCycles. Con el IOP sin hilos, muchos avances pequeños e irregulares
++        // (como los del EE) deben dar los mismos ciclos y las mismas muestras que la cuenta cerrada.
++        tc.Run("an idle IOP advanced in many small steps keeps exact cycles and SPU2 frames", [](TestCase &t)
++        {
++            iop_test::Host host;
++            ps2x::iop::IopSubsystem subsystem(host);
++            uint64_t eeCycles = 0;
++            uint64_t frames = 0;
++            size_t lateSteps = 0;
++            std::vector<int16_t> out(2u * 64u);
++            uint32_t seed = 0x2468ACE1u;
++            for (int i = 0; i < 200000; ++i)
++            {
++                seed = seed * 1103515245u + 12345u;
++                const uint64_t step = 1u + ((seed >> 16u) % 517u);
++                subsystem.runEeCycles(step);
++                eeCycles += step;
++                // Tras cada avance deben existir exactamente las muestras de los ciclos ya transcurridos.
++                frames += subsystem.drainAudio(out.data(), 64u);
++                if (frames != eeCycles / 8u / Spu2::CyclesPerSample)
++                    ++lateSteps;
++            }
++            t.Equals(subsystem.debugSnapshot().emulatorCycles, eeCycles / 8u, "IOP cycles must follow the EE cycles exactly");
++            t.Equals(lateSteps, static_cast<size_t>(0u),
++                     "after every advance the SPU2 must hold exactly one frame per elapsed 768 IOP cycles");
++        });
++
+         tc.Run("the IOP subsystem exposes one SPU2 frame per 768 IOP cycles", [](TestCase &t)
+         {
+             iop_test::Host host;
