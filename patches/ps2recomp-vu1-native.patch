@@ -42,18 +42,19 @@ index 6e855fd..9f4c1e0 100644
          message(STATUS "VU1 compilada: ${PS2X_VU1_IMAGE_COUNT} micromemorias en ${PS2X_VU1_MICROCODE_DIR}")
      endif()
 diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime/ps2_vu1.h
-index 0709f01..f036721 100644
+index 0709f01..64ac0a7 100644
 --- a/ps2xRuntime/include/runtime/ps2_vu1.h
 +++ b/ps2xRuntime/include/runtime/ps2_vu1.h
-@@ -6,6 +6,7 @@
+@@ -6,6 +6,8 @@
  #include <cstring>
  #include <limits>
  #include <cstdint>
++#include <memory>
 +#include <vector>
  
  // GOW-Port: las funciones en línea de VU1 usan el mismo modo de coma flotante que ps2_vu1_*.cpp (sin
  // /fp:fast); MSVC no las expande en línea si los modos no coinciden.
-@@ -112,6 +113,7 @@ private:
+@@ -112,6 +114,7 @@ private:
      friend struct VU1CompiledProgram;
      friend struct VU1CompiledGenerator;
      friend struct VU1CompiledAccess;
@@ -61,7 +62,7 @@ index 0709f01..f036721 100644
  
      enum Pipeline : uint8_t
      {
-@@ -328,6 +330,15 @@ private:
+@@ -328,6 +331,19 @@ private:
      bool m_pendingHaltD = false;
      bool m_pendingHaltT = false;
      bool m_lastRunHitBudget = false; // GOW-Port: PR #12
@@ -69,7 +70,11 @@ index 0709f01..f036721 100644
 +    // it returns when the program ended or when the current pc has no native block (the caller then steps the exact
 +    // engine). commitEverythingNow retires every in-flight pipeline entry without advancing the cycle counter.
 +    struct NativeState;
-+    NativeState *m_native = nullptr;
++    // GOW-Port (KIexster): compartido entre copias (el verificador copia el intérprete) y liberado con el último;
++    // antes era un puntero crudo sin liberar, y las pruebas que crean muchos intérpretes agotaban la memoria.
++    std::shared_ptr<NativeState> m_native;
++    // GOW-Port (KIexster): la VU1 nativa solo se prepara con GOW_VU1_NATIVE=1.
++    static bool nativeRequested() noexcept;
 +    bool m_verifySilent = false; // GOW-Port: la pasada de verificación no envía paquetes XGKICK al GIF (runtime@8af9676)
 +    bool runNative(StepContext &context);
 +    void nativeTiming(const uint8_t *code, uint32_t pc, uint32_t count, std::vector<uint8_t> &cyc);
@@ -743,7 +748,7 @@ index db9168f..77165f3 100644
  #if defined(_MSC_VER) || defined(__SSE4_1__)
  #include <immintrin.h>
 diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
-index af9ee2e..539e20a 100644
+index af9ee2e..1c54485 100644
 --- a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
 +++ b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
 @@ -1,4 +1,6 @@
@@ -880,8 +885,8 @@ index af9ee2e..539e20a 100644
 +                return true;
 +        }
 +    };
-+    if (m_unit == Unit::VU1 && !m_native)
-+        m_native = new NativeState();
++    if (m_unit == Unit::VU1 && !m_native && nativeRequested())
++        m_native = std::make_shared<NativeState>();
 +    if (m_unit == Unit::VU1 && m_native && m_native->enabled && vuData && codeSize == PS2_VU1_CODE_SIZE)
 +        VU1NativeAccess::recordReplay(*this, &context, maxCycles);
 +    if (m_unit == Unit::VU1 && m_native && m_native->enabled && m_native->verifyLeft != 0u && vuData && codeSize == PS2_VU1_CODE_SIZE)
@@ -1200,10 +1205,10 @@ index ab62b2d..c160563 100644
      case 0x1B: // FMOR
 diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_native.inl b/ps2xRuntime/src/lib/vu/ps2_vu1_native.inl
 new file mode 100644
-index 0000000..f653e90
+index 0000000..4770747
 --- /dev/null
 +++ b/ps2xRuntime/src/lib/vu/ps2_vu1_native.inl
-@@ -0,0 +1,1007 @@
+@@ -0,0 +1,1018 @@
 +// GOW-Port: native VU1 backend runtime (included at the end of ps2_vu1_core.cpp). See include/runtime/ps2_vu1_native.h.
 +#include "runtime/ps2_vu1_native.h"
 +
@@ -1910,7 +1915,11 @@ index 0000000..f653e90
 +    if (m_unit != Unit::VU1 || context.vuData == nullptr || context.codeSize != PS2_VU1_CODE_SIZE)
 +        return false;
 +    if (!m_native)
-+        m_native = new NativeState();
++    {
++        if (!nativeRequested())
++            return false;
++        m_native = std::make_shared<NativeState>();
++    }
 +    NativeState &ns = *m_native;
 +    if (!ns.enabled)
 +        return false;
@@ -2210,6 +2219,13 @@ index 0000000..f653e90
 +        std::fclose(f), std::fprintf(stderr, "[vu1n-record] %u records written\n", written);
 +    else if (written % 500u == 0u)
 +        std::fflush(f);
++}
++
++// GOW-Port (KIexster): la VU1 nativa es opcional en este proyecto.
++bool VU1Interpreter::nativeRequested() noexcept
++{
++    static const bool requested = [] { const char *v = std::getenv("GOW_VU1_NATIVE"); return v && v[0] == '1' && !std::getenv("GOW_VU1_NATIVE_OFF"); }();
++    return requested;
 +}
 diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_upper.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_upper.cpp
 index c2765bf..ad563ce 100644
