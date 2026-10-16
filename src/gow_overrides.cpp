@@ -1,5 +1,5 @@
 // GOW-Port: overrides de Waffle565/God-Of-War-Native-Port, main@34f30d5:port/overrides-usa/gow_overrides.cpp,
-// copiados con permiso del autor. Parten de los de este repositorio al 2026-10-09.
+// que parten de los de este repositorio al 2026-10-09.
 // GOW-Port: enlaces manuales para God of War (SCUS-97399).
 #include "runtime/ee_scheduler.h"
 #include "game_overrides.h"

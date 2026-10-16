@@ -12,8 +12,8 @@
    falte ningún archivo de `patches/`. Desde la raíz, `python tools/ci/parches.py` muestra los parches
    y su orden; esa es la referencia para preparar un cambio sobre el runtime fijado.
 
-   Desde 2026-10-15 la base es el runtime de **Waffle565/God-Of-War-Native-Port** (rama `runtime`, con
-   permiso del autor): `ps2recomp-waffle-runtime.patch` es el diff `c5a9d02..runtime` y ya incluye la pila
+   Desde 2026-10-15 la base es el runtime de **Waffle565/God-Of-War-Native-Port** (rama `runtime`):
+   `ps2recomp-waffle-runtime.patch` es el diff `c5a9d02..runtime` y ya incluye la pila
    de parches de este repositorio a fecha de 2026-10-09. Encima van parches pequeños por tema (pruebas
    adaptadas, VU0 VF0/VI0, lista de entradas de la VU1 nativa, portabilidad a GCC, fuga de la VU1 nativa).
    La pila anterior queda en `patches/anteriores/` como referencia y no se aplica. Ver "Base del runtime".

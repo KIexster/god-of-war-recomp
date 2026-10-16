@@ -7011,8 +7011,7 @@ parche; 3 rondas de 150 s por lado alternas A/B, ventanas de 5 s con t=50..145, 
 ## Portes de Waffle565: NAX del SPU2 y accesos rápidos del EE (2026-10-15)
 
 [Waffle565/God-Of-War-Native-Port](https://github.com/Waffle565/God-Of-War-Native-Port) partió de la pila de
-parches de este repositorio el 2026-10-09. Su autor dio permiso para copiar su código (comunicado por el
-propietario de este repositorio). Se portan, con su atribución en los parches y en los commits:
+parches de este repositorio el 2026-10-09. Se portan, con su atribución en los parches y en los commits:
 
 - `ps2recomp-spu2-nax.patch` (runtime@65e1d79): el registro NAX se lee dentro del bloque que suena, como
   `NextA` en PCSX2. Nuestro NAX apuntaba al bloque siguiente; en el último bloque de una mitad del anillo
@@ -7033,8 +7032,8 @@ origen.
 
 `patches/ps2recomp-vu1-native.patch` reúne, con `cherry-pick` sobre la serie actual, los commits de su
 rama `runtime` 61052ee, 5cea74e, af18417, 0055349, 994a514, 6358428 (solo la parte VU1), 71fb632, ef2692f
-y 1d9d563, más dos ajustes de compilación (`<vector>` y `m_verifySilent`, de runtime@8af9676). Copiado
-con permiso del autor. `tools/vu1/vu1n_gen.py` (de su `main`) genera, a partir de las micromemorias
+y 1d9d563, más dos ajustes de compilación (`<vector>` y `m_verifySilent`, de runtime@8af9676).
+`tools/vu1/vu1n_gen.py` (de su `main`) genera, a partir de las micromemorias
 capturadas, bloques en C++ con semántica inmediata y latencia de flags entre bloques. El motor exacto
 sigue de respaldo para cualquier bloque que falte y como oráculo: `GOW_VU1N_VERIFY=<n>` compara n
 ejecuciones (estado, memoria de datos y paquetes GIF; enteros exactos, floats con tolerancia relativa
@@ -7107,7 +7106,7 @@ de pruebas lanzada en paralelo. La saturación de la GPU sigue: es el siguiente 
 
 ## Migración a la base de Waffle565 (2026-10-15)
 
-Decisión del usuario: adoptar como base el runtime de **Waffle565/God-Of-War-Native-Port** (con permiso del autor)
+Decisión del usuario: adoptar como base el runtime de **Waffle565/God-Of-War-Native-Port**
 para ejecutar el juego como su port. Detalle de los parches en [`ARQUITECTURA.md`](ARQUITECTURA.md#base-del-runtime-waffle565).
 
 **Hecho (verificado):**

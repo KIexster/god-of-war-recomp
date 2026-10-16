@@ -37,7 +37,7 @@
 En lugar de emular la PlayStation 2, este proyecto **traduce el ejecutable original del juego (`SCUS_973.99`) a
 código C++** con [PS2Recomp](https://github.com/ran-j/PS2Recomp) y lo compila como un programa nativo de Windows.
 Desde octubre de 2026 la base es el runtime del port nativo de
-[**Waffle565**](https://github.com/Waffle565/God-Of-War-Native-Port) (con su permiso), que sustituye cada pieza del
+[**Waffle565**](https://github.com/Waffle565/God-Of-War-Native-Port), que sustituye cada pieza del
 hardware de la PS2 por código nativo que produce el mismo resultado a partir de los datos del propio juego:
 
 | Capa | Sustituto nativo |
@@ -228,7 +228,7 @@ Más detalles en [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md).
 ## Créditos y licencia
 
 - [**PS2Recomp**](https://github.com/ran-j/PS2Recomp) de ran-j y colaboradores — recompilador y runtime (GPL-3.0).
-- [**God-Of-War-Native-Port**](https://github.com/Waffle565/God-Of-War-Native-Port) de Waffle565 — runtime nativo (GS, VU1, IOP, sonido, DMA, disco), overrides y herramientas que son la base del port desde octubre de 2026, copiados con permiso del autor.
+- [**God-Of-War-Native-Port**](https://github.com/Waffle565/God-Of-War-Native-Port) de Waffle565 — runtime nativo (GS, VU1, IOP, sonido, DMA, disco), overrides y herramientas que son la base del port desde octubre de 2026; su port partió a su vez de este repositorio.
 - Autores de [**PCSX2**](https://github.com/PCSX2/pcsx2) — GS original utilizado por el módulo de diagnóstico DX11 opcional, y el intérprete del EE y las operaciones de VU del runtime (`ee_ref/`, `vu_pcsx2/`, traídos con el runtime de Waffle565) (GPL-3.0+).
 - [**Urban Reign recomp**](https://github.com/thiagordsfx/urban-reign-recomp) de thiagordsfx — referencia compartida de integración GS; ayudó a identificar la convención de campo VSync de nuestro espejo ([revisión y alcance](docs/REVISION_URBAN_REIGN.md)).
 - [**Fork del runtime de SotC**](https://github.com/LightVelox/PS2Recomp/tree/ac9efa070638ad3b3accd284de6f898d5ab271d1) de Taylor N. Albarnaz / LightVelox — backend GS OpenGL y cola de comandos, y arreglos del EE (FPU, ramas de 64 bits, LQ/SQ, saltos finales, VU0 en modo macro y cadenas DMA largas) (GPL-3.0, `ac9efa0`).
