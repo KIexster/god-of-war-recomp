@@ -7208,3 +7208,19 @@ del reproductor de vídeo (13 entradas de Waffle, privadas); diagnósticos `GOW_
 - Cuelgue de la presentación: reapareció una vez en `waffle6` (`runs\ab6_3B`: 4 líneas `[gow-perf]` y luego nada,
   el juego siguió 148 s). El vigilante del arnés detecta ahora 15 s sin líneas nuevas y vuelca las pilas. 0 apariciones
   en las 38 ejecuciones siguientes (`caza5_*`, `caza6_*`, `sep_*`, `sepb_*`); 4 en total desde la migración.
+
+### Tabla `[mmio]` del reproductor de vídeo (2026-10-16)
+
+- `GOW_IO_HIST=80` durante el vídeo de apertura (`Semo01`, partida nueva con `GOW_SKIP_FMV=0`, `bin\waffle5`):
+  13 instrucciones del reproductor seguían accediendo a hardware por la ruta genérica (~1360 veces cada una por
+  canal): `0x26ee18/24/34/54` (QWC/MADR/D_STAT/CHCR de VIF1 y GIF), `0x26eda0/ac/bc/d0` (canal toIPU),
+  `0x26ed54` (D_ENABLEW), `0x26e844/60/68` y `0x26cc74` (registros de pantalla del GS, 64 bits). Son las 13
+  entradas privadas que Waffle565 describe en las funciones 0x26CB90, 0x26E798, 0x26ED20, 0x26ED68 y 0x26EDE0.
+- Añadidas a `[mmio]` de `config/recomp.template.toml`. Al regenerar cambian exactamente esos 5 archivos; el código
+  emitido pasa por el servicio DMA nativo (`eeDmaStore`) o por los registros de pantalla nativos.
+- Con el cambio (`bin\waffle9`): `GOW_IO_HIST` ya no lista ningún acceso durante el vídeo; `Semo01` se ve igual
+  (49 marcas `[MPEG:sync]`, capturas correctas).
+- **No es solo rendimiento:** con `tools/pruebas/videos.py` (PR #107) un vídeo pedido desde el menú de extras
+  (`GOW_BONUS_MOVIE`, `D01MP03`) fallaba sin la tabla: llamada indirecta a `0x0` en `0x161c68` y el hilo principal
+  dormido, sin imágenes. Con la tabla: correcto, 270 imágenes a 30,00/s, 8,01 s de imagen y 8,00 s de audio,
+  deriva A/V 0,01 s, sin muestras saturadas ni bloques repetidos.
