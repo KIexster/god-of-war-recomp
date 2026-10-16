@@ -34,12 +34,22 @@
 
 ## Qué es
 
-En lugar de emular la PlayStation 2 instrucción por instrucción, este proyecto **traduce el ejecutable
-original del juego (`SCUS_973.99`) a código C++** con [PS2Recomp](https://github.com/ran-j/PS2Recomp),
-y lo compila como un programa nativo de Windows enlazado contra un runtime que reimplementa el hardware
-y el sistema operativo de la PS2 (kernel del EE, GS, DMA, CD/DVD…). El procesador de E/S (IOP) ejecuta
-los **módulos IRX originales** del juego (driver de sonido, cargador de datos…) en el intérprete R3000A de
-PS2Recomp.
+En lugar de emular la PlayStation 2, este proyecto **traduce el ejecutable original del juego (`SCUS_973.99`) a
+código C++** con [PS2Recomp](https://github.com/ran-j/PS2Recomp) y lo compila como un programa nativo de Windows.
+Desde octubre de 2026 la base es el runtime del port nativo de
+[**Waffle565**](https://github.com/Waffle565/God-Of-War-Native-Port) (con su permiso), que sustituye cada pieza del
+hardware de la PS2 por código nativo que produce el mismo resultado a partir de los datos del propio juego:
+
+| Capa | Sustituto nativo |
+|---|---|
+| **CPU EE** (código del juego) | Recompilación estática a C++ (6 414 funciones) |
+| **VU1** (microcódigo vectorial) | Microprogramas compilados por adelantado a C++ |
+| **GS** (gráficos) | Renderizador OpenGL por render targets, resolución interna 2x; almacén de texturas/CLUT en lugar de un modelo de VRAM |
+| **IOP** (CPU de E/S) | Los 8 módulos IRX del juego compilados por adelantado a C++ (opcional) |
+| **Sonido** (SPU2) | Motor de sonido nativo guiado por las llamadas LIBSD del juego |
+| **Mando / memory card** | Servicios nativos, sin modelo del SIO2 |
+| **DMA / VIF / GIF** | Los paquetes del juego van directos a la VU1 y al GS, sin modelo del controlador DMA |
+| **Disco** | Archivos extraídos del disco, cada uno en su sector original (no se lee la ISO) |
 
 Este repositorio contiene todo lo específico de God of War:
 
@@ -48,9 +58,9 @@ Este repositorio contiene todo lo específico de God of War:
 | **Mapa de funciones** | 6 414 funciones identificadas en el ELF (`config/funcmap.csv`) |
 | **Configuración del recompilador** | Stubs, puntos de entrada (incluidos métodos virtuales a los que solo se llega por vtable) y parches de instrucciones (`config/recomp.template.toml`) |
 | **Overrides del juego** | Reemplazos y diagnósticos de funciones del juego (`src/gow_overrides.cpp`) |
-| **Parche del runtime** | Correcciones al emulador del IOP y al runtime del EE de PS2Recomp que necesita este juego (`patches/`) |
+| **Parches del runtime** | El runtime de Waffle565 y nuestros arreglos encima, un parche por tema (`patches/`) |
 | **Scripts de compilación** | Pipeline completo y reproducible en Windows (`scripts/`) |
-| **Herramientas** | Extractor de la capa 1 de DVD-9 (`tools/`) |
+| **Herramientas** | Extractor del disco, generadores de la VU1 y del IOP nativos, CI y mapa de estado (`tools/`) |
 
 ## Estado actual
 
@@ -58,41 +68,31 @@ Este repositorio contiene todo lo específico de God of War:
 
 Desglose por librería y por componente: [`docs/estado/detalle.es.md`](docs/estado/detalle.es.md). Se regenera a partir de `docs/estado/datos.toml` con `tools/estado/generar.py` (y automáticamente al subir a `main`).
 
-Compilación nativa para Windows (renderizador OpenGL) en un Ryzen 7 5800XT con una RX 5700 XT:
+Compilación nativa para Windows en un Ryzen 7 5800XT con una RX 5700 XT (capturas del GS a 1024×894):
 
 <p align="center">
-  <img src="docs/capturas/menu.jpg" alt="Menú principal" width="49%">
-  <img src="docs/capturas/partida.jpg" alt="Partida" width="49%">
+  <img src="docs/capturas/menu.jpg" alt="Menú de dificultad" width="49%">
+  <img src="docs/capturas/partida.jpg" alt="Combate en el barco" width="49%">
 </p>
 
 | Hito | Estado |
 |---|:---:|
-| Extracción de ambas capas del DVD-9 | ✅ |
-| Recompilación de `SCUS_973.99` a C++ (6 418 archivos) | ✅ |
-| Compilación del ejecutable nativo (MSVC, x64) | ✅ |
-| Arranque: inicialización de raylib/OpenGL, heap y threads | ✅ |
-| IRX originales del juego en el emulador del IOP (`989snd`, `smpd`, `libsd`…) | ✅ |
-| Carga de datos desde la ISO original (`smpd` → `R_PERM.WAD`, configuración) | ✅ |
-| Bucle principal del juego (`sys::GameLoop`) | ✅ |
-| Salida de vídeo: pantalla legal y logo del título | ✅ |
-| Barco, Kratos, enemigos y HUD con formas correctas; faltan otros controles de renderizado | 🔧 en progreso |
-| Mando/teclado por HLE de libpad2; menú y selección de dificultad | ✅ |
-| Partida alcanzada; muelles de Atenas a ~12 fps por defecto y ~25 fps con los hilos opcionales de VU1/GS (objetivo: 30) | 🔧 en progreso |
-| Vídeo FMV: intro decodificada y presentada sin omitirla; faltan otros vídeos | 🔧 en progreso |
-| Audio: bancos y sonido continuo emulado verificados; salida entrecortada a la velocidad actual | 🔧 en progreso |
-| Memory card: listar, cargar, guardar y recargar verificados en una copia PCSX2; falta formateo | 🔧 en progreso |
+| Recompilación de `SCUS_973.99` a C++ y ejecutable nativo (MSVC, x64) | ✅ |
+| Datos leídos de los archivos del disco extraído, sin la ISO | ✅ |
+| Arranque, menús, partida nueva y combate en el barco, con HUD | ✅ |
+| VU1 nativa (todos los bloques del barco sin intérprete) | ✅ |
+| IOP nativo: los 8 IRX compilados (partida a ~21 s en lugar de ~34 s) | ✅ |
+| Velocidad del juego exacta (1,00) | ✅ |
+| Suite del runtime en Windows (MSVC) y Linux (GCC) | ✅ |
+| 60 fps en el barco con la cámara quieta: ~53–56 llamadas a `vid::Flip` por segundo de mediana | 🔧 en progreso |
+| Zonas guardadas, guardar/cargar y vídeos con sonido: verificados por Waffle565, por repetir aquí | 🔧 en progreso |
+| Recorrido completo del juego | ⏳ pendiente |
+| Idiomas PAL y lanzador con selector | ⏳ aparcado |
 
-El juego arranca, carga sus datos desde la ISO y llega al menú y a la partida con teclado o mando.
-Tras corregir las cadenas DMA del scratchpad, las capturas muestran el barco, Kratos, enemigos y HUD
-con formas correctas. La intro FMV también se decodifica sin `GOW_SKIP_FMV`. Se han verificado cargar,
-guardar y recargar una partida en una copia de tarjeta PCSX2 de 8 MB con ECC; faltan formateo y reapertura
-en PCSX2. El port sigue siendo experimental. En los muelles de Atenas va a ~12 fps con la configuración por
-defecto y a ~25 fps con los hilos opcionales de VU1 y del frontal del GS y el FINISH asíncrono
-(`PS2X_VU1_HILO=1`, `PS2X_GS_FRENTE=1`, `GOW_GS_FINISH_ASINCRONO=1`), que todavía pueden colgarse de vez en
-cuando; el cuello de botella principal es el microcódigo de VU1 compilado. El audio se oye entrecortado y
-quedan diferencias CPU/OpenGL y cobertura gráfica por comprobar. Ver [rendimiento](docs/RENDIMIENTO.md),
-[renderizado](docs/COMPARACION_PCSX2.md), [FMV y audio](docs/FMV_Y_AUDIO.md), [memory card](docs/MEMORY_CARD.md) y
-[`docs/ESTADO.md`](docs/ESTADO.md) para los controles y sus límites.
+El juego se juega como el port de Waffle565: arranca, carga sus datos del disco extraído y llega a la partida con
+teclado o mando. El rendimiento en escenas cargadas todavía no llega a 60 en esta máquina; el camino crítico de cada
+cuadro es el trabajo de VU1 y GS (~11–13 ms). Hay un cuelgue intermitente del hilo de la ventana (el juego sigue
+corriendo) que se está investigando. Ver [`docs/ESTADO.md`](docs/ESTADO.md) para las mediciones y sus límites.
 
 ## Estructura del repositorio
 
@@ -104,28 +104,32 @@ quedan diferencias CPU/OpenGL y cobertura gráfica por comprobar. Ver [rendimien
 │   ├── funcmap.csv               # Mapa de funciones (nombre, inicio, fin, tamaño)
 │   └── recomp.template.toml      # Configuración de PS2Recomp (@ELF@, @MAP@, @OUT@)
 ├── docs/                         # Documentación técnica
+│   ├── capturas/                 # Capturas de esta página
 │   └── estado/                   # Datos del mapa de estado y SVG/tablas generados
-├── game/                         # Aquí va TU SCUS_973.99 (ignorado por git)
+├── game/                         # Aquí va TU disco extraído: SCUS_973.99, IRX, PAK, .disc_layout (ignorado por git)
 ├── patches/
-│   └── ps2recomp-*.patch         # Cambios sobre PS2Recomp @ c5a9d02, aplicados en orden
+│   ├── ps2recomp-waffle-runtime.patch   # Runtime de Waffle565 sobre PS2Recomp @ c5a9d02
+│   ├── ps2recomp-*.patch         # Nuestros arreglos encima, en el orden de scripts/compilar.ps1
+│   └── anteriores/               # Pila de parches anterior a la migración (referencia, no se aplica)
 ├── scripts/
 │   ├── 1_instalar_herramientas.cmd
-│   ├── 2_compilar.cmd            # Pipeline completo de compilación
+│   ├── 2_compilar.cmd            # Pipeline completo (GOW_IOP_MODULOS: IOP nativo)
 │   ├── 2_recompilar_rapido.cmd   # Recompila solo src/gow_overrides.cpp (~1 min)
-│   ├── 3_ejecutar.cmd            # Ejecuta 60 s y guarda logs
+│   ├── 3_ejecutar.cmd            # Ejecuta 60 s y guarda logs (extrae el disco la primera vez)
 │   ├── 3_ejecutar_manual.cmd     # Ejecuta sin límite de tiempo
 │   ├── probar_menu.ps1           # Prueba del menú con capturas del GS
 │   ├── probar_pad2.cmd           # Compila y ejecuta la prueba de paquetes de libpad2
-│   ├── monitor.cmd               # Monitoriza CPU/RAM durante la compilación
 │   └── *.ps1                     # Lógica de los scripts
 ├── src/
-│   ├── gow_overrides.cpp         # Overrides específicos del juego
-│   └── gow_pad2_packet.h         # Formato del paquete de libpad2 (probado)
+│   ├── gow_overrides.cpp         # Overrides específicos del juego (de Waffle565)
+│   └── *.h                       # Formatos y ayudas probados (paquete de libpad2, replay GS…)
 ├── tests/                        # Pruebas independientes del juego y fallos conocidos de la suite
 └── tools/
     ├── ci/                       # Ayudas de la CI (orden de parches, config, pruebas)
-    ├── extraer_capa2.ps1         # Extrae la capa 1 de una ISO DVD-9 de PS2
-    └── estado/generar.py         # Generador del mapa de estado
+    ├── estado/generar.py         # Generador del mapa de estado
+    ├── iop/iopn_gen.py           # Compila los IRX del juego a C++ (IOP nativo)
+    ├── vu1/vu1n_gen.py           # Compila el microcódigo de VU1 a C++ (VU1 nativa)
+    └── iso_extract.py            # Extrae el disco con sus sectores originales (--layout)
 ```
 
 ## Requisitos
@@ -133,7 +137,8 @@ quedan diferencias CPU/OpenGL y cobertura gráfica por comprobar. Ver [rendimien
 - Windows 10/11 x64
 - [Visual Studio 2022 Build Tools](https://visualstudio.microsoft.com/downloads/) con la carga de trabajo **C++** (incluye CMake y Ninja)
 - [Git](https://git-scm.com/)
-- ~10 GB libres y 16 GB de RAM recomendados (la compilación usa todos los núcleos)
+- [Python 3](https://www.python.org/) (extracción del disco y generadores de la VU1 y el IOP nativos)
+- ~20 GB libres (el disco extraído ocupa ~8,5 GB) y 16 GB de RAM recomendados (la compilación usa todos los núcleos)
 - Una copia propia de **God of War (NTSC-U, SCUS-97399)**
 
 `scripts\1_instalar_herramientas.cmd` instala Git y las Build Tools con `winget`.
@@ -204,7 +209,7 @@ flowchart LR
     O[gow_overrides.cpp] --> E
     P["PS2Recomp runtime<br/>+ patches/*.patch"] --> E
     E --> F[ps2EntryRunner.exe]
-    I[Módulos IRX originales] --> G[Emulador del IOP<br/>R3000A]
+    I[Módulos IRX originales] --> G[IOP<br/>IRX nativos o intérprete]
     ISO["Disco extraído<br/>.disc_layout"] --> G
     F <--> G
 ```
@@ -223,6 +228,7 @@ Más detalles en [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md).
 ## Créditos y licencia
 
 - [**PS2Recomp**](https://github.com/ran-j/PS2Recomp) de ran-j y colaboradores — recompilador y runtime (GPL-3.0).
+- [**God-Of-War-Native-Port**](https://github.com/Waffle565/God-Of-War-Native-Port) de Waffle565 — runtime nativo (GS, VU1, IOP, sonido, DMA, disco), overrides y herramientas que son la base del port desde octubre de 2026, copiados con permiso del autor.
 - Autores de [**PCSX2**](https://github.com/PCSX2/pcsx2) — GS original utilizado por el módulo de diagnóstico DX11 opcional, y el intérprete del EE y las operaciones de VU del runtime (`ee_ref/`, `vu_pcsx2/`, traídos con el runtime de Waffle565) (GPL-3.0+).
 - [**Urban Reign recomp**](https://github.com/thiagordsfx/urban-reign-recomp) de thiagordsfx — referencia compartida de integración GS; ayudó a identificar la convención de campo VSync de nuestro espejo ([revisión y alcance](docs/REVISION_URBAN_REIGN.md)).
 - [**Fork del runtime de SotC**](https://github.com/LightVelox/PS2Recomp/tree/ac9efa070638ad3b3accd284de6f898d5ab271d1) de Taylor N. Albarnaz / LightVelox — backend GS OpenGL y cola de comandos, y arreglos del EE (FPU, ramas de 64 bits, LQ/SQ, saltos finales, VU0 en modo macro y cadenas DMA largas) (GPL-3.0, `ac9efa0`).
