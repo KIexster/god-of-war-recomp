@@ -25498,7 +25498,7 @@ index 0000000..486aa56
 +    uint8_t *vram = nullptr;
 +    uint32_t vramSize = 0;
 +
-+    float scale = 2.0f;
++    float scale = 1.0f; // GOW-Port: escala nativa por defecto; PS2X_GS_HW_SCALE permite aumentarla.
 +    GLuint program = 0, vao = 0, vbo = 0;
 +    GLint locInvSize = -1, locTex = -1, locTexSize = -1, locTexDim = -1, locTme = -1, locFst = -1, locTfx = -1, locTcc = -1, locIip = -1,
 +          locAte = -1, locFailTint = -1, locAtst = -1, locAref = -1, locPass = -1, locBlendScale = -1, locRtTex24 = -1, locTa0 = -1, locTa1 = -1, locReinterp = -1, locDate = -1, locDatm = -1, locDest = -1, locZTex = -1, locZMax = -1, locTables = -1, locRtColor = -1, locPalette = -1, locTexFmt = -1, locTexFmt2 = -1,
@@ -35349,6 +35349,15 @@ index 8590f14..b008aea 100644
      auto clearBit = [&btns](uint16_t mask)
      { btns &= ~mask; };
  
+@@ -87,7 +118,7 @@ bool PSPadBackend::readState(int /*port*/, int /*slot*/, uint8_t *data, size_t s
+-    else
++    if (IsWindowReady())
+     {
+         if (IsKeyDown(KEY_UP) || IsKeyDown(KEY_W))
+             clearBit(PAD_UP);
+         if (IsKeyDown(KEY_DOWN) || IsKeyDown(KEY_S))
+             clearBit(PAD_DOWN);
+
 @@ -121,5 +152,43 @@ bool PSPadBackend::readState(int /*port*/, int /*slot*/, uint8_t *data, size_t s
  
      data[2] = static_cast<uint8_t>(btns & 0xFF);

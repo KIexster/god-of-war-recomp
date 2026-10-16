@@ -302,14 +302,16 @@ namespace
         uint8_t state[32]{};
         if (!buffer || !socket || socket->port != 0 || !runtime ||
             !runtime->padBackend().readState(0, 0, state, sizeof(state))) { padReturn(ctx, 0xffffffffu); return; }
-        // GOW-Port: keyboard sticks only without any gamepad (PSPadBackend uses the first available slot).
-        if (!IsGamepadAvailable(0) && !IsGamepadAvailable(1) && !IsGamepadAvailable(2) && !IsGamepadAvailable(3))
-        {
-            state[6] = IsKeyDown(KEY_A) ? 0 : IsKeyDown(KEY_D) ? 255 : 128;
-            state[7] = IsKeyDown(KEY_W) ? 0 : IsKeyDown(KEY_S) ? 255 : 128;
-            state[4] = IsKeyDown(KEY_J) ? 0 : IsKeyDown(KEY_L) ? 255 : 128;
-            state[5] = IsKeyDown(KEY_I) ? 0 : IsKeyDown(KEY_K) ? 255 : 128;
-        }
+        // GOW-Port: keyboard movement remains available alongside connected/idle gamepads.
+        // Only override an axis while one of its keys is held, so the gamepad keeps control otherwise.
+        if (IsKeyDown(KEY_A) || IsKeyDown(KEY_D))
+            state[6] = IsKeyDown(KEY_A) ? 0 : 255;
+        if (IsKeyDown(KEY_W) || IsKeyDown(KEY_S))
+            state[7] = IsKeyDown(KEY_W) ? 0 : 255;
+        if (IsKeyDown(KEY_J) || IsKeyDown(KEY_L))
+            state[4] = IsKeyDown(KEY_J) ? 0 : 255;
+        if (IsKeyDown(KEY_I) || IsKeyDown(KEY_K))
+            state[5] = IsKeyDown(KEY_I) ? 0 : 255;
         // Opt-in smoke test: advance title/new-game prompts without host UI input.
         // Capture the GS's own presented pixels; normal play never injects input.
         static const bool smokeTest = [] {

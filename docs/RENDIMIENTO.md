@@ -1,5 +1,14 @@
 # Rendimiento
 
+## Escala GS en gráficos integrados
+
+El rasterizador OpenGL usa escala 1× por defecto para evitar que el sobremuestreo 2× sature
+gráficos integrados durante la partida. `PS2X_GS_HW_SCALE=2` permite recuperar 2× en GPU con
+margen suficiente. En AMD Radeon(TM) Graphics, con el mismo ejecutable y perfil OpenGL de
+presentación compartida, escala 2× cayó a menos de 1 presentación del host/s en gameplay;
+escala 1× mantuvo 59,08 presentaciones/s y 52,45 entradas a `vid::Flip`/s durante 50 s de
+partida cargada. Las presentaciones del host no equivalen a cuadros únicos del juego.
+
 ## Seleccionar ventanas de partida cargada
 
 El menú y las pantallas de carga también llaman a `vid::Flip`; contar esas entradas no demuestra

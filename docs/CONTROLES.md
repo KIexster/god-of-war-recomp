@@ -6,7 +6,8 @@ primer puerto. El segundo puerto permanece desconectado; todavía no hay vibraci
 
 ## Teclado
 
-Cuando no hay un gamepad conectado al backend:
+El teclado y el gamepad se pueden usar a la vez. Las teclas conservan el esquema habitual; al pulsar
+una tecla de stick, esa dirección toma prioridad hasta soltarla.
 
 | Control de PS2 | Tecla |
 |---|---|
@@ -21,8 +22,9 @@ Cuando no hay un gamepad conectado al backend:
 | L2 / R2 | Shift izquierdo / derecho |
 | Start / Select | Enter / Tab |
 
-El backend usa el gamepad de índice 0 cuando está disponible. Sus botones, sticks y gatillos se
-adaptan al paquete libpad2. Las presiones se simulan como 0 o 255 según el botón esté suelto o pulsado.
+El backend combina los botones del teclado con los del mando seleccionado, así un dispositivo
+auxiliar detectado por Windows no deja el teclado inutilizable. Las presiones se simulan como 0 o
+255 según el botón esté suelto o pulsado.
 
 ## Validación
 
