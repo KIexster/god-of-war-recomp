@@ -7189,3 +7189,28 @@ del reproductor de vídeo (13 entradas de Waffle, privadas); diagnósticos `GOW_
   `[gow-perf]` y no atendió WM_CLOSE; antes, `w1_dump` (`waffle1`, sin cambios propios) tampoco atendió WM_CLOSE.
   El arnés vuelca ahora las pilas de todos los hilos (`pilas.exe`, privado) si a los 40 s no hay `[gow-perf]`;
   0 apariciones en las 14 ejecuciones siguientes.
+
+### Pruebas automáticas adaptadas de Waffle565 (2026-10-16)
+
+- Scripts añadidos en `tools/pruebas/zonas.py`, `guardado.py` y `videos.py`, adaptados de
+  `Waffle565/God-Of-War-Native-Port main@34f30d5e432751369177af115104f4d19af6d080`. Usan
+  `scripts\\2_compilar.cmd`, el runner bajo `GOW_WORK\\PS2Recomp\\out\\build`, el layout de
+  `tools/iso_extract.py --layout` y la tarjeta indicada por `GOW_MC0`.
+- Análisis sintáctico de Python y `--help` de los tres scripts: correcto. `git diff --check`: sin errores.
+- Compilación con `scripts\\2_compilar.cmd` sobre el `main` actualizado: terminó correctamente, código 0,
+  a las 00:54:04. Runner creado en `C:\\Users\\Noxi-PC\\gow-pr97-bench-work\\PS2Recomp\\out\\build\\ps2xRuntime\\ps2EntryRunner.exe`,
+  56.567.296 bytes (registro local `logs/2_compilar.log`).
+- Configuración de ejecución: `GOW_WORK=C:\\Users\\Noxi-PC\\gow-pr97-bench-work` y
+  `GOW_ELF=C:\\Users\\Noxi-PC\\gow-pr97-bench-src\\game_base\\SCUS_973.99`. No existe la ruta de tarjeta
+  `C:\\Users\\Noxi-PC\\gow-pr97-bench-work\\PS2Recomp\\out\\build\\ps2xRuntime\\mc0\\Mcd001.ps2`.
+  Junto al ELF no están `.disc_layout`, `.disc_meta`, `GODOFWAR.TOC`, `PART1.PAK` ni `PART2.PAK`.
+- Zonas (`logs/pruebas/zonas/20261016_004301/informe.md`): runner no iniciado. Ranuras 1, 2, 3 y 4:
+  ninguna ejecutada; no hay log de juego ni captura. Faltan `GOW_MC0` y el layout indicado arriba.
+- Guardar y recargar (`logs/pruebas/guardado/20261016_004304/informe.md`): runner no iniciado; guardar y
+  recargar no intentados. La tarjeta original no se copió ni modificó. Faltan `GOW_MC0` y el layout.
+- Vídeos (`logs/pruebas/videos/20261016_004420/informe.md`): runner no iniciado. No se pudo leer el TOC,
+  por tanto se enumeraron 0 vídeos y no se probó ningún FMV individual; no hay capturas ni mediciones de
+  imagen/audio. Faltan `GOW_MC0` y el layout. El intento anterior con `--secs 1` fue rechazado porque esa
+  opción no existe en `videos.py`; se repitió con su CLI válida y produjo el preflight aquí citado.
+- No se observó un fallo del juego: ninguna prueba llegó a ejecutar el runner. No se abrió issue al no haber
+  un defecto de runtime reproducible.
