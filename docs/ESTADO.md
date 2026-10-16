@@ -7192,25 +7192,7 @@ del reproductor de vídeo (13 entradas de Waffle, privadas); diagnósticos `GOW_
 
 ### Pruebas automáticas adaptadas de Waffle565 (2026-10-16)
 
-- Scripts añadidos en `tools/pruebas/zonas.py`, `guardado.py` y `videos.py`, adaptados de
-  `Waffle565/God-Of-War-Native-Port main@34f30d5e432751369177af115104f4d19af6d080`. Usan
-  `scripts\\2_compilar.cmd`, el runner bajo `GOW_WORK\\PS2Recomp\\out\\build`, el layout de
-  `tools/iso_extract.py --layout` y la tarjeta indicada por `GOW_MC0`.
-- Análisis sintáctico de Python y `--help` de los tres scripts: correcto. `git diff --check`: sin errores.
-- Compilación con `scripts\\2_compilar.cmd` sobre el `main` actualizado: terminó correctamente, código 0,
-  a las 00:54:04. Runner creado en `C:\\Users\\Noxi-PC\\gow-pr97-bench-work\\PS2Recomp\\out\\build\\ps2xRuntime\\ps2EntryRunner.exe`,
-  56.567.296 bytes (registro local `logs/2_compilar.log`).
-- Configuración de ejecución: `GOW_WORK=C:\\Users\\Noxi-PC\\gow-pr97-bench-work` y
-  `GOW_ELF=C:\\Users\\Noxi-PC\\gow-pr97-bench-src\\game_base\\SCUS_973.99`. No existe la ruta de tarjeta
-  `C:\\Users\\Noxi-PC\\gow-pr97-bench-work\\PS2Recomp\\out\\build\\ps2xRuntime\\mc0\\Mcd001.ps2`.
-  Junto al ELF no están `.disc_layout`, `.disc_meta`, `GODOFWAR.TOC`, `PART1.PAK` ni `PART2.PAK`.
-- Zonas (`logs/pruebas/zonas/20261016_004301/informe.md`): runner no iniciado. Ranuras 1, 2, 3 y 4:
-  ninguna ejecutada; no hay log de juego ni captura. Faltan `GOW_MC0` y el layout indicado arriba.
-- Guardar y recargar (`logs/pruebas/guardado/20261016_004304/informe.md`): runner no iniciado; guardar y
-  recargar no intentados. La tarjeta original no se copió ni modificó. Faltan `GOW_MC0` y el layout.
-- Vídeos (`logs/pruebas/videos/20261016_004420/informe.md`): runner no iniciado. No se pudo leer el TOC,
-  por tanto se enumeraron 0 vídeos y no se probó ningún FMV individual; no hay capturas ni mediciones de
-  imagen/audio. Faltan `GOW_MC0` y el layout. El intento anterior con `--secs 1` fue rechazado porque esa
-  opción no existe en `videos.py`; se repitió con su CLI válida y produjo el preflight aquí citado.
-- No se observó un fallo del juego: ninguna prueba llegó a ejecutar el runner. No se abrió issue al no haber
-  un defecto de runtime reproducible.
+- `tools/pruebas/zonas.py` carga partidas de una tarjeta; `guardado.py` comprueba guardar/recargar usando una copia; `videos.py` mide imagen y audio de los FMV del TOC. Las herramientas guardan informes y capturas bajo `logs/pruebas/`.
+- Requieren el runner compilado, el ELF junto al layout extraído con `tools/iso_extract.py --layout` y una tarjeta configurada con `GOW_MC0` o `--card`. Ejemplos: `python -I tools/pruebas/zonas.py --slots 1 --secs 200`, `python -I tools/pruebas/guardado.py --card TARJETA.ps2` y `python -I tools/pruebas/videos.py --batch 1`.
+- El menú de extras puede provocar una llamada virtual nula en `0x161c68` antes de inicializar el reproductor. `videos.py` reintenta hasta tres sesiones con `missing-target`; probar un vídeo por sesión reduce los fallos al encadenar peticiones. Este error del arnés no determina el resultado real del FMV.
+- La ejecución de `zonas.py --slots 1 --secs 200` reportada en la revisión llegó a gameplay a los 91 s, con 59,9–60,1 Hz y sin errores de runtime; la tarjeta usada no tenía partida guardada en esa ranura. Guardado/recarga y la batería completa de vídeos requieren validación con el layout y la tarjeta disponibles.

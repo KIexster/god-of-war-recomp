@@ -9,6 +9,12 @@ la tarjeta seleccionada por GOW_MC0; registros, PCM y capturas PPM se guardan
 en logs/pruebas/videos/ (ignorado por Git).
 
 Adaptado de Waffle565/God-Of-War-Native-Port main@34f30d5e432751369177af115104f4d19af6d080.
+
+El menú de extras puede llamar a un objeto virtual nulo en 0x161c68 antes de
+inicializar el reproductor. Si el registro contiene `missing-target`, se repite
+la sesión hasta tres intentos; ese fallo del arnés no cuenta como fallo del FMV.
+Usa `--batch 1` (valor predeterminado): las sesiones con varios vídeos tienden
+a fallar al solicitar vídeos posteriores.
 """
 import argparse
 import datetime
@@ -223,7 +229,7 @@ def write_report(folder, rows, stamp):
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--only", help="nombres separados por comas; por defecto prueba todos los PSS del TOC")
-    ap.add_argument("--batch", type=int, default=12, help="vídeos por sesión")
+    ap.add_argument("--batch", type=int, default=1, help="vídeos por sesión (por defecto, uno)")
     ap.add_argument("--exe")
     ap.add_argument("--elf")
     ap.add_argument("--card", help="tarjeta origen; también se puede indicar en GOW_MC0")
@@ -247,10 +253,19 @@ def main():
     for index, start in enumerate(range(0, len(movies), args.batch)):
         batch = movies[start:start + args.batch]
         print(f"Tanda {index}: {', '.join(batch)}", flush=True)
-        log_path, pcm_path, elapsed, ended_early, code = run_batch(batch, sizes, folder, index, runner, elf, source_card)
+        attempts = 0
+        while True:
+            attempts += 1
+            log_path, pcm_path, elapsed, ended_early, code = run_batch(
+                batch, sizes, folder, index, runner, elf, source_card)
+            log_text = log_path.read_text(encoding="utf-8", errors="replace")
+            if "missing-target" not in log_text or attempts >= 3:
+                break
+            print(f"  missing-target del arnés; repito sesión ({attempts + 1}/3)", flush=True)
         rows = analyse(batch, log_path, pcm_path)
         for row in rows:
             row["tanda"] = index
+            row["intentos"] = attempts
             all_rows.append(row)
             print(f"  {row['video']:12s} {row['resultado']}: {'; '.join(row['motivos'])}", flush=True)
         summary_path = folder / f"batch{index}.json"

@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import zonas
 
 RAW = 528
+DATA = 512
 
 
 def page(card, p):
