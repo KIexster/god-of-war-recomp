@@ -1,7 +1,12 @@
 # Perfil reproducible: cuenta vid::Flip y presentaciones, sin volcados ni capturas del juego.
 param(
-    [int]$Segundos = 150,
+    [ValidateScript({ $_ -gt 0 })][int]$Segundos = 150,
     [switch]$SoloCuadros,
+    [switch]$Vu1Hilo,
+    [switch]$GsFrente,
+    [switch]$FinishAsync,
+    [switch]$GpuProfile,
+    [switch]$HardwareLog,
     [ValidateSet('cpu', 'cpu-hilo', 'opengl')][string]$Renderer = 'cpu',
     [ValidateSet('ram', 'compartida')][string]$Presentacion = 'ram',
     [ValidatePattern('^[a-zA-Z0-9_-]+$')][string]$Etiqueta = 'limpio'
@@ -10,6 +15,9 @@ $ErrorActionPreference = 'Stop'
 if ($Presentacion -eq 'compartida' -and $Renderer -ne 'opengl') {
     throw 'La presentacion compartida requiere -Renderer opengl.'
 }
+if ($GsFrente -and -not $Vu1Hilo) {
+    throw '-GsFrente requiere -Vu1Hilo.'
+}
 . (Join-Path $PSScriptRoot 'common.ps1')
 $clear = @('GOW_VIF_DIAG', 'GOW_RENDER_DIAG', 'GOW_EE_PRIM_DIAG', 'GOW_MODEL_DIAG', 'GOW_PATH_DIAG', 'GOW_ANM_DIAG', 'GOW_CLIP_TRACE',
            'GOW_GEOM_DIAG', 'GOW_GEOMETRY_DIAG', 'GOW_CAMERA_DIAG', 'GOW_SIO2_DIAG', 'GOW_GS_GPU_TEST', 'GOW_VU1_BUDGET_DIAG',
@@ -17,7 +25,8 @@ $clear = @('GOW_VIF_DIAG', 'GOW_RENDER_DIAG', 'GOW_EE_PRIM_DIAG', 'GOW_MODEL_DIA
            'GOW_GS_REPLAY_SECONDS', 'GOW_GS_REPLAY_TEXFLUSH', 'GOW_GS_REPLAY_STATE', 'PS2X_GS_DIAG', 'PS2X_GS_TRACE_TBP', 'PS2X_GS_TRACE_AFTER',
            'PS2X_GS_DUMP_SECONDS', 'PS2X_GS_DISCARD_DRAWS', 'PS2X_GS_GPU_STATS', 'PS2X_GS_GPU_PROF',
            'PS2X_GS_HW_LOG', 'PS2X_FRAME_HASH', 'PS2X_IOP_PC_EVERY', 'PS2X_IOP_TRACE', 'PS2X_IOP_TRACE_EVERY',
-           'PS2X_IOP_TRACE_NOCLIB', 'PS2X_IOP_TRACE_FROM', 'PS2X_IOP_TRACE_DMA')
+           'PS2X_IOP_TRACE_NOCLIB', 'PS2X_IOP_TRACE_FROM', 'PS2X_IOP_TRACE_DMA',
+           'PS2X_VU1_HILO', 'PS2X_GS_FRENTE', 'GOW_GS_FINISH_ASINCRONO')
 $set = @{
     GOW_PERF_DIAG = $(if ($SoloCuadros) { 'frames' } else { '1' })
     GOW_PERF_FRAME_PC = '0x001837B8' # vid::Flip de SCUS-97399; sus reanudaciones no cuentan.
@@ -31,6 +40,13 @@ $set = @{
     PS2X_GS_THREAD = $(if ($Renderer -eq 'cpu-hilo') { '1' } else { '0' })
     # GOW-Port: fijar ambos modos evita heredar una presentacion distinta en la comparacion.
     PS2X_GS_DIRECT_PRESENT = $(if ($Presentacion -eq 'compartida') { '1' } else { '0' })
+    # GOW-Port: fijar explícitamente los hilos opcionales para que el entorno no altere el perfil.
+    PS2X_VU1_HILO = $(if ($Vu1Hilo) { '1' } else { '0' })
+    PS2X_GS_FRENTE = $(if ($GsFrente) { '1' } else { '0' })
+    GOW_GS_FINISH_ASINCRONO = $(if ($FinishAsync) { '1' } else { '0' })
+    # GOW-Port: diagnosticos GPU alteran el ritmo; nunca usarlos para comparar FPS.
+    PS2X_GS_GPU_PROF = $(if ($GpuProfile) { '1' } else { '0' })
+    PS2X_GS_HW_LOG = $(if ($HardwareLog) { '1' } else { '0' })
 }
 $previous = @{}
 foreach ($name in @($clear) + @($set.Keys)) { $previous[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
@@ -45,7 +61,7 @@ try {
     # getenv() aún lo detecta: eliminar la entrada evita activar diagnósticos por presencia.
     foreach ($name in $clear) { Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue }
     foreach ($name in $set.Keys) { [Environment]::SetEnvironmentVariable($name, $set[$name], 'Process') }
-    Write-Host "Renderer: $Renderer; presentacion solicitada: $Presentacion"
+    Write-Host "Renderer: $Renderer; presentacion: $Presentacion; VU1 hilo: $Vu1Hilo; GS frente: $GsFrente; FINISH asincrono: $FinishAsync; profiler GPU: $GpuProfile; log hardware: $HardwareLog"
     $destination = Join-Path $LogsDir "perf_$Etiqueta.log"
     try {
         & (Join-Path $PSScriptRoot 'ejecutar.ps1') -Segundos $Segundos -VigilarRendimiento

@@ -1,0 +1,908 @@
+diff --git a/ps2xIOP/include/ps2x/iop/iop_subsystem.h b/ps2xIOP/include/ps2x/iop/iop_subsystem.h
+index 3e4548b..02c4b46 100644
+--- a/ps2xIOP/include/ps2x/iop/iop_subsystem.h
++++ b/ps2xIOP/include/ps2x/iop/iop_subsystem.h
+@@ -42,6 +42,8 @@ namespace ps2x::iop
+         [[nodiscard]] bool isMemoryRange(uint32_t address, size_t size) const;
+ 
+         [[nodiscard]] DebugSnapshot debugSnapshot() const;
++        // GOW-Port: GOW_STALL_DIAG; solo desde el hilo que avanza el IOP.
++        void describeEmulator(std::string &out) const;
+ 
+         // GOW-Port: salida del SPU2 emulado, estereo intercalado a 48 kHz. Puede llamarse desde el hilo de audio del
+         // host. Si hay mas de maxLatencyFrames acumulados, se descartan los mas antiguos.
+diff --git a/ps2xIOP/src/emulator/core/iop_kernel.cpp b/ps2xIOP/src/emulator/core/iop_kernel.cpp
+index e48d1f4..b019c13 100644
+--- a/ps2xIOP/src/emulator/core/iop_kernel.cpp
++++ b/ps2xIOP/src/emulator/core/iop_kernel.cpp
+@@ -4,9 +4,38 @@
+ #include "../iop_emulator_const.h"
+ 
+ #include <algorithm>
++#include <cstdio>
+ 
+ namespace ps2x::iop::detail
+ {
++    // GOW-Port: GOW_STALL_DIAG.
++    void IopKernel::describe(std::string &out) const
++    {
++        static constexpr const char *states[] = {"dormant", "ready", "run", "sleep", "delay", "sema", "evf", "susp", "dead"};
++        char line[224];
++        for (const auto &[id, thread] : m_threads)
++        {
++            const auto state = static_cast<size_t>(thread.state);
++            std::snprintf(line, sizeof(line),
++                          "[gow-stall]   iop hilo=%d %s prio=%u pc=%08x ra=%08x espera=%d bits=%x despertar=%llu wakeups=%d actual=%d\n",
++                          id, state < std::size(states) ? states[state] : "?", thread.priority, thread.cpu.pc,
++                          thread.cpu.gpr[31], thread.waitId, thread.waitBits,
++                          static_cast<unsigned long long>(thread.wakeCycle), thread.wakeupCount,
++                          m_currentThread == &thread ? 1 : 0);
++            out += line;
++        }
++        for (const auto &[id, sema] : m_semaphores)
++        {
++            std::snprintf(line, sizeof(line), "[gow-stall]   iop sema=%d cuenta=%d/%d\n", id, sema.current, sema.maximum);
++            out += line;
++        }
++        for (const auto &[id, flag] : m_eventFlags)
++        {
++            std::snprintf(line, sizeof(line), "[gow-stall]   iop evf=%d bits=%08x\n", id, flag.bits);
++            out += line;
++        }
++    }
++
+     namespace
+     {
+         uint32_t alignUp(uint32_t value, uint32_t alignment)
+diff --git a/ps2xIOP/src/emulator/core/iop_kernel.h b/ps2xIOP/src/emulator/core/iop_kernel.h
+index b20f870..1014799 100644
+--- a/ps2xIOP/src/emulator/core/iop_kernel.h
++++ b/ps2xIOP/src/emulator/core/iop_kernel.h
+@@ -6,6 +6,7 @@
+ #include <cstdint>
+ #include <functional>
+ #include <map>
++#include <string>
+ 
+ namespace ps2x::iop::detail
+ {
+@@ -73,6 +74,8 @@ namespace ps2x::iop::detail
+         void setOutsideThreadWait(OutsideThreadWait wait) { m_outsideThreadWait = std::move(wait); }
+ 
+         [[nodiscard]] size_t threadCount() const noexcept { return m_threads.size(); }
++        // GOW-Port: hilos, semáforos y flags con esperas, para GOW_STALL_DIAG (una línea por objeto).
++        void describe(std::string &out) const;
+         // GOW-Port: hay algun hilo listo para ejecutar (lo usa IopRpcBridge tras cada RPC).
+         [[nodiscard]] bool hasReadyThread() const noexcept
+         {
+diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_emulator.cpp
+index 3911d71..425c501 100644
+--- a/ps2xIOP/src/emulator/iop_emulator.cpp
++++ b/ps2xIOP/src/emulator/iop_emulator.cpp
+@@ -1021,6 +1021,15 @@ namespace ps2x::iop::detail
+         return m_impl->totalCycles;
+     }
+ 
++    void IopEmulator::describe(std::string &out) const
++    {
++        char line[128];
++        std::snprintf(line, sizeof(line), "[gow-stall]   iop ciclos=%llu instrucciones=%llu\n",
++                      static_cast<unsigned long long>(cycles()), static_cast<unsigned long long>(instructions()));
++        out += line;
++        m_impl->kernel.describe(out);
++    }
++
+     uint64_t IopEmulator::instructions() const noexcept
+     {
+         return m_impl->totalInstructions;
+diff --git a/ps2xIOP/src/emulator/iop_emulator.h b/ps2xIOP/src/emulator/iop_emulator.h
+index cb2621c..d7b1705 100644
+--- a/ps2xIOP/src/emulator/iop_emulator.h
++++ b/ps2xIOP/src/emulator/iop_emulator.h
+@@ -39,6 +39,8 @@ namespace ps2x::iop::detail
+         // GOW-Port: muestras estereo de 48 kHz que ha producido el SPU2 (ver Spu2::drainOutput).
+         size_t drainAudio(int16_t *stereo, size_t maxFrames, size_t maxLatencyFrames);
+         [[nodiscard]] uint64_t cycles() const noexcept;
++        // GOW-Port: estado legible para GOW_STALL_DIAG; solo desde el hilo que avanza el IOP.
++        void describe(std::string &out) const;
+         [[nodiscard]] uint64_t instructions() const noexcept;
+         [[nodiscard]] uint32_t loadedModuleCount() const noexcept;
+         [[nodiscard]] uint32_t threadCount() const noexcept;
+diff --git a/ps2xIOP/src/iop_subsystem.cpp b/ps2xIOP/src/iop_subsystem.cpp
+index b9d3a36..8421528 100644
+--- a/ps2xIOP/src/iop_subsystem.cpp
++++ b/ps2xIOP/src/iop_subsystem.cpp
+@@ -170,6 +170,11 @@ namespace ps2x::iop
+         m_impl->emulator.runEeCycles(eeCycles);
+     }
+ 
++    void IopSubsystem::describeEmulator(std::string &out) const
++    {
++        m_impl->emulator.describe(out);
++    }
++
+     RpcAbi IopSubsystem::selectRpcAbi(const RpcAbiRequest &request) const
+     {
+         for (const auto &service : m_impl->coreServices)
+diff --git a/ps2xRuntime/CMakeLists.txt b/ps2xRuntime/CMakeLists.txt
+index 4d24a52..1bf7507 100644
+--- a/ps2xRuntime/CMakeLists.txt
++++ b/ps2xRuntime/CMakeLists.txt
+@@ -400,6 +400,7 @@ add_library(ps2_runtime STATIC
+     src/lib/ps2_rom_device.cpp
+     src/lib/ps2_vfs.cpp
+     src/lib/ps2_runtime.cpp
++    src/lib/ps2_stall_diag.cpp
+     src/lib/ps2_vif1_interpreter.cpp
+     src/lib/vu/ps2_vu1_core.cpp
+     src/lib/vu/ps2_vu1_upper.cpp
+diff --git a/ps2xRuntime/include/runtime/ps2_stall_diag.h b/ps2xRuntime/include/runtime/ps2_stall_diag.h
+new file mode 100644
+index 0000000..3732283
+--- /dev/null
++++ b/ps2xRuntime/include/runtime/ps2_stall_diag.h
+@@ -0,0 +1,96 @@
++#ifndef PS2_STALL_DIAG_H
++#define PS2_STALL_DIAG_H
++
++// GOW-Port: diagnóstico opcional de atascos (GOW_STALL_DIAG=1, etiqueta [gow-stall]).
++// Registra hitos la primera vez que ocurren y, desde un hilo vigía propio, imprime un latido
++// cada pocos segundos y un volcado cuando los flips del juego se detienen. No cambia el
++// planificador: los hilos del emulador solo incrementan contadores atómicos y el estado del
++// IOP se copia en el hilo EE cuando el vigía lo pide.
++#include <array>
++#include <atomic>
++#include <cstddef>
++#include <cstdint>
++#include <cstdlib>
++#include <cstring>
++#include <functional>
++#include <string>
++
++struct EeKernelSnapshot;
++
++namespace ps2_stall
++{
++    enum class Counter : size_t
++    {
++        Flip,
++        VBlank,
++        Alarm,
++        RpcCall,
++        RpcBind,
++        SifDma,
++        IopSlice,
++        Vif1Chunk,
++        SemaSignal,
++        SemaWait,
++        SemaPoll,
++        Wakeup,
++        Count
++    };
++    constexpr size_t counterCount = static_cast<size_t>(Counter::Count);
++
++    inline bool enabled()
++    {
++        static const bool on = [] {
++            const char *value = std::getenv("GOW_STALL_DIAG");
++            return value && std::strcmp(value, "1") == 0;
++        }();
++        return on;
++    }
++
++    inline std::array<std::atomic<uint64_t>, counterCount> counters{};
++    inline void count(Counter counter)
++    {
++        if (enabled())
++            counters[static_cast<size_t>(counter)].fetch_add(1u, std::memory_order_relaxed);
++    }
++
++    // Segundos monotónicos desde el primer uso (steady_clock); comunes a todos los hilos.
++    double seconds();
++
++    // Imprime "[gow-stall] hito" la primera vez que aparece cada par (nombre, clave); como
++    // máximo 512 hitos por ejecución. El nombre debe ser una cadena literal.
++    void milestone(const char *name, uint32_t key = 0u, uint32_t value = 0u);
++
++    // Para sitios frecuentes: evita el mutex de hitos tras la primera vez.
++    inline void milestoneOnce(std::atomic<bool> &done, const char *name, uint32_t key = 0u, uint32_t value = 0u)
++    {
++        if (enabled() && !done.load(std::memory_order_relaxed) && !done.exchange(true, std::memory_order_relaxed))
++            milestone(name, key, value);
++    }
++
++    // Estado del juego que aporta el código específico del juego (por ejemplo, gow_overrides).
++    // Escribe texto en buffer y devuelve un número que identifica el estado: un cambio se
++    // registra como hito. Se llama desde el hilo vigía; debe limitarse a leer memoria.
++    using StateProvider = uint32_t (*)(const uint8_t *rdram, char *buffer, size_t size);
++    void setStateProvider(StateProvider provider);
++
++    // Fuentes que lee el vigía. Las aporta ps2_runtime.cpp para que este módulo no dependa del
++    // runtime completo (otros ejecutables enlazan ps2_runtime.lib sin el código generado).
++    struct Sources
++    {
++        std::function<EeKernelSnapshot()> eeSnapshot;
++        const std::atomic<uint32_t> *debugPc = nullptr;
++        const std::atomic<uint32_t> *debugRa = nullptr;
++        std::function<std::string(size_t)> recentRpc;
++        const uint8_t *rdram = nullptr;
++    };
++
++    // Arranca o detiene el hilo vigía. No hace nada si el diagnóstico está desactivado.
++    void start(Sources sources);
++    void stop();
++
++    // Petición del vigía para describir el IOP; la atiende el hilo EE al avanzar el IOP.
++    inline std::atomic<bool> iopDescriptionRequested{false};
++    void provideIopDescription(std::string text);
++}
++
++#endif
+diff --git a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+index 94ee16e..08e9551 100644
+--- a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
++++ b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+@@ -2,6 +2,7 @@
+ 
+ #include "ps2_log.h"
+ #include "runtime/ps2_perf.h"
++#include "runtime/ps2_stall_diag.h"
+ #include "ps2_runtime_macros.h"
+ 
+ #include <algorithm>
+@@ -161,6 +162,7 @@ void EeScheduler::run()
+ {
+     ps2_perf::Scope perf(ps2_perf::Bucket::Ee); // GOW-Port: tiempos exclusivos del ejecutor.
+     assertExecutor();
++    ps2_stall::milestone("ee_run"); // GOW-Port: GOW_STALL_DIAG.
+     m_running.store(true, std::memory_order_release);
+ 
+     while (!m_stopRequested.load(std::memory_order_acquire))
+@@ -665,6 +667,7 @@ void EeScheduler::sleepCurrent()
+ int EeScheduler::wakeupThread(int id, bool interruptSafe)
+ {
+     assertExecutor();
++    ps2_stall::count(ps2_stall::Counter::Wakeup); // GOW-Port: GOW_STALL_DIAG.
+     if (id == 0 || id == m_currentThreadId)
+     {
+         return KE_ILLEGAL_THID;
+@@ -877,6 +880,7 @@ int EeScheduler::deleteSemaphore(int id, bool interruptSafe)
+ int EeScheduler::signalSemaphore(int id, bool interruptSafe)
+ {
+     assertExecutor();
++    ps2_stall::count(ps2_stall::Counter::SemaSignal); // GOW-Port: GOW_STALL_DIAG.
+     EeSemaphore *object = semaphore(id);
+     if (!object)
+     {
+@@ -904,6 +908,7 @@ int EeScheduler::signalSemaphore(int id, bool interruptSafe)
+ int EeScheduler::pollSemaphore(int id)
+ {
+     assertExecutor();
++    ps2_stall::count(ps2_stall::Counter::SemaPoll); // GOW-Port: GOW_STALL_DIAG.
+     EeSemaphore *object = semaphore(id);
+     if (!object)
+     {
+@@ -921,6 +926,7 @@ int EeScheduler::pollSemaphore(int id)
+ void EeScheduler::waitSemaphore(int id)
+ {
+     assertExecutor();
++    ps2_stall::count(ps2_stall::Counter::SemaWait); // GOW-Port: GOW_STALL_DIAG.
+     EeSemaphore *object = semaphore(id);
+     if (!object)
+     {
+@@ -1906,6 +1912,7 @@ void EeScheduler::processEvent(const EeEvent &event)
+         requestStop();
+         break;
+     case EeEventType::VBlankStart:
++        ps2_stall::count(ps2_stall::Counter::VBlank); // GOW-Port: GOW_STALL_DIAG.
+         ++m_vsyncTick;
+         m_runtime.memory().gs().vsyncTick.store(m_vsyncTick, std::memory_order_release);
+         if ((m_vsyncTick & 1u) != 0u)
+@@ -1960,6 +1967,7 @@ void EeScheduler::processEvent(const EeEvent &event)
+         }
+         const EeAlarm alarm = it->second;
+         m_alarms.erase(it);
++        ps2_stall::count(ps2_stall::Counter::Alarm); // GOW-Port: GOW_STALL_DIAG.
+         GuestInvocation invocation{};
+         invocation.kind = GuestInvocationKind::Alarm;
+         invocation.context.pc = alarm.handler;
+diff --git a/ps2xRuntime/src/lib/Kernel/Stubs/SIF.cpp b/ps2xRuntime/src/lib/Kernel/Stubs/SIF.cpp
+index dc975ed..8f65d08 100644
+--- a/ps2xRuntime/src/lib/Kernel/Stubs/SIF.cpp
++++ b/ps2xRuntime/src/lib/Kernel/Stubs/SIF.cpp
+@@ -4,6 +4,7 @@
+ #include "../../ps2_iop_transport.h"
+ #include "runtime/ps2_address.h"
+ #include "runtime/ee_scheduler.h"
++#include "runtime/ps2_stall_diag.h"
+ 
+ #include <algorithm>
+ #include <cstring>
+@@ -630,6 +631,9 @@ namespace ps2_stubs
+     {
+         const uint32_t dmatAddr = getRegU32(ctx, 4);
+         const uint32_t count = getRegU32(ctx, 5);
++        ps2_stall::count(ps2_stall::Counter::SifDma); // GOW-Port: GOW_STALL_DIAG.
++        static std::atomic<bool> firstDma{false};
++        ps2_stall::milestoneOnce(firstDma, "sif_dma", dmatAddr, count);
+ 
+         const uint32_t listAddr = getRegU32(ctx, 4);
+         PS2_IF_AGRESSIVE_LOGS({
+diff --git a/ps2xRuntime/src/lib/Kernel/Syscalls/Helpers/State.h b/ps2xRuntime/src/lib/Kernel/Syscalls/Helpers/State.h
+index d6b7549..49d4416 100644
+--- a/ps2xRuntime/src/lib/Kernel/Syscalls/Helpers/State.h
++++ b/ps2xRuntime/src/lib/Kernel/Syscalls/Helpers/State.h
+@@ -192,6 +192,7 @@ struct SifRpcDebugEvent
+     uint8_t sendPreview[16]{};
+     uint8_t recvPreview[16]{};
+     int32_t result = 0;
++    double stallSeconds = 0.0; // GOW-Port: reloj de GOW_STALL_DIAG (0 si está desactivado).
+ };
+ 
+ static constexpr size_t kSifRpcDebugHistoryCount = 256u;
+diff --git a/ps2xRuntime/src/lib/Kernel/Syscalls/RPC.cpp b/ps2xRuntime/src/lib/Kernel/Syscalls/RPC.cpp
+index 07fcd29..42538b7 100644
+--- a/ps2xRuntime/src/lib/Kernel/Syscalls/RPC.cpp
++++ b/ps2xRuntime/src/lib/Kernel/Syscalls/RPC.cpp
+@@ -1,6 +1,9 @@
+ #include "Common.h"
+ #include "RPC.h"
+ #include "../../ps2_iop_transport.h"
++#include "runtime/ps2_stall_diag.h"
++
++#include <cstdio>
+ 
+ namespace ps2_syscalls
+ {
+@@ -19,6 +22,8 @@ namespace ps2_syscalls
+         void pushSifRpcDebugEventLocked(SifRpcDebugEvent event)
+         {
+             event.seq = ++g_sif_rpc_debug_next_seq;
++            if (ps2_stall::enabled())
++                event.stallSeconds = ps2_stall::seconds();
+             g_sif_rpc_debug_history[event.seq % kSifRpcDebugHistoryCount] = event;
+         }
+ 
+@@ -243,6 +248,7 @@ namespace ps2_syscalls
+             }
+             g_rpc_initialized = true;
+             RUNTIME_LOG("[SifInitRpc] Initialized");
++            ps2_stall::milestone("sif_init_rpc"); // GOW-Port: GOW_STALL_DIAG.
+         }
+ 
+         SifRpcDebugEvent event = makeRpcDebugEvent("InitRpc", ctx, runtime);
+@@ -256,6 +262,8 @@ namespace ps2_syscalls
+         uint32_t clientPtr = getRegU32(ctx, 4);
+         uint32_t rpcId = getRegU32(ctx, 5);
+         uint32_t mode = getRegU32(ctx, 6);
++        ps2_stall::count(ps2_stall::Counter::RpcBind); // GOW-Port: GOW_STALL_DIAG.
++        ps2_stall::milestone("sif_bind_rpc", rpcId, mode);
+ 
+         t_SifRpcClientData *client = reinterpret_cast<t_SifRpcClientData *>(getMemPtr(rdram, clientPtr));
+ 
+@@ -347,6 +355,9 @@ namespace ps2_syscalls
+         const uint32_t rpcNum = getRegU32(ctx, 5);
+         const uint32_t mode = getRegU32(ctx, 6);
+         const uint32_t sendBuf = getRegU32(ctx, 7);
++        ps2_stall::count(ps2_stall::Counter::RpcCall); // GOW-Port: GOW_STALL_DIAG.
++        static std::atomic<bool> firstCall{false};
++        ps2_stall::milestoneOnce(firstCall, "sif_call_rpc", clientPtr, rpcNum);
+         const uint32_t stackPointer = getRegU32(ctx, 29);
+ 
+         const uint32_t sendSizeRegisters = getRegU32(ctx, 8);
+@@ -1005,4 +1016,26 @@ namespace ps2_syscalls
+         uint32_t queuePtr = getRegU32(ctx, 4);
+         setReturnS32(ctx, static_cast<int32_t>(queuePtr));
+     }
++
++    // GOW-Port: resumen de las últimas llamadas para el volcado de GOW_STALL_DIAG.
++    std::string describeRecentSifRpc(size_t count)
++    {
++        std::string out;
++        char line[224];
++        std::lock_guard<std::mutex> lock(g_rpc_mutex);
++        const uint64_t last = g_sif_rpc_debug_next_seq;
++        const uint64_t first = last > count ? last - count + 1u : 1u;
++        for (uint64_t seq = first; seq <= last && seq != 0u; ++seq)
++        {
++            const SifRpcDebugEvent &event = g_sif_rpc_debug_history[seq % kSifRpcDebugHistoryCount];
++            if (event.seq != seq)
++                continue;
++            std::snprintf(line, sizeof(line),
++                          "[gow-stall]   rpc seq=%llu t=%.3f %s sid=%08x fno=%u modo=%x flags=%x hilo=%u pc=%08x ra=%08x res=%d\n",
++                          static_cast<unsigned long long>(event.seq), event.stallSeconds, event.op ? event.op : "",
++                          event.sid, event.rpcNum, event.mode, event.flags, event.threadId, event.pc, event.ra, event.result);
++            out += line;
++        }
++        return out;
++    }
+ }
+diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
+index a455177..199961f 100644
+--- a/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -2,6 +2,7 @@
+ #include "runtime/gs/gs_host_present.h" // GOW-Port: consumidor privado del host.
+ #include "ps2_log.h"
+ #include "runtime/ps2_perf.h"
++#include "runtime/ps2_stall_diag.h"
+ #include "ps2_stubs.h"
+ #include "ps2_syscalls.h"
+ #include "game_overrides.h"
+@@ -96,6 +97,11 @@ namespace ps2_stubs
+     void resetSifState();
+ }
+ 
++namespace ps2_syscalls
++{
++    std::string describeRecentSifRpc(size_t count); // GOW-Port: RPC.cpp, para GOW_STALL_DIAG.
++}
++
+ // GOW-Port: velocidad del juego = tiempo de juego / tiempo real (1 = tiempo real; < 1 = cámara lenta). En cada
+ // cuadro (entrada a GOW_PERF_FRAME_PC, vid::Flip) suma el paso de tiempo del juego (float en 0x29C64C de
+ // SCUS-97399). Con GOW_DELTA_DIAG=1 se imprime cada segundo. Idea tomada de Tobiichi-Port (YYOzcan).
+@@ -578,13 +584,17 @@ PS2Runtime::~PS2Runtime()
+ ps2x::iop::ModuleLoadResult PS2Runtime::loadIopModule(std::string_view path, const void *arguments, uint32_t argumentSize)
+ {
+     auto scope = m_iopHost->enterCall(nullptr, m_memory.getRDRAM());
+-    return m_iopSubsystem->loadModule(path, arguments, argumentSize);
++    const ps2x::iop::ModuleLoadResult result = m_iopSubsystem->loadModule(path, arguments, argumentSize);
++    ps2_stall::milestone("irx", static_cast<uint32_t>(result.moduleId), static_cast<uint32_t>(result.startResult)); // GOW-Port
++    return result;
+ }
+ 
+ ps2x::iop::ModuleLoadResult PS2Runtime::loadIopModuleBuffer(uint32_t guestAddress, const void *arguments, uint32_t argumentSize)
+ {
+     auto scope = m_iopHost->enterCall(nullptr, m_memory.getRDRAM());
+-    return m_iopSubsystem->loadModuleBuffer(guestAddress, arguments, argumentSize);
++    const ps2x::iop::ModuleLoadResult result = m_iopSubsystem->loadModuleBuffer(guestAddress, arguments, argumentSize);
++    ps2_stall::milestone("irx_buffer", static_cast<uint32_t>(result.moduleId), static_cast<uint32_t>(result.startResult)); // GOW-Port
++    return result;
+ }
+ 
+ bool PS2Runtime::stopIopModule(int32_t moduleId, int32_t *result)
+@@ -622,6 +632,17 @@ void PS2Runtime::advanceIopEeCycles(uint64_t eeCycles) noexcept
+ {
+     ps2_perf::Scope perf(ps2_perf::Bucket::Iop);
+     m_iopSubsystem->runEeCycles(eeCycles);
++    // GOW-Port: GOW_STALL_DIAG. El vigía pide el estado del IOP y se copia aquí, en el hilo que lo avanza.
++    if (ps2_stall::enabled())
++    {
++        ps2_stall::count(ps2_stall::Counter::IopSlice);
++        if (ps2_stall::iopDescriptionRequested.load(std::memory_order_acquire))
++        {
++            std::string text;
++            m_iopSubsystem->describeEmulator(text);
++            ps2_stall::provideIopDescription(std::move(text));
++        }
++    }
+ }
+ 
+ void PS2Runtime::resetIop()
+@@ -2508,6 +2529,16 @@ void PS2Runtime::run()
+     RUNTIME_LOG("Starting execution at address 0x" << std::hex << m_cpuContext.pc << std::dec);
+ 
+     std::atomic<bool> gameThreadFinished{false};
++    if (ps2_stall::enabled()) // GOW-Port: GOW_STALL_DIAG.
++    {
++        ps2_stall::Sources sources;
++        sources.eeSnapshot = [this] { return m_eeScheduler->snapshot(); };
++        sources.debugPc = &m_debugPc;
++        sources.debugRa = &m_debugRa;
++        sources.recentRpc = [](size_t count) { return ps2_syscalls::describeRecentSifRpc(count); };
++        sources.rdram = m_memory.getRDRAM();
++        ps2_stall::start(std::move(sources));
++    }
+ 
+     std::thread gameThread([&]()
+                            {
+@@ -2605,6 +2636,7 @@ void PS2Runtime::run()
+     {
+         gameThread.join();
+     }
++    ps2_stall::stop(); // GOW-Port: GOW_STALL_DIAG.
+ 
+     if (m_debugUiInitialized && m_debugUiShutdownCallback)
+     {
+diff --git a/ps2xRuntime/src/lib/ps2_stall_diag.cpp b/ps2xRuntime/src/lib/ps2_stall_diag.cpp
+new file mode 100644
+index 0000000..e91f97b
+--- /dev/null
++++ b/ps2xRuntime/src/lib/ps2_stall_diag.cpp
+@@ -0,0 +1,319 @@
++// GOW-Port: diagnóstico opcional de atascos. Ver runtime/ps2_stall_diag.h.
++#include "runtime/ps2_stall_diag.h"
++
++#include "runtime/ee_scheduler.h"
++
++#include <algorithm>
++#include <chrono>
++#include <condition_variable>
++#include <cstdio>
++#include <map>
++#include <mutex>
++#include <set>
++#include <thread>
++#include <utility>
++#include <vector>
++
++namespace ps2_stall
++{
++    namespace
++    {
++        using Clock = std::chrono::steady_clock;
++
++        const Clock::time_point &origin()
++        {
++            static const Clock::time_point value = Clock::now();
++            return value;
++        }
++
++        std::mutex g_milestoneMutex;
++        std::set<std::pair<const char *, uint32_t>> g_milestones;
++
++        std::atomic<StateProvider> g_stateProvider{nullptr};
++
++        std::mutex g_iopMutex;
++        std::condition_variable g_iopReady;
++        std::string g_iopText;
++        bool g_iopTextReady = false;
++
++        std::mutex g_threadMutex;
++        std::condition_variable g_stopSignal;
++        std::thread g_thread;
++        bool g_stop = false;
++
++        const char *counterName(size_t index)
++        {
++            static constexpr const char *names[counterCount] = {
++                "flip", "vblank", "alarma", "rpc", "bind", "sifdma", "iop", "vif1",
++                "sema_signal", "sema_wait", "sema_poll", "wakeup"};
++            return names[index];
++        }
++
++        const char *statusName(EeThreadStatus status)
++        {
++            switch (status)
++            {
++            case EeThreadStatus::Running: return "run";
++            case EeThreadStatus::Ready: return "ready";
++            case EeThreadStatus::Waiting: return "wait";
++            case EeThreadStatus::WaitingSuspended: return "wait+susp";
++            case EeThreadStatus::Suspended: return "susp";
++            case EeThreadStatus::Dormant: return "dormant";
++            }
++            return "?";
++        }
++
++        const char *waitName(EeWaitReason reason)
++        {
++            switch (reason)
++            {
++            case EeWaitReason::None: return "-";
++            case EeWaitReason::Sleep: return "sleep";
++            case EeWaitReason::Semaphore: return "sema";
++            case EeWaitReason::EventFlag: return "evf";
++            case EeWaitReason::VSync: return "vsync";
++            case EeWaitReason::External: return "ext";
++            case EeWaitReason::Mpeg: return "mpeg";
++            }
++            return "?";
++        }
++
++        std::string describeEe(const EeKernelSnapshot &snapshot)
++        {
++            std::string out;
++            char line[256];
++            std::snprintf(line, sizeof(line), "[gow-stall]   ee seq=%llu ciclo=%llu hilo_actual=%d\n",
++                          static_cast<unsigned long long>(snapshot.sequence),
++                          static_cast<unsigned long long>(snapshot.eeCycle), snapshot.runningThreadId);
++            out += line;
++            for (const auto &thread : snapshot.threads)
++            {
++                if (thread.status == EeThreadStatus::Dormant)
++                    continue;
++                std::snprintf(line, sizeof(line),
++                              "[gow-stall]   ee hilo=%d %s espera=%s id=%d prio=%d pc=%08x ra=%08x wakeups=%u invocaciones=%u\n",
++                              thread.id, statusName(thread.status), waitName(thread.waitReason), thread.waitId,
++                              thread.currentPriority, thread.pc, thread.ra, thread.wakeupCount, thread.invocationDepth);
++                out += line;
++            }
++            for (const auto &sema : snapshot.semaphores)
++            {
++                if (sema.waiters == 0u)
++                    continue;
++                std::snprintf(line, sizeof(line), "[gow-stall]   ee sema=%d cuenta=%d/%d esperan=%u\n",
++                              sema.id, sema.count, sema.maxCount, sema.waiters);
++                out += line;
++            }
++            for (const auto &flag : snapshot.eventFlags)
++            {
++                if (flag.waiters == 0u)
++                    continue;
++                std::snprintf(line, sizeof(line), "[gow-stall]   ee evf=%d bits=%08x esperan=%u\n",
++                              flag.id, flag.bits, flag.waiters);
++                out += line;
++            }
++            return out;
++        }
++
++        // Muestras de la PC y RA publicadas en cada despacho del EE durante unos 200 ms.
++        std::string samplePcs(const Sources &sources)
++        {
++            std::map<std::pair<uint32_t, uint32_t>, unsigned> histogram;
++            unsigned samples = 0;
++            const auto end = Clock::now() + std::chrono::milliseconds(200);
++            while (Clock::now() < end)
++            {
++                const uint32_t pc = sources.debugPc->load(std::memory_order_relaxed);
++                const uint32_t ra = sources.debugRa->load(std::memory_order_relaxed);
++                ++histogram[{pc, ra}];
++                ++samples;
++                std::this_thread::sleep_for(std::chrono::microseconds(500));
++            }
++            std::vector<std::pair<unsigned, std::pair<uint32_t, uint32_t>>> sorted;
++            for (const auto &[key, hits] : histogram)
++                sorted.push_back({hits, key});
++            std::sort(sorted.begin(), sorted.end(), [](const auto &a, const auto &b) { return a.first > b.first; });
++            std::string out;
++            char line[160];
++            std::snprintf(line, sizeof(line), "[gow-stall]   pc muestras=%u distintas=%zu\n", samples, sorted.size());
++            out += line;
++            for (size_t i = 0; i < sorted.size() && i < 8u; ++i)
++            {
++                std::snprintf(line, sizeof(line), "[gow-stall]   pc=%08x ra=%08x veces=%u\n",
++                              sorted[i].second.first, sorted[i].second.second, sorted[i].first);
++                out += line;
++            }
++            return out;
++        }
++
++        std::string requestIopDescription()
++        {
++            std::unique_lock lock(g_iopMutex);
++            g_iopTextReady = false;
++            iopDescriptionRequested.store(true, std::memory_order_release);
++            if (!g_iopReady.wait_for(lock, std::chrono::seconds(2), [] { return g_iopTextReady; }))
++            {
++                iopDescriptionRequested.store(false, std::memory_order_release);
++                return "[gow-stall]   iop sin respuesta del hilo EE en 2 s\n";
++            }
++            return g_iopText;
++        }
++
++        void dump(const Sources &sources, double stalledSeconds, unsigned index)
++        {
++            std::string text;
++            char line[160];
++            std::snprintf(line, sizeof(line), "[gow-stall] volcado=%u t=%.3f sin_flips=%.1fs\n",
++                          index, seconds(), stalledSeconds);
++            text += line;
++            text += describeEe(sources.eeSnapshot());
++            text += samplePcs(sources);
++            text += sources.recentRpc(12u);
++            text += requestIopDescription();
++            std::fputs(text.c_str(), stderr);
++            std::fflush(stderr);
++        }
++
++        void watch(Sources sources)
++        {
++            const uint8_t *rdram = sources.rdram;
++            std::array<uint64_t, counterCount> previous{};
++            double lastFlipSeconds = -1.0;
++            double nextHeartbeat = 5.0;
++            double nextDump = 0.0;
++            unsigned dumps = 0;
++            bool stalled = false;
++            uint32_t lastState = 0xFFFFFFFFu;
++            for (;;)
++            {
++                {
++                    std::unique_lock lock(g_threadMutex);
++                    if (g_stopSignal.wait_for(lock, std::chrono::seconds(1), [] { return g_stop; }))
++                        return;
++                }
++                const double now = seconds();
++                std::array<uint64_t, counterCount> current{};
++                for (size_t i = 0; i < counterCount; ++i)
++                    current[i] = counters[i].load(std::memory_order_relaxed);
++                const uint64_t flips = current[static_cast<size_t>(Counter::Flip)];
++
++                char state[192] = "";
++                if (const StateProvider provider = g_stateProvider.load(std::memory_order_acquire); provider && rdram)
++                {
++                    const uint32_t key = provider(rdram, state, sizeof(state));
++                    if (key != lastState)
++                    {
++                        lastState = key;
++                        milestone("estado_juego_vigia", key);
++                    }
++                }
++
++                if (flips != previous[static_cast<size_t>(Counter::Flip)] || lastFlipSeconds < 0.0)
++                {
++                    if (stalled)
++                        std::fprintf(stderr, "[gow-stall] reanuda t=%.3f tras %.1fs sin flips\n", now, now - lastFlipSeconds);
++                    stalled = false;
++                    dumps = 0;
++                    if (flips != 0u)
++                        lastFlipSeconds = now;
++                }
++
++                if (now >= nextHeartbeat)
++                {
++                    nextHeartbeat = now + 5.0;
++                    std::string text;
++                    char item[64];
++                    std::snprintf(item, sizeof(item), "[gow-stall] latido t=%.3f", now);
++                    text += item;
++                    for (size_t i = 0; i < counterCount; ++i)
++                    {
++                        std::snprintf(item, sizeof(item), " %s=+%llu", counterName(i),
++                                      static_cast<unsigned long long>(current[i] - previous[i]));
++                        text += item;
++                    }
++                    std::snprintf(item, sizeof(item), " pc=%08x ra=%08x ",
++                                  sources.debugPc->load(std::memory_order_relaxed),
++                                  sources.debugRa->load(std::memory_order_relaxed));
++                    text += item;
++                    text += state;
++                    text += '\n';
++                    std::fputs(text.c_str(), stderr);
++                }
++                previous = current;
++
++                // Solo tras el primer flip: antes, el arranque no tiene un ritmo de cuadros de referencia.
++                if (lastFlipSeconds >= 0.0 && now - lastFlipSeconds >= 3.0)
++                {
++                    if (!stalled)
++                    {
++                        stalled = true;
++                        nextDump = now;
++                    }
++                    if (now >= nextDump && dumps < 8u)
++                    {
++                        dump(sources, now - lastFlipSeconds, ++dumps);
++                        static constexpr double delays[] = {7.0, 20.0, 30.0};
++                        nextDump = now + (dumps <= 3u ? delays[dumps - 1u] : 60.0);
++                    }
++                }
++            }
++        }
++    }
++
++    double seconds()
++    {
++        return std::chrono::duration<double>(Clock::now() - origin()).count();
++    }
++
++    void milestone(const char *name, uint32_t key, uint32_t value)
++    {
++        if (!enabled())
++            return;
++        {
++            std::lock_guard lock(g_milestoneMutex);
++            if (g_milestones.size() >= 512u || !g_milestones.insert({name, key}).second)
++                return;
++        }
++        std::fprintf(stderr, "[gow-stall] hito t=%.6f %s clave=0x%x valor=0x%x\n", seconds(), name, key, value);
++    }
++
++    void setStateProvider(StateProvider provider)
++    {
++        g_stateProvider.store(provider, std::memory_order_release);
++    }
++
++    void start(Sources sources)
++    {
++        if (!enabled() || !sources.eeSnapshot || !sources.debugPc || !sources.debugRa || !sources.recentRpc)
++            return;
++        (void)origin();
++        std::lock_guard lock(g_threadMutex);
++        if (g_thread.joinable())
++            return;
++        g_stop = false;
++        g_thread = std::thread(watch, std::move(sources));
++        std::fprintf(stderr, "[gow-stall] vigia activo (latido 5 s, volcado tras 3 s sin flips)\n");
++    }
++
++    void stop()
++    {
++        {
++            std::lock_guard lock(g_threadMutex);
++            g_stop = true;
++        }
++        g_stopSignal.notify_all();
++        if (g_thread.joinable())
++            g_thread.join();
++    }
++
++    void provideIopDescription(std::string text)
++    {
++        {
++            std::lock_guard lock(g_iopMutex);
++            g_iopText = std::move(text);
++            g_iopTextReady = true;
++        }
++        iopDescriptionRequested.store(false, std::memory_order_release);
++        g_iopReady.notify_all();
++    }
++}
+diff --git a/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp b/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
+index 68a796c..1cb03b0 100644
+--- a/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
++++ b/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
+@@ -3,6 +3,7 @@
+ #include <immintrin.h>
+ #endif
+ #include "runtime/ps2_memory.h"
++#include "runtime/ps2_stall_diag.h"
+ #include <cstring>
+ #include <vector>
+ #include <algorithm>
+@@ -258,6 +259,9 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
+ {
+     if (sizeBytes == 0u)
+         return;
++    ps2_stall::count(ps2_stall::Counter::Vif1Chunk); // GOW-Port: GOW_STALL_DIAG.
++    static std::atomic<bool> firstChunk{false};
++    ps2_stall::milestoneOnce(firstChunk, "vif1_datos", sizeBytes);
+ 
+     uint32_t pos = 0;
+     static const bool traceVif = std::getenv("GOW_VIF_DIAG") != nullptr;
+diff --git a/ps2xTest/src/ps2_iop_tests.cpp b/ps2xTest/src/ps2_iop_tests.cpp
+index 4be26c5..09bdca6 100644
+--- a/ps2xTest/src/ps2_iop_tests.cpp
++++ b/ps2xTest/src/ps2_iop_tests.cpp
+@@ -6,6 +6,9 @@
+ #include "../../ps2xIOP/src/emulator/imports/iop_cdvd.h"
+ #include "../../ps2xIOP/src/emulator/core/iop_memory.h"
+ #include "../../ps2xIOP/src/emulator/services/iop_rpc.h"
++#include "runtime/ps2_stall_diag.h"
++
++#include <string>
+ 
+ void register_ps2_iop_tests()
+ {
+@@ -59,6 +62,40 @@ void register_ps2_iop_tests()
+                       "stopping LIBSD should deactivate its RPC endpoint");
+         });
+ 
++        // GOW-Port: GOW_STALL_DIAG describe el núcleo IOP desde el hilo que lo avanza.
++        tc.Run("IopKernel describe reports semaphores and threads for the stall diagnostic", [](TestCase &t)
++        {
++            using namespace ps2x::iop::detail;
++            IopMemory memory;
++            IopKernel kernel(memory);
++            kernel.reset();
++            constexpr uint32_t kDescriptor = 0x2000u;
++            memory.write32(kDescriptor + 0u, 0u);
++            memory.write32(kDescriptor + 4u, 0u);
++            memory.write32(kDescriptor + 8u, 2u);
++            memory.write32(kDescriptor + 12u, 5u);
++            IopCpuState create{};
++            create.gpr[4] = kDescriptor;
++            t.IsTrue(kernel.dispatchSemaphoreImport(4u, create), "CreateSema should be handled");
++            const int id = static_cast<int32_t>(create.gpr[2]);
++
++            std::string text;
++            kernel.describe(text);
++            const std::string expected = "iop sema=" + std::to_string(id) + " cuenta=2/5";
++            t.IsTrue(text.find(expected) != std::string::npos, "describe must list the semaphore count and maximum");
++            t.IsTrue(text.find("[gow-stall]") == 0u, "every line must carry the stall diagnostic tag");
++            t.IsTrue(text.back() == '\n', "describe output must end each line with a newline");
++        });
++
++        tc.Run("stall diagnostic counters stay untouched while GOW_STALL_DIAG is off", [](TestCase &t)
++        {
++            t.IsFalse(ps2_stall::enabled(), "the test environment must not enable GOW_STALL_DIAG");
++            const uint64_t before = ps2_stall::counters[static_cast<size_t>(ps2_stall::Counter::RpcCall)].load();
++            ps2_stall::count(ps2_stall::Counter::RpcCall);
++            t.Equals(ps2_stall::counters[static_cast<size_t>(ps2_stall::Counter::RpcCall)].load(), before,
++                     "count must be a no-op when the diagnostic is disabled");
++        });
++
+         // GOW-Port: 989snd toma su candado del tick con WaitSema desde el servidor RPC (sin hilo actual).
+         tc.Run("WaitSema outside a thread waits for the semaphore instead of faking success", [](TestCase &t)
+         {

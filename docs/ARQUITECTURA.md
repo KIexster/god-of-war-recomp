@@ -12,10 +12,11 @@
    falte ningún archivo de `patches/`. Desde la raíz, `python tools/ci/parches.py` muestra los parches
    y su orden; esa es la referencia para preparar un cambio sobre el runtime fijado.
 
-   Los temas se mantienen en parches separados: arranque y servicios del runtime, EE/FPU/MMI,
-   IOP/audio/memory card, DMA/VIF/GIF/VU y renderizado GS. Los backends CPU/OpenGL, el muestreo,
-   la presentación y el feedback opcional se describen en [`RENDERIZADO.md`](RENDERIZADO.md);
-   los controles ejecutados y sus límites se registran en [`ESTADO.md`](ESTADO.md).
+   Desde 2026-10-15 la base es el runtime de **Waffle565/God-Of-War-Native-Port** (rama `runtime`):
+   `ps2recomp-waffle-runtime.patch` es el diff `c5a9d02..runtime` y ya incluye la pila
+   de parches de este repositorio a fecha de 2026-10-09. Encima van parches pequeños por tema (pruebas
+   adaptadas, VU0 VF0/VI0, lista de entradas de la VU1 nativa, portabilidad a GCC, fuga de la VU1 nativa).
+   La pila anterior queda en `patches/anteriores/` como referencia y no se aplica. Ver "Base del runtime".
 
    Antes de reaplicar la lista, el script retira los archivos que algún parche crea (`new file mode`),
    conservando una limpieza común para nuevos parches. Cada cambio de parches requiere la
@@ -26,8 +27,13 @@
 5. **Recompilador** — compila el objetivo `ps2_recomp`.
 6. **Generación de C++** — rellena `config/recomp.template.toml` (`@ELF@`, `@MAP@`, `@OUT@`) y ejecuta
    `ps2_recomp` sobre `SCUS_973.99`.
-7. **Runtime** — copia el código generado y `src/gow_overrides.cpp` a `ps2xRuntime/src/runner` y compila
-   `ps2EntryRunner` (unity build + PCH).
+7. **IOP nativo (opcional)** — si `GOW_IOP_MODULOS` apunta a una carpeta con `modules.txt`,
+   `tools/iop/iopn_gen.py` compila por adelantado los 8 módulos IRX del juego a C++ en
+   `ps2xIOP/src/native/`. La carpeta se obtiene ejecutando el juego una vez con
+   `PS2X_IOP_DUMP_MODULES=<carpeta>`. Sin ella los IRX corren en el intérprete del IOP.
+8. **Runtime** — copia el código generado y `src/gow_overrides.cpp` a `ps2xRuntime/src/runner` y compila
+   `ps2EntryRunner` (unity build + PCH). Con `GOW_VU1_MICROCODIGO`, CMake genera además la VU1 nativa
+   (`tools/vu1/vu1n_gen.py`, con las entradas extra de `tools/vu1/vu1n_heads.txt`) y la VU1 compilada.
 
 Las trazas `PS2X_ENABLE_RUNTIME_LOGS`, `PS2X_ENABLE_AGRESSIVE_LOGS` y `PS2X_ENABLE_IOP_RPC_TRACE`
 se configuran en `OFF` por defecto; `scripts\2_compilar.cmd -Trazas` las activa para investigar.
@@ -60,16 +66,30 @@ Se registran con `PS2_REGISTER_GAME_OVERRIDE` para el ELF `SCUS_973.99` (entry `
 | `0x0026BF28` | `snd_SendIOPCommandAndWait` (`989snd`) | Registra cada comando (`[gow-snd]`) y llama al original; con `GOW_SND_STUB=1` responde 0 sin pasar por el IOP |
 | `0x00298CE8` | `sceSifLoadStartModuleBuffer` | Módulo IOP embebido `ck01`: se responde como consola retail (`NO_RESIDENT_END`) |
 
-## Parche del runtime (`patches/ps2recomp-runtime.patch`)
+## Base del runtime (Waffle565)
 
-| Archivo | Cambio |
+El runtime de Waffle565 sustituye por código nativo cada pieza del hardware que el juego usaba:
+
+| Capa | Sustituto nativo |
 |---|---|
-| `ps2xIOP/src/modules/gow_stub_services.cpp` *(nuevo)* | Servicio IOP silencioso para el motor de sonido **989snd** (`989nomid.irx`) |
-| `ps2xIOP/src/modules/dbcman.cpp` | Responde a los servidores secundarios de `dbcman` (`0x8000131C/E/F`) |
-| `ps2xIOP/src/iop_subsystem.cpp`, `module_factories.h`, `CMakeLists.txt` | Registro del nuevo servicio |
-| `ps2xRuntime/src/lib/Kernel/Syscalls/System.cpp` | El juego recibe su propio heap |
-| `ps2xRuntime/src/lib/ps2_runtime.cpp` | Heap privado del runtime en `0x000A0000–0x000FF000`; anillo de traza de saltos |
-| `ps2xRuntime/src/lib/Kernel/EeScheduler.cpp` | Ajuste en `makeRunning` |
+| GS | Renderizador OpenGL por render targets (resolución interna 2x, 16:9), almacén de texturas/CLUT en lugar de un modelo de VRAM |
+| VU1 | Microprogramas compilados por adelantado a C++ (`vu1n`); la VU1 exacta queda de respaldo |
+| IOP | Los 8 IRX del juego compilados por adelantado (`tools/iop/iopn_gen.py`) |
+| SPU2 | Motor de sonido nativo guiado por las llamadas LIBSD del juego |
+| Pad / memory card | Servicios nativos, sin modelo de SIO2 |
+| DMA / VIF / GIF | Los paquetes van directos a la VU1 y al GS; el recompilador convierte los accesos a registros de DMA, temporizadores y registros de pantalla del GS en llamadas nativas |
+| Disco | Archivos extraídos junto al ELF (`tools/iso_extract.py --layout`, `.disc_layout`), cada uno en su sector original |
+
+Parches encima de la base, en orden:
+
+| Parche | Contenido |
+|---|---|
+| `ps2recomp-waffle-runtime.patch` | Diff `c5a9d02..runtime` (49ca62c), sin el registro generado |
+| `ps2recomp-waffle-tests.patch` | Retira de `ps2xTest` las pruebas de piezas sustituidas por diseño y adapta `SifInitRpc` al IOP por lotes de 512 ciclos |
+| `ps2recomp-vu0-vf0.patch`, `ps2recomp-vu0-vi0.patch` | VF0 y VI0 de VU0 constantes (#79) |
+| `ps2recomp-vu1n-heads.patch` | `-DPS2X_VU1N_HEADS_FILE` para pasar `tools/vu1/vu1n_heads.txt` |
+| `ps2recomp-waffle-gcc.patch` | Ruta de inclusión de `ee_ref/` y funciones de `VUflags`/`VUops` sin `inline` para GCC |
+| `ps2recomp-vu1n-leak.patch` | `NativeState` de la VU1 nativa en `std::shared_ptr` (se perdía con cada `VU1Interpreter`) |
 
 ## Integración continua
 
@@ -89,14 +109,11 @@ Se registran con `PS2_REGISTER_GAME_OVERRIDE` para el ELF `SCUS_973.99` (entry `
   que use una función del runtime que ningún parche define falla aquí y no solo en Windows.
   `tools/ci/comprobar_pruebas.py` solo falla por pruebas que no estén en `tests/fallos_conocidos.txt`
   (hoy vacía: la suite pasa entera). Cuando una prueba de la lista pase, la CI lo avisa para quitarla.
-  La CI incluye `tools/ci/pruebas_gs.cmake` en su checkout temporal de PS2Recomp para compilar y
-  ejecutar `tests/gs_replay_test.cpp`: captura/replay CPU, parser, truncamiento, opciones inválidas y
-  comienzo después de TEXFLUSH, sin el juego ni contexto OpenGL. Los archivos sintéticos quedan
-  en el directorio temporal de compilación.
-  También compila la CLI `repetir_gs` y ejecuta los controles de
-  `tests/gs_replay_checkpoints_test.cpp` y `tests/gs_replay_cli_test.py`:
-  variación intermedia aunque el End coincida, argumentos, repetición CPU
-  y límite previo de controles sincronizados. No requieren contexto OpenGL.
+  La CI incluye `tools/ci/pruebas_gs.cmake` y `tools/ci/pruebas_vu1.cmake` en su checkout temporal de
+  PS2Recomp para compilar y ejecutar los controles de FINISH del GS y de la VU1 compilada (pares, DIV, FMAC),
+  estos con `GOW_VU1_NATIVE_OFF=1` porque la VU1 nativa va primero. Las herramientas de replay y feedback del
+  GS y el cliente del módulo GS de PCSX2 se retiraron con la migración: usaban el rasterizador CPU y el
+  observador externo del GS, que el runtime de Waffle565 no tiene.
 
 `.github/workflows/estado.yml` regenera el mapa de estado (`docs/estado/`) cuando cambian sus datos.
 

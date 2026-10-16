@@ -69,6 +69,10 @@ def run_session(runner, elf, card, script, seconds, folder, label):
     env = os.environ.copy()
     env.update(zonas.PLAY_ENV)
     env.update({"GOW_MC0": str(card), "GOW_PAD_GUION": script})
+    captures = [4, 10, 18, 26, 34, 44, 56, 70, 90, 110, 130, 160, 190, 220,
+                230, 240, 250, 260, 270, 280, 295, 310, 320, 360, 480]
+    captures += [f"g{second}" for second in (2, 5, 10, 15, 20, 25)]
+    env["GOW_PAD_CAPTURAS"] = ",".join(map(str, captures))
     env.pop("GOW_ISO", None)
     with log_path.open("wb") as log:
         proc = subprocess.Popen([str(runner), str(elf)], cwd=runner.parent, env=env,

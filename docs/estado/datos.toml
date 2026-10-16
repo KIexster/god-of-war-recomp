@@ -18,7 +18,7 @@ hasta = 0x0029BBA4
 nombre = "libmpeg"
 inicio = 0x0026F228
 estado = "parcial"
-nota = { es = "La intro FMV se decodifica por software y se presenta sin GOW_SKIP_FMV; falta verificar el resto de vídeos", en = "The FMV intro is software-decoded and displayed without GOW_SKIP_FMV; other videos remain unverified", pt = "A intro FMV é decodificada por software e exibida sem GOW_SKIP_FMV; os demais vídeos ainda precisam ser verificados" }
+nota = { es = "Vídeos con libmpeg2 nativo y sonido (Waffle565 reproduce todos los del disco); aquí se juega con GOW_SKIP_FMV y falta repetirlo", en = "Movies through native libmpeg2 with sound (Waffle565 plays every movie of the disc); runs here use GOW_SKIP_FMV, still to be repeated", pt = "Vídeos com libmpeg2 nativo e som (o Waffle565 reproduz todos os do disco); aqui se joga com GOW_SKIP_FMV e falta repetir" }
 
 [[librerias.grupo]]
 nombre = "libipu"
@@ -40,31 +40,31 @@ estado = "ok"
 nombre = "libcdvd"
 inicio = 0x0027A340
 estado = "ok"
-nota = { es = "Lee la ISO original", en = "Reads the original ISO", pt = "Lê a ISO original" }
+nota = { es = "Lee los archivos del disco extraídos junto al ELF (.disc_layout); la ISO solo con GOW_ISO", en = "Reads the disc files extracted next to the ELF (.disc_layout); the ISO only with GOW_ISO", pt = "Lê os arquivos do disco extraídos ao lado do ELF (.disc_layout); a ISO só com GOW_ISO" }
 
 [[librerias.grupo]]
 nombre = "libdbc"
 inicio = 0x0027ACA8
 estado = "parcial"
-nota = { es = "RPC de dbcman y SIO2 verificados al cargar y guardar en tarjeta; los mandos SIO2 aún se ven desconectados", en = "dbcman RPC and SIO2 verified for card loading and saving; SIO2 controllers still read as disconnected", pt = "RPC de dbcman e SIO2 verificados ao carregar e salvar no cartão; os controles SIO2 ainda aparecem desconectados" }
+nota = { es = "Servicios nativos de mando y tarjeta en lugar del SIO2 emulado", en = "Native controller and card services instead of the emulated SIO2", pt = "Serviços nativos de controle e cartão em vez do SIO2 emulado" }
 
 [[librerias.grupo]]
 nombre = "libpad2"
 inicio = 0x0027B7E8
 estado = "parcial"
-nota = { es = "HLE del primer puerto (teclado o gamepad); presiones 0/255", en = "HLE for the first port (keyboard or gamepad); pressures 0/255", pt = "HLE da primeira porta (teclado ou gamepad); pressões 0/255" }
+nota = { es = "Servicio de mando nativo (teclado y gamepad); presiones 0/255", en = "Native controller service (keyboard and gamepad); pressures 0/255", pt = "Serviço de controle nativo (teclado e gamepad); pressões 0/255" }
 
 [[librerias.grupo]]
 nombre = "libvib"
 inicio = 0x0027BF90
 estado = "pendiente"
-nota = { es = "Sin vibración: el HLE no anuncia actuadores", en = "No rumble: the HLE reports no actuators", pt = "Sem vibração: o HLE não anuncia atuadores" }
+nota = { es = "Vibración nativa del runtime de Waffle565 (XInput, DualShock 4/DualSense); sin verificar aquí", en = "Native rumble from the Waffle565 runtime (XInput, DualShock 4/DualSense); not verified here", pt = "Vibração nativa do runtime do Waffle565 (XInput, DualShock 4/DualSense); não verificada aqui" }
 
 [[librerias.grupo]]
 nombre = "libmc2"
 inicio = 0x0027C100
 estado = "parcial"
-nota = { es = "Listar, cargar, guardar y recargar verificados con una copia de tarjeta PCSX2 de 8 MB con ECC; faltan formateo y reapertura en PCSX2", en = "Listing, loading, saving and reloading verified with a copied 8 MB PCSX2 card with ECC; formatting and reopening in PCSX2 remain unverified", pt = "Listar, carregar, salvar e recarregar verificados com uma cópia de cartão PCSX2 de 8 MB com ECC; faltam formatação e reabertura no PCSX2" }
+nota = { es = "Servicio de memory card nativo (sin SIO2); Waffle565 verificó cargar y guardar; aquí no repetido tras la migración", en = "Native memory card service (no SIO2); Waffle565 verified loading and saving; not repeated here after the migration", pt = "Serviço de memory card nativo (sem SIO2); o Waffle565 verificou carregar e salvar; aqui não repetido após a migração" }
 
 [[librerias.grupo]]
 nombre = "libscf"
@@ -159,13 +159,14 @@ nombre = "EE"
   nombre = { es = "Controlador DMA", en = "DMA controller", pt = "Controlador DMA" }
   estado = "ok"
   peso = 2
-  nota = { es = "Las cadenas fromSPR/toSPR ya copian la paleta de huesos; formas de Kratos y enemigos verificadas en partida", en = "fromSPR/toSPR chains now copy the bone palette; Kratos and enemy shapes verified in gameplay", pt = "As cadeias fromSPR/toSPR já copiam a paleta de ossos; formas de Kratos e inimigos verificadas na partida" }
+  nota = { es = "Servicio DMA nativo: las cadenas van directas a VIF1/VU1 y al GS, sin modelo del controlador; búferes reutilizables", en = "Native DMA service: chains go straight to VIF1/VU1 and the GS, with no controller model; reusable buffers", pt = "Serviço DMA nativo: as cadeias vão direto para VIF1/VU1 e o GS, sem modelo do controlador; buffers reutilizáveis" }
 
   [[hardware.grupo.componente]]
   corto = "Timers"
   nombre = { es = "Temporizadores", en = "Timers", pt = "Temporizadores" }
   estado = "ok"
   peso = 1
+  nota = { es = "Reloj nativo del EE: el recompilador convierte las lecturas de los temporizadores en llamadas al reloj", en = "Native EE clock: the recompiler turns timer reads into clock calls", pt = "Relógio nativo do EE: o recompilador converte as leituras dos temporizadores em chamadas ao relógio" }
 
 [[hardware.grupo]]
 nombre = "GS / VU"
@@ -175,21 +176,21 @@ nombre = "GS / VU"
   nombre = { es = "GS: primitivas y framebuffer", en = "GS: primitives and framebuffer", pt = "GS: primitivas e framebuffer" }
   estado = "parcial"
   peso = 3
-  nota = { es = "CPU/OpenGL conservados; barco, Kratos, enemigos y HUD visibles. Orden color/Z y alias por ancho/vuelta validados. Feedback inestable acotado a 33 envíos; snapshot opcional estable en 64 pasadas, aún distinto de CPU. Z de solo lectura retenido; profiler GPU por variante y frontera de consultas verificado; falta cobertura completa", en = "CPU/OpenGL retained; ship, Kratos, enemies and HUD visible. Color/Z ordering and width/wrap aliases validated. Unstable feedback narrowed to 33 submissions; optional snapshot stable over 64 passes, still different from CPU. Read-only depth optimization withheld; per-variant GPU profiling and query boundary verified; coverage remains incomplete", pt = "CPU/OpenGL mantidos; barco, Kratos, inimigos e HUD visíveis. Ordem cor/Z e aliases por largura/volta validados. Feedback instável limitado a 33 envios; snapshot opcional estável em 64 passagens, ainda diferente da CPU. Z de somente leitura retido; profiler GPU por variante e limite de consultas verificado; falta cobertura completa" }
+  nota = { es = "Renderizador OpenGL nativo por render targets (Waffle565), resolución interna 2x; menú, barco, combate y HUD correctos aquí, 4 zonas en Waffle565; falta un recorrido completo", en = "Native OpenGL render-target renderer (Waffle565), 2x internal resolution; menu, ship, combat and HUD correct here, 4 zones at Waffle565; a full playthrough is pending", pt = "Renderizador OpenGL nativo por render targets (Waffle565), resolução interna 2x; menu, barco, combate e HUD corretos aqui, 4 zonas no Waffle565; falta um percurso completo" }
 
   [[hardware.grupo.componente]]
   corto = "VIF1/VU1"
   nombre = { es = "VIF1 y VU1", en = "VIF1 and VU1", pt = "VIF1 e VU1" }
   estado = "parcial"
   peso = 3
-  nota = { es = "Bloques compilados, flags persistentes, SSE de cuatro carriles, DIV compilado y flags confirmados al leerlos (intérprete 333 → 293 ms por cuadro); regresión FTZ/DAZ conserva underflow. Modelos y HUD visibles tras MMI/EFU/SPR. En partida cargada VU1 ocupa ~35 % del hilo del juego y la espera a la GPU ~31 %; falta certificar cobertura y rendimiento sostenido", en = "Compiled blocks, persistent flags, four-lane SSE, compiled DIV and flags committed when read (interpreter 333 → 293 ms per frame); FTZ/DAZ regression preserves underflow. Models and HUD visible after MMI/EFU/SPR fixes. In loaded gameplay VU1 takes ~35% of the game thread and waiting on the GPU ~31%; coverage and sustained performance remain unverified", pt = "Blocos compilados, flags persistentes, SSE de quatro vias, DIV compilado e flags confirmados ao serem lidos (interpretador 333 → 293 ms por quadro); regressão FTZ/DAZ preserva underflow. Modelos e HUD visíveis após MMI/EFU/SPR. Em partida carregada a VU1 ocupa ~35 % da thread do jogo e a espera pela GPU ~31 %; falta verificar cobertura e rendimento sustentado" }
+  nota = { es = "VU1 nativa compilada por adelantado (100 % de los bloques en el barco) y UNPACK rápido; barco a ~53-56 flips/s, objetivo 60", en = "Ahead-of-time native VU1 (100% of the blocks on the ship) and fast UNPACK; ship at ~53-56 flips/s, target 60", pt = "VU1 nativa compilada antecipadamente (100 % dos blocos no barco) e UNPACK rápido; barco a ~53-56 flips/s, objetivo 60" }
 
   [[hardware.grupo.componente]]
   corto = "Tex/CLUT"
   nombre = { es = "GS: texturas, CLUT y fuentes", en = "GS: textures, CLUT and fonts", pt = "GS: texturas, CLUT e fontes" }
   estado = "parcial"
   peso = 2
-  nota = { es = "HUD visible; bilineal y nearest STQ CPU/OpenGL verificados, incluidos límites 16.16 con signo, con patrones procedurales de PCSX2 software; feedback GPU estable en modo experimental; lotes de texturas regionales optimizados y verificados en los 13 PSM; quedan pendientes la caché GS real y la cobertura de fuentes/CLUT", en = "HUD visible; CPU/OpenGL bilinear and nearest STQ verified, including signed 16.16 boundaries, against procedural PCSX2 software patterns; GPU feedback stable in an experimental mode; regional texture batches optimized and verified across all 13 PSMs; real GS cache and full font/CLUT coverage remain unverified", pt = "HUD visível; bilinear e nearest STQ CPU/OpenGL verificados, incluindo limites 16.16 com sinal, com padrões procedurais de PCSX2 software; feedback GPU estável em modo experimental; lotes de texturas regionais otimizados e verificados nos 13 PSMs; cache GS real e cobertura de fontes/CLUT ainda não verificadas" }
+  nota = { es = "Almacén nativo de texturas y CLUT en lugar de un modelo de VRAM; HUD y fuentes del menú correctos en las capturas", en = "Native texture and CLUT store instead of a VRAM model; HUD and menu fonts correct in the captures", pt = "Armazém nativo de texturas e CLUT em vez de um modelo de VRAM; HUD e fontes do menu corretos nas capturas" }
 
   [[hardware.grupo.componente]]
   corto = "GIF"
@@ -202,30 +203,31 @@ nombre = "GS / VU"
   nombre = { es = "IPU: vídeo FMV", en = "IPU: FMV video", pt = "IPU: vídeo FMV" }
   estado = "parcial"
   peso = 2
-  nota = { es = "La intro FMV funciona por decodificación MPEG por software; no demuestra emulación completa del hardware IPU", en = "The FMV intro works through software MPEG decoding; this does not establish complete IPU hardware emulation", pt = "A intro FMV funciona por decodificação MPEG por software; isso não comprova emulação completa do hardware IPU" }
+  nota = { es = "Sin IPU: el decodificador MPEG nativo toma los datos del PSS; Waffle565 verificó todos los vídeos con sonido", en = "No IPU: the native MPEG decoder takes the data from the PSS; Waffle565 verified every movie with sound", pt = "Sem IPU: o decodificador MPEG nativo pega os dados do PSS; o Waffle565 verificou todos os vídeos com som" }
 
 [[hardware.grupo]]
 nombre = "IOP"
 
   [[hardware.grupo.componente]]
   corto = "R3000A"
-  nombre = { es = "CPU R3000A (intérprete)", en = "R3000A CPU (interpreter)", pt = "CPU R3000A (interpretador)" }
+  nombre = { es = "CPU R3000A (IRX compilados a C++)", en = "R3000A CPU (IRX compiled to C++)", pt = "CPU R3000A (IRX compilados para C++)" }
   estado = "ok"
   peso = 3
-  nota = { es = "Planificador ocioso de Opus integrado y validado con GS/VU1: recuerda el próximo despertar; su perfil reduce IOP de ~1300–1500 a ~570–650 ms cada 5 s; falta una comparación de FPS sin compilaciones concurrentes", en = "Opus idle scheduler integrated and validated with GS/VU1: caches the next wake-up; its profile reduces IOP from ~1300–1500 to ~570–650 ms per 5 s; an FPS comparison without concurrent builds remains pending", pt = "Escalonador ocioso de Opus integrado e validado com GS/VU1: guarda o próximo despertar; seu perfil reduz IOP de ~1300–1500 para ~570–650 ms a cada 5 s; falta comparar FPS sem compilações simultâneas" }
+  nota = { es = "Los 8 IRX del juego compilados por adelantado (opcional, con un volcado): partida a 21 s en lugar de 34 s; sin volcado, intérprete", en = "The game's 8 IRX compiled ahead of time (optional, from a dump): gameplay at 21 s instead of 34 s; without a dump, interpreter", pt = "Os 8 IRX do jogo compilados antecipadamente (opcional, com um dump): partida aos 21 s em vez de 34 s; sem dump, interpretador" }
 
   [[hardware.grupo.componente]]
   corto = "SPU2"
   nombre = { es = "SPU2: salida de audio", en = "SPU2: audio output", pt = "SPU2: saída de áudio" }
   estado = "parcial"
   peso = 3
-  nota = { es = "Bancos cargados y sonido continuo en tiempo emulado verificados; a ~2 fps se oye entrecortado; faltan reverb y ADMA", en = "Bank loading and continuous sound in emulated time verified; at ~2 fps playback stutters; reverb and ADMA are missing", pt = "Carregamento de bancos e som contínuo em tempo emulado verificados; a ~2 fps o áudio tem cortes; faltam reverb e ADMA" }
+  nota = { es = "Motor de sonido nativo guiado por las llamadas LIBSD del juego (Waffle565); aquí falta una escucha sostenida tras la migración", en = "Native sound engine driven by the game's LIBSD calls (Waffle565); a sustained listening check is pending here after the migration", pt = "Motor de som nativo guiado pelas chamadas LIBSD do jogo (Waffle565); aqui falta uma escuta prolongada após a migração" }
 
   [[hardware.grupo.componente]]
   corto = "IRX"
   nombre = { es = "Módulos IRX originales", en = "Original IRX modules", pt = "Módulos IRX originais" }
   estado = "ok"
   peso = 2
+  nota = { es = "Los IRX originales, en el intérprete o compilados a C++", en = "The original IRX, in the interpreter or compiled to C++", pt = "Os IRX originais, no interpretador ou compilados para C++" }
 
   [[hardware.grupo.componente]]
   corto = "SIF"
@@ -235,20 +237,21 @@ nombre = "IOP"
 
   [[hardware.grupo.componente]]
   corto = "CDVD"
-  nombre = { es = "CDVD: lectura de la ISO original", en = "CDVD: reading the original ISO", pt = "CDVD: leitura da ISO original" }
+  nombre = { es = "CDVD: archivos del disco extraído", en = "CDVD: extracted disc files", pt = "CDVD: arquivos do disco extraído" }
   estado = "ok"
   peso = 2
+  nota = { es = "Cada archivo en su sector original (.disc_layout); la ISO solo con GOW_ISO", en = "Each file at its original sector (.disc_layout); the ISO only with GOW_ISO", pt = "Cada arquivo no seu setor original (.disc_layout); a ISO só com GOW_ISO" }
 
   [[hardware.grupo.componente]]
   corto = "Pad"
   nombre = { es = "Mando DualShock 2", en = "DualShock 2 controller", pt = "Controle DualShock 2" }
   estado = "parcial"
   peso = 2
-  nota = { es = "libpad2 por HLE (primer puerto); en el SIO2 emulado los mandos se ven desconectados", en = "libpad2 via HLE (first port); controllers read as disconnected on the emulated SIO2", pt = "libpad2 por HLE (primeira porta); no SIO2 emulado os controles aparecem desconectados" }
+  nota = { es = "Servicio de mando nativo (teclado y gamepad, sin SIO2); presiones 0/255", en = "Native controller service (keyboard and gamepad, no SIO2); pressures 0/255", pt = "Serviço de controle nativo (teclado e gamepad, sem SIO2); pressões 0/255" }
 
   [[hardware.grupo.componente]]
   corto = "MC"
-  nombre = { es = "SIO2: memory card", en = "SIO2: memory card", pt = "SIO2: memory card" }
+  nombre = { es = "Memory card", en = "Memory card", pt = "Memory card" }
   estado = "parcial"
   peso = 2
-  nota = { es = "SIO2 y tarjeta de 8 MB con ECC: cargar, guardar y recargar verificados en el juego sobre una copia PCSX2; faltan formateo y reapertura en PCSX2", en = "SIO2 and 8 MB card with ECC: loading, saving and reloading verified in-game on a PCSX2 copy; formatting and reopening in PCSX2 remain unverified", pt = "SIO2 e cartão de 8 MB com ECC: carregar, salvar e recarregar verificados no jogo em uma cópia PCSX2; faltam formatação e reabertura no PCSX2" }
+  nota = { es = "Servicio nativo (sin SIO2); Waffle565 verificó cargar y guardar; aquí no repetido tras la migración", en = "Native service (no SIO2); Waffle565 verified loading and saving; not repeated here after the migration", pt = "Serviço nativo (sem SIO2); o Waffle565 verificou carregar e salvar; aqui não repetido após a migração" }

@@ -63,6 +63,24 @@ python tools/rendimiento/resumir.py logs/perf_ram_1.log --partida --desde 100 --
 python tools/rendimiento/resumir.py logs/perf_compartida_1.log --partida --desde 100 --hasta 220
 ```
 
+El perfilador fija también las opciones de concurrencia y las deja desactivadas por defecto,
+aunque el proceso padre las tenga activadas. Para comparar el camino base con VU1/GS en hilos,
+usa el mismo renderer, escena y ejecutable en ambas pasadas:
+
+```powershell
+.\scripts\probar_rendimiento.ps1 -Renderer opengl -Presentacion compartida -SoloCuadros -Segundos 150 -Etiqueta base
+.\scripts\probar_rendimiento.ps1 -Renderer opengl -Presentacion compartida -SoloCuadros -Vu1Hilo -GsFrente -FinishAsync -Segundos 150 -Etiqueta hilos
+python tools/rendimiento/resumir.py logs/perf_base.log --partida --desde 50 --hasta 140
+python tools/rendimiento/resumir.py logs/perf_hilos.log --partida --desde 50 --hasta 140
+```
+
+`-GsFrente` requiere `-Vu1Hilo`. El script restaura las variables heredadas al terminar y muestra
+el modo usado al inicio. Usa el mismo hash del ejecutable en ambas pasadas.
+
+Para diagnosticar carga GPU se puede activar `-GpuProfile -HardwareLog`. El profiler usa timestamps
+de GPU y cambia el ritmo de la partida; este modo sirve para localizar raster/compute y tiempos de
+compilación de variantes, no para medir FPS. Ambos diagnósticos se restauran al valor heredado.
+
 Usar el mismo ejecutable y estado inicial de tarjeta en todas las pasadas,
 conservar su SHA-256 y alternar el orden al repetir. `-SoloCuadros` reduce el
 coste del perfil; `guest_flip_hz` cuenta entradas reales en `vid::Flip`, mientras
@@ -842,3 +860,14 @@ medidor: en cada cuadro (`GOW_PERF_FRAME_PC`) suma el paso de tiempo del juego (
 En los muelles, con hilos de VU1 y GS, cuatro partidas alternando: velocidad 1,00 con y sin `GOW_VBLANK_REALTIME`, y
 19,9 / 20,0 frente a 19,9 / 19,9 cuadros/s. Aquí el juego ya va a tiempo real, así que el VBlank en tiempo real no se
 trae.
+
+## Transferencias de texturas P4 por tramos de fila
+
+La optimización `WriteRun`/`UploadAligned` de [Waffle565/God-Of-War-Native-Port](https://github.com/Waffle565/God-Of-War-Native-Port/blob/main/docs/performance.md)
+evita calcular las coordenadas de cada texel P4 individualmente. En este port la ruta habitual ya envía la imagen al
+compute shader de OpenGL, así que `ps2recomp-gs-p4-row-runs.patch` adapta la idea a esa ruta: el host divide la
+transferencia en tramos de fila y cada grupo del shader recibe el origen, la longitud y la coordenada de destino. El
+shader evita así la división y el módulo por píxel; los demás formatos mantienen el indexado previo.
+
+La mejora aún no se ha medido en este port. Hay que comparar el mismo tramo de juego con y sin el parche y confirmar
+que las transferencias P4 mantienen paridad visual antes de atribuirle una mejora de rendimiento.

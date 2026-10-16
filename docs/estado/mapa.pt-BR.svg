@@ -934,21 +934,21 @@
 <text class="t1" x="321.4" y="349.9" font-size="11" pointer-events="none">libdbc</text>
 <text class="t1" x="460" y="102" font-size="14">Hardware do PS2: 60.5%</text>
 <rect class="grupo" x="460" y="112" width="424" height="260"/>
-<rect class="ok" x="461.5" y="113.5" width="92.5" height="79.6"><title>CPU R3000A (interpretador) — Escalonador ocioso de Opus integrado e validado com GS/VU1: guarda o próximo despertar; seu perfil reduz IOP de ~1300–1500 para ~570–650 ms a cada 5 s; falta comparar FPS sem compilações simultâneas</title></rect>
+<rect class="ok" x="461.5" y="113.5" width="92.5" height="79.6"><title>CPU R3000A (IRX compilados para C++) — Os 8 IRX do jogo compilados antecipadamente (opcional, com um dump): partida aos 21 s em vez de 34 s; sem dump, interpretador</title></rect>
 <text class="badge-t" x="507.7" y="157.2" font-size="11" text-anchor="middle" pointer-events="none">R3000A</text>
-<rect class="ok" x="555" y="113.5" width="61.3" height="79.6"><title>Módulos IRX originais</title></rect>
+<rect class="ok" x="555" y="113.5" width="61.3" height="79.6"><title>Módulos IRX originais — Os IRX originais, no interpretador ou compilados para C++</title></rect>
 <text class="badge-t" x="585.6" y="157.2" font-size="11" text-anchor="middle" pointer-events="none">IRX</text>
 <rect class="ok" x="461.5" y="194.1" width="76.9" height="63.5"><title>SIF: RPC e DMA EE ↔ IOP</title></rect>
 <text class="badge-t" x="499.9" y="229.7" font-size="11" text-anchor="middle" pointer-events="none">SIF</text>
-<rect class="ok" x="539.4" y="194.1" width="76.9" height="63.5"><title>CDVD: leitura da ISO original</title></rect>
+<rect class="ok" x="539.4" y="194.1" width="76.9" height="63.5"><title>CDVD: arquivos do disco extraído — Cada arquivo no seu setor original (.disc_layout); a ISO só com GOW_ISO</title></rect>
 <text class="badge-t" x="577.8" y="229.7" font-size="11" text-anchor="middle" pointer-events="none">CDVD</text>
-<rect class="parcial" x="461.5" y="258.6" width="65.8" height="111.9"><title>SPU2: saída de áudio — Carregamento de bancos e som contínuo em tempo emulado verificados; a ~2 fps o áudio tem cortes; faltam reverb e ADMA</title></rect>
+<rect class="parcial" x="461.5" y="258.6" width="65.8" height="111.9"><title>SPU2: saída de áudio — Motor de som nativo guiado pelas chamadas LIBSD do jogo (Waffle565); aqui falta uma escuta prolongada após a migração</title></rect>
 <rect x="461.5" y="258.6" width="65.8" height="111.9" fill="url(#rayas)" pointer-events="none"/>
 <text class="badge-v-oscuro" x="494.4" y="318.4" font-size="11" text-anchor="middle" pointer-events="none">SPU2</text>
-<rect class="parcial" x="528.3" y="258.6" width="88" height="55.4"><title>Controle DualShock 2 — libpad2 por HLE (primeira porta); no SIO2 emulado os controles aparecem desconectados</title></rect>
+<rect class="parcial" x="528.3" y="258.6" width="88" height="55.4"><title>Controle DualShock 2 — Serviço de controle nativo (teclado e gamepad, sem SIO2); pressões 0/255</title></rect>
 <rect x="528.3" y="258.6" width="88" height="55.4" fill="url(#rayas)" pointer-events="none"/>
 <text class="badge-v-oscuro" x="572.3" y="290.2" font-size="11" text-anchor="middle" pointer-events="none">Pad</text>
-<rect class="parcial" x="528.3" y="315.1" width="88" height="55.4"><title>SIO2: memory card — SIO2 e cartão de 8 MB com ECC: carregar, salvar e recarregar verificados no jogo em uma cópia PCSX2; faltam formatação e reabertura no PCSX2</title></rect>
+<rect class="parcial" x="528.3" y="315.1" width="88" height="55.4"><title>Memory card — Serviço nativo (sem SIO2); o Waffle565 verificou carregar e salvar; aqui não repetido após a migração</title></rect>
 <rect x="528.3" y="315.1" width="88" height="55.4" fill="url(#rayas)" pointer-events="none"/>
 <text class="badge-v-oscuro" x="572.3" y="346.6" font-size="11" text-anchor="middle" pointer-events="none">MC</text>
 <rect class="ok" x="619.3" y="113.5" width="144.9" height="85"><title>CPU R5900 (recompilada para C++)</title></rect>
@@ -959,22 +959,22 @@
 <text class="badge-t" x="735.5" y="245.8" font-size="11" text-anchor="middle" pointer-events="none">FPU/MMI</text>
 <rect class="ok" x="619.3" y="285.5" width="57.4" height="85"><title>INTC: VSync e interrupção do GS</title></rect>
 <text class="badge-t" x="647.9" y="331.9" font-size="11" text-anchor="middle" pointer-events="none">INTC</text>
-<rect class="ok" x="677.6" y="285.5" width="57.4" height="85"><title>Controlador DMA — As cadeias fromSPR/toSPR já copiam a paleta de ossos; formas de Kratos e inimigos verificadas na partida</title></rect>
+<rect class="ok" x="677.6" y="285.5" width="57.4" height="85"><title>Controlador DMA — Serviço DMA nativo: as cadeias vão direto para VIF1/VU1 e o GS, sem modelo do controlador; buffers reutilizáveis</title></rect>
 <text class="badge-t" x="706.3" y="331.9" font-size="11" text-anchor="middle" pointer-events="none">DMAC</text>
-<rect class="ok" x="736" y="285.5" width="28.2" height="85"><title>Temporizadores</title></rect>
+<rect class="ok" x="736" y="285.5" width="28.2" height="85"><title>Temporizadores — Relógio nativo do EE: o recompilador converte as leituras dos temporizadores em chamadas ao relógio</title></rect>
 <text class="badge-t" x="750.1" y="331.9" font-size="11" text-anchor="middle" transform="rotate(-90 750.1 328)" pointer-events="none">Timers</text>
 <rect class="ok" x="767.2" y="113.5" width="45.5" height="106.5"><title>GIF (PATH1-3)</title></rect>
 <text class="badge-t" x="789.9" y="170.6" font-size="11" text-anchor="middle" pointer-events="none">GIF</text>
-<rect class="parcial" x="813.7" y="113.5" width="68.8" height="106.5"><title>GS: primitivas e framebuffer — CPU/OpenGL mantidos; barco, Kratos, inimigos e HUD visíveis. Ordem cor/Z e aliases por largura/volta validados. Feedback instável limitado a 33 envios; snapshot opcional estável em 64 passagens, ainda diferente da CPU. Z de somente leitura retido; profiler GPU por variante e limite de consultas verificado; falta cobertura completa</title></rect>
+<rect class="parcial" x="813.7" y="113.5" width="68.8" height="106.5"><title>GS: primitivas e framebuffer — Renderizador OpenGL nativo por render targets (Waffle565), resolução interna 2x; menu, barco, combate e HUD corretos aqui, 4 zonas no Waffle565; falta um percurso completo</title></rect>
 <rect x="813.7" y="113.5" width="68.8" height="106.5" fill="url(#rayas)" pointer-events="none"/>
 <text class="badge-v-oscuro" x="848.1" y="170.6" font-size="11" text-anchor="middle" pointer-events="none">GS</text>
-<rect class="parcial" x="767.2" y="221" width="115.3" height="63.5"><title>VIF1 e VU1 — Blocos compilados, flags persistentes, SSE de quatro vias, DIV compilado e flags confirmados ao serem lidos (interpretador 333 → 293 ms por quadro); regressão FTZ/DAZ preserva underflow. Modelos e HUD visíveis após MMI/EFU/SPR. Em partida carregada a VU1 ocupa ~35 % da thread do jogo e a espera pela GPU ~31 %; falta verificar cobertura e rendimento sustentado</title></rect>
+<rect class="parcial" x="767.2" y="221" width="115.3" height="63.5"><title>VIF1 e VU1 — VU1 nativa compilada antecipadamente (100 % dos blocos no barco) e UNPACK rápido; barco a ~53-56 flips/s, objetivo 60</title></rect>
 <rect x="767.2" y="221" width="115.3" height="63.5" fill="url(#rayas)" pointer-events="none"/>
 <text class="badge-v-oscuro" x="824.8" y="256.6" font-size="11" text-anchor="middle" pointer-events="none">VIF1/VU1</text>
-<rect class="parcial" x="767.2" y="285.5" width="57.2" height="85"><title>GS: texturas, CLUT e fontes — HUD visível; bilinear e nearest STQ CPU/OpenGL verificados, incluindo limites 16.16 com sinal, com padrões procedurais de PCSX2 software; feedback GPU estável em modo experimental; lotes de texturas regionais otimizados e verificados nos 13 PSMs; cache GS real e cobertura de fontes/CLUT ainda não verificadas</title></rect>
+<rect class="parcial" x="767.2" y="285.5" width="57.2" height="85"><title>GS: texturas, CLUT e fontes — Armazém nativo de texturas e CLUT em vez de um modelo de VRAM; HUD e fontes do menu corretos nas capturas</title></rect>
 <rect x="767.2" y="285.5" width="57.2" height="85" fill="url(#rayas)" pointer-events="none"/>
 <text class="badge-v-oscuro" x="795.8" y="331.1" font-size="9" text-anchor="middle" pointer-events="none">Tex/CLUT</text>
-<rect class="parcial" x="825.3" y="285.5" width="57.2" height="85"><title>IPU: vídeo FMV — A intro FMV funciona por decodificação MPEG por software; isso não comprova emulação completa do hardware IPU</title></rect>
+<rect class="parcial" x="825.3" y="285.5" width="57.2" height="85"><title>IPU: vídeo FMV — Sem IPU: o decodificador MPEG nativo pega os dados do PSS; o Waffle565 verificou todos os vídeos com som</title></rect>
 <rect x="825.3" y="285.5" width="57.2" height="85" fill="url(#rayas)" pointer-events="none"/>
 <text class="badge-v-oscuro" x="853.9" y="331.9" font-size="11" text-anchor="middle" pointer-events="none">IPU</text>
 <rect class="chip" x="462" y="114" width="27.8" height="15" rx="2" pointer-events="none"/>

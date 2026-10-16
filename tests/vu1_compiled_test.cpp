@@ -21,6 +21,9 @@ namespace {
 constexpr uint32_t nop = 0x2ffu, lowerNop = 0x8000033cu, e = 0x40000000u;
 constexpr uint32_t divStart = 128u, divPairs = 14u, divBytes = divPairs * 8u;
 constexpr uint32_t specialStart = 0x1000u;
+constexpr uint32_t timingStart = 0x2000u;
+constexpr uint32_t delayedTimingStart = 0x3000u;
+constexpr uint32_t splitTimingStart = 0x3800u;
 constexpr uint32_t upper(uint32_t op, uint32_t dest, uint32_t ft, uint32_t fs, uint32_t fd) {
     return op | (dest<<21) | (ft<<16) | (fs<<11) | (fd<<6);
 }
@@ -95,6 +98,25 @@ std::vector<uint8_t> program() {
         {lowerNop,nop},
     }};
     std::memcpy(code.data()+specialStart,sp.data(),sizeof(sp));
+    // Bloque largo con lecturas solo de registros de entrada: debe tomar la ruta sin comprobaciones por par.
+    for (uint32_t i=0; i<9u; ++i) {
+        std::array<uint32_t,2> pair{lowerNop,upper(0x28u,8u,2u,1u,3u)};
+        if (i==8u) pair[1] |= e;
+        std::memcpy(code.data()+timingStart+i*8u,pair.data(),sizeof(pair));
+    }
+    const std::array<std::array<uint32_t,2>,2> delayed{{
+        {(0x20u<<25)|(static_cast<uint32_t>(-513)&0x1fffffu),upper(0x29u,1u,2u,3u,1u)},
+        {lowerNop,nop},
+    }};
+    std::memcpy(code.data()+delayedTimingStart,delayed.data(),sizeof(delayed));
+    // Dos tramos rápidos separados por una dependencia VF interna que debe conservar su espera dinámica.
+    for(uint32_t i=0;i<10u;++i) {
+        std::array<uint32_t,2> pair{lowerNop,upper(0x28u,4u,3u,2u,5u)};
+        if(i==4u) pair[1]=upper(0x28u,1u,3u,2u,1u); // escribe vf1
+        if(i==5u) pair[1]=upper(0x28u,3u,1u,2u,3u); // lee vf1 antes de estar lista
+        if(i==9u) pair[1]|=e;
+        std::memcpy(code.data()+splitTimingStart+i*8u,pair.data(),sizeof(pair));
+    }
     return code;
 }
 struct Result {
@@ -102,7 +124,7 @@ struct Result {
     std::vector<uint8_t> data;
     bool budget=false;
 };
-Result run(bool compiled, bool queues, unsigned mutation, uint32_t budget, bool resume) {
+Result run(bool compiled, bool queues, unsigned mutation, uint32_t budget, bool resume, uint32_t start=0u) {
     PS2Memory mem;
     if(!mem.initialize()) throw "initialize";
     GS gs; gs.init(mem.getGSVRAM(),4u*1024u*1024u,&mem.gs());
@@ -117,7 +139,7 @@ Result run(bool compiled, bool queues, unsigned mutation, uint32_t budget, bool 
     vu.state().vf[1][0]=std::numeric_limits<float>::min();
     vu.state().vf[2][0]=0.5f;
     vu.state().vf[5][0]=1.f;
-    vu.execute(mem.getVU1Code(),PS2_VU1_CODE_SIZE,mem.getVU1Data(),PS2_VU1_DATA_SIZE,gs,&mem,0,0,0,budget);
+    vu.execute(mem.getVU1Code(),PS2_VU1_CODE_SIZE,mem.getVU1Data(),PS2_VU1_DATA_SIZE,gs,&mem,start,0,0,budget);
     if(resume) for(unsigned i=0;i<64 && vu.lastRunHitBudget();++i)
         vu.resume(mem.getVU1Code(),PS2_VU1_CODE_SIZE,mem.getVU1Data(),PS2_VU1_DATA_SIZE,gs,&mem,0,0,64);
     return {vu.state(),{mem.getVU1Data(),mem.getVU1Data()+PS2_VU1_DATA_SIZE},vu.lastRunHitBudget()};
@@ -331,6 +353,29 @@ int main(int argc,char **argv) {
             ++cases;
         }
     std::printf("VU1 compilada: %u casos exactos (bloques, palabras modificadas, reservada, colas y presupuesto/reanudacion)\n",cases);
+    const auto timedRef=run(false,false,0u,65536u,false,timingStart);
+    const auto timedGot=run(true,false,0u,65536u,false,timingStart);
+    if(!same(timedRef,timedGot)) {
+        std::fprintf(stderr,"VU1 bloque sin esperas distinta: ciclos=%llu/%llu\n", static_cast<unsigned long long>(timedRef.state.cycles),static_cast<unsigned long long>(timedGot.state.cycles));
+        return 1;
+    }
+    std::printf("VU1 temporizacion estatica: bloque de 9 pares exacto\n");
+    const auto delayedRef=run(false,false,0u,65536u,false,delayedTimingStart);
+    const auto delayedGot=run(true,false,0u,65536u,false,delayedTimingStart);
+    if(!same(delayedRef,delayedGot)) {
+        std::fprintf(stderr,"VU1 fallback de espera externa distinto: ciclos=%llu/%llu\n",
+            static_cast<unsigned long long>(delayedRef.state.cycles),static_cast<unsigned long long>(delayedGot.state.cycles));
+        return 1;
+    }
+    std::printf("VU1 temporizacion estatica: fallback conserva espera externa\n");
+    const auto splitRef=run(false,false,0u,65536u,false,splitTimingStart);
+    const auto splitGot=run(true,false,0u,65536u,false,splitTimingStart);
+    if(!same(splitRef,splitGot)) {
+        std::fprintf(stderr,"VU1 tramos rápidos con hazard interno distintos: ciclos=%llu/%llu\n",
+            static_cast<unsigned long long>(splitRef.state.cycles),static_cast<unsigned long long>(splitGot.state.cycles));
+        return 1;
+    }
+    std::printf("VU1 temporizacion estatica: dos tramos rápidos conservan el hazard interno\n");
     if(!divCases()) return 1;
     if(!specialCases()) return 1;
     return 0;

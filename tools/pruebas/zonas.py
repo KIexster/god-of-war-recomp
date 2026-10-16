@@ -21,6 +21,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PLAY_ENV = {
+    "PS2X_GS_WORKER": "1",
+    "GOW_GS_FINISH_ASINCRONO": "1",
     "GOW_PAD_TEST": "1",
     "GOW_PAD_SOLO_GUION": "1",
     "GOW_SKIP_FMV": "1",
@@ -28,6 +30,7 @@ PLAY_ENV = {
     "GOW_PERF_DIAG": "1",
     "GOW_PERF_FRAME_PC": "0x001837B8",
     "GOW_DELTA_DIAG": "1",
+    "GOW_PLAYER_TRACE": "1",
 }
 ERROR_PATTERNS = [
     (r"No exact recompiled function", "función recompilada ausente"),
@@ -69,12 +72,11 @@ def elf_path(explicit=None):
 
 
 def validate_layout(elf):
-    # PS2Recomp configura el CD root desde la carpeta del ELF: el modo --layout
-    # debe dejar allí el TOC y los PAK que smpd abre por nombre.
-    missing = [name for name in ("GODOFWAR.TOC", "PART1.PAK", "PART2.PAK") if not (elf.parent / name).is_file()]
+    # PS2Recomp sirve el disco desde el ELF: metadatos y archivos extraídos deben compartir carpeta.
+    missing = [name for name in (".disc_layout", ".disc_meta", "GODOFWAR.TOC", "PART1.PAK", "PART2.PAK")
+               if not (elf.parent / name).is_file()]
     if missing:
-        tool_note = "" if (ROOT / "tools" / "iso_extract.py").is_file() else "; tampoco existe tools/iso_extract.py en este checkout"
-        raise FileNotFoundError(f"Layout incompleto junto al ELF ({', '.join(missing)}); prepara el disco con tools/iso_extract.py --layout y define GOW_ELF a ese layout{tool_note}")
+        raise FileNotFoundError(f"Layout incompleto junto al ELF ({', '.join(missing)}); extrae con `python tools/iso_extract.py <ISO> game --layout` y define GOW_ELF a game\\SCUS_973.99")
 
 
 def card_path(explicit=None):
@@ -178,14 +180,15 @@ def run_zone(slot, args, runner, elf, source_card, outdir):
         keys.append(f"{t:g}:derecha:0.3")
         t += 1.5
     keys.append("90:x")
-    t = 145.0
+    t = 8.0
     for direction in ("mover_abajo", "mover_derecha", "mover_arriba", "mover_izquierda"):
-        keys.append(f"{t:g}:{direction}:3")
+        keys.append(f"g{t:g}:{direction}:3")
         t += 5
     env = os.environ.copy()
     env.update(PLAY_ENV)
     env["GOW_MC0"] = str(card)
     env["GOW_PAD_GUION"] = ",".join(keys)
+    env["GOW_PAD_CAPTURAS"] = ",".join(f"g{t}" for t in (0, 2, 5, 8, 13, 18, 23))
     env.pop("GOW_ISO", None)  # el runner lee los archivos ya extraídos junto al ELF
     log_path = zone / "ejecucion.log"
     for old in runner.parent.glob("gow_pad_test_*.ppm"):
@@ -204,6 +207,7 @@ def run_zone(slot, args, runner, elf, source_card, outdir):
             failures.append(f"{label}: {count}")
     perf = re.findall(r"guest_flip_hz=([0-9.]+)", text)
     state = re.findall(r"\[gow-pad2:test\].*?state=(\d+).*?levelReady=(\d+)", text)
+    zones_seen = sorted(set(re.findall(r"\[gow-player\].*?zone=(\S+)", text)))
     captures = []
     for path in sorted(runner.parent.glob("gow_pad_test_*.ppm")):
         dest = zone / path.name
@@ -221,7 +225,20 @@ def run_zone(slot, args, runner, elf, source_card, outdir):
         warnings.append("las capturas requieren revisión visual; el log no identifica la zona por nombre")
     if state:
         warnings.append("se registró estado del juego: " + ", ".join(f"estado {s}/nivel listo {l}" for s, l in state[-4:]))
-    return {"slot": slot, "termino_antes": died, "codigo": code, "fps_ultimos": [float(x) for x in perf[-4:]],
+    gameplay = re.search(r"\[gow-pad2:test\] gameplay start at ([0-9.]+) s", text)
+    if not gameplay:
+        failures.append("no se alcanzó el inicio de gameplay (estado 11 sin tareas pendientes)")
+    fps = [float(x) for x in perf[-4:]]
+    if fps and min(fps) < args.min_fps:
+        failures.append(f"guest_flip_hz mínimo {min(fps):.1f} bajo el umbral {args.min_fps:.1f}")
+    speeds = [float(x) for x in re.findall(r"\[gow-speed\].*?speed=([0-9.]+)", text)][-20:]
+    if speeds and not 0.9 <= sum(speeds) / len(speeds) <= 1.1:
+        warnings.append(f"velocidad media del juego {sum(speeds) / len(speeds):.2f}× tiempo real")
+    return {"slot": slot, "termino_antes": died, "codigo": code,
+            "inicio_gameplay_s": float(gameplay.group(1)) if gameplay else None,
+            "velocidad_juego": [sum(speeds) / len(speeds), min(speeds), max(speeds)] if speeds else None,
+            "zonas_detectadas": zones_seen,
+            "fps_ultimos": fps,
             "estados": state[-4:], "capturas": captures, "fallos": failures, "avisos": warnings,
             "errores_de_runtime": [label for pattern, label in ERROR_PATTERNS if re.search(pattern, text, re.IGNORECASE)]}
 
@@ -233,6 +250,7 @@ def main():
     ap.add_argument("--elf")
     ap.add_argument("--card")
     ap.add_argument("--secs", type=float, default=200)
+    ap.add_argument("--min-fps", type=float, default=25.0)
     ap.add_argument("--out", default=str(ROOT / "logs" / "pruebas" / "zonas"))
     args = ap.parse_args()
     stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -266,6 +284,9 @@ def main():
                      f"{', '.join(r['errores_de_runtime']) or 'ninguno detectado'} | "
                      f"{'FALLO: ' + '; '.join(r['fallos']) if r['fallos'] else 'sin fallos detectados'} |")
         lines += ["", f"## Ranura {r['slot']}", ""]
+        lines += [f"- Inicio de gameplay: {r['inicio_gameplay_s']} s desde el runner; velocidad: "
+                  f"{'%.2f× (%.2f–%.2f)' % tuple(r['velocidad_juego']) if r['velocidad_juego'] else 'sin muestra'}."]
+        lines += [f"- Zonas que informó el trazado del jugador: {', '.join(r['zonas_detectadas']) or 'ninguna'}."]
         lines += [f"- Captura `{c['archivo']}`: {c['ancho']}×{c['alto']}, luminancia media {c['luminancia_media']}, desviación {c['desviacion']}." for c in r["capturas"]]
         lines += [f"- Aviso: {v}" for v in r["avisos"]]
         lines += [f"- Fallo: {v}" for v in r["fallos"]]

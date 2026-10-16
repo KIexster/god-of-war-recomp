@@ -4716,6 +4716,30 @@ El próximo control activará `GOW_VU1_BUDGET_DIAG=1`, sin aumentar presupuestos
 y examinará magnitudes además de finitud. Primero comprobar PMULTH; las demás
 hipótesis requieren evidencia por separado y no se incorporan arreglos en bloque.
 
+## VF0 constante en VU0 (2026-10-14)
+
+La issue [#66](https://github.com/KIexster/god-of-war-recomp/issues/66) señaló que
+`R5900Context` dejaba `vu0_vf[0]` en cero completo. El constructor ahora inicializa
+VF0 a `(0, 0, 0, 1)`; las traducciones de VU0 ignoran escrituras al vector cero
+sin quitar otros efectos de la instrucción, y `LQC2` a VF0 no carga memoria. Se
+añadieron regresiones para el contexto y para LQC2, QMTC2, VADD, VITOF y VMFIR.
+Las rutas de `VI0` ya ignoraban escrituras de `CTC2`, operaciones VI y cargas/
+incrementos de memoria; `VMTIR` aún podía escribirlo. Un parche adicional lo
+trata como destino constante y la regresión comprueba también que los destinos
+VI distintos de cero sigan escribiendo.
+
+Ambos parches se compilaron con MSVC 19.44 y Ninja 1.12.1; `ps2x_tests` pasó
+622/622 con cero fallos conocidos. También pasan `tools/ci/parches.py`,
+`tools/ci/validar_config.py` y la aplicación limpia de los dos parches en orden.
+
+Revisión del filtro VF0 (2026-10-14): se retiró la búsqueda de la cadena generada
+`ctx->vu0_vf[0] =` y el borrado hasta el siguiente punto y coma. Los emisores de
+VU0 envían ahora las escrituras a `PS2_VU0_VF_WRITE`, que comprueba el destino y
+no evalúa el valor cuando el destino es VF0; las escrituras a otros VF siguen
+iguales y los efectos laterales, como actualizar R en VRNEXT, se conservan.
+Una regresión verifica el comportamiento de VF0/VF1. La serie VF0+VI0 aplicada
+limpiamente y compilada con Ninja pasó `ps2x_tests` 623/623, sin fallos conocidos.
+
 ## PMULTH: compilación completa y regresiones nativas (2026-10-11)
 
 La cadena 102 termina con código 0 en 959,94 s, regenerando los cuatro sitios
@@ -6154,39 +6178,1039 @@ CI verde del HEAD documental final antes de ready/merge. Permanecen abiertas
 la diferencia adquirido/shadow, los detalles frente al software original,
 encuadre, presentación única, desglose de HostWait y estabilidad larga.
 
-### 2026-10-16 — Pruebas adaptadas de Waffle565: ejecución bloqueada por datos ausentes
+### 2026-10-14 — TEXA fusionado; composición PCRTC 109 en validación
 
-Se añadieron `tools/pruebas/zonas.py`, `guardado.py` y `videos.py`, adaptadas
-de Waffle565/God-Of-War-Native-Port `main@34f30d5e432751369177af115104f4d19af6d080`.
-Usan el runner más reciente bajo `$GOW_WORK\PS2Recomp\out\build`, `GOW_ELF`
-del layout extraído, copias aisladas de la tarjeta mediante `GOW_MC0` y
-guardan informes, registros y capturas PPM en `logs/pruebas/` (ignorado por
-Git). La compilación solicitada, `scripts\2_compilar.cmd`, terminó con código
-0 a las 00:27:29; usó `GOW_WORK=C:\Users\Noxi-PC\gow-pr97-bench-work` y
-`GOW_ELF=C:\Users\Noxi-PC\gow-pr97-bench-src\game_base\SCUS_973.99`.
-El ejecutable resultante mide 54.591.488 bytes.
+La PR 77 quedó fusionada en `80f42145d2e9373d02c23685294de40236deed97`.
+Los cuatro checks del HEAD final `14a70b3` terminaron en SUCCESS,
+run [38498133684](https://github.com/KIexster/god-of-war-recomp/actions/runs/38498133684).
+La revisión final es local y acotada; full, menú y controles108 anteriores
+están cerrados dentro del alcance descrito. Persisten las diferencias de
+detalle y entre la imagen adquirida y el shadow, encuadre y estabilidad larga.
 
-Las tres herramientas se invocaron con `python -I` el 16 de octubre a las
-00:28:13. Las tres devolvieron código 2 en su prechequeo; ninguna lanzó el
-runner. La tarjeta indicada por `GOW_MC0` no existe en
-`C:\Users\Noxi-PC\gow-pr97-bench-work\PS2Recomp\out\build\ps2xRuntime\mc0\Mcd001.ps2`.
-Junto al ELF disponible faltan `GODOFWAR.TOC`, `PART1.PAK` y `PART2.PAK`, y
-este checkout tampoco contiene `tools/iso_extract.py`; por tanto no se pudo
-preparar el layout de disco requerido.
+La siguiente sonda usa fuentes CT32 uniformes independientes, páginas0/32,
+salida64×64 progresiva y32 combinaciones EN/MMOD/SLBG/ALP/alpha. CPU y
+OpenGL108 coinciden con el software original en16/32 resultados RGB.
+Cuando solo queda RC1, ambos omiten su mezcla con BGCOLOR; también hay
+errores de un nivel en la aritmética de mezcla. La fuente primaria
+PCSX2 `2954ebe`, `GSDevice11::DoMerge` y `merge.fx`, conserva la mezcla de
+RC1 incluso con RC2 apagado: MMOD selecciona ALP/255 o alpha de RC1×2/255.
+Esto pertenece al compositor de salida, separado del ALPHA del raster.
 
-- **Zonas:** ranuras 1, 2, 3 y 4: ninguna se ejecutó, sin log de juego ni
-  captura. Informe: `logs/pruebas/zonas/20261016_002813/informe.md`.
-- **Guardar/cargar:** no se inició ninguna sesión, no se copió ni modificó
-  una tarjeta, y no se intentó guardar ni recargar. Informe:
-  `logs/pruebas/guardado/20261016_002813/informe.md`.
-- **Vídeos:** no se inició el runner y no se pudo enumerar ningún vídeo porque
-  falta `GODOFWAR.TOC`. Informe:
-  `logs/pruebas/videos/20261016_002813/informe.md`. Además, este port no
-  implementa `GOW_MOVIE_OVERRIDE` ni escribe el nombre del PSS en el log, así
-  que los vídeos que el flujo natural no active no se pueden probar
-  individualmente con el runner actual.
+El candidato109 mezcla también RC1 con BGCOLOR y suma los productos antes
+del redondeo UNORM al entero más cercano, tanto en CPU como en GLSL.
+Los tres modos privados CPU/compute/hardware producen31/32 RGB exactos
+frente al software original. En ALP201, el rojo es232 frente a231; verde61
+y azul120 coinciden. Se mantiene esa diferencia registrada: el modelo
+UNORM ideal da232 y la [especificación D3D11, sección17.5](https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm)
+admite mezcla con precisión igual a la del formato de salida. Es compatible
+con un límite numérico de la referencia, sin demostrar su causa particular
+ni declarar paridad exacta32/32. El espejo hardware original difiere del
+software en cuatro patrones con alpha de framebuffer y tampoco es autoridad
+única. La prueba nueva usa32 esperados del modelo, con el caso201 explicado.
 
-No se encontró ni aisló un fallo de ejecución del juego: las pruebas pararon
-antes de iniciarlo, así que no se abrió un issue de regresión. La sintaxis de
-los tres scripts Python se analizó correctamente; los modos `--help` también
-arrancan con `python -I`.
+Negativos contra la LIB full108: CPU0/2, exit2, GPU0/4, exit4. Candidato
+CPU2/2 y GPU4/4, exit0, OpenGL efectivo comprobado sin fallback. La suite
+incremental normal termina622/622, exit0,13,871s. La primera suite encontró
+seis fallos en controles que pretendían copiar RGB con alpha bajo y MMOD0;
+siete fixtures de copia/stride/latch ahora solicitan MMOD1/ALP255 de forma
+explícita, conservando sus expectativas. El control GPU de copia opaca
+también requiere esa configuración: modificar un píxel negro para darle
+color con alpha0 lo deja negro al mezclar con el fondo. La nueva matriz
+cubre la mezcla por separado. No se añaden fallos conocidos. Suite GPU,
+full109 obligatorio, menú y contraste funcional del ejecutable pendientes.
+
+Otra sonda de450 filas con PCRTC observado108 coincide HW/SW6/6 y difiere
+en CPU/OpenGL con ambas paridades. Los17 registros del mismo burst108 tienen
+SMODE1=0 y SYNCV=0; la referencia `isReallyInterlaced()` requiere CMOD y
+VFP impar, mientras el port duplica filas a partir de SMODE2. `GsSetCrt`
+del runtime configura SMODE2 y todavía no modela esos registros de
+temporización. No se atribuye la diferencia a una paridad equivocada ni
+se cambia el entrelazado en109: falta establecer la configuración efectiva
+de la referencia y la temporización adecuada del port. Estas sondas no
+prueban una causa única de la imagen del juego, FPS ni estabilidad.
+
+El cierre posterior de las suites del candidato 109 registra **622/622
+normal** (13,523 s) y **666/666 GPU** (46,452 s), exit 0, sin fallos conocidos
+ni fallos nuevos. Exe incremental SHA-256
+`17e8efbd9a101d171da0f5c55d3792c8e4424286de8528921d1db509e868f0cc`:
+objetos CPU/GLSL y pruebas 109, pruebas 107/108, LIB runtime full108 y LIB
+anterior de pruebas. No acredita todavía la compilación completa 109.
+El primer GPU terminó 664/666: sus dos fallos eran el control de copia
+mencionado; el ajuste explícito a copia opaca conserva todos los controles
+previos de VRAM, fuentes y campos. Los resultados fallidos se conservan.
+
+La sonda pública nueva reprodujo los 32 RGBA del software original de las
+sondas privadas, módulo SHA-256
+`3ad27ad874ec7e8bcba35396bb2134f158156261d392965978cc43085587db55`, exit 0.
+Config válida (cuatro avisos históricos, cero errores), sintaxis de 25 scripts
+PowerShell, prueba pad2 y revisión de espacios correctas. Continúan pendientes
+full109, menú y contraste funcional del nuevo runner; la PR permanecerá en
+borrador hasta cerrar esa validación y el CI del HEAD final.
+
+### 2026-10-14 — Full109 cerrado y título contrastado con la imagen adquirida
+
+La compilación obligatoria mediante `scripts/2_compilar.cmd` terminó con
+código 0 en 1.050,312 s. Fuente `3fb71484935a1b6f373eb4f6fa62912250627915`,
+109 parches, VU1 compilada, las 501 micromemorias privadas identificadas y
+los 13 archivos `programa0..12` compilados y enlazados. Ejecutable de
+66.302.976 bytes, SHA-256
+`6af0e4c12f4cf5d8061ed478b41ea48c28d93aa52a560456aa499e0cdd02c552`;
+LIB del runtime
+`4b46443ce6d1f93e006d216b75ebcd554e93437aedc764042063b84e348f361d`.
+Manifiesto y resultados privados en `transition109_pcrtc_blend_vu1c_full`.
+Los cuatro checks de esa fuente finalizaron en SUCCESS,
+[run38552301551](https://github.com/KIexster/god-of-war-recomp/actions/runs/38552301551).
+Esto sustituye el estado pendiente de compilación anterior, sin acreditar
+todavía el CI del HEAD documental final ni todo el comportamiento del juego.
+
+El menú obligatorio terminó por límite en 115,314 s, controlador PowerShell
+0. Tarjeta privada intacta, nueve capturas 512×448 y ninguna firma buscada
+de fallo. Dificultad, introducción y barco/Kratos aparecen en las muestras;
+primer informe 11 a 70,19 s y último a 90,19 s. Las capturas 1..3 mostraban
+fuego/rostro sin opciones, y las 0/7 eran negras. No se atribuye una causa
+a esas imágenes. Este script no registró el estado de la ventana y su
+cierre por límite no demuestra salida normal ni estabilidad prolongada.
+
+Para revisar el título se ejecutó un control separado con solo Start a 5 s,
+pero **las cuatro referencias de ese control reciben la misma ejecución**:
+merge DX11 original, shadow OpenGL ligado a la LIB full109, software original
+restaurado desde su Freeze/GIF/VSync y textura adquirida por el host.
+Duración 180,172 s por límite, proceso 1/controlador 0, tarjeta intacta,
+ventana visible sin minimización registrada y estado 3 hasta 170,81 s.
+Se revisaron los cuartetos completos 900/904/908/912 y el adquirido 900:
+todos muestran el título, «New Game» y «Select». La falta de opciones en
+las capturas del script de menú no demuestra una regresión del compositor.
+
+La captura `GowPadTest` llama a `copyLatchedHostPresentationFrame`: en modo
+compartido descarga VRAM **actual** con la solicitud CRTC latched. No copia
+los píxeles de la textura adquirida por la ventana. Esto limita su uso como
+evidencia de lo presentado, sin demostrar por sí solo la causa del fondo
+sin opciones en las muestras anteriores. No se ha modificado esa ruta.
+
+Ráfaga de título Freeze899..End915, 41.187.493 bytes, 23.084 registros,
+SHA-256 `5a83dee1de5422f044dcca690167ab1b690985f005fbb5a40cd2f4bc0b94e88a`.
+Software original restaurado: 17 campos 899..915, código 0, sin historia
+inicial de desentrelazado serializada. Los 16 adquiridos son distintos,
+se correlacionan exactamente con sus registros, tamaño 512×448 y SMODE2=1.
+En 3.305 adquisiciones registradas no hay regresiones de secuencia,
+repeticiones inconsistentes ni cambios de tamaño; distancia de ticks 0..1.
+Esas cifras no miden latencia ni cuadros únicos por segundo.
+
+Adquirido y shadow siguen sin ser idénticos al mismo tick: la ejecución
+compartida no acredita su misma frontera GIF. Tampoco hay igualdad global
+shadow/software: en 915 la diferencia absoluta media RGB es
+2,7159/1,5433/0,6734, con 194.045 píxeles distintos; DX11/software da
+0,7117/0,5857/0,3457. Son estadísticas descriptivas, sin tolerancia global.
+El módulo de captura full109 se validó primero con TEXA48, FOG64, restauración
+SW frente a referencia fresca y rechazo de End truncado antes de crear GS.
+CPU y referencias originales se conservan; no hay `glFinish` global ni
+fences retiradas. La PR80 sigue en borrador hasta cerrar escena, combinado
+con hilos, revisión local final y CI del HEAD final.
+
+### 2026-10-14 — Escena109: mismo prefijo y comparación separada del host
+
+Control compartido síncrono109, VU1 compilada y ambos hilos apagados:
+433,235 s, STOP propio después de End4015 y los 16 HW/shadow/adquiridos.
+Proceso1/controlador0, tarjeta intacta, ventana sin minimización registrada
+y ninguna firma buscada de fallo. Primer estado11 a55,22 s y último a426,94 s.
+No son600 s completos, salida normal ni prueba de estabilidad prolongada.
+
+Freeze3999..End4015:113.832.837 bytes,94.405 registros, SHA-256
+`c04ee2bd36a0a907942c8728ba6f79bbf0c75e9e7572ea793562affb1828190f`.
+Software original restaura esa entrada y repite17 campos3999..4015, código0.
+La historia inicial de desentrelazado no se conserva. Se revisaron los16
+tríos completos de merge DX11/software/shadow109 en contactos, más los
+cuartetos completos4004/4015 con adquirido. Aparecen HUD, Kratos y enemigos.
+El fondo queda cercano a las referencias originales; persisten diferencias
+de líneas y pose. PMODE constante0x8023, SMODE2=0x21fed1 y fuentes208,
+sin cambiar el entrelazado en109.
+
+En4015, región fija x200..339,y0..79: medias RGB shadow
+35,4516/35,3573/30,6859 y software35,2632/35,1795/30,5835. Incluye mástil
+y cuerdas; no acredita igualdad global. En todo el campo, diferencia
+absoluta media shadow−SW4,0995/3,9323/3,4149 RGB, media firmada
+−0,2999/−0,2906/−0,2419, máximo171 y208.847 píxeles distintos.
+DX11−SW tiene media absoluta0,6197/0,6157/0,5630. No hay tolerancia global
+aceptada ni comparación causal con otra pasada por compartir el tick.
+
+Los16 adquiridos4000..4015,512×448, son distintos y se correlacionan
+exactamente con sus registros. En90 adquisiciones registradas no hay
+regresiones, repeticiones inconsistentes, retornos A-B-A ni cambios de
+tamaño; distancia de ticks0. Ninguno de los16 adquiridos es idéntico al
+shadow del mismo tick. En4015 hay216.932 píxeles distintos y media absoluta
+11,8596/11,3732/9,6050 RGB. **La frontera GIF del host sigue sin acreditarse**:
+ese desacuerdo no demuestra por sí solo un fallo de rasterización o de slots.
+Estas pasadas con espejo y readbacks no miden FPS únicos.
+
+La escena cierra un contraste funcional acotado del ejecutable109. El modo
+combinado con entradas de ataque sigue en validación; PR80 permanece en
+borrador hasta su cierre, revisión final y CI del HEAD documental final.
+
+### 2026-10-14 — Combinado109 con ataques cerrado y revisión local
+
+Presentación compartida, FINISH asíncrono y VU1/frente GS en hilos propios,
+confirmados en el registro de arranque:420,056 s por límite, proceso1 y
+controlador0. Tarjeta privada intacta, sin minimización registrada ni firmas
+buscadas de fallo. Primer informe de estado11 a35,09 s y último a416,33 s;
+no aparece estado14 en los informes. El arranque forma parte de los420 s,
+por lo que no son420 s íntegros de partida ni estabilidad prolongada.
+
+Guion Start/X y cuadrado desde40 s cada0,75 s durante0,35 s. Los128 cambios
+de paquete registrados incluyen ataque/neutral en estado11; su cupo limita
+las lecturas conservadas. Se revisaron los16 adquiridos tardíos11999..12040
+en contacto y los completos primero/último: HUD y Kratos ejecutando ataques
+con arcos de las hojas. Son16 RGBA distintos,512×448, SMODE2=0x21fed1,
+correlacionados exactamente con el registro. No se afirma completar una
+sección del juego ni equivalencia frente a otra ejecución por compartir tick.
+
+Las4.096 adquisiciones registradas no muestran regresiones, repeticiones
+inconsistentes, retornos A-B-A ni cambios de tamaño. Distancia entre ticks
+0..4, sin convertirla en tiempo, latencia o FPS únicos. El logger omite
+iteraciones que reutilizan la misma secuencia; cero filas repetidas no
+descarta reutilización por el host. El proceso se detuvo al alcanzar el
+límite: **no se acredita todavía cierre normal**.
+
+Quedan cerrados el full109 obligatorio, menú, negativos/positivos,
+referencia procedural, título/escena en fronteras comunes y este control
+combinado acotado. La revisión final de fuente y alcance es local, sin
+aprobación externa: factor0..255, suma ponderada acotada antes de dividir255,
+alpha conservado durante mezcla y normalizado después. Las pruebas de
+copia solicitan opacidad explícita y conservan sus expectativas; no se
+añaden fallos conocidos. Referencias CPU/DX11/SW y fences preservadas.
+La PR80 necesita el CI del HEAD documental final antes de ready/merge.
+Siguen abiertos frontera GIF del adquirido, líneas/pose, temporización,
+encuadre, desglose de HostWait, cuadros distintos y estabilidad prolongada.
+
+### 2026-10-14 — PCRTC109 fusionado y control de tiempos sin capturas
+
+PR80 fusionada en `ca6bace6eec3f33432229d357d8f6b2bbffe38ae` después de
+los cuatro SUCCESS del HEAD final `286267264027b181997e1438a7fd48874d8996ea`,
+[run38559090776](https://github.com/KIexster/god-of-war-recomp/actions/runs/38559090776).
+La revisión de fuente y evidencia es local, sin aprobación externa.
+
+Otro control usa el mismo runner109 identificado, presentación compartida,
+FINISH asíncrono y ambos hilos, pero sin espejo, hash, readback ni diagnóstico
+de adquisiciones. `GOW_PERF_DIAG=1`, guion Start/X y ataques, tarjeta copiada.
+Termina por límite en 600,164 s, proceso/controlador0. El controlador envía
+WM_CLOSE únicamente a la ventana del PID hijo: el proceso sale con código0
+en 0,147 s, sin recurrir a terminación forzada. Se acredita **cierre solicitado
+de esa ventana**, no final del juego ni salida espontánea. Tarjeta intacta,
+sin minimización registrada ni firmas buscadas; estado11 en los informes
+35,06..596,22 s. El primer plano cambia durante el control; no fue constante.
+
+119 informes de tiempos; 111 tienen estado11 observado en dos reportes
+consecutivos, sin demostrar estado continuo entre muestras. En ellos,
+Flip25,32..49,07/s y host9,11..60/s. Diez ventanas t50,17..95,67 registran
+host9,11..19,64/s y Flip25,32..41,68/s; cien posteriores t100,69..595,73
+registran host55,66..60/s y Flip41..46,6/s. **Son contadores de operaciones,
+no cuadros únicos mostrados**. No hay capturas de esta pasada para alinear
+su cámara/escena con otro control ni declarar una mejora de rendimiento.
+
+HostWait tiene mediana4.979,41 ms en ventanas de unos5 s, mientras Upload
+tiene mediana5,20 ms. El código mide HostWait alrededor de `EndDrawing`
+entero: loteGL, swap, limitador y eventos. Ese ámbito también domina las
+ventanas de host60/s; no prueba por sí solo espera de GPU, fences o swap.
+Los ámbitos de EE/VU/GS/IOP abarcan hilos distintos y no se suman como tiempo
+exclusivo global o porcentaje de CPU. Falta separar los componentes de
+EndDrawing y contar envíos nuevos/reutilizados sin hash/readback. Este
+control de diez minutos no acredita estabilidad prolongada ni todo el juego.
+
+### 2026-10-14 — Referencia de proporción y límites del procesamiento original
+
+Wrapper privado nuevo con `SaveSnapshotToMemory` original y consulta de modo:
+compilación0, 16 patrones de aspecto/ventana y tres rechazos correctos.
+Repite el mismo Freeze/GIF/VSync de la escena109: los17 campos crudos SW
+son idénticos al módulo SW anterior. En4015, Stretch512×448 conserva RGB
+exacto; Auto/4:3 producen597×448 y16:9 produce796×448. Se revisaron el
+Stretch completo y Auto con ventana640×448. Esto separa proporción de
+textura y configuración de presentación del calculador original, sin
+establecer todavía el encuadre físico PS2 ni cambiar la cámara del port.
+
+La configuración efectiva del original en esa entrada es VESA, Automatic,
+PCRTCAntiBlur activado y `isReallyInterlaced=false`: SMODE1=0, SYNCV=0,
+SMODE2=0x21fed1. Otra matriz sintética usa cuatro condiciones CMOD/VFP y
+cuatro INT/FFMD, seis campos por instancia nueva. Sus96 campos HW/SW son
+RGB idénticos. CPU/SW tienen igual tamaño84/96 y RGB exacto0/96; los dos
+modos GPU tienen igual tamaño60/96 y RGB exacto0/96. Las dimensiones cambian
+según configuración; no se impone una igualdad512×448 a todos los casos.
+Con CMOD2 se reconoce NTSC; solo CMOD2+VFP1 activa reallyInterlaced.
+Las diferencias de INT1/FFMD0 persisten con esos registros sintéticos.
+
+También se contrastó PCRTCAntiBlur ON/OFF en instancias SW independientes
+del mismo patrón de filas. ON conserva sus colores originales; OFF mezcla
+filas adyacentes. GPU mezcla y duplica pares de filas. En el control observado,
+los cinco merge originales antes del desentrelazado son RGB idénticos a
+GetCurrent después; ambos difieren del shadow. En el campo6, media absoluta
+GPU−ON2,6161/6,7411/10,2009 RGB y GPU−OFF2,9174/6,5938/10,0112. No son
+tolerancias de escena ni prueba de una causa única. La primera petición de
+trace desde1 fue rechazada por su límite start>=2; corregida a Freeze1,
+merge2..6/End6, terminó0. Ese rechazo no era un fallo del renderer del juego.
+No se modifica bob, paridad, temporización o fences para igualar el oráculo.
+
+### 2026-10-14 — Snapshot y modo efectivo como extensión optativa del módulo
+
+El módulo aislado permite ahora `gow_gs_read_video_info` y
+`gow_gs_read_snapshot`. Mantiene ABI1 y los structs/calls anteriores; una DLL
+antigua puede carecer de los nuevos exports. Snapshot llama al calculador
+original con Stretch/Auto/4:3/16:9, restaura la configuración de aspecto y
+conserva el output crudo. Consulta y lectura usan la misma captura; VSync,
+reset y cierre invalidan la caché. No cambia el renderer del juego ni requiere
+otra compilación de sus archivos generados: es una herramienta aislada.
+
+Compilación local sobre Core original fijado:0; contratos sin dispositivo y
+control GPU de dos ciclos:0. Proporciones, bandas, buffers insuficientes,
+canarios, hilo propietario, conservación de output y reset con secuencia
+repetida comprobados. Al omitir solo invalidación VSync/reset, falla exactamente
+el control de caché antigua después de reset, código1; positivo intacto0.
+La sonda pública `probe_snapshot_reference.py` obtiene16/16 RGBA idénticos
+a la referencia SW privada de aspectos/ventanas. DLL antigua: error explícito
+de función ausente antes de crear GS. Resultados/binarios privados, sin assets
+publicados. Faltan CI del HEAD final y revisión final de esta extensión antes
+de fusionar; no se presenta como corrección ya validada de encuadre del juego.
+
+### 2026-10-14 — Referencia fusionada; opciones públicas de perfil y cierre
+
+PR81 fusionada en `ec7cd43882d8f58c1208ad5828b1e744bc674a8c` después de
+los cuatro SUCCESS del HEAD `e71ad9c32ac5634ee1062b98247488e3368944ba`,
+[run38562439264](https://github.com/KIexster/god-of-war-recomp/actions/runs/38562439264).
+Compilación aislada, contratos, GPU, negativo de caché y sonda anteriores
+cierran esa extensión de referencia; revisión local, sin aprobación externa.
+
+El lanzador `run_transition_control.py` expone ahora `--gpu-profile`,
+`--gpu-stats` y `--request-window-close`, registradas en measurement/result.
+Las dos primeras activan flags ya existentes; no añaden temporizadores al
+runtime. La tercera envía WM_CLOSE solo a una ventana visible del PID del
+hijo creado por Popen, sin activar ventanas. Si no hay ventana, falla el
+envío o el hijo no termina en15s, registra el fallback y usa el handle de
+ese mismo hijo para detenerlo. Un hijo ya cerrado conserva su código y no
+consulta ventanas. Se mantienen los valores predeterminados anteriores.
+
+26 pruebas propias Windows y91 Python completas pasan0: incluyen selección
+del HWND propio, exclusión de ventanas ajenas, conservación del error17,
+timeout/sin ventana, saneado de flags heredadas y metadatos. Control real de
+75,323s con las tres opciones, runner109 sin recompilar: proceso/controlador0,
+WM_CLOSE0en0,303s sin fallback, tarjeta intacta, sin minimización ni firmas
+buscadas. Estado11 en35,08..70,23; no hay imágenes de esa pasada ni prueba de
+estabilidad prolongada o FPS mostrados. Falta CI del HEAD final del lanzador.
+
+### 2026-10-14 — Timestamps GPU109: raster y denominador comprobados
+
+Control privado anterior de240,172s, mismo ejecutable109, sin espejo/hash/
+readbacks, con perfil CPU y GPU y entradas de ataque: proceso/controlador0,
+cierre solicitado de ventana0en0,159s sin forzar. Tarjeta intacta, sin
+minimización registrada ni firmas buscadas; estado11 en35,09..235,62.
+39 ventanas CPU tienen estado11 observado en informes consecutivos, con
+Flip27,44..46,97/s y host10,72..60/s. No comparar su velocidad con otra
+ejecución por coincidir el guion o tick; no hay referencia visual alineada.
+
+El perfil GPU genera2.613 ventanas:2.612 de cuatro intentos y una al cierre.
+Hay ocho avisos de muestras omitidas. En2.083 ventanas de cuatro sin esos
+avisos, sin línea de tiempos intercalada y con último estado observado11,
+raster registra12,93..103,88ms, mediana19,56; present0,02..0,24ms, mediana0,02.
+CLUT tiene mediana0,03ms. Son tiempos de los ámbitos instrumentados por
+timestamps, sin cubrir toda la GPU ni representar utilización o tiempo de CPU.
+
+Se comprobó el denominador en fuente: `profFrame/endFrame` se llama después
+del DispatchCompute de Present y **antes** de PublishShared. No cuenta Flip,
+VSync, adquisiciones o EndDrawing; las ventanas pueden contener trabajo
+acumulado entre intentos. El cierre puede recoger queries pendientes con
+menos intentos. Las ventanas GPU y CPU carecen de una frontera temporal común
+registrada: raster destaca entre los ámbitos medidos, pero no se atribuye
+todavía a él toda la espera de EndDrawing ni se derivan FPS físicos.
+Los resultados apoyan continuar con el desglose de loteGL/swap/limitador/
+eventos y con contadores de secuencias enviadas/reutilizadas. No se modifican
+fences, sincronización, bob, paridad o raster para ocultar la diferencia.
+
+### 2026-10-14 — Candidato110: detalle inclusivo de EndDrawing y envíos reales
+
+Parche nuevo `ps2recomp-gs-host-timing.patch`, al final de la cadena110.
+Con `GOW_PERF_DIAG=1`, raylib llama callbacks alrededor del primer loteGL,
+swap, `WaitTime` condicional y eventos. CMake comprueba la huella del source
+raylib5.5 y compila un `rcore.c` instrumentado en su directorio binario;
+no escribe en el source de FetchContent. La copia privada110 y la fuente
+compartida106..109 conservan su SHA original. Las llamadas, condiciones y
+orden de EndDrawing permanecen; no se usa control manual de frames.
+
+`[gow-perf:host]` comparte t/ventana con `[gow-perf]`. Informa end/batch/swap/
+limiter/events/other_ms y llamadas. **HostWait mantiene su significado
+inclusivo**; las cuatro fases son exclusivas entre sí y están incluidas en
+EndDrawing/HostWait, no se suman otra vez como tiempo global ni CPU%.
+`other_ms` conserva lo no atribuido. Sin diagnóstico el callback es nulo;
+se retira al cerrar el consumidor. `GOW_PERF_DIAG=frames` no activa fases.
+
+Cuenta el View devuelto tras EndDrawing: shared_texture/blank/fallback y RAM
+son categorías disjuntas; ram_blank es subconjunto de RAM. shared_changed/
+reused cuentan primera/cambiada o misma secuencia en Acquire efectivo,
+también si es blank. Cambio de modo/reset separa epochs. Una ausencia de
+Acquire no usa metadata antigua como prueba de reutilización. **Cambiar
+secuencia no acredita RGB distinto ni scanout**, y no se añade hash/readback.
+
+Compilación nueva de suite0/127,219s; normal626/626 y GPU671/671 tanto OFF
+como ON, códigos0. Primer normal625/626 se lanzó desde el directorio binario:
+la prueba de mappings VU0 no encontraba su header relativo. Se corrigió sólo
+el directorio del lanzador; el intento fallido se conserva y no se añaden
+fallos conocidos. Cadena110 reaplicada desde pin, diez archivos del tema iguales.
+
+Control aislado5/5 positivo; raylib109 sin callbacks falla sólo el caso de
+hooks reales,4/5/código1. Consumidor real4/4 positivo; omitir únicamente el
+registro del View falla las tres escalas,1/4/código3. Imágenes, fences y
+referencias CPU/DX11 se conservan. Revisión local, sin aprobación externa.
+**Full110, menú115, control funcional y medición del juego siguen pendientes**;
+todavía no hay resultado de tiempos110 ni mejora de rendimiento declarada.
+
+### 2026-10-14 — Full110 y control funcional del diagnóstico
+
+`scripts/2_compilar.cmd` terminó0 en1.079,539s:110parches, VU1 compilada,
+copia privada501micros y13programas0..12 compilados y enlazados. Fuente
+`7d3461c2d42694bbc12dceb437e6a1812c55269a`; ejecutable66.307.584bytes,
+SHA256`533c9cd7e841b7343c34e6cc3ff86ae5615a35969efcd5cec8a4bef6705852cc`.
+Manifiesto privado `transition110_host_timing_vu1c_full/build.json`.
+Bibliotecas106..109 y source raylib compartido intactos después del full;
+la copia instrumentada de rcore es idéntica entre configuraciones sucesivas.
+
+Menú obligatorio115:115,348s/control0/tarjeta copiada intacta, nueve capturas
+512×448 revisadas. Dificultad4, introducción5..6 y barco8;0y7 negras y1..3
+fondo sin opciones. Son lecturas GowPadTest de VRAM actual/CRTC latched,
+no la textura adquirida: no se declara regresión de título por esas capturas.
+Sin firmas buscadas de fallo ni informes del nuevo perfil con diagnóstico OFF.
+La detención por límite del script no acredita cierre normal del juego.
+
+Otro control combinado dura240,186s: FINISH asíncrono configurado, VU1 y
+frente GS en hilos propios confirmados en registro, presentación compartida,
+entradas Start/X y cuadrado. Estado11 en informes35,05..235,65; no estado14.
+Proceso/controlador0; WM_CLOSE de su propia ventana termina0en0,168s,
+sin fallback. Tarjeta intacta, sin minimización registrada ni firmas buscadas.
+No hay línea que contabilice cada FINISH; se distingue configuración de
+esa opción de la confirmación explícita de los hilos.
+
+Los16adquiridos3999..4031 son RGBA distintos512×448, SMODE2=0x21fed1,
+correlacionados exactamente con su registro. Contacto y primera/última
+completas revisados: HUD, Kratos, enemigos y variación de poses; no se
+afirman arcos de ataque ni completar una sección. Las4.096 adquisiciones
+registradas no muestran regresiones, repeticiones inconsistentes, retornos
+A-B-A ni cambios de tamaño. Distancia de ticks0..9, sin traducirla a latencia.
+El logger antiguo omite reusos; el nuevo contador sí los registra.
+Esta pasada con hashes/capturas no se usa como benchmark ni referencia
+visual de otra partida por coincidir sus ticks.
+
+### 2026-10-14 — Espera de swap, limitador y reutilización medidos sin capturas
+
+Control separado con el mismo runner110 identificado, ambos hilos,
+FINISH asíncrono configurado, sin espejo, hashes, capturas, diagnóstico de
+adquisiciones ni perfil GPU. Dura600,150s, proceso/controlador0. WM_CLOSE
+solicitado sólo al hijo11444: salida0en0,141s sin forzar. Tarjeta intacta,
+sin minimización registrada ni firmas buscadas de fallo. El primer plano
+cambia; no fue constante. Estado11 en informes35,07..596,32, sin14 observado.
+No son600s íntegros de partida ni prueba de estabilidad prolongada/final del juego.
+
+119parejas de informes CPU/detalle con t/ventana iguales, cero errores del
+contrato. Cada EndDrawing/envío tiene una llamada de batch/swap/eventos;
+WaitTime sólo cuenta si se ejecuta. Las fases más residual suman end_ms
+dentro del redondeo de printf; ese total sigue incluido en HostWait.
+
+111ventanas tienen estado11 observado en informes consecutivos, sin probar
+estado continuo entre muestras. Host8,51..60/s y Flip18,93..47,60/s.
+En21ventanas con host<20, situadas en45,16..100,73 y341,01..381,75,
+swap registra4.553,40..5.047,23ms, mediana4.917,07; limitador mediana109,31ms.
+En87ventanas con host≥50, swap12,21..1.938,29ms, mediana154,53;
+limitador3.045,12..4.967,29ms, mediana4.819,00. Las ventanas son de unos5s.
+El perfil localiza la espera dentro de swap en el grupo lento y del limitador
+en el rápido; no demuestra por sí solo una fence, trabajo GPU o política del
+driver como causa. Batch mide el primer lote dentro de EndDrawing, no todo
+el dibujo ni los lotes que el overlay pueda haber enviado antes.
+
+En las111ventanas:27.519envíos de textura,19.432cambios de secuencia y8.087
+reutilizaciones, sin blank/fallback/RAM en ese subconjunto. No representan
+27.519RGB distintos ni scanouts físicos. HostWait mediano4.980,18ms conserva
+su alcance anterior; las fases no se vuelven a sumar a él ni a los ámbitos
+de otros hilos como CPU%. No hay referencia visual alineada en esta pasada.
+
+El CI del HEAD fuente7d3461c terminó con cuatroSUCCESS,
+[run38603697064](https://github.com/KIexster/god-of-war-recomp/actions/runs/38603697064).
+Revisión de fuente/evidencia local, sin aprobación externa. Se conservan
+CPU/DX11/SW, fences y el renderer; **no se declara mejora de FPS**.
+Falta CI del HEAD documental final antes de sacar PR83 de borrador/fusionar.
+Sigue pendiente identificar el prefijo común de comandos adquirido/espejo,
+neblina restante, líneas/pose, encuadre y estabilidad prolongada.
+
+### 2026-10-14 — PR83 fusionada y frontera del módulo de referencia
+
+PR83 fusionada mediante merge en `96b164f143dc62917779d42fbdac32c4a2bfa11c`.
+El HEAD final `d0afe0b6062bc5fb240a5efc4038846b572eb6ba` terminó los cuatro
+trabajos con SUCCESS,
+[run38609264065](https://github.com/KIexster/god-of-war-recomp/actions/runs/38609264065).
+La validación anterior de110 queda cerrada dentro de su alcance; neblina,
+encuadre, causa de la espera de swap y estabilidad prolongada siguen pendientes.
+
+La auditoría de fuente detecta dos límites para comparar adquirido/espejo:
+la petición CRTC se construye bajo stateMutex pero Present se encola después
+de soltarlo, y el observador recibe el span GIF completo antes de que termine
+su procesamiento en el frontend. La secuencia de publicación no acredita un
+prefijo original común. El banco CRTC también tiene lectores host y escrituras
+MMIO/syscalls/DispEnv sin exclusión común visible. No se demuestra aquí un
+solapamiento nativo concreto ni que ese riesgo cause la neblina; atomizar cada
+campo tampoco acreditaría una transacción multirregistro. No se cambian locks,
+fences, sincronización, ABI C++ de observadores ni el renderer del juego.
+
+Como paso acotado, el módulo aislado añade `gow_gs_read_stream_info`, export
+optativo de ABI1 con struct64, sin cambiar los contratos anteriores. Cuenta
+llamadas aceptadas y bytes GIF aceptados por el transporte; conserva ambos cursores del último
+VSync, su campo y secuencia; reset separa epochs aunque se repita la secuencia.
+Las consultas/rechazos no avanzan cursores. La alineación se refiere sólo al
+transporte de16bytes: un tag puede seguir pendiente. GetCurrent disponible no
+prueba composición nueva, y entrada posterior no se atribuye al último VSync.
+No son fingerprints ni certificado de alineación con la imagen del host.
+
+Compilación aislada y contratos sin dispositivo:0. Control GPU con dos ciclos:0,
+2.048 píxeles RGBA exactos por ciclo. Comprueba prefijos antes/después de VSync,
+fragmentos a través de VSync, tag con payload pendiente pero QWORD alineado,
+submit vacío, consultas repetidas, rechazos/hilo propietario y reset pendiente.
+Omitir sólo registro de bytes de VSync produce tres fallos de frontera, código1;
+no avanzar epoch produce sólo el fallo de separación por reset, código1.
+Positivo intacto0;16/16 snapshots RGBA iguales al módulo anterior. DLL previa,
+Core original, runtime y runner110 preservados. No se requiere recompilar el
+juego: no hay parche/runtime/override modificado. Falta revisión/CI final de
+esta extensión antes de fusionarla. El siguiente paso es correlacionar estos
+cursores con eventos completos de la FIFO del host y la imagen compuesta,
+sin equiparar capturas sólo por tick o drenar la ruta compartida.
+
+### 2026-10-14 — Frontera de referencia fusionada y sonda con procedencia
+
+PR84 fusionada en `9aa3423fb1a3e23670bbb78344bd7626ce2180c8`, revisión local
+sin aprobación externa y cuatroSUCCESS del HEAD `0d34424765ac95b278ca16aeab48bf25ae6c4614`,
+[run38612566788](https://github.com/KIexster/god-of-war-recomp/actions/runs/38612566788).
+La sonda de snapshots añade ahora `--stream-info`: guarda los cursores antes
+del patrón, tras submit, tras VSync y tras las capturas. Sólo resuelve el export
+si se pide; los errores se propagan y el handle creado se cierra por finally.
+
+96 pruebas Python completas:0, incluidos layout64, contadores/handles mayores
+de32bits, ABI ctypes, DLL sin export y error de consulta. Controles GPU reales:
+DLL nueva con opción0/0,809s; antigua sin opción0/0,818s; antigua con opción1/
+0,085s, error explícito antes de crear GS. Los16snapshots son RGBA iguales en
+ambas DLL; cursores0→1→2,192bytes aceptados, sin avance por las capturas. Sin
+cambios de runtime/parches/overrides ni recompilación del juego. Falta CI final
+antes de fusionar la opción de sonda.
+
+Un control privado adicional enlazado al frontend y GSThreadedBackend reales
+reproduce la intercalación con barreras explícitas, sin sleeps ni ejecutar el
+juego. El host termina su snapshot, otro hilo entra al observador con un span
+de80bytes y se detiene antes del parser. Present se encola y ejecuta con cero
+Submit; al liberar el parser, se procesa un Submit. Repite con compact1 y0,
+códigos0/0,069s y0/0,079s. El observador y backend final de ese control son de
+prueba: acredita el orden posible de la implementación, no su frecuencia en
+la partida, divergencia visual ni causa de neblina. La futura regresión debe
+marcar ese Present como evento abierto/prefijo distinto; contar spans recibidos
+no basta. No se mueve Present bajo stateMutex ni se drena la ruta compartida.
+
+### 2026-10-14 — ResetGraph: corrupción ALPHA reproducida y candidato111
+
+La PR85 de procedencia de snapshots quedó fusionada en
+`4709806ad0594a507f9e311368f420442d55c03c`, después de revisión local y
+cuatroSUCCESS del HEAD `ae43949304f8d2dd72b3496fdb85f4c2f14e87e9`,
+[run38613982328](https://github.com/KIexster/god-of-war-recomp/actions/runs/38613982328).
+
+Una sonda privada del stub real110, con RAM del runtime y sin ejecutar el
+juego, llama `sceGsResetGraph(mode0,interlace1,omode2,ffmode1)`: devuelve0 y
+emite una DMA; PMODE sigue0 y SMODE2 conserva el centinela0x12345678. A la vez,
+ALPHA_1 cambia de0x8000000064 a3. La causa en fuente es el paquete A+D que
+pretende configurar CRTC usando0x41/0x42:0x42 corresponde a ALPHA_1. No se
+atribuye todavía a este fallo la neblina observada en la partida.
+
+El candidato separado111 `ps2recomp-gs-reset-crtc.patch` cambia sólo esa ruta
+mode0 a una actualización del banco privilegiado de PMODE, SMODE2, ambos
+DISPFB/DISPLAY y BGCOLOR bajo el mutex del frontend, compartido con su snapshot. Mantiene los valores calculados, incluido CRTMDbit2 de
+PMODE. No inyecta comandos GIF ni toca ALPHA; no inventa SMODE1/SYNCV ni decide
+el modo efectivo a partir de registros vacíos. La selección completa de modo
+sigue pendiente: no se modifica bob/paridad para igualar el oráculo.
+
+Regresión nueva en ps2xTest: cuatro combinaciones INT/FFMD, registros CRTC,
+conservación ALPHA_1/2 y ausencia de DMA de dibujo. Contra la biblioteca110
+falla0/1, código1, con cuatro comprobaciones por combinación; contra111 pasa
+1/1, código0. La primera variante MMIO pasa627/627 normal y672/672 GPU OFF/ON,
+códigos0, pero se conserva como histórica: antes de full se ajustó esa ruta
+para mantener el bloqueo de snapshot y se vuelven a validar sus fuentes finales.
+Compilación fresca inicial de suite0/121,297s. Al revisar el esperado de
+PMODE se corrigió0x8001 a0x8005 por CRTMDbit2 y se recompiló antes de ejecutar
+la regresión. **Suites completas, full13/501, menú, control funcional y CI final
+siguen pendientes**: no existe runner111 validado ni mejora visual declarada.
+El runtime110, tarjetas, CPU/DX11/SW y diagnósticos anteriores se conservan.
+
+Las fuentes finales bajo stateMutex pasan627/627 normal0/11,858s y672/672
+GPU tanto OFF0/38,039s como ON0/37,706s. SHA de suite final
+`b82957d494261cb28a6902c0ca1acd019f6cd3089f8c3371253bd96566e2ff67`.
+La cadena111 se reaplica desde pin y sus cuatro archivos coinciden con el
+candidato. Configuración/handlers0 y25scriptsPS1sin errores. El full del juego
+se inicia después de congelar el commit fuente; estas pruebas aún no lo sustituyen.
+
+### 2026-10-14/15 — Runner111 completo y validación acotada de ResetGraph
+
+La compilación completa `scripts/2_compilar.cmd` de la fuente
+`8c5cefe2dfb297187970da037463731fd54d33de` terminó con código 0 en 1.067,821 s:
+111 parches, VU1 compilada, 13 unidades programa0..12 enlazadas y 501 micromemorias
+privadas. El manifiesto final está en
+`E:/gowgpuprof/transition111_reset_graph_vu1c_full/build.json` y sustituye las
+notas históricas de actividad. EXE SHA-256
+`63c3bae7f275e8638a83618f2f8864f4230436f65f2153ff54c3414fb42b62e6`,
+66.307.584 bytes; biblioteca
+`b94efacbfa991f246a47443c31d69a7dd4413abd065b34c61153636c489e015b`.
+Ambas identidades se verificaron después de terminar. Se conservaron los
+runtimes previos, CPU/DX11/SW, tarjetas de origen y micromemorias.
+
+Las fuentes finales bajo `stateMutex` pasan 627/627 pruebas normales y 672/672
+con GPU, tanto con `GOW_PERF_DIAG` desactivado como activado, todos con código 0.
+El nuevo caso incluye cuatro combinaciones INT/FFMD. La regresión contra110
+falla 0/1, código 1; el caso pasa en las fuentes finales dentro de 627/627.
+La variante MMIO previa también pasó 1/1 aislada, sin sustituir la suite final
+bajo mutex. Cadena111 desde pin, configuración, handlers y sintaxis PowerShell
+correctos. CI de fuente8c: cuatro SUCCESS,
+[run38616693562](https://github.com/KIexster/god-of-war-recomp/actions/runs/38616693562).
+
+Menú obligatorio `scripts/probar_menu.ps1 -Segundos 115`: código del script 0,
+115,375 s y nueve capturas de 512×448. Revisión del contacto y captura completa:
+rostro/fuego, dificultad Hero, escena con Kratos y barco con personaje. Las
+muestras 0 y 7 son negras en inicio/transición; el registro llega a estado11
+sin errores del patrón revisado. Tarjeta privada y origen conservan SHA-256
+`47ebe237a3987f843fc19b0f801ce1edc1690768ef6b18e4b03a12ca6b298358`.
+El script detiene al límite: su código 0 no acredita salida normal. Estas
+capturas son GowPadTest (VRAM actual/CRTC latched), no textura adquirida.
+
+Control combinado privado `visual_reset111_a`: 240,170 s, código 0, VU1 y frente
+GS en hilos, FINISH asíncrono y presentación compartida activados. Estado11
+muestreado entre 35,06 y 236,73 s, lecturas reales del guion de mando y tarjeta
+intacta. Sin minimización registrada; el primer plano varió. Las 16 capturas
+adquiridas de 512×448 son RGBA distintas y correlacionan con el registro del
+host: ticks 3999..4030 y SMODE2=0x21fed1. Se revisaron el contacto completo y
+el último cuadro: HUD, Kratos, enemigos, cambios de pose y efecto de ataque
+en el barco. No hay referencia DX11 alineada en esta pasada.
+
+El inspector de 4.096 registros con cupo no encuentra regresión de secuencia
+ni repetición inconsistente; no certifica iteraciones no registradas ni
+ausencia global de reutilización. Sin errores del patrón revisado. WM_CLOSE
+al HWND del PID hijo cierra con código 0 en 0,163 s, sin terminación forzada.
+El límite de 240 s sigue siendo motivo del controlador, no final del juego.
+La pasada contiene hash, readback y perfil: no es un benchmark.
+Artefactos privados en `transition111_reset_graph_vu1c_full/runs/`:
+`menu115_reset111` y `visual_reset111_a`, con resultados, registros y capturas.
+
+Alcance contrastado con el ELF comercial: el ResetGraph original también
+ordena CSR.RESET/FLUSH y tiene rutas de modo que el stub todavía aproxima.
+Esta PR sólo corrige la programación CRTC de mode0 que emitía una escritura
+ALPHA_1 indebida por GIF. Conservar ALPHA en su test caracteriza esa operación
+acotada, no el estado del hardware después de RESET. No valida ResetGraph
+completo, todas las escrituras CRTC/MMIO ni el ABI comercial de GParam.
+No se modifica bob/paridad/SMODE1/SYNCV para forzar una referencia visual.
+
+Siguen pendientes la frontera de comandos entre adquirido y espejo original,
+la neblina restante, el encuadre PS2 y la estabilidad prolongada. Estos
+controles no miden cuadros físicos ni FPS únicos, ni prueban final de nivel.
+No se compararon otras ejecuciones por igualdad de tick.
+
+Revisión local de código, regresión, alcance original y evidencia funcional
+completada, sin aprobación externa. La fusión exige CI del HEAD documental
+final; no hubo cambios de fuente tras el full.
+
+## Atasco intermitente tras la carga del menú: relectura y diagnóstico `GOW_STALL_DIAG` (2026-10-14)
+
+**Relectura del intento bloqueado del runner 105** (registros privados
+`profile_fog105_review_20261013` y su repetición `_repeat_`, misma
+configuración salvo la ruta de la tarjeta; comparación línea a línea sin las
+cachés de shaders). Hechos observados:
+
+- No fue un atasco de arranque: ambos registros son idénticos hasta t≈20 s.
+  Los ocho IRX iniciales se cargaron, el 989snd respondió a 113 órdenes y el
+  juego estuvo en estado 3 a ~47 entradas de `vid::Flip` por segundo.
+- La divergencia aparece tras la pulsación X del guion en t=20 s. En la
+  ejecución correcta llega `[gow-fmv] skipped Semo01` en t≈22 s, luego estado 4
+  (`levelReady=1`) y estado 11 en t≈35 s. En la bloqueada no aparece esa línea,
+  el juego deja de leer el mando y de emitir `[gow-pad2:state]`, y
+  `guest_flip_hz`, `vu_ms` y `gs_ms` caen a cero desde la ventana t=25..30 s.
+- Durante los ~90 s restantes, cada ventana de 5 s reparte el hilo EE en
+  `ee_ms≈3360` e `iop_ms≈1640` (suma ≈5000 ms), con `guest_wait_ms=0`. El
+  host siguió refrescando a 60 Hz.
+
+Inferencia: el EE no está bloqueado en una espera del kernel (no hay tiempo de
+`GuestWait`), sino ejecutando código del juego mientras el IOP avanza por
+porciones; es compatible con un sondeo que espera algo que no llega antes de
+la llamada a la carga del vídeo (0x188CA0). Hipótesis aún sin comprobar: una
+petición asíncrona al IOP (carga o flujo) que no completa. La pareja no
+demuestra relación con `ResetGraph`, el perfil o el guion.
+
+**Diagnóstico nuevo** (`patches/ps2recomp-stall-diag.patch` y
+`src/gow_overrides.cpp`), activado con `GOW_STALL_DIAG=1`, etiqueta
+`[gow-stall]`, tiempos de `steady_clock` comunes a todos los hilos:
+
+- `hito`: primera vez de `ee_run`, `sif_init_rpc`, cada `sif_bind_rpc` (por
+  SID), primera `sif_call_rpc`, primer `sif_dma`, cada `irx`/`irx_buffer`
+  (id y resultado de arranque), primeros datos VIF1, `primer_flip`,
+  `fmv_saltado` y cada estado nuevo del juego observado en `vid::Flip`
+  (`estado_juego`) o por el vigía (`estado_juego_vigia`). Máximo 512 hitos.
+- `latido` cada 5 s desde un hilo vigía propio: incrementos de flips, VBlank,
+  alarmas, llamadas y binds RPC, DMA SIF, porciones IOP, bloques VIF1,
+  señales/esperas/sondeos de semáforos y wakeups del EE, la PC/RA del último
+  despacho EE y las palabras de estado del juego.
+- `volcado` cuando no hay flips durante 3 s tras el primero (a los 3, 10, 30
+  s y luego cada 60 s, máximo 8): hilos EE con estado, motivo e id de espera;
+  semáforos y flags con esperas; histograma de PC/RA de despacho muestreado
+  durante 200 ms; las 12 últimas operaciones SIF RPC con su tiempo; y hilos,
+  semáforos y flags del IOP. El IOP se describe en el hilo EE, en la siguiente
+  porción IOP, a petición del vigía: no se leen estructuras del IOP desde otro
+  hilo.
+
+Límites: la PC es la del último despacho (entrada de función o cabecera de
+bucle), no la instrucción exacta; un bucle interno sin despachos aparece como
+su función. El vigía no cambia esperas, plazos ni el orden del planificador;
+sin la variable, los contadores no se tocan (regresión en `ps2xTest`).
+
+Controles con el juego (compilación completa local de 114 parches, VU1
+compilada con 501 micromemorias, exe SHA-256 `3e375c2d…f301`, 66.339.328 B),
+misma configuración que el intento bloqueado (hilo VU1, frontend GS, FINISH
+asíncrono, presentación directa, `GOW_SKIP_FMV=1`, mismo guion, tarjeta
+intacta copiada por intento) más `GOW_STALL_DIAG=1`:
+
+- Primer intento descartado como comparación: caché de shaders vacía; el
+  backend GPU compiló durante la partida (`gs_ms≈ee_ms≈6 s` por ventana de 5
+  s, `host_hz<1`). El vigía volcó a los 3 s sin flips y luego registró la
+  reanudación; la petición al IOP expiró porque el hilo EE estaba dentro del
+  GS. Sirve como prueba de que el volcado se dispara y se recupera.
+- Once intentos con la caché caliente (uno de 120 s y diez de 60 s), todos
+  correctos: estado 4 en 22,03..22,16 s, `fmv_saltado` en 23,77..23,93 s y
+  estado 11 en 35,36..35,68 s; ~47 entradas a `vid::Flip`/s en estado 3, igual
+  que el registro original. Cierre por `WM_CLOSE`, código 0, tarjeta intacta.
+- **No se reprodujo el atasco** (0 de 11). No hay comparación correcta/bloqueada
+  con el diagnóstico; la causa sigue sin identificar.
+
+Próximo paso: dejar `GOW_STALL_DIAG=1` en los controles largos habituales.
+Si el atasco reaparece, el volcado dirá qué hilo EE corre o espera, la PC de
+despacho, la última RPC y el estado de los hilos del IOP.
+
+## SPU2: perfil `GOW_SPU2_PERF` y coste medido en el barco (2026-10-15)
+
+`patches/ps2recomp-spu2-perf.patch` (solo `spu2.cpp` y su prueba):
+
+- `GOW_SPU2_PERF=1`: una línea `[gow-spu2-perf]` cada 5 s con el tiempo
+  transcurrido de `advanceTo` (muestras), las voces activas por muestra, los
+  bloques ADPCM, DMA (ms y KB), el drenado del hilo de audio (ms, espera de
+  mutex, cuadros pedidos, entregados y faltantes) y los descartes.
+- `GOW_SPU2_PERF=2`: añade los ciclos TSC por sección (envolvente,
+  decodificación, tono/interpolación/mezcla, salida y espera de su mutex),
+  calibrados con el tiempo de `advanceTo` de la misma ventana. Tiene su propio
+  sobrecoste por voz: sirve para repartir, no para medir el total.
+- Regresión `multi-voice mix keeps its reference output hash`: 12 voces en dos
+  núcleos con tonos, ADSR, bucles y KON/KOFF a mitad. El hash FNV-1a
+  `0xa97415b49fd7d37c` coincide con `spu2.cpp` sin instrumentar. Fija la
+  salida observable para futuras optimizaciones.
+
+Medición (exe local de 115 parches, SHA-256 `1b8d2112…07a5`, VU1 compilada,
+misma configuración y guion que los controles de atasco, 150 s por ronda, 20 s
+de pausa, máquina sin compilaciones ni otros juegos; rondas 0/1/0/1/2/2).
+Ventanas de 5 s con t=50..145 s, todas en estado 11 (barco con ataques del
+guion); medianas [mín..máx], 19-20 ventanas por ronda:
+
+| Ronda | `step_ms` | % de la ventana | µs/muestra | muestras/s | voces activas |
+|---|---|---|---|---|---|
+| 2 (nivel 1) | 146,7 [77,0..176,9] | 2,93 [1,54..3,54] | 0,83 | 34.696 | 37,4 |
+| 4 (nivel 1) | 150,6 [77,7..174,6] | 3,01 [1,55..3,49] | 0,87 | 34.698 | 38,9 |
+| 5 (nivel 2) | 166,3 [108,2..187,4] | 3,33 | 1,21 | 26.528 | 39,5 |
+| 6 (nivel 2) | 169,5 [103,1..185,0] | 3,39 | 1,30 | 26.189 | 42,0 |
+
+- Hecho: con el nivel 1, el SPU2 ocupa ≈3 % del tiempo transcurrido del hilo EE
+  (que también ejecuta el IOP). DMA ≈0,37 ms y drenado ≈0,17 ms por ventana.
+  No hay descartes por latencia ni por búfer.
+- Hecho (nivel 2, rondas 5 y 6): del tiempo de voces, la envolvente ≈39 %, el
+  tono/interpolación/mezcla ≈54 % y la decodificación ADPCM ≈7 %. La salida
+  (mezcla maestra y cola) 4,1-4,3 ms por ventana, con 2,3 ms de espera de mutex.
+- Hecho: solo se producen ~34.700 muestras/s de 48.000 (nivel 1). El reloj del
+  SPU2 sigue a los ciclos del IOP, que siguen al EE, y este va por debajo del
+  tiempo real. El hilo de audio pide 48 kHz y recibe de menos: ~66.500 cuadros
+  faltantes por ventana (~28 %), que `ps2_runtime.cpp` rellena con silencio.
+  Inferencia: los cortes de audio en el barco vienen de la velocidad global de
+  la emulación, no del coste del SPU2.
+- Los flips medianos varían mucho entre rondas sin relación con el nivel
+  (nivel 0: 37,4 y 28,7; nivel 1: 41,0 y 40,1; nivel 2: 29,8 y 27,7). Con esta
+  dispersión no se puede cuantificar el sobrecoste del nivel 1. `guest_flip_hz`
+  no son FPS físicos.
+- La estimación antigua del 5 % queda sustituida por estas mediciones. El SPU2
+  no es un cuello de botella: optimizar la envolvente ahorraría como mucho ~1 %
+  del hilo. No se ha hecho ninguna optimización.
+
+Pendiente: decidir cómo tratar el déficit de muestras (estiramiento temporal o
+ritmo de audio) cuando la emulación no llega a tiempo real; es una decisión de
+salida de audio, no de coste del SPU2.
+
+## Perfil por muestreo `GOW_SAMPLER`: reparto del hilo EE en el barco (2026-10-15)
+
+`patches/ps2recomp-sampler.patch` (solo Windows x64). `GOW_SAMPLER=inicio:fin` en segundos, o `1` para
+toda la ejecución. Un hilo propio suspende los hilos EE, VU1 y frontend GS unas 1000 veces por segundo,
+copia su pila (RIP más `RtlVirtualUnwind`) en un búfer preasignado, sin reservar memoria mientras el hilo
+está suspendido, y lo reanuda. Al cerrar simboliza con DbgHelp (`ps2EntryRunner.pdb` junto al exe) e
+imprime `[gow-sampler]` con las 40 funciones con más muestras propias e inclusivas por hilo. Son muestras
+de tiempo de reloj del hilo, incluidas las esperas, no uso exclusivo de CPU.
+
+Primera medición: `main` `ed181a8` más el muestreador, exe `20e87cea…`, VU1 compilada, guion y
+configuración de los controles anteriores, `GOW_PERF_DIAG=frames` (sin relojes por subsistema),
+muestreo de 50 a 145 s en estado 11. Resultado: 51.059 muestras por hilo, intervalo real 1,86 ms,
+ninguna fallida. Hilo EE, porcentaje de muestras:
+
+| Inclusivo | % | Lectura |
+|---|---|---|
+| `GS::notifyExternalVSync` → `RtlSleepConditionVariableSRW` | 28,5 | el EE espera al GS en cada VBlank |
+| `PS2Runtime::advanceIopEeCycles` | 31,9 | emulación del IOP; `runCycles` 27,1, `serviceSpu2` 9,7 |
+| `PS2Memory::advanceEeTimers` | 9,4 | propio: recorre los 4 temporizadores en cada punto de control |
+| `ps2_stall::enabled` + `ps2_perf::enabled` | 2,9 | propio: guarda de estáticas locales sin inlinear |
+| Código del juego (`sub_…`) y resto | ~27 | p. ej. `sub_00162F18` 6,9 incl., `sub_0017A1D0` 6,6 |
+
+- Hecho: más del 40 % del hilo EE se va en avanzar el IOP y los temporizadores desde cada punto de
+  control (`checkpointDue`, 43 % inclusivo), y casi todo es comprobar que no hay nada que hacer.
+  `executeInstruction` del IOP solo suma un 2,4 % propio.
+- Hecho: el 28,5 % del hilo EE está bloqueado esperando al GS dentro de `notifyExternalVSync` (área de
+  GS/presentación). Se documenta para quien lleva esa área; aquí no se toca.
+- `ps2_stall::enabled` (1,6 %) lo introdujo el diagnóstico de atascos (#87): se corrige en el parche
+  siguiente, junto con el camino rápido del IOP y los temporizadores.
+## Punto de control del EE más barato: IOP ocioso exacto y temporizadores perezosos (2026-10-15)
+
+`patches/ps2recomp-checkpoint-fast.patch`, a partir del reparto medido con `GOW_SAMPLER` (sección anterior):
+
+- **IOP ocioso:** `IopEmulator::runEeCycles` solo suma ciclos mientras el IOP no tenga hilos listos y el
+  objetivo quede por debajo del primer evento posible: despertar de un hilo, fin de DMA, callback,
+  evento de temporizador del IOP o siguiente muestra del SPU2. Es exactamente lo que haría `runCycles` en
+  ese tramo. El límite se invalida con cualquier entrada externa (RPC, SIF, carga de módulos, escrituras
+  de memoria) y con un cambio de versión del núcleo IOP.
+- **Temporizadores del EE perezosos:** `advanceEeTimers` acumula ciclos hasta la próxima interrupción
+  posible (`cyclesUntilNextEeTimerInterrupt`) y los aplica antes de cualquier lectura o escritura de sus
+  registros. Aplicarlos de una vez o a trozos da la misma cuenta y el mismo resto del reloj.
+- `ps2_stall::enabled` y `ps2_perf::enabled/countFrames` leen globales `inline const` en vez de
+  estáticas locales con guarda (2,9 % del hilo EE en el muestreo).
+- Regresiones: un IOP ocioso avanzado en 200.000 pasos irregulares conserva ciclos y muestras tras cada
+  paso; temporizadores perezosos frente a aplicación inmediata en 300.000 pasos (mismas interrupciones,
+  cuentas y plazo). Ambas fallan con una mutación del límite (comprobado).
+
+Medición en el barco (exe A `20e87cea…` = `main` más el muestreador; exe B `9e61941e…` = A más este
+parche; 3 rondas de 150 s por lado alternas A/B, ventanas de 5 s con t=50..145, `GOW_PERF_DIAG=frames`,
+`GOW_SPU2_PERF=1`, `GOW_DELTA_DIAG=1`):
+
+| Métrica (mediana [mín..máx]) | A | B |
+|---|---|---|
+| velocidad de juego (`[gow-delta]`, 1,00 = tiempo real) | 0,91 [0,60..1,76] | 1,00 [0,84..1,10] |
+| muestras de SPU2 por segundo | 44.365 [34.295..83.716] | 49.436 [48.295..50.331] |
+| entradas a `vid::Flip` por segundo | 30,1 [16,3..101,6] | 30,3 [17,5..60,2] |
+
+- Hecho: con el parche el juego mantiene la velocidad real y el SPU2 produce las muestras de tiempo
+  real. El déficit de ~28 % de silencio medido antes desaparece. Las muestras quedan ~3 % por encima de
+  48 kHz; se vigila.
+- Hecho: los flips medianos no cambian (~30, dos VBlank por cuadro). La mejora es de regularidad y
+  velocidad, no de FPS. `guest_flip_hz` no son FPS físicos. `host_hz` fue bimodal (17 en dos rondas B,
+  60 en una) y no se atribuye.
+- Muestreo de B (`sampler_cpfast`): el hilo EE espera el 57 % del tiempo (antes 28 %); `checkpointDue`
+  pasa de 43 a 21,7 % inclusivo, el IOP de 31,9 a 14,1 %, la espera en `notifyExternalVSync` de 28,5 a
+  10,1 %, y `advanceEeTimers` queda en 5,9 % propio. El bucle `0x17A2A0` lee T0 en cada vuelta y fuerza
+  la aplicación; el siguiente paso sería un reloj nativo para los temporizadores sin eventos.
+- Anomalía (área de presentación): en una ronda A el hilo del host dejó de iterar hacia t≈5..10 s
+  (solo una línea `[gow-perf]`, la ventana no atendió `WM_CLOSE` y hubo que terminarla), mientras el
+  juego seguía en estado 11. Sus FPS no se usan; su audio y velocidad sí.
+
+## Portes de Waffle565: NAX del SPU2 y accesos rápidos del EE (2026-10-15)
+
+[Waffle565/God-Of-War-Native-Port](https://github.com/Waffle565/God-Of-War-Native-Port) partió de la pila de
+parches de este repositorio el 2026-10-09. Se portan, con su atribución en los parches y en los commits:
+
+- `ps2recomp-spu2-nax.patch` (runtime@65e1d79): el registro NAX se lee dentro del bloque que suena, como
+  `NextA` en PCSX2. Nuestro NAX apuntaba al bloque siguiente; en el último bloque de una mitad del anillo
+  de streaming quedaba fuera de las dos mitades y 989snd (989NOMID.IRX 0x13258) abortaba el flujo (error
+  0x35): la música se reiniciaba cada pocos segundos. Regresión: NAX dentro del bloque en un anillo de dos
+  bloques; falla con el código anterior (comprobado). El hash de referencia del SPU2 no cambia.
+- `ps2recomp-ee-fast-access.patch` (runtime@96f61ab y la parte de macros de runtime@e96ee58): las macros
+  `READ*`/`WRITE*` acceden al scratchpad directamente cuando el acceso está alineado, y `SET_GPR_*` escriben
+  los 64 bits bajos con un solo almacenamiento. Regresiones para el scratchpad (y su alias `0xF0000000`) y
+  para la semántica de GPR (extensión de signo, 64 bits altos intactos, `$zero`).
+
+Validación: `ps2x_tests` 640/640 con los dos parches y la VU1 nativa encima. Compilación completa local
+(exe `ad179aa4…`): el barco llega al estado 11 y cierra con `WM_CLOSE`, código 0, con la VU1 nativa
+desactivada. No se ha medido de oído el arreglo de la música; el efecto descrito es el del proyecto de
+origen.
+
+## VU1 nativa de Waffle565, opcional con `GOW_VU1_NATIVE=1` (2026-10-15)
+
+`patches/ps2recomp-vu1-native.patch` reúne, con `cherry-pick` sobre la serie actual, los commits de su
+rama `runtime` 61052ee, 5cea74e, af18417, 0055349, 994a514, 6358428 (solo la parte VU1), 71fb632, ef2692f
+y 1d9d563, más dos ajustes de compilación (`<vector>` y `m_verifySilent`, de runtime@8af9676).
+`tools/vu1/vu1n_gen.py` (de su `main`) genera, a partir de las micromemorias
+capturadas, bloques en C++ con semántica inmediata y latencia de flags entre bloques. El motor exacto
+sigue de respaldo para cualquier bloque que falte y como oráculo: `GOW_VU1N_VERIFY=<n>` compara n
+ejecuciones (estado, memoria de datos y paquetes GIF; enteros exactos, floats con tolerancia relativa
+2e-4). `GOW_VU1N_RECORD/REPLAY` graba y repite para comparar versiones del generador. Aquí queda
+**desactivada por defecto**; en el proyecto de origen está activa.
+
+- Generación con las 501 micromemorias de este repositorio: 1302 bloques distintos, 1302 generados, 0
+  sin soporte.
+- Verificación con el juego (barco, 120 s, `GOW_VU1N_VERIFY=3000`): **2000 ejecuciones comparadas, 0
+  discrepancias** frente al motor exacto. Estado 11 alcanzado y cierre con `WM_CLOSE`, código 0.
+- Rendimiento: mismo exe (`ad179aa4…`) alternando `GOW_VU1_NATIVE=0/1`, 3+3 rondas de 150 s,
+  `GOW_PERF_DIAG=1`. `vu_ms` por ventana de 5 s: 4066 y 3630 (exacta) frente a 1474, 1477 y 1647 (nativa),
+  un −60 %. La velocidad de juego no mejora (0,76 y 0,66 frente a 0,58, 0,57 y 0,73), y con
+  `GOW_PERF_DIAG=1` ningún lado llega a 1,00. Este modo de perfil tiene un coste propio apreciable; con
+  `frames`, la rama `checkpoint-fast` da 1,00.
+- Por qué no mejora (muestreo `sampler_vu1n`, nativa activa, `GOW_PERF_DIAG=frames`): EE, VU1 y frontend
+  GS esperan el 52, 66 y 87 % del tiempo. El 52 % del EE está entero dentro de `GS::notifyExternalVSync`,
+  esperando `GS::m_stateMutex` (`std::recursive_mutex`) para llamar al observador de VSync; en la base
+  medida antes eran el 28,5 %. Inferencia: otro hilo, probablemente el de presentación/GPU, retiene ese
+  mutex durante mucho tiempo, y cuanto antes llega el EE al VBlank, más espera. Es área de
+  GS/presentación: se deja documentado para quien la lleva. Hasta resolverlo, acelerar EE, IOP o VU1 no
+  se traduce en velocidad de juego.
+- El atasco intermitente volvió a aparecer en una ronda con la VU1 exacta (`vu1ab_1A`): estado 4 a ~22
+  s, sin flips desde t≈36..40 s, justo antes del paso a estado 11; EE ≈3800 ms e IOP ≈1200 ms por
+  ventana, sin VU ni GS. Es la misma firma que en el runner 105, pero en otra transición de carga. Esa
+  ronda tenía `GOW_STALL_DIAG=0`; se lanza una serie con el diagnóstico para capturarlo.
+
+## Integración de #91 y #97 (2026-10-15)
+
+- #91 (menos comprobaciones de espera en bloques VU1): fusionada. Con las 501 micromemorias del juego solo 1
+  de 1294 bloques cumple las condiciones del camino rápido; el efecto en el juego es despreciable. Ejecución
+  de 60 s en el barco: estado 11, cierre con `WM_CLOSE`.
+- #97 (subidas P4 por filas): conflicto de orden en `compilar.ps1` resuelto (el parche va al final). La serie
+  de 123 parches aplica limpia. Compilación completa local (exe `0cddf7cf…`) y comparación visual con un exe
+  sin #97 (`02e81c90…`): 10 capturas en los mismos instantes (4..110 s) del título, la elección de
+  dificultad, el primer plano de Kratos y el combate en el barco, con texto del menú, HUD y contador de
+  golpes correctos. No se ven diferencias de texturas; el combate difiere por la variación normal entre
+  ejecuciones. No se midió rendimiento.
+
+## El VBlank del EE ya no espera al mutex del GS (2026-10-15)
+
+Con `GOW_SAMPLER` registrando también el hilo del host y el trabajador GPU
+(`ps2recomp-sampler-threads.patch`), y la VU1 nativa activa (`sampler_gs_n`):
+
+- El trabajador GPU está ocupado el 87 % del tiempo; el 73 % es `GSGpuBackend::Impl::prepareTarget`, y
+  dentro de él, ~62 % es la espera de las barreras del anillo de subidas (`GSGpuUpload::Ring::put`,
+  `WaitOnAddress` en el controlador). El host pasa el 91 % en `SwapBuffers`. Inferencia: la GPU está
+  saturada con este renderizador.
+- El frontend GS espera hueco en esa cola (`GSThreadedBackend::PublishLocked`, 65 %) **dentro de
+  `processGIFPacket`, con `GS::m_stateMutex` tomado**. El EE espera ese mutex en
+  `GS::notifyExternalVSync` (58 %) al procesar cada VBlank, así que los VBlank llegan tarde y la
+  velocidad del juego cae (0,58).
+
+`ps2recomp-gs-vsync-unlocked.patch`: `notifyExternalVSync` solo toma el mutex si hay observador externo
+(el espejo PCSX2 opcional); sin él no lee ni escribe estado del GS. Regresión: un backend que bloquea
+`Submit` con el mutex tomado; la notificación debe volver. Falla sin el cambio (comprobado).
+
+Medición (exe A `a075fcc7…` sin el cambio, exe B `02e81c90…` con él; ambos con `GOW_VU1_NATIVE=1`, 3+3
+rondas alternas de 150 s en el barco, ventanas de t=50..145 s, `GOW_PERF_DIAG=frames`):
+
+| mediana [mín..máx] | A | B |
+|---|---|---|
+| velocidad de juego | 0,63 [0,36..0,96] | 1,00 [0,33..3,33] (rondas: 1,00 / 0,99 / 1,00) |
+| muestras de SPU2 por segundo | 29.272 | 49.160 |
+| entradas a `vid::Flip` por segundo | 33,2 | 31,8 |
+
+Cuando la GPU no da abasto, el juego ya no se ralentiza: conserva la velocidad real y el audio, y pierde
+cuadros. Una ronda B tuvo una ráfaga de recuperación (máximo 3,33) que pudo coincidir con una compilación
+de pruebas lanzada en paralelo. La saturación de la GPU sigue: es el siguiente objetivo (renderizador).
+
+## Migración a la base de Waffle565 (2026-10-15)
+
+Decisión del usuario: adoptar como base el runtime de **Waffle565/God-Of-War-Native-Port**
+para ejecutar el juego como su port. Detalle de los parches en [`ARQUITECTURA.md`](ARQUITECTURA.md#base-del-runtime-waffle565).
+
+**Hecho (verificado):**
+- Suite `ps2x_tests` 439/439 en Windows (MSVC) y en Linux (GCC, WSL Ubuntu 24.04), con 89 casos retirados de piezas
+  sustituidas por diseño (lista en `patches/ps2recomp-waffle-tests.patch`).
+- Dos defectos del runtime de Waffle corregidos en parches propios: no enlazaba con GCC (`inline` en funciones de
+  PCSX2 llamadas desde otra unidad) y la VU1 nativa perdía su `NativeState` con cada `VU1Interpreter`
+  (`gow_vu1_fmac_test` pasaba de 7,6 GB; ahora 47 MB).
+- Compilación completa en Windows y ejecución con el disco extraído (`tools/iso_extract.py --layout`), valores de
+  `play.cmd` (`PS2X_GS_WORKER=1`, `GOW_GS_FINISH_ASINCRONO=1`) y guion de partida nueva (`logs/tools/correr_w.py`,
+  privado): menú de dificultad, barco, combate, HUD y sangre correctos en las capturas (1024×894, resolución
+  interna 2x). La ventana responde a WM_CLOSE.
+- IOP nativo: una ejecución con `PS2X_IOP_DUMP_MODULES` vuelca los 8 IRX; con `GOW_IOP_MODULOS` y recompilación
+  los 8 corren como código nativo. Inicio de la partida (`[gow-pad2:test] gameplay start`): 33,6 s con el
+  intérprete, 21,1 s con el IOP nativo y `GOW_FAST_BOOT=1` (Waffle documenta ~20 s).
+- VU1: `GOW_VU1_STATS=1` da 0 pasos interpretados (todo bloque nativo), ~2,7 s de VU1 por ventana de 5 s.
+
+**Medición (escena del barco con combate, 150 s, ventanas finales, `guest_flip_hz` = llamadas a `vid::Flip`, no FPS
+físicos; velocidad del juego con `GOW_DELTA_DIAG`):**
+
+| Ejecutable | Rondas | `guest_flip_hz` mediana (mín–máx por ronda) | velocidad |
+|---|---|---|---|
+| PR #101 (`bin\gsn`, base anterior, GS y VU1 nativos, `GOW_PERF_DIAG=frames`) | 3 | 59,98 / 60,00 / 60,00 (59,79–60,20) | 1,00 |
+| Base Waffle (`bin\waffle2`, IOP nativo, `GOW_PERF_DIAG=frames`) | 2 | 44,17 / 48,53 (42,75–60,16) | 1,00 |
+| Base Waffle (`GOW_PERF_DIAG=1`, más caro) | 3 | 47,54 / 44,34 / 44,80 | 1,00 |
+
+Hecho: en esta escena la base de Waffle da menos flips por segundo que la PR #101, sin perder velocidad de juego.
+Desglose de la base de Waffle (`GOW_PERF_DIAG=1`, ventana de 5 s): EE 2,6 s, espera de VBlank del EE 2,1 s, VU1
+2,8 s (hilo del trabajador), GS 1,9 s (hilo stage); el EE apenas espera al trabajador (`PS2X_GS_WORKER_DIAG=1`:
+~15 ms por ventana en `mmio 0x12001000`). Inferencia: por cuadro, EE (~12 ms) + VU1 (~13 ms) supera los 16,7 ms
+y parte de los cuadros pierde el VBlank. Hipótesis: faltan las mejoras del EE posteriores a la bifurcación de
+Waffle (checkpoint-fast #94, VBlank sin mutex #100), que no aplican tal cual sobre su runtime.
+Observación aparte: el ejecutable de la PR #101 con `GOW_PERF_DIAG=1` se quedó colgado a los ~60 s
+(`runs\abw_perfA`), otra aparición del atasco intermitente de la base anterior.
+
+**Próximos pasos:** portar checkpoint-fast y el VBlank sin bloqueo a la base de Waffle y medir A/B; tabla `[mmio]`
+del reproductor de vídeo (13 entradas de Waffle, privadas); diagnósticos `GOW_SAMPLER`, `GOW_STALL_DIAG`,
+`GOW_SPU2_PERF`.
+
+### Rutas rápidas del UNPACK de VIF1 sobre la base de Waffle565 (2026-10-16)
+
+- Muestreo (`muestrear`, 30 s, barco con la cámara quieta, `bin\waffle2`): en el hilo trabajador (VIF1 + VU1)
+  `PS2Memory::processVIF1Data` era el 18,5 % de las muestras, más que la VU1 nativa (`runNative` 11,3 %). El
+  runtime de Waffle descomprime cada vector por la ruta genérica.
+- `patches/ps2recomp-vif1-unpack-rapido.patch` porta las rutas rápidas de la base anterior (un bucle por formato
+  sin máscara y la ruta SSE con máscara o STMOD 1-3). Diferencia con la versión anterior: STMOD 3 también guarda el
+  dato en ROW, como la ruta genérica de Waffle (y PCSX2), así que sin máscara solo STMOD 0 va por el bucle simple.
+- Prueba `VIF1 UNPACK fast paths match the generic path`: compara las dos rutas (interruptor
+  `ps2_vif1::setUnpackFastPaths`, solo para pruebas) en memoria de VU1 y ROW para todos los formatos, máscara,
+  STMOD 0-3, cinco ciclos CL/WL y extensión de signo. Falla si se quita el caso STMOD 3 (comprobado).
+- A/B alterno, 3 rondas de 130 s, misma escena, `GOW_PERF_DIAG=frames` (`guest_flip_hz` de las 12 últimas
+  ventanas, no FPS físicos):
+
+| Ronda | A `waffle2` (sin cambio) mediana (mín–máx) | B `waffle3` (con el parche) mediana (mín–máx) |
+|---|---|---|
+| 1 | 47,35 (43,53–59,96) | 50,94 (49,56–52,76) |
+| 2 | 44,75 (42,55–60,16) | 53,76 (48,08–60,00) |
+| 3 | 46,55 (43,55–59,98) | 54,00 (51,00–59,80) |
+
+  Velocidad del juego 1,00 en todas. Sigue por debajo de 60: lo siguiente son las reservas de memoria del hilo
+  trabajador (`RtlAllocateHeap` ~3,9 % de sus muestras) y la VU1 nativa.
+
+### Búferes DMA reutilizables (2026-10-16)
+
+- Traza del trabajador (`PS2X_GS_WORKER_TRACE`, `logs/tools/gap.py` privado), barco con la cámara quieta, `bin\waffle3`:
+  periodo por cuadro 17,75 ms = flip→kick de la cadena DMA 1,66 ms + trabajo VU1/GS 13,01 ms + fin→flip 3,12 ms.
+  60 Hz pide 16,67 ms.
+- El EE aplanaba cada cadena (~2,6 MB por cuadro) en un vector nuevo que crecía realojándose; el trabajador lo
+  liberaba al acabar. `patches/ps2recomp-dma-buffers.patch` reutiliza esos búferes (hasta 4). Prueba
+  `DMA sends reuse buffers without replaying earlier data` (falla si el búfer reutilizado no se vacía).
+- Traza con el cambio (`bin\waffle5`): flip→kick 0,22 ms (antes 1,66–1,78), trabajo 10,63 ms, periodo 16,55 ms en esa
+  ventana de 2 s (una sola ventana; el trabajo de `waffle3` varió entre 13,0 y 14,9 ms en dos ventanas).
+- A/B alterno de 7 rondas, 130 s, `guest_flip_hz` (no FPS físicos), mediana de las 12 últimas ventanas:
+  A `waffle3` 49,39 / 55,55 / 51,15 / 53,20 / 56,15 / 50,16 / 53,79 (mediana 53,20);
+  B `waffle5` 56,96 / 52,94 / 52,17 / 54,57 / 55,75 / 56,36 / 56,96 (mediana 55,75). B gana en 5 de 7; la
+  dispersión entre rondas (±4) es comparable a la diferencia. Velocidad del juego 1,00 en todas.
+- Descartado (sin mejora medible): reutilizar los vectores del árbitro GIF y no ordenar su cola ya ordenada
+  (`waffle4`: A 48,60–58,98, B 53,98–55,37 en 5 rondas válidas).
+- Cuelgue de la presentación: una ejecución de `waffle4` (`runs\abg_2B`) siguió corriendo 148 s sin ninguna línea
+  `[gow-perf]` y no atendió WM_CLOSE; antes, `w1_dump` (`waffle1`, sin cambios propios) tampoco atendió WM_CLOSE.
+  El arnés vuelca ahora las pilas de todos los hilos (`pilas.exe`, privado) si a los 40 s no hay `[gow-perf]`;
+  0 apariciones en las 14 ejecuciones siguientes.
+
+### Pruebas automáticas adaptadas de Waffle565 (2026-10-16)
+
+- Scripts añadidos en `tools/pruebas/zonas.py`, `guardado.py` y `videos.py`, adaptados de
+  `Waffle565/God-Of-War-Native-Port main@34f30d5e432751369177af115104f4d19af6d080`. Usan
+  `scripts\\2_compilar.cmd`, el runner bajo `GOW_WORK\\PS2Recomp\\out\\build`, el layout de
+  `tools/iso_extract.py --layout` y la tarjeta indicada por `GOW_MC0`.
+- Análisis sintáctico de Python y `--help` de los tres scripts: correcto. `git diff --check`: sin errores.
+- Compilación con `scripts\\2_compilar.cmd` sobre el `main` actualizado: terminó correctamente, código 0,
+  a las 00:54:04. Runner creado en `C:\\Users\\Noxi-PC\\gow-pr97-bench-work\\PS2Recomp\\out\\build\\ps2xRuntime\\ps2EntryRunner.exe`,
+  56.567.296 bytes (registro local `logs/2_compilar.log`).
+- Configuración de ejecución: `GOW_WORK=C:\\Users\\Noxi-PC\\gow-pr97-bench-work` y
+  `GOW_ELF=C:\\Users\\Noxi-PC\\gow-pr97-bench-src\\game_base\\SCUS_973.99`. No existe la ruta de tarjeta
+  `C:\\Users\\Noxi-PC\\gow-pr97-bench-work\\PS2Recomp\\out\\build\\ps2xRuntime\\mc0\\Mcd001.ps2`.
+  Junto al ELF no están `.disc_layout`, `.disc_meta`, `GODOFWAR.TOC`, `PART1.PAK` ni `PART2.PAK`.
+- Zonas (`logs/pruebas/zonas/20261016_004301/informe.md`): runner no iniciado. Ranuras 1, 2, 3 y 4:
+  ninguna ejecutada; no hay log de juego ni captura. Faltan `GOW_MC0` y el layout indicado arriba.
+- Guardar y recargar (`logs/pruebas/guardado/20261016_004304/informe.md`): runner no iniciado; guardar y
+  recargar no intentados. La tarjeta original no se copió ni modificó. Faltan `GOW_MC0` y el layout.
+- Vídeos (`logs/pruebas/videos/20261016_004420/informe.md`): runner no iniciado. No se pudo leer el TOC,
+  por tanto se enumeraron 0 vídeos y no se probó ningún FMV individual; no hay capturas ni mediciones de
+  imagen/audio. Faltan `GOW_MC0` y el layout. El intento anterior con `--secs 1` fue rechazado porque esa
+  opción no existe en `videos.py`; se repitió con su CLI válida y produjo el preflight aquí citado.
+- No se observó un fallo del juego: ninguna prueba llegó a ejecutar el runner. No se abrió issue al no haber
+  un defecto de runtime reproducible.

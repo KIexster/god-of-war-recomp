@@ -1,0 +1,19 @@
+diff --git a/ps2xRuntime/CMakeLists.txt b/ps2xRuntime/CMakeLists.txt
+index 7b7c6a9..a6a20be 100644
+--- a/ps2xRuntime/CMakeLists.txt
++++ b/ps2xRuntime/CMakeLists.txt
+@@ -594,7 +594,13 @@ if(PS2X_VU1_MICROCODE_DIR AND PS2X_VU1_GENERATOR_SOURCE AND NOT PS2X_IS_ANDROID
+             foreach(part RANGE 0 5)
+                 list(APPEND PS2X_VU1N_PARTS "${PS2X_VU1N_DIR}/vu1n_part${part}.cpp")
+             endforeach()
+-            set(PS2X_VU1N_HEADS "${PS2X_VU1_MICROCODE_DIR}/../vu1n_heads.txt")
++            # GOW-Port: entradas extra de la VU1 nativa; por defecto junto a la carpeta de micromemorias.
++            set(PS2X_VU1N_HEADS_FILE "" CACHE FILEPATH "vu1n_heads.txt alternativo (vacío: <micromemorias>/../vu1n_heads.txt)")
++            if(PS2X_VU1N_HEADS_FILE)
++                set(PS2X_VU1N_HEADS "${PS2X_VU1N_HEADS_FILE}")
++            else()
++                set(PS2X_VU1N_HEADS "${PS2X_VU1_MICROCODE_DIR}/../vu1n_heads.txt")
++            endif()
+             get_filename_component(PS2X_VU1N_HEADS "${PS2X_VU1N_HEADS}" ABSOLUTE)
+             set(PS2X_VU1N_HEADS_DEP)
+             if(EXISTS "${PS2X_VU1N_HEADS}")

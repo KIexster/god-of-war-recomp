@@ -1,0 +1,313 @@
+diff --git a/ps2xRuntime/src/lib/gs/gpu/gs_gpu_shaders.cpp b/ps2xRuntime/src/lib/gs/gpu/gs_gpu_shaders.cpp
+index dada512..3c94684 100644
+--- a/ps2xRuntime/src/lib/gs/gpu/gs_gpu_shaders.cpp
++++ b/ps2xRuntime/src/lib/gs/gpu/gs_gpu_shaders.cpp
+@@ -1139,8 +1139,8 @@ uint readCircuit(uint c[12], int rx, int ry)
+ 
+ uint blendChannel(uint src, uint dst, uint factor)
+ {
+-    int delta = int(src) - int(dst);
+-    return clampU8(int(dst) + ((delta * int(factor)) / 255));
++    // GOW-Port: coincide con el merge UNORM del compositor DX11 original.
++    return (src * factor + dst * (255u - factor) + 127u) / 255u;
+ }
+ 
+ void main()
+@@ -1185,20 +1185,11 @@ void main()
+         if (in1)
+         {
+             uint color = readCircuit(c1, rx, ry);
+-            // GOW-Port: con un único circuito no mezclar contra el fondo por su alfa.
+-            if (c2[0] == 0u)
+-            {
+-                r = color & 0xFFu;
+-                g = (color >> 8u) & 0xFFu;
+-                b = (color >> 16u) & 0xFFu;
+-            }
+-            else
+-            {
+-                uint factor = mmod ? alp : min(255u, (color >> 24u) * 2u);
+-                r = blendChannel(color & 0xFFu, r, factor);
+-                g = blendChannel((color >> 8u) & 0xFFu, g, factor);
+-                b = blendChannel((color >> 16u) & 0xFFu, b, factor);
+-            }
++            // GOW-Port: RC1 siempre se mezcla; con RC2 apagado el destino es BGCOLOR.
++            uint factor = mmod ? alp : min(255u, (color >> 24u) * 2u);
++            r = blendChannel(color & 0xFFu, r, factor);
++            g = blendChannel((color >> 8u) & 0xFFu, g, factor);
++            b = blendChannel((color >> 16u) & 0xFFu, b, factor);
+         }
+         outPixel = r | (g << 8u) | (b << 16u) | 0xFF000000u;
+     }
+diff --git a/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp b/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
+index d28a224..b2e49d3 100644
+--- a/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
+@@ -454,8 +454,8 @@ namespace
+ 
+     uint8_t blendPresentationChannel(uint8_t src, uint8_t dst, uint32_t factor)
+     {
+-        const int delta = static_cast<int>(src) - static_cast<int>(dst);
+-        return GSInternal::clampU8(static_cast<int>(dst) + ((delta * static_cast<int>(factor)) / 255));
++        // GOW-Port: compositor DX11 original: suma ponderada y conversión UNORM al más cercano.
++        return static_cast<uint8_t>((uint32_t(src) * factor + uint32_t(dst) * (255u - factor) + 127u) / 255u);
+     }
+ 
+     uint32_t countNonBlackPixels(const std::vector<uint8_t> &pixels, uint32_t width, uint32_t height)
+@@ -2180,8 +2180,20 @@ PresentationFrame GSCpuBackend::PresentFromLocalMemory(const GSPresentationReque
+     result.width = valid1 ? width1 : width2;
+     result.height = valid1 ? height1 : height2;
+     GSFrameReg selected = displayFrame;
+-    if (!copySource(displayFrame, origin, result.width, result.height, true, false, selected, result.pixels, result.usedPreferred))
++    if (!copySource(displayFrame, origin, result.width, result.height, true, valid1, selected, result.pixels, result.usedPreferred))
+         return {};
++    // GOW-Port: RC1 se mezcla también si RC2 está apagado; su destino entonces es BGCOLOR.
++    // RC2 solo conserva su copia directa. El alpha de salida se normaliza después.
++    if (valid1)
++        for (uint32_t y = 0; y < result.height; ++y)
++            for (uint32_t x = 0; x < result.width; ++x)
++            {
++                uint8_t *pixel = result.pixels.data() + (y * kHostFrameWidth + x) * 4u;
++                const uint32_t factor = pmode.mmod ? pmode.alp : std::min<uint32_t>(255u, uint32_t(pixel[3]) * 2u);
++                pixel[0] = blendPresentationChannel(pixel[0], static_cast<uint8_t>(request.bgcolor), factor);
++                pixel[1] = blendPresentationChannel(pixel[1], static_cast<uint8_t>(request.bgcolor >> 8u), factor);
++                pixel[2] = blendPresentationChannel(pixel[2], static_cast<uint8_t>(request.bgcolor >> 16u), factor);
++            }
+     if (fieldMode)
+         applyFieldPresentation(result.pixels, result.width, result.height, oddField);
+     normalizePresentationAlpha(result.pixels, result.width, result.height);
+diff --git a/ps2xTest/CMakeLists.txt b/ps2xTest/CMakeLists.txt
+index ef5d77e..7c695bc 100644
+--- a/ps2xTest/CMakeLists.txt
++++ b/ps2xTest/CMakeLists.txt
+@@ -39,6 +39,7 @@ add_library(ps2_test_lib STATIC
+     src/ps2_gs_zte_tests.cpp # GOW-Port: habilitacion de test y escritura Z.
+     src/ps2_gs_cpu_colclamp_tests.cpp # GOW-Port: wrap/clamp del RGB de mezcla en CPU.
+     src/ps2_gs_texa_depth_tests.cpp # GOW-Port: TEXA en alias de profundidad.
++    src/ps2_gs_pcrtc_blend_tests.cpp # GOW-Port: mezcla PCRTC contra circuitos/fondo.
+     src/ps2_gs_backend_tests.cpp # GOW-Port: cola, VRAM y comparación CPU/OpenGL.
+     src/ps2_gpu_profile_tests.cpp # GOW-Port: ventanas y lecturas de timestamps sin espera.
+     src/ps2_gpu_upload_ring_tests.cpp # GOW-Port: datos pendientes y fallback de uploads.
+diff --git a/ps2xTest/src/main.cpp b/ps2xTest/src/main.cpp
+index f6fab7c..1fd16a9 100644
+--- a/ps2xTest/src/main.cpp
++++ b/ps2xTest/src/main.cpp
+@@ -20,6 +20,7 @@ void register_gs_fog_math_tests(); // GOW-Port
+ void register_gs_zte_tests(); // GOW-Port
+ void register_gs_cpu_colclamp_tests(); // GOW-Port
+ void register_gs_texa_depth_tests(); // GOW-Port
++void register_gs_pcrtc_blend_tests(); // GOW-Port
+ void register_ps2_gs_backend_tests(); // GOW-Port
+ void register_ps2_gpu_profile_tests(); // GOW-Port
+ void runGpuUploadRingTests(); // GOW-Port
+@@ -61,6 +62,7 @@ int main()
+     register_gs_zte_tests(); // GOW-Port
+     register_gs_cpu_colclamp_tests(); // GOW-Port
+     register_gs_texa_depth_tests(); // GOW-Port
++    register_gs_pcrtc_blend_tests(); // GOW-Port
+     register_ps2_gs_backend_tests();
+     register_ps2_gpu_profile_tests();
+     runGpuUploadRingTests();
+diff --git a/ps2xTest/src/ps2_gs_backend_tests.cpp b/ps2xTest/src/ps2_gs_backend_tests.cpp
+index b4f662f..c405afe 100644
+--- a/ps2xTest/src/ps2_gs_backend_tests.cpp
++++ b/ps2xTest/src/ps2_gs_backend_tests.cpp
+@@ -1301,7 +1301,8 @@ void gpuRegionEdges(TestCase &t,bool hardware)
+             t.Equals(backend->ReadVram(0,0,1,41,21),0x80112236u,"Sprite texturado CT32 1:1");
+         }
+         // CRTC básico sin la heurística específica de GoW del renderer CPU.
+-        GSPresentationRequest req{}; req.pmode=1; req.dispfb1=1ull<<9;
++        // GOW-Port: control de copia opaca (MMOD1/ALP255), independiente del alpha de la textura.
++        GSPresentationRequest req{}; req.pmode=0xff21; req.dispfb1=1ull<<9;
+         req.display1=(63ull<<32)|(63ull<<44);
+         auto a=cpu.Present(req), b=threaded.Present(req);
+         t.Equals(b.width,a.width,"Ancho de presentación");
+@@ -1354,7 +1355,7 @@ void gpuRegionEdges(TestCase &t,bool hardware)
+             }
+             auto first=comparePresentation("Píxeles CPU/OpenGL de la fuente preferida");
+             for(auto *backend : {static_cast<GSRasterBackend *>(&cpu),static_cast<GSRasterBackend *>(&threaded)})
+-                // Color sin alfa también debe verse con un único circuito activo.
++                // GOW-Port: la copia opaca debe cambiar aunque el nuevo color tenga alpha cero.
+                 backend->WriteVram(psm,1057,2,0,0,0x00001234u);
+             auto next=comparePresentation("Se presenta la actualización posterior de la fuente");
+             t.IsTrue(first.pixels!=next.pixels,"La presentación cambia con la fuente");
+diff --git a/ps2xTest/src/ps2_gs_pcrtc_blend_tests.cpp b/ps2xTest/src/ps2_gs_pcrtc_blend_tests.cpp
+new file mode 100644
+index 0000000..40de846
+--- /dev/null
++++ b/ps2xTest/src/ps2_gs_pcrtc_blend_tests.cpp
+@@ -0,0 +1,100 @@
++// GOW-Port: 32 patrones contrastados con GSRendererSW original2954ebe/DX11 merge, sin assets.
++#include "MiniTest.h"
++#include "runtime/gs/gs_cpu_backend.h"
++#include "runtime/gs/gs_gpu_backend.h"
++#include "runtime/gs/gs_threaded_backend.h"
++#include "runtime/gs/gs_swizzle.h"
++#include <cstdlib>
++#include <memory>
++#include <vector>
++
++namespace {
++struct Pattern {uint32_t en1,en2,mmod,slbg,alp,alpha,rgb;};
++constexpr Pattern patterns[]={
++    {1,0,0,0,255,64,0x6d39dcu},
++    {0,1,0,0,255,64,0x20a010u},
++    {1,1,0,0,255,64,0x507080u},
++    {1,1,0,1,255,64,0x6d39dcu},
++    {1,0,1,0,64,128,0x6436d2u},
++    {1,1,1,0,64,128,0x388848u},
++    {1,1,1,1,64,128,0x6436d2u},
++    {1,0,1,0,255,128,0x8040f0u},
++    {1,0,0,0,255,128,0x8040f0u},
++    {1,1,0,0,255,128,0x8040f0u},
++    {1,0,0,0,255,0,0x5a32c8u},
++    {1,1,0,0,255,0,0x20a010u},
++    {1,1,1,0,0,128,0x20a010u},
++    {1,1,1,1,0,128,0x5a32c8u},
++    {1,0,1,0,0,128,0x5a32c8u},
++    {1,1,1,0,255,128,0x8040f0u},
++    {1,0,1,0,0,128,0x5a32c8u},
++    {1,0,1,0,1,128,0x5a32c8u},
++    {1,0,1,0,37,128,0x6034ceu},
++    {1,0,1,0,64,128,0x6436d2u},
++    {1,0,1,0,127,128,0x6d39dcu},
++    {1,0,1,0,128,128,0x6d39dcu},
++    {1,0,1,0,129,128,0x6d39dcu},
++    // GOW-Port: UNORM ideal232/61/120; DX11 local231/61/120 (precisión permitida D3D11 17.5).
++    {1,0,1,0,201,128,0x783de8u},
++    {1,0,1,0,254,128,0x8040f0u},
++    {1,0,1,0,255,128,0x8040f0u},
++    {1,1,1,1,1,128,0x5a32c8u},
++    {1,1,1,1,37,128,0x6034ceu},
++    {1,1,1,1,127,128,0x6d39dcu},
++    {1,1,1,1,129,128,0x6d39dcu},
++    {1,0,0,0,255,1,0x5a32c8u},
++    {1,0,0,0,255,127,0x8040f0u},
++};
++void upload(GSRasterBackend&backend,uint32_t base,uint32_t rgba){
++    std::vector<uint32_t> pixels(64u*64u,rgba);
++    GSTransferCommand command{};command.direction=0;command.bitbltbuf.dbp=base;
++    command.bitbltbuf.dbw=1;command.bitbltbuf.dpsm=GS_PSM_CT32;command.trxreg={64,64};
++    backend.BeginTransfer(command);
++    backend.UploadImage(reinterpret_cast<const uint8_t*>(pixels.data()),uint32_t(pixels.size()*4u));
++}
++void check(TestCase&t,GSRasterBackend&backend,unsigned first){
++    for(unsigned index=first;index<first+16;++index){
++        const auto&p=patterns[index];upload(backend,0,0x008040f0u|(p.alpha<<24));
++        upload(backend,32u*32u,0x8020a010u);
++        GSPresentationRequest request{};
++        request.pmode=p.en1|(p.en2<<1)|(p.mmod<<5)|(p.slbg<<7)|(p.alp<<8);
++        request.dispfb1=1ull<<9;request.dispfb2=32ull|(1ull<<9);
++        request.display1=request.display2=(25ull<<12)|(3ull<<23)|(255ull<<32)|(63ull<<44);
++        request.bgcolor=200u|(50u<<8)|(90u<<16);request.forceReadback=true;
++        const auto frame=backend.Present(request);
++        if(!frame || frame.width!=64 || frame.height!=64 || frame.pixels.size()<640u*64u*4u){
++            t.Fail("Salida64x64 requerida para caso "+std::to_string(index));continue;
++        }
++        bool exact=true;
++        for(unsigned y=0;y<64;++y)for(unsigned x=0;x<64;++x){
++            const auto*pixel=frame.pixels.data()+(y*640u+x)*4u;
++            const uint32_t color=uint32_t(pixel[0])|(uint32_t(pixel[1])<<8)|(uint32_t(pixel[2])<<16);
++            exact=exact&&color==p.rgb&&pixel[3]==255;
++        }
++        t.IsTrue(exact,"RGB UNORM contrastado y alpha normalizado del caso "+std::to_string(index));
++    }
++}
++void cpu(TestCase&t,unsigned first){
++    std::vector<uint8_t>vram(GSSwizzle::kMemorySize);GSCpuBackend backend;
++    backend.Initialize(vram.data(),uint32_t(vram.size()));check(t,backend,first);
++}
++void gpu(TestCase&t,bool hardware){
++    std::vector<uint8_t>vram(GSSwizzle::kMemorySize);
++    auto inner=std::make_unique<GSGpuBackend>();auto*actual=inner.get();actual->SetHardwareRasterAllowed(hardware);
++    GSThreadedBackend backend(std::move(inner));backend.Initialize(vram.data(),uint32_t(vram.size()));
++    if(dynamic_cast<GSGpuBackend*>(&backend.Inner())!=actual||!actual->IsReady()){
++        t.Fail("Compositor OpenGL efectivo requerido, sin fallbackCPU");return;
++    }
++    check(t,backend,0);check(t,backend,16);
++}
++}
++void register_gs_pcrtc_blend_tests(){
++    MiniTest::Case("GS mezcla PCRTC original",[](TestCase&t){
++        t.Run("CPU EN/MMOD/SLBG/alpha",[](TestCase&t){cpu(t,0);});
++        t.Run("CPU BGCOLOR y factores de frontera",[](TestCase&t){cpu(t,16);});
++        if(const char*enabled=std::getenv("GOW_GS_GPU_TEST");enabled&&enabled[0]=='1'){
++            t.Run("Compositor OpenGL con modo compute",[](TestCase&t){gpu(t,false);});
++            t.Run("Compositor OpenGL con modo hardware",[](TestCase&t){gpu(t,true);});
++        }
++    });
++}
+diff --git a/ps2xTest/src/ps2_gs_tests.cpp b/ps2xTest/src/ps2_gs_tests.cpp
+index d7a01e9..d9bfe49 100644
+--- a/ps2xTest/src/ps2_gs_tests.cpp
++++ b/ps2xTest/src/ps2_gs_tests.cpp
+@@ -1174,7 +1174,8 @@ void register_ps2_gs_tests()
+         {
+             std::vector<uint8_t> vram(PS2_GS_VRAM_SIZE, 0u);
+             GSRegisters regs{};
+-            regs.pmode = 1ull;
++            // GOW-Port: este control de copia/stride/latch usa RC1 opaco explícito (MMOD1/ALP255).
++            regs.pmode = 0xff21ull;
+             regs.dispfb1 =
+                 150ull |
+                 (10ull << 9) |
+@@ -1308,7 +1309,8 @@ void register_ps2_gs_tests()
+         {
+             std::vector<uint8_t> vram(PS2_GS_VRAM_SIZE, 0u);
+             GSRegisters regs{};
+-            regs.pmode = 1ull;
++            // GOW-Port: este control de copia/stride/latch usa RC1 opaco explícito (MMOD1/ALP255).
++            regs.pmode = 0xff21ull;
+             regs.dispfb1 =
+                 150ull |
+                 (1ull << 9) |
+@@ -1362,7 +1364,8 @@ void register_ps2_gs_tests()
+         {
+             std::vector<uint8_t> vram(PS2_GS_VRAM_SIZE, 0u);
+             GSRegisters regs{};
+-            regs.pmode = 1ull;
++            // GOW-Port: este control de copia/stride/latch usa RC1 opaco explícito (MMOD1/ALP255).
++            regs.pmode = 0xff21ull;
+             regs.dispfb1 =
+                 150ull |
+                 (10ull << 9) |
+@@ -1475,7 +1478,8 @@ void register_ps2_gs_tests()
+         {
+             std::vector<uint8_t> vram(PS2_GS_VRAM_SIZE, 0u);
+             GSRegisters regs{};
+-            regs.pmode = 0x0001ull;
++            // GOW-Port: este control de copia/stride/latch usa RC1 opaco explícito (MMOD1/ALP255).
++            regs.pmode = 0xff21ull;
+             regs.dispfb1 =
+                 150ull |
+                 (10ull << 9) |
+@@ -1601,7 +1605,8 @@ void register_ps2_gs_tests()
+         {
+             std::vector<uint8_t> vram(PS2_GS_VRAM_SIZE, 0u);
+             GSRegisters regs{};
+-            regs.pmode = 0x0001ull;
++            // GOW-Port: este control de copia/stride/latch usa RC1 opaco explícito (MMOD1/ALP255).
++            regs.pmode = 0xff21ull;
+             regs.dispfb1 =
+                 150ull |
+                 (10ull << 9) |
+@@ -1641,7 +1646,8 @@ void register_ps2_gs_tests()
+         {
+             std::vector<uint8_t> vram(PS2_GS_VRAM_SIZE, 0u);
+             GSRegisters regs{};
+-            regs.pmode = 0x0001ull;
++            // GOW-Port: este control de copia/stride/latch usa RC1 opaco explícito (MMOD1/ALP255).
++            regs.pmode = 0xff21ull;
+             regs.dispfb1 =
+                 150ull |
+                 (10ull << 9) |
+@@ -1687,7 +1693,8 @@ void register_ps2_gs_tests()
+         {
+             std::vector<uint8_t> vram(PS2_GS_VRAM_SIZE, 0u);
+             GSRegisters regs{};
+-            regs.pmode = 0x0001ull;
++            // GOW-Port: este control de copia/stride/latch usa RC1 opaco explícito (MMOD1/ALP255).
++            regs.pmode = 0xff21ull;
+             regs.smode2 = 0x0001ull; // interlaced, field mode
+             regs.dispfb1 =
+                 0ull |

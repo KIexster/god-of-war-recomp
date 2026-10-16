@@ -1,0 +1,32 @@
+diff --git a/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp b/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp
+index 6181965..ffe6fef 100644
+--- a/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp
+@@ -1,5 +1,6 @@
+ // GOW-Port: adaptado de Taylor N. Albarnaz / LightVelox (GPL-3.0).
+ // Origen: PS2Recomp sotc-port, ac9efa070638ad3b3accd284de6f898d5ab271d1.
++#include "runtime/ps2_sampler.h" // GOW-Port: GOW_SAMPLER
+ #include "runtime/gs/gs_threaded_backend.h"
+ #include "runtime/gs/gs_cpu_backend.h"
+ #include "runtime/gs/gs_gpu_backend.h"
+@@ -65,7 +66,7 @@ GSThreadedBackend::GSThreadedBackend(std::unique_ptr<GSRasterBackend> inner)
+         m_queueChunkLimit = static_cast<size_t>(std::clamp(std::atoi(limit), 1, static_cast<int>(kMaxPendingChunks)));
+     m_open.reserve(kPublishBytes + 4096u);
+     m_worker = std::thread([this]
+-                           { WorkerLoop(); });
++                           { ps2_sampler::registerCurrentThread("GS-gpu"); WorkerLoop(); }); // GOW-Port: GOW_SAMPLER
+ }
+ 
+ GSThreadedBackend::~GSThreadedBackend()
+diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
+index 994bf7c..7db8b5a 100644
+--- a/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -2564,6 +2564,7 @@ void PS2Runtime::run()
+         }
+         gameThreadFinished.store(true, std::memory_order_release); });
+ 
++    ps2_sampler::registerCurrentThread("HOST"); // GOW-Port: GOW_SAMPLER (presentación y bucle de la ventana)
+     uint64_t tick = 0;
+     while (!isStopRequested() && !gameThreadFinished.load(std::memory_order_acquire))
+     {

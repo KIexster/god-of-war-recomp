@@ -127,3 +127,34 @@ handle cerrado, otro hilo, GIF fragmentado, tamaño de registros, capacidad y
 2.048 píxeles RGBA exactos por ciclo. La DLL todavía es **solo renderizado**:
 no sustituye FIFO/VRAM del runtime, IRQ/FINISH ni soporta carga a mitad de una
 partida, pérdida de dispositivo o todos los caminos de fallo de reserva.
+
+`gow_gs_read_stream_info` es otra extensión optativa de ABI1. Devuelve
+`GowGsStreamInfo` de64bytes bajo el mismo contrato de hilo/handle, sin consumir
+entrada, componer, vaciar colas o descargar píxeles. Una DLL antigua puede no
+exportarlo. La identidad del flujo es **handle + epoch**; reset avanza epoch y
+pone a cero los cursores aunque la secuencia VSync vuelva a repetirse.
+
+`input_events` cuenta cada submit, escritura directa y VSync aceptados, incluido
+un submit vacío; `input_gif_bytes` cuenta sólo sus bytes GIF. Los campos
+`last_vsync_*` conservan los valores en la última llamada VSync correcta,
+incluido ese evento, y su campo/secuencia. Rechazos y consultas no los avanzan.
+Así, GIF o registros posteriores no se atribuyen al VSync anterior.
+
+Los flags `INPUT_QWORD_ALIGNED` y `VSYNC_QWORD_ALIGNED` sólo indican ausencia
+de fragmentos de transporte de16bytes en la entrada actual o en esa frontera.
+**Un tag GIF puede seguir esperando payload aunque el transporte esté alineado.**
+`HAS_VSYNC` indica un VSync correcto en la epoch; `OUTPUT_AVAILABLE` sólo
+observa GetCurrent y puede corresponder a una textura conservada tras reset.
+Estos cursores no son hashes, no demuestran composición nueva/RGB nuevo ni
+alineación con la presentación OpenGL del host. Para comparar hay que acreditar
+el mismo flujo y prefijo, CRTC y opciones efectivos, además de la frontera de
+la imagen compuesta. Las capturas del juego y ráfagas se mantienen privadas.
+
+La sonda `probe_snapshot_reference.py --stream-info` conserva esa metadata en
+`result.json` en cuatro puntos: antes de enviar, después del GIF, después del
+VSync y después de los16snapshots. Requiere el export nuevo sólo si se solicita;
+sin la opción mantiene compatibilidad con DLL antiguas. Un error de consulta
+falla explícitamente y cierra el handle, en lugar de publicar ceros como datos.
+La sonda exige que los snapshots no avancen el cursor. El patrón es sintético;
+los cursores locales y sus límites se guardan junto al resultado, sin declarar
+paridad con el host o fidelidad de una escena.
