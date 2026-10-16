@@ -6153,3 +6153,40 @@ de código/alcance es local, sin aprobación externa. La PR 77 requiere todavía
 CI verde del HEAD documental final antes de ready/merge. Permanecen abiertas
 la diferencia adquirido/shadow, los detalles frente al software original,
 encuadre, presentación única, desglose de HostWait y estabilidad larga.
+
+### 2026-10-16 — Pruebas adaptadas de Waffle565: ejecución bloqueada por datos ausentes
+
+Se añadieron `tools/pruebas/zonas.py`, `guardado.py` y `videos.py`, adaptadas
+de Waffle565/God-Of-War-Native-Port `main@34f30d5e432751369177af115104f4d19af6d080`.
+Usan el runner más reciente bajo `$GOW_WORK\PS2Recomp\out\build`, `GOW_ELF`
+del layout extraído, copias aisladas de la tarjeta mediante `GOW_MC0` y
+guardan informes, registros y capturas PPM en `logs/pruebas/` (ignorado por
+Git). La compilación solicitada, `scripts\2_compilar.cmd`, terminó con código
+0 a las 00:27:29; usó `GOW_WORK=C:\Users\Noxi-PC\gow-pr97-bench-work` y
+`GOW_ELF=C:\Users\Noxi-PC\gow-pr97-bench-src\game_base\SCUS_973.99`.
+El ejecutable resultante mide 54.591.488 bytes.
+
+Las tres herramientas se invocaron con `python -I` el 16 de octubre a las
+00:28:13. Las tres devolvieron código 2 en su prechequeo; ninguna lanzó el
+runner. La tarjeta indicada por `GOW_MC0` no existe en
+`C:\Users\Noxi-PC\gow-pr97-bench-work\PS2Recomp\out\build\ps2xRuntime\mc0\Mcd001.ps2`.
+Junto al ELF disponible faltan `GODOFWAR.TOC`, `PART1.PAK` y `PART2.PAK`, y
+este checkout tampoco contiene `tools/iso_extract.py`; por tanto no se pudo
+preparar el layout de disco requerido.
+
+- **Zonas:** ranuras 1, 2, 3 y 4: ninguna se ejecutó, sin log de juego ni
+  captura. Informe: `logs/pruebas/zonas/20261016_002813/informe.md`.
+- **Guardar/cargar:** no se inició ninguna sesión, no se copió ni modificó
+  una tarjeta, y no se intentó guardar ni recargar. Informe:
+  `logs/pruebas/guardado/20261016_002813/informe.md`.
+- **Vídeos:** no se inició el runner y no se pudo enumerar ningún vídeo porque
+  falta `GODOFWAR.TOC`. Informe:
+  `logs/pruebas/videos/20261016_002813/informe.md`. Además, este port no
+  implementa `GOW_MOVIE_OVERRIDE` ni escribe el nombre del PSS en el log, así
+  que los vídeos que el flujo natural no active no se pueden probar
+  individualmente con el runner actual.
+
+No se encontró ni aisló un fallo de ejecución del juego: las pruebas pararon
+antes de iniciarlo, así que no se abrió un issue de regresión. La sintaxis de
+los tres scripts Python se analizó correctamente; los modos `--help` también
+arrancan con `python -I`.
