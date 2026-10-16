@@ -7169,3 +7169,24 @@ del reproductor de vídeo (13 entradas de Waffle, privadas); diagnósticos `GOW_
 
   Velocidad del juego 1,00 en todas. Sigue por debajo de 60: lo siguiente son las reservas de memoria del hilo
   trabajador (`RtlAllocateHeap` ~3,9 % de sus muestras) y la VU1 nativa.
+
+### Búferes DMA reutilizables (2026-10-16)
+
+- Traza del trabajador (`PS2X_GS_WORKER_TRACE`, `logs/tools/gap.py` privado), barco con la cámara quieta, `bin\waffle3`:
+  periodo por cuadro 17,75 ms = flip→kick de la cadena DMA 1,66 ms + trabajo VU1/GS 13,01 ms + fin→flip 3,12 ms.
+  60 Hz pide 16,67 ms.
+- El EE aplanaba cada cadena (~2,6 MB por cuadro) en un vector nuevo que crecía realojándose; el trabajador lo
+  liberaba al acabar. `patches/ps2recomp-dma-buffers.patch` reutiliza esos búferes (hasta 4). Prueba
+  `DMA sends reuse buffers without replaying earlier data` (falla si el búfer reutilizado no se vacía).
+- Traza con el cambio (`bin\waffle5`): flip→kick 0,22 ms (antes 1,66–1,78), trabajo 10,63 ms, periodo 16,55 ms en esa
+  ventana de 2 s (una sola ventana; el trabajo de `waffle3` varió entre 13,0 y 14,9 ms en dos ventanas).
+- A/B alterno de 7 rondas, 130 s, `guest_flip_hz` (no FPS físicos), mediana de las 12 últimas ventanas:
+  A `waffle3` 49,39 / 55,55 / 51,15 / 53,20 / 56,15 / 50,16 / 53,79 (mediana 53,20);
+  B `waffle5` 56,96 / 52,94 / 52,17 / 54,57 / 55,75 / 56,36 / 56,96 (mediana 55,75). B gana en 5 de 7; la
+  dispersión entre rondas (±4) es comparable a la diferencia. Velocidad del juego 1,00 en todas.
+- Descartado (sin mejora medible): reutilizar los vectores del árbitro GIF y no ordenar su cola ya ordenada
+  (`waffle4`: A 48,60–58,98, B 53,98–55,37 en 5 rondas válidas).
+- Cuelgue de la presentación: una ejecución de `waffle4` (`runs\abg_2B`) siguió corriendo 148 s sin ninguna línea
+  `[gow-perf]` y no atendió WM_CLOSE; antes, `w1_dump` (`waffle1`, sin cambios propios) tampoco atendió WM_CLOSE.
+  El arnés vuelca ahora las pilas de todos los hilos (`pilas.exe`, privado) si a los 40 s no hay `[gow-perf]`;
+  0 apariciones en las 14 ejecuciones siguientes.

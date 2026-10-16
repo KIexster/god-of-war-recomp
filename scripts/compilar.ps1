@@ -25,6 +25,8 @@ $waffleGccPatch = Join-Path $RepoRoot 'patches\ps2recomp-waffle-gcc.patch'
 $vu1nLeakPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1n-leak.patch'
 # GOW-Port: rutas rápidas del UNPACK de VIF1 (de la base anterior), con STMOD 3 como la ruta genérica de Waffle565.
 $vif1UnpackRapidoPatch = Join-Path $RepoRoot 'patches\ps2recomp-vif1-unpack-rapido.patch'
+# GOW-Port: búferes de las cadenas DMA reutilizables (el EE aplanaba ~2,6 MB por cuadro en un vector nuevo).
+$dmaBuffersPatch = Join-Path $RepoRoot 'patches\ps2recomp-dma-buffers.patch'
 # GOW-Port: VF0 y VI0 de VU0 son constantes (PR #79), no incluido en el runtime de Waffle565.
 $vu0Vf0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vf0.patch'
 $vu0Vi0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vi0.patch'
@@ -75,6 +77,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1nHeadsPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $waffleGccPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1nLeakPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vif1UnpackRapidoPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $dmaBuffersPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
