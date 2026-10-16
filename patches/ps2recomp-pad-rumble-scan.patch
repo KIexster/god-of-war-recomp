@@ -1,0 +1,64 @@
+diff --git a/ps2xRuntime/src/lib/ps2_pad_rumble_win.cpp b/ps2xRuntime/src/lib/ps2_pad_rumble_win.cpp
+index 5f0d4e3..0666f09 100644
+--- a/ps2xRuntime/src/lib/ps2_pad_rumble_win.cpp
++++ b/ps2xRuntime/src/lib/ps2_pad_rumble_win.cpp
+@@ -13,6 +13,8 @@
+ #include <string>
+ #include <utility>
+ #include <vector>
++#include <mutex>
++#include <thread>
+ 
+ namespace
+ {
+@@ -231,16 +233,45 @@ bool sendSonyRumble(SonyPad &pad, uint8_t large, uint8_t small)
+     return WriteFile(pad.handle, report.data(), static_cast<DWORD>(report.size()), &written, nullptr) && written == report.size();
+ }
+ 
++// GOW-Port: el escaneo HID (SetupDi + CreateFile en cada dispositivo) tarda decenas de ms y se repetía cada 2 s en
++// el hilo del juego mientras no hubiera un mando Sony (en el barco, ~1,9 % del hilo del EE y un parón por escaneo).
++// Ahora se hace en un hilo aparte; la vibración usa los mandos que ya estén abiertos.
++struct SonyPadSet
++{
++    std::mutex mutex;
++    std::vector<SonyPad> pads;
++    ULONGLONG lastScan = 0;
++    bool scanning = false;
++};
++
++SonyPadSet &sonyPadSet()
++{
++    static SonyPadSet *set = new SonyPadSet; // sin destructor: el hilo de escaneo puede acabar después de main
++    return *set;
++}
++
+ bool sonyRumble(uint8_t large, uint8_t small)
+ {
+-    static std::vector<SonyPad> pads;
+-    static ULONGLONG lastScan = 0;
++    SonyPadSet &set = sonyPadSet();
++    std::lock_guard<std::mutex> lock(set.mutex);
++    std::vector<SonyPad> &pads = set.pads;
+     // (re)scan when there is no pad, at most every 2 s, so a pad plugged in later is found
+     const ULONGLONG now = GetTickCount64();
+-    if (pads.empty() && (lastScan == 0 || now - lastScan >= 2000))
++    if (pads.empty() && !set.scanning && (set.lastScan == 0 || now - set.lastScan >= 2000))
+     {
+-        lastScan = now;
+-        pads = openSonyPads();
++        set.lastScan = now;
++        set.scanning = true;
++        std::thread([&set] {
++            std::vector<SonyPad> found = openSonyPads();
++            std::lock_guard<std::mutex> scanLock(set.mutex);
++            if (set.pads.empty())
++                set.pads = std::move(found);
++            else
++                for (SonyPad &pad : found)
++                    CloseHandle(pad.handle);
++            set.lastScan = GetTickCount64();
++            set.scanning = false;
++        }).detach();
+     }
+     bool any = false;
+     for (size_t i = 0; i < pads.size();)
