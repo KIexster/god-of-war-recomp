@@ -37,7 +37,7 @@
 Em vez de emular o PlayStation 2, este projeto **traduz o executável original do jogo (`SCUS_973.99`) para C++**
 com o [PS2Recomp](https://github.com/ran-j/PS2Recomp) e o compila como um programa nativo do Windows. Desde outubro
 de 2026 a base é o runtime do port nativo do
-[**Waffle565**](https://github.com/Waffle565/God-Of-War-Native-Port) (com a permissão dele), que substitui cada peça
+[**Waffle565**](https://github.com/Waffle565/God-Of-War-Native-Port), que substitui cada peça
 do hardware do PS2 por código nativo que produz o mesmo resultado a partir dos dados do próprio jogo:
 
 | Camada | Substituto nativo |
@@ -230,7 +230,7 @@ A documentação técnica está atualmente em espanhol:
 ## Créditos e licença
 
 - [**PS2Recomp**](https://github.com/ran-j/PS2Recomp), de ran-j e colaboradores — recompilador e runtime (GPL-3.0).
-- [**God-Of-War-Native-Port**](https://github.com/Waffle565/God-Of-War-Native-Port) do Waffle565 — runtime nativo (GS, VU1, IOP, som, DMA, disco), overrides e ferramentas que são a base do port desde outubro de 2026, copiados com a permissão do autor.
+- [**God-Of-War-Native-Port**](https://github.com/Waffle565/God-Of-War-Native-Port) do Waffle565 — runtime nativo (GS, VU1, IOP, som, DMA, disco), overrides e ferramentas que são a base do port desde outubro de 2026; o port do Waffle565, por sua vez, partiu deste repositório.
 - Autores do [**PCSX2**](https://github.com/PCSX2/pcsx2) — GS original utilizado pelo módulo de diagnóstico DX11 opcional, e o interpretador do EE e as operações de VU do runtime (`ee_ref/`, `vu_pcsx2/`, trazidos com o runtime do Waffle565) (GPL-3.0+).
 - [**Urban Reign recomp**](https://github.com/thiagordsfx/urban-reign-recomp), de thiagordsfx — referência compartilhada de integração GS; ajudou a identificar a convenção de campo VSync do nosso espelho ([revisão e alcance](docs/REVISION_URBAN_REIGN.md)).
 - [**Fork do runtime de SotC**](https://github.com/LightVelox/PS2Recomp/tree/ac9efa070638ad3b3accd284de6f898d5ab271d1), de Taylor N. Albarnaz / LightVelox — backend GS OpenGL e fila de comandos, e correções do EE (FPU, desvios de 64 bits, LQ/SQ, saltos finais, VU0 em modo macro e cadeias DMA longas) (GPL-3.0, `ac9efa0`).

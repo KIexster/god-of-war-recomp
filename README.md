@@ -37,7 +37,7 @@
 Instead of emulating the PlayStation 2, this project **translates the game's original executable (`SCUS_973.99`)
 into C++** with [PS2Recomp](https://github.com/ran-j/PS2Recomp) and compiles it into a native Windows program.
 Since October 2026 the base is the runtime of [**Waffle565**](https://github.com/Waffle565/God-Of-War-Native-Port)'s
-native port (with their permission), which replaces every piece of PS2 hardware with native code that produces the
+native port, which replaces every piece of PS2 hardware with native code that produces the
 same result from the game's own data:
 
 | Layer | Native replacement |
@@ -229,7 +229,7 @@ The technical documentation is currently written in Spanish:
 ## Credits and license
 
 - [**PS2Recomp**](https://github.com/ran-j/PS2Recomp) by ran-j and contributors — recompiler and runtime (GPL-3.0).
-- [**God-Of-War-Native-Port**](https://github.com/Waffle565/God-Of-War-Native-Port) by Waffle565 — native runtime (GS, VU1, IOP, sound, DMA, disc), overrides and tools that are the base of the port since October 2026, copied with the author's permission.
+- [**God-Of-War-Native-Port**](https://github.com/Waffle565/God-Of-War-Native-Port) by Waffle565 — native runtime (GS, VU1, IOP, sound, DMA, disc), overrides and tools that are the base of the port since October 2026; their port in turn started from this repository.
 - [**PCSX2**](https://github.com/PCSX2/pcsx2) contributors — original GS used by the optional DX11 diagnostic module, and the EE interpreter and VU operations of the runtime (`ee_ref/`, `vu_pcsx2/`, brought in with Waffle565's runtime) (GPL-3.0+).
 - [**Urban Reign recomp**](https://github.com/thiagordsfx/urban-reign-recomp) by thiagordsfx — shared GS integration reference; helped identify the VSync field convention in our diagnostic mirror ([review and scope](docs/REVISION_URBAN_REIGN.md)).
 - [**SotC runtime fork**](https://github.com/LightVelox/PS2Recomp/tree/ac9efa070638ad3b3accd284de6f898d5ab271d1) by Taylor N. Albarnaz / LightVelox — OpenGL GS backend and command queue, and EE fixes (FPU, 64-bit branches, LQ/SQ, tail jumps, VU0 macro mode and long DMA chains) (GPL-3.0, `ac9efa0`).

@@ -13,7 +13,7 @@ $bld  = Join-Path $rec 'out\build'
 
 $template  = Join-Path $RepoRoot 'config\recomp.template.toml'
 $funcmap   = Join-Path $RepoRoot 'config\funcmap.csv'
-# GOW-Port: runtime de Waffle565/God-Of-War-Native-Port (rama runtime, con permiso del autor),
+# GOW-Port: runtime de Waffle565/God-Of-War-Native-Port (rama runtime),
 # que ya incluye la pila de parches de este repositorio al 2026-10-09. Los parches anteriores
 # siguen en patches\anteriores\ como referencia y no se aplican.
 $waffleRuntimePatch = Join-Path $RepoRoot 'patches\ps2recomp-waffle-runtime.patch'

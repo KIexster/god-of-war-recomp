@@ -1,4 +1,4 @@
-# GOW-Port: copiado de Waffle565/God-Of-War-Native-Port main@34f30d5:tools/iso_extract.py, con permiso del autor.
+# GOW-Port: copiado de Waffle565/God-Of-War-Native-Port main@34f30d5:tools/iso_extract.py.
 """ISO9660 lister/extractor for PS2 discs (no external deps). Handles dual-layer DVDs: layer 1 has its own
 volume descriptor right after layer 0, with extents relative to (that sector - 16).
 
