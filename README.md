@@ -185,6 +185,8 @@ scripts\3_ejecutar_manual.cmd   :: no time limit
 ```
 
 **F2** shows an FPS meter (also with `GOW_FPS=1`); see [`docs/CONTROLES.md`](docs/CONTROLES.md#medidor-de-fps).
+The game starts in borderless fullscreen; **F11** switches to a window and back (`GOW_PANTALLA_COMPLETA=0` starts
+windowed). **F1** opens the runtime debugger.
 
 **5. Native IOP (optional, as in Waffle565's port).** Compiles the game's 8 IRX modules ahead of time and
 shortens loading (gameplay starts at ~21 s instead of ~34 s). One run dumps the modules and the next build
