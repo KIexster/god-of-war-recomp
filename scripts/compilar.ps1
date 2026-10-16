@@ -31,6 +31,8 @@ $dmaBuffersPatch = Join-Path $RepoRoot 'patches\ps2recomp-dma-buffers.patch'
 $padRumbleScanPatch = Join-Path $RepoRoot 'patches\ps2recomp-pad-rumble-scan.patch'
 # GOW-Port: VBlank al campo NTSC real (59,94 Hz): los vídeos iban a 30,00 imágenes/s y el audio se quedaba atrás.
 $vblankNtscPatch = Join-Path $RepoRoot 'patches\ps2recomp-vblank-ntsc.patch'
+# GOW-Port: diagnóstico opcional de la traza por cuadro (PS2X_GS_WORKER_TRACE_SECS/_PCS, VBlank, IRQ del GS, hilos).
+$gsWorkerTracePatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-worker-trace.patch'
 # GOW-Port: VF0 y VI0 de VU0 son constantes (PR #79), no incluido en el runtime de Waffle565.
 $vu0Vf0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vf0.patch'
 $vu0Vi0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vi0.patch'
@@ -84,6 +86,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $vif1UnpackRapidoPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $dmaBuffersPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $padRumbleScanPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vblankNtscPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsWorkerTracePatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
