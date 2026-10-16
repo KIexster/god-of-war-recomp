@@ -39,6 +39,8 @@ $fpsOverlayPatch = Join-Path $RepoRoot 'patches\ps2recomp-fps-overlay.patch'
 $fpsImagenesPatch = Join-Path $RepoRoot 'patches\ps2recomp-fps-imagenes.patch'
 # GOW-Port: la ventana muestra los cuadros en orden (no salta al más reciente si hay menos de 3 pendientes).
 $presentOrdenPatch = Join-Path $RepoRoot 'patches\ps2recomp-present-orden.patch'
+# GOW-Port: pantalla completa sin bordes por defecto (F11) y depurador oculto al empezar (F1).
+$pantallaPatch = Join-Path $RepoRoot 'patches\ps2recomp-pantalla-completa.patch'
 # GOW-Port: VF0 y VI0 de VU0 son constantes (PR #79), no incluido en el runtime de Waffle565.
 $vu0Vf0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vf0.patch'
 $vu0Vi0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vi0.patch'
@@ -96,6 +98,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $gsWorkerTracePatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $fpsOverlayPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $fpsImagenesPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $presentOrdenPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $pantallaPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner

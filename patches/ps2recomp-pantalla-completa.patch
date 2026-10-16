@@ -1,0 +1,39 @@
+diff --git a/ps2xRuntime/include/ps2_debug_panel.h b/ps2xRuntime/include/ps2_debug_panel.h
+index b9933d5..104b148 100644
+--- a/ps2xRuntime/include/ps2_debug_panel.h
++++ b/ps2xRuntime/include/ps2_debug_panel.h
+@@ -16,7 +16,7 @@ public:
+ 
+ private:
+     bool m_initialized = false;
+-    bool m_visible = true;
++    bool m_visible = false; // GOW-Port: oculto al empezar; F1 lo muestra
+     bool m_showRegisters = true;
+     unsigned int m_memoryAddress = 0x00100000u;
+     unsigned int m_memoryBytes = 0x100u;
+diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
+index 757a92c..5ad408b 100644
+--- a/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -862,6 +862,11 @@ bool PS2Runtime::initialize(const char *title)
+                     SetWindowSize(static_cast<int>(width * scale), static_cast<int>(height * scale));
+                     SetWindowPosition(0, 0);
+                 }
++                // GOW-Port: pantalla completa sin bordes por defecto (cubre la barra de tareas); F11 la
++                // alterna. GOW_PANTALLA_COMPLETA=0, o un tamaño pedido con GOW_WINDOW, empiezan en ventana.
++                const char *full = std::getenv("GOW_PANTALLA_COMPLETA");
++                if (full ? full[0] == '1' : std::getenv("GOW_WINDOW") == nullptr)
++                    ToggleBorderlessWindowed();
+             }
+         }
+ #endif
+@@ -2811,6 +2816,9 @@ void PS2Runtime::run()
+                 m_debugUiDrawCallback(*this, m_debugUiUserData);
+             static GowFpsMeter fpsMeter; // GOW-Port: F2
+             fpsMeter.frame(*this);
++            // GOW-Port: F11 alterna pantalla completa sin bordes y ventana (Alt+Enter no: Enter es Start).
++            if (IsKeyPressed(KEY_F11))
++                ToggleBorderlessWindowed();
+         });
+         if (ps2_perf::countFrames()) ps2_perf::hostFrames.fetch_add(1, std::memory_order_relaxed);
+         ps2_perf::report();

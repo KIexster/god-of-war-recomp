@@ -24,6 +24,16 @@ Cuando no hay un gamepad conectado al backend:
 El backend usa el gamepad de índice 0 cuando está disponible. Sus botones, sticks y gatillos se
 adaptan al paquete libpad2. Las presiones se simulan como 0 o 255 según el botón esté suelto o pulsado.
 
+## Pantalla y depurador
+
+Desde 2026-10-16 el juego empieza en **pantalla completa sin bordes**: la ventana ocupa todo el monitor y tapa la barra
+de tareas. Antes era una ventana de 1920x1080 en un monitor del mismo tamaño, con la barra de título fuera de la
+pantalla y la barra de tareas encima de la franja inferior de la imagen. **F11** alterna pantalla completa y ventana.
+`GOW_PANTALLA_COMPLETA=0` empieza en ventana, igual que pedir un tamaño con `GOW_WINDOW=<ancho>x<alto>`;
+`GOW_PANTALLA_COMPLETA=1` fuerza la pantalla completa aunque se pida un tamaño. No se usa Alt+Enter porque Enter es Start.
+
+El **depurador del runtime** ("Runtime Debugger") ya no se abre al empezar: **F1** lo muestra u oculta.
+
 ## Medidor de FPS
 
 **F2** muestra u oculta, arriba a la izquierda, los cuadros por segundo del juego (entradas a `vid::Flip`, la función de

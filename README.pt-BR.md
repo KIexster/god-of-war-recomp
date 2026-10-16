@@ -186,6 +186,8 @@ scripts\3_ejecutar_manual.cmd   :: sem limite
 ```
 
 **F2** mostra um medidor de FPS (também com `GOW_FPS=1`); veja [`docs/CONTROLES.md`](docs/CONTROLES.md#medidor-de-fps).
+O jogo começa em tela cheia sem bordas; **F11** alterna para janela e volta (`GOW_PANTALLA_COMPLETA=0` começa em
+janela). **F1** abre o depurador do runtime.
 
 **5. IOP nativo (opcional, como no port do Waffle565).** Compila antecipadamente os 8 módulos IRX do jogo
 e encurta o carregamento (a partida começa em ~21 s em vez de ~34 s). Uma execução extrai os módulos e a
