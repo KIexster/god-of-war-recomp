@@ -1,0 +1,159 @@
+diff --git a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+index 68f8833..377be77 100644
+--- a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
++++ b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+@@ -10,6 +10,8 @@
+ #include <limits>
+ #include <stdexcept>
+ 
++double ps2GsWorkerTraceSeconds(); // GOW-Port: ps2_memory.cpp
++
+ namespace
+ {
+     constexpr int KE_OK = 0;
+@@ -1684,6 +1686,18 @@ void EeScheduler::makeRunning(GuestThread &item)
+     item.status = EeThreadStatus::Running;
+     m_currentThreadId = item.id;
+     renewTimeSlice();
++    {
++        // GOW-Port: diagnóstico (PS2X_GS_WORKER_TRACE): hilo del EE que pasa a ejecutarse.
++        static const double tf = [] { const char *v = std::getenv("PS2X_GS_WORKER_TRACE"); return v ? std::atof(v) : -1.0; }();
++        static const auto t0 = std::chrono::steady_clock::now();
++        if (tf >= 0.0)
++        {
++            const double sec = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
++            if (sec >= tf && sec < tf + ps2GsWorkerTraceSeconds())
++                std::fprintf(stderr, "[gsw-trace] %.0f thread %d\n",
++                             std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now().time_since_epoch()).count(), item.id);
++        }
++    }
+ }
+ 
+ void gowDumpBranchRing(const char *why);
+@@ -1811,6 +1825,16 @@ void EeScheduler::pollGsInterrupt()
+     g_gsIrqLatched = active;
+     if (rising != 0u)
+     {
++        // GOW-Port: diagnóstico (PS2X_GS_WORKER_TRACE): el EE despacha la interrupción del GS.
++        static const double tf = [] { const char *v = std::getenv("PS2X_GS_WORKER_TRACE"); return v ? std::atof(v) : -1.0; }();
++        static const auto t0 = std::chrono::steady_clock::now();
++        if (tf >= 0.0)
++        {
++            const double sec = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
++            if (sec >= tf && sec < tf + ps2GsWorkerTraceSeconds())
++                std::fprintf(stderr, "[gsw-trace] %.0f ee-gs-irq 0\n",
++                             std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now().time_since_epoch()).count());
++        }
+         dispatchIrq(false, 0u);
+     }
+ }
+@@ -1973,6 +1997,18 @@ void EeScheduler::processEvent(const EeEvent &event)
+         break;
+     case EeEventType::VBlankStart:
+         ++m_vsyncTick;
++        {
++            // GOW-Port: diagnóstico (PS2X_GS_WORKER_TRACE): inicio de cada VBlank.
++            static const double tf = [] { const char *v = std::getenv("PS2X_GS_WORKER_TRACE"); return v ? std::atof(v) : -1.0; }();
++            static const auto t0 = std::chrono::steady_clock::now();
++            if (tf >= 0.0)
++            {
++                const double sec = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
++                if (sec >= tf && sec < tf + ps2GsWorkerTraceSeconds())
++                    std::fprintf(stderr, "[gsw-trace] %.0f vblank 0\n",
++                                 std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now().time_since_epoch()).count());
++            }
++        }
+         m_runtime.memory().gs().vsyncTick.store(m_vsyncTick, std::memory_order_release);
+         if ((m_vsyncTick & 1u) != 0u)
+         {
+diff --git a/ps2xRuntime/src/lib/ps2_memory.cpp b/ps2xRuntime/src/lib/ps2_memory.cpp
+index f61d4b9..2204301 100644
+--- a/ps2xRuntime/src/lib/ps2_memory.cpp
++++ b/ps2xRuntime/src/lib/ps2_memory.cpp
+@@ -1972,6 +1972,14 @@ void PS2Memory::deliverDma(DmaPath path, std::vector<uint8_t> &&bytes)
+     giveDmaBuffer(std::move(bytes));
+ }
+ 
++// GOW-Port: duración de la ventana de PS2X_GS_WORKER_TRACE (PS2X_GS_WORKER_TRACE_SECS, por defecto 2 s); la usan también
++// ps2_runtime.cpp y EeScheduler.cpp.
++double ps2GsWorkerTraceSeconds()
++{
++    static const double secs = [] { const char *v = std::getenv("PS2X_GS_WORKER_TRACE_SECS"); return v ? std::atof(v) : 2.0; }();
++    return secs;
++}
++
+ // GOW-Port: PS2X_GS_WORKER_TRACE (see PS2Runtime::dispatchGuestBranch): worker kick/start/done times.
+ static void gsWorkerTrace(const char *what, size_t bytes)
+ {
+@@ -1981,7 +1989,7 @@ static void gsWorkerTrace(const char *what, size_t bytes)
+     static const auto traceStart = std::chrono::steady_clock::now();
+     const auto now = std::chrono::steady_clock::now();
+     const double s = std::chrono::duration<double>(now - traceStart).count();
+-    if (s >= traceFrom && s < traceFrom + 2.0)
++    if (s >= traceFrom && s < traceFrom + ps2GsWorkerTraceSeconds())
+         std::fprintf(stderr, "[gsw-trace] %.0f %s %zu\n",
+                      std::chrono::duration<double, std::micro>(now.time_since_epoch()).count(), what, bytes);
+ }
+diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
+index 5bfeccb..f086621 100644
+--- a/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -39,6 +39,8 @@ static bool gowUsePcsx2Vu1(); // GOW_VU1_PCSX2=1, defined before PS2Runtime::ini
+ #include <cstdio>
+ #include <cstdlib>
+ 
++double ps2GsWorkerTraceSeconds(); // GOW-Port: ps2_memory.cpp
++
+ // GOW-Port: audio device position for the movie A/V check (GOW_MPEG_DIAG, Kernel/Stubs/MPEG.cpp): frames the device
+ // has played (including silence fill) and frames the sound engine produced (= GOW_AUDIO_PCM file position).
+ std::atomic<uint64_t> g_gowAudioFramesPlayed{0};
+@@ -715,7 +717,19 @@ bool PS2Runtime::syncCoreSubsystems()
+                             [this]
+                             {
+                                 if (m_eeScheduler && (m_memory.gs().csr.load(std::memory_order_acquire) & 0x3u) != 0u)
++                                {
++                                    // GOW-Port: diagnóstico (PS2X_GS_WORKER_TRACE): el stage levanta FINISH/SIGNAL y despierta al EE.
++                                    static const double tf = [] { const char *v = std::getenv("PS2X_GS_WORKER_TRACE"); return v ? std::atof(v) : -1.0; }();
++                                    static const auto t0 = std::chrono::steady_clock::now();
++                                    if (tf >= 0.0)
++                                    {
++                                        const double sec = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
++                                        if (sec >= tf && sec < tf + ps2GsWorkerTraceSeconds())
++                                            std::fprintf(stderr, "[gsw-trace] %.0f stage-wake 0\n",
++                                                         std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now().time_since_epoch()).count());
++                                    }
+                                     m_eeScheduler->postEvent(EeEvent{EeEventType::ExternalWake, 0xFFFFFFFFu, ~0ull});
++                                }
+                             });
+     m_gifArbiter.setProcessPathPacketFn([this](GifPathId path, const uint8_t *data, uint32_t size)
+                                     {
+@@ -1586,12 +1600,27 @@ bool PS2Runtime::dispatchGuestBranch(uint8_t *rdram,
+     // GOW-Port: PS2X_GS_WORKER_TRACE=<s>: for 2 s after <s> s of uptime, host µs of vid::Flip (0x1837B8),
+     // vid::WaitForDMAComplete (0x183878) and 0x13F730 entry/return, to see the per-frame dependency chain.
+     static const double traceFrom = [] { const char *v = std::getenv("PS2X_GS_WORKER_TRACE"); return v ? std::atof(v) : -1.0; }();
+-    const bool traced = traceFrom >= 0.0 && (targetPc == 0x1837B8u || targetPc == 0x183878u || targetPc == 0x13F730u);
++    // GOW-Port: PS2X_GS_WORKER_TRACE_PCS=pc,pc,... añade funciones del juego a la traza (diagnóstico).
++    static const std::vector<uint32_t> tracePcs = [] {
++        std::vector<uint32_t> v;
++        if (const char *e = std::getenv("PS2X_GS_WORKER_TRACE_PCS"))
++            for (const char *p = e; *p;)
++            {
++                char *end = nullptr;
++                const unsigned long x = std::strtoul(p, &end, 16);
++                if (end == p) break;
++                v.push_back(static_cast<uint32_t>(x));
++                p = (*end == ',') ? end + 1 : end;
++            }
++        return v;
++    }();
++    const bool traced = traceFrom >= 0.0 && (targetPc == 0x1837B8u || targetPc == 0x183878u || targetPc == 0x13F730u ||
++                                             std::find(tracePcs.begin(), tracePcs.end(), targetPc) != tracePcs.end());
+     static const auto traceStart = std::chrono::steady_clock::now();
+     auto traceEvent = [&](const char *what)
+     {
+         const double s = std::chrono::duration<double>(std::chrono::steady_clock::now() - traceStart).count();
+-        if (s >= traceFrom && s < traceFrom + 2.0)
++        if (s >= traceFrom && s < traceFrom + ps2GsWorkerTraceSeconds())
+             std::fprintf(stderr, "[gsw-trace] %.0f %s 0x%X\n",
+                          std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now().time_since_epoch()).count(),
+                          what, targetPc);

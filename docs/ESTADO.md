@@ -7246,3 +7246,25 @@ del reproductor de vídeo (13 entradas de Waffle, privadas); diagnósticos `GOW_
 - Con el cambio (`bin\waffle10`): BONUS06 correcto (29,97 imágenes/s, deriva 0,01 s), BONUS03 correcto (deriva
   0,08 s), SEMO10 correcto (deriva 0,01 s, sin audio faltante). SEMO08, P04MP05 y BONUS20 siguen igual (otras causas).
   Barco con la cámara quieta: `guest_flip_hz` mediana 56,15 (54,16–59,98), velocidad 1,00; el techo pasa a 59,94.
+
+### Anatomía de un cuadro en el barco y traza ampliada (2026-10-16)
+
+- `patches/ps2recomp-gs-worker-trace.patch` amplía el diagnóstico `PS2X_GS_WORKER_TRACE=<s>`: ventana configurable
+  (`PS2X_GS_WORKER_TRACE_SECS`, por defecto 2 s), funciones del juego extra (`PS2X_GS_WORKER_TRACE_PCS=hex,hex,...`) y
+  eventos `stage-wake` (el stage del GS levanta FINISH y despierta al EE), `ee-gs-irq` (el EE despacha la interrupción
+  del GS), `vblank` y `thread <id>` (hilo del EE que pasa a ejecutarse). Desactivado por defecto.
+- Traza de 30 s en el barco con la cámara quieta (`bin\wtrace`, 1640 cuadros, `logs/tools/gap2.py` privado):
+  - Por cuadro: flip → kick de la cadena DMA (~2,6 MB) 0,3 ms; la lógica del juego en el EE (`sub_00162F18`…) dura
+    8,5 ms de mediana (p90 9,6) y corre en paralelo con el trabajo del trabajador VU1/VIF + stage GS (mediana
+    14,6 ms, p90 15,9, máx. 19,6); el stage termina a la vez que el trabajador (`stage-wake` = `job-done`).
+  - Tras el trabajo: `ee-gs-irq` 10–20 µs después; de ahí al siguiente kick mediana 0,86 ms (p90 2,48; los casos
+    lentos tienen un VBlank en medio); de `WaitForDMAComplete` al flip mediana 2,15 ms (p10 1,00, p90 3,05) de trabajo
+    del EE en serie (no es espera de VBlank: los flips caen a 6,85 ms de mediana del último VBlank, repartidos).
+  - Periodo de cuadro ≈ trabajo + 3,5 ms: trabajo 12–14 ms → 17,12 ms; 14–16 ms → 18,32 ms; 16–18 ms → 20,18 ms.
+    Para 60 Hz estables el trabajo VU1+GS tendría que bajar de ~13 ms.
+  - No hay cambios de hilo del EE en ese tramo (un solo hilo activo). `DelayThread` no se llama.
+- El hilo del EE pasa ~46 % del tiempo durmiendo en `processDueDeadlines` (ritmo frente al tiempo real, 16 pasos por
+  campo), sobre todo desde `advanceIopEeCycles`.
+- Descartado: caché de registros VF/ACC en los bloques de la VU1 nativa (`vu1n_gen.py --regcache`, no subido): menos
+  lecturas generadas (ACC 3052 → 1636) pero el mismo coste, ~3,8 ns por ciclo de VU1 (el compilador ya reenviaba los
+  valores); `GOW_VU1N_VERIFY=20000` daba el mismo único desajuste que sin el cambio (ejecución 15759, ya existente).
