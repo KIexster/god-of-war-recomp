@@ -24,6 +24,14 @@ Cuando no hay un gamepad conectado al backend:
 El backend usa el gamepad de índice 0 cuando está disponible. Sus botones, sticks y gatillos se
 adaptan al paquete libpad2. Las presiones se simulan como 0 o 255 según el botón esté suelto o pulsado.
 
+## Medidor de FPS
+
+**F2** muestra u oculta, arriba a la izquierda, los cuadros por segundo del juego (entradas a `vid::Flip`, la función de
+cuadro del juego; `GOW_PERF_FRAME_PC` la cambia) y los refrescos de la ventana. Verde a partir de 57, amarillo de 45 a 57,
+rojo por debajo. `GOW_FPS=1` lo muestra desde el inicio. Mientras se ve, cada segundo se escribe en el registro
+(`logs\ejecutar_err.log`) una línea `[gow-fps] t=<s> juego=<fps> min=<mínimo en ventanas de 0,25 s> pantalla=<Hz>`, para
+localizar después dónde hubo tirones.
+
 ## Validación
 
 `scripts\probar_pad2.cmd` compila y ejecuta una prueba independiente del juego. Comprueba el orden

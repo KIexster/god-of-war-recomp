@@ -1,0 +1,98 @@
+diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
+index f086621..76c569b 100644
+--- a/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -1535,6 +1535,75 @@ void gowDumpBranchRing(const char *why)
+         std::fprintf(stderr, "  src=%08x dst=%08x ra=%08x kind=%u\n", r.src, r.dst, r.ra, r.kind);
+     }
+ }
++// GOW-Port: medidor de FPS en pantalla. F2 lo muestra u oculta; GOW_FPS=1 lo muestra desde el inicio. "Juego" son
++// las entradas por segundo a la función de cuadro del juego (GOW_PERF_FRAME_PC; en God of War vid::Flip, 0x001837B8),
++// "pantalla" los refrescos de la ventana. Mientras se ve escribe una línea [gow-fps] por segundo en el registro
++// (con el mínimo de cada segundo medido en ventanas de 0,25 s), para localizar tirones al jugar.
++namespace
++{
++    std::atomic<uint64_t> g_gowFpsGuestFrames{0};
++
++    uint32_t gowFpsFramePc()
++    {
++        static const uint32_t pc = []
++        {
++            const char *value = std::getenv("GOW_PERF_FRAME_PC");
++            return value ? static_cast<uint32_t>(std::strtoul(value, nullptr, 0)) : 0x001837B8u;
++        }();
++        return pc;
++    }
++
++    struct GowFpsMeter
++    {
++        bool visible = [] { const char *v = std::getenv("GOW_FPS"); return v && v[0] == '1'; }();
++        std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
++        std::chrono::steady_clock::time_point windowStart = start, secondStart = start;
++        uint64_t windowGuest = 0, windowHost = 0, secondGuest = 0, secondHost = 0, hostFrames = 0;
++        double guestFps = 0.0, hostFps = 0.0, secondMin = 1e9;
++
++        void frame(PS2Runtime &runtime)
++        {
++            if (IsKeyPressed(KEY_F2))
++                visible = !visible;
++            ++hostFrames;
++            if (!visible)
++                return;
++            const auto now = std::chrono::steady_clock::now();
++            const uint64_t guest = g_gowFpsGuestFrames.load(std::memory_order_relaxed);
++            const double window = std::chrono::duration<double>(now - windowStart).count();
++            if (window >= 0.25)
++            {
++                guestFps = static_cast<double>(guest - windowGuest) / window;
++                hostFps = static_cast<double>(hostFrames - windowHost) / window;
++                secondMin = std::min(secondMin, guestFps);
++                windowStart = now;
++                windowGuest = guest;
++                windowHost = hostFrames;
++            }
++            const double second = std::chrono::duration<double>(now - secondStart).count();
++            if (second >= 1.0)
++            {
++                std::fprintf(stderr, "[gow-fps] t=%.0f juego=%.1f min=%.1f pantalla=%.1f\n",
++                             std::chrono::duration<double>(now - start).count(),
++                             static_cast<double>(guest - secondGuest) / second, secondMin,
++                             static_cast<double>(hostFrames - secondHost) / second);
++                secondStart = now;
++                secondGuest = guest;
++                secondHost = hostFrames;
++                secondMin = 1e9;
++            }
++            (void)runtime;
++            char text[96];
++            std::snprintf(text, sizeof(text), "%.0f FPS  (pantalla %.0f Hz)", guestFps, hostFps);
++            const Color colour = guestFps >= 57.0 ? GREEN : guestFps >= 45.0 ? YELLOW : RED;
++            const int size = std::max(20, GetScreenHeight() / 30); // ~36 px a 1080p
++            const int pad = size / 2;
++            DrawRectangle(pad, pad, MeasureText(text, size) + pad, size + pad / 2, Color{0, 0, 0, 170});
++            DrawText(text, pad + pad / 2, pad + pad / 4, size, colour);
++        }
++    };
++}
++
+ bool PS2Runtime::dispatchGuestBranch(uint8_t *rdram,
+                                      R5900Context *ctx,
+                                      uint32_t targetPc,
+@@ -1597,6 +1666,8 @@ bool PS2Runtime::dispatchGuestBranch(uint8_t *rdram,
+     const uint64_t checkpointSerial = m_eeCheckpointSerial;
+     const uint64_t jumpSerial = g_guestJumpSerial;
+     ps2_perf::guestEntry(targetPc, rdram); // GOW-Port: también cuenta llamadas que no vuelven al dispatcher.
++    if (targetPc == gowFpsFramePc())
++        g_gowFpsGuestFrames.fetch_add(1, std::memory_order_relaxed); // GOW-Port: medidor de FPS (F2)
+     // GOW-Port: PS2X_GS_WORKER_TRACE=<s>: for 2 s after <s> s of uptime, host µs of vid::Flip (0x1837B8),
+     // vid::WaitForDMAComplete (0x183878) and 0x13F730 entry/return, to see the per-frame dependency chain.
+     static const double traceFrom = [] { const char *v = std::getenv("PS2X_GS_WORKER_TRACE"); return v ? std::atof(v) : -1.0; }();
+@@ -2727,6 +2798,8 @@ void PS2Runtime::run()
+         {
+             if (m_debugUiInitialized && m_debugUiDrawCallback)
+                 m_debugUiDrawCallback(*this, m_debugUiUserData);
++            static GowFpsMeter fpsMeter; // GOW-Port: F2
++            fpsMeter.frame(*this);
+         });
+         if (ps2_perf::countFrames()) ps2_perf::hostFrames.fetch_add(1, std::memory_order_relaxed);
+         ps2_perf::report();
