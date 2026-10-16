@@ -7286,3 +7286,21 @@ del reproductor de vídeo (13 entradas de Waffle, privadas); diagnósticos `GOW_
   59,9 con el cambio; imágenes perdidas 413 / 293 / 277 / 359 / 208 / 455 → 102 / 34 / 58 / 169 / 58 / 166.
   Cuadros del juego (mediana) 58,9 / 58,9 / 59,9 / 59,0 / 58,9 / 59,0 antes y 59,9 / 55,0 / 55,9 / 58,1 / 56,0 /
   59,9 con el cambio: posible bajada pequeña, sin confirmar (la velocidad del juego queda en 1,00–1,01 en ambos).
+
+## Banco aislado del frontend GS: grabación y reproducción de paquetes GIF (2026-10-16)
+
+`patches/ps2recomp-gs-replay.patch` añade un flujo opcional para comparar cambios del frontend GS sin repetir
+una partida completa:
+
+- `PS2X_GS_WORKER=1`, `PS2X_GS_RECORD=<archivo>` y `PS2X_GS_RECORD_SECONDS=<N>` guardan durante `N` segundos
+  los paquetes que llegan a `ps2_gs_stage::push`, conservando el orden, el `GifPathId` y los bytes exactos.
+  El reloj comienza con el primer paquete. Si no se especifica la duración, usa 10 segundos.
+- `PS2X_GS_REPLAY=<archivo>` inicializa el frontend, reproduce la captura sin ejecutar el guest, informa paquetes,
+  bytes y milisegundos consumidos dentro de `GS::processGIFPacket`, y termina el proceso. El tiempo excluye las
+  lecturas del archivo para que una comparación A/B mida el frontend y no el disco.
+- El formato tiene versión, límites de tamaño y un pie de cierre. Una captura incompleta o truncada se rechaza en
+  vez de producir una medición parcial presentada como válida.
+
+La prueba independiente de `ps2xTest` graba dos paquetes de rutas distintas, comprueba orden y contenido al
+reproducirlos y verifica que un archivo sin el pie completo sea rechazado. Los archivos reales de captura contienen
+datos del juego, están destinados únicamente a pruebas locales y **no deben subirse al repositorio**.

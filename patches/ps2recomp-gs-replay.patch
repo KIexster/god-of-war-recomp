@@ -1,0 +1,416 @@
+diff --git a/ps2xRuntime/include/runtime/gs/gs_stage.h b/ps2xRuntime/include/runtime/gs/gs_stage.h
+index 4de5d6b..e9da2ba 100644
+--- a/ps2xRuntime/include/runtime/gs/gs_stage.h
++++ b/ps2xRuntime/include/runtime/gs/gs_stage.h
+@@ -15,6 +15,14 @@ namespace ps2_gs_stage
+ {
+     using ProcessFn = std::function<void(GifPathId, const uint8_t *, uint32_t)>;
+ 
++    struct ReplayStats
++    {
++        uint64_t packets = 0;
++        uint64_t bytes = 0;
++        uint64_t processNanoseconds = 0;
++        bool ok = false;
++    };
++
+     // Starts the stage thread (once). `process` runs each packet on the stage thread; `afterBatch` runs there
+     // after each batch of packets (used to wake the EE when the GS raised an interrupt).
+     void start(ProcessFn process, std::function<void()> afterBatch);
+@@ -25,6 +33,9 @@ namespace ps2_gs_stage
+     // Queues a copy of the packet (blocks while too much is queued, so the worker cannot run far ahead).
+     void push(GifPathId path, const uint8_t *data, uint32_t size);
+ 
++    // GOW-Port: reproduce una captura PS2X_GS_RECORD sin ejecutar el guest. El tiempo excluye la lectura del archivo.
++    ReplayStats replayFile(const char *path, const ProcessFn &process);
++
+     // Returns when every queued packet has been processed. No-op on the stage thread itself.
+     void waitIdle();
+ }
+diff --git a/ps2xRuntime/src/lib/gs/gs_stage.cpp b/ps2xRuntime/src/lib/gs/gs_stage.cpp
+index 786cb51..3964720 100644
+--- a/ps2xRuntime/src/lib/gs/gs_stage.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_stage.cpp
+@@ -1,9 +1,14 @@
+ #include "runtime/gs/gs_stage.h"
+ 
++#include <algorithm>
++#include <array>
++#include <chrono>
+ #include <condition_variable>
+ #include <cstdio>
++#include <cstdlib>
+ #include <deque>
+ #include <mutex>
++#include <string>
+ #include <thread>
+ #include <vector>
+ 
+@@ -18,6 +23,32 @@ namespace
+     // Bound on queued bytes: enough for several XGKICK packets of a batch, small enough that the worker never
+     // runs a whole frame ahead of the GS frontend.
+     constexpr size_t kMaxQueuedBytes = 4u << 20;
++    constexpr std::array<uint8_t, 8> kReplayMagic{{'P', 'S', '2', 'X', 'G', 'S', 'R', 'P'}};
++    constexpr uint32_t kReplayVersion = 1u;
++    constexpr uint32_t kMaxReplayPacket = 64u << 20;
++
++    bool writeU32(FILE *file, uint32_t value)
++    {
++        const uint8_t bytes[4] = {
++            static_cast<uint8_t>(value),
++            static_cast<uint8_t>(value >> 8u),
++            static_cast<uint8_t>(value >> 16u),
++            static_cast<uint8_t>(value >> 24u),
++        };
++        return std::fwrite(bytes, 1, sizeof(bytes), file) == sizeof(bytes);
++    }
++
++    bool readU32(FILE *file, uint32_t &value)
++    {
++        uint8_t bytes[4]{};
++        if (std::fread(bytes, 1, sizeof(bytes), file) != sizeof(bytes))
++            return false;
++        value = static_cast<uint32_t>(bytes[0]) |
++                (static_cast<uint32_t>(bytes[1]) << 8u) |
++                (static_cast<uint32_t>(bytes[2]) << 16u) |
++                (static_cast<uint32_t>(bytes[3]) << 24u);
++        return true;
++    }
+ 
+     struct Stage
+     {
+@@ -34,6 +65,13 @@ namespace
+         std::thread::id threadId;
+         ps2_gs_stage::ProcessFn process;
+         std::function<void()> afterBatch;
++        FILE *recordFile = nullptr;
++        std::string recordPath;
++        double recordSeconds = 10.0;
++        bool recordStarted = false;
++        std::chrono::steady_clock::time_point recordStart;
++        uint64_t recordPackets = 0;
++        uint64_t recordBytes = 0;
+     };
+ 
+     Stage &stage()
+@@ -42,6 +80,47 @@ namespace
+         return s;
+     }
+ 
++    void closeRecording(Stage &s, const char *reason, bool seal = true)
++    {
++        if (!s.recordFile)
++            return;
++        const bool footerOk = !seal || (writeU32(s.recordFile, 0u) && writeU32(s.recordFile, 0u));
++        const bool flushOk = std::fflush(s.recordFile) == 0;
++        const bool closeOk = std::fclose(s.recordFile) == 0;
++        s.recordFile = nullptr;
++        std::fprintf(stderr, "[gs-replay] record %s: %llu packets, %llu bytes -> %s%s\n", reason,
++                     static_cast<unsigned long long>(s.recordPackets),
++                     static_cast<unsigned long long>(s.recordBytes), s.recordPath.c_str(),
++                     (footerOk && flushOk && closeOk) ? "" : " (write error)");
++    }
++
++    void recordPacket(Stage &s, GifPathId path, const uint8_t *data, uint32_t size)
++    {
++        if (!s.recordFile)
++            return;
++        const auto now = std::chrono::steady_clock::now();
++        if (!s.recordStarted)
++        {
++            s.recordStarted = true;
++            s.recordStart = now;
++        }
++        else if (std::chrono::duration<double>(now - s.recordStart).count() >= s.recordSeconds)
++        {
++            closeRecording(s, "complete");
++            return;
++        }
++        const bool ok = writeU32(s.recordFile, static_cast<uint32_t>(path)) &&
++                        writeU32(s.recordFile, size) &&
++                        (size == 0u || std::fwrite(data, 1, size, s.recordFile) == size);
++        if (!ok)
++        {
++            closeRecording(s, "failed", false);
++            return;
++        }
++        ++s.recordPackets;
++        s.recordBytes += size;
++    }
++
+     void loop()
+     {
+         Stage &s = stage();
+@@ -77,8 +156,80 @@ namespace
+ 
+ namespace ps2_gs_stage
+ {
++    ReplayStats replayFile(const char *path, const ProcessFn &process)
++    {
++        ReplayStats stats{};
++        FILE *file = path ? std::fopen(path, "rb") : nullptr;
++        if (!file)
++        {
++            std::fprintf(stderr, "[gs-replay] cannot open %s\n", path ? path : "(null)");
++            return stats;
++        }
++        std::array<uint8_t, kReplayMagic.size()> magic{};
++        uint32_t version = 0, reserved = 0;
++        const bool headerOk = std::fread(magic.data(), 1, magic.size(), file) == magic.size() &&
++                              readU32(file, version) && readU32(file, reserved) &&
++                              magic == kReplayMagic && version == kReplayVersion && reserved == 0u;
++        if (!headerOk)
++        {
++            std::fprintf(stderr, "[gs-replay] invalid header in %s\n", path);
++            std::fclose(file);
++            return stats;
++        }
++
++        std::vector<uint8_t> data;
++        for (;;)
++        {
++            uint8_t first = 0;
++            const size_t got = std::fread(&first, 1, 1, file);
++            if (got == 0u)
++                break;
++            uint8_t rest[3]{};
++            if (std::fread(rest, 1, sizeof(rest), file) != sizeof(rest))
++                break;
++            const uint32_t pathValue = static_cast<uint32_t>(first) |
++                                       (static_cast<uint32_t>(rest[0]) << 8u) |
++                                       (static_cast<uint32_t>(rest[1]) << 16u) |
++                                       (static_cast<uint32_t>(rest[2]) << 24u);
++            uint32_t size = 0;
++            if (!readU32(file, size))
++                break;
++            if (pathValue == 0u && size == 0u)
++            {
++                stats.ok = true;
++                break;
++            }
++            if (pathValue < static_cast<uint32_t>(GifPathId::Path1) ||
++                pathValue > static_cast<uint32_t>(GifPathId::Path3) || size > kMaxReplayPacket)
++                break;
++            data.resize(size);
++            if (size != 0u && std::fread(data.data(), 1, size, file) != size)
++                break;
++            const auto begin = std::chrono::steady_clock::now();
++            process(static_cast<GifPathId>(pathValue), data.data(), size);
++            stats.processNanoseconds += static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
++                std::chrono::steady_clock::now() - begin).count());
++            ++stats.packets;
++            stats.bytes += size;
++        }
++        std::fclose(file);
++        if (!stats.ok)
++            std::fprintf(stderr, "[gs-replay] truncated or invalid record in %s after %llu packets\n", path,
++                         static_cast<unsigned long long>(stats.packets));
++        return stats;
++    }
++
+     void start(ProcessFn process, std::function<void()> afterBatch)
+     {
++        if (const char *replayPath = std::getenv("PS2X_GS_REPLAY"); replayPath && *replayPath)
++        {
++            const ReplayStats stats = replayFile(replayPath, process);
++            std::fprintf(stderr, "[gs-replay] %s: %llu packets, %llu bytes, %.3f ms frontend\n",
++                         stats.ok ? "complete" : "failed",
++                         static_cast<unsigned long long>(stats.packets),
++                         static_cast<unsigned long long>(stats.bytes), stats.processNanoseconds / 1e6);
++            std::exit(stats.ok ? EXIT_SUCCESS : EXIT_FAILURE);
++        }
+         Stage &s = stage();
+         std::lock_guard<std::mutex> lock(s.mutex);
+         if (s.thread.joinable())
+@@ -86,6 +237,31 @@ namespace ps2_gs_stage
+         s.process = std::move(process);
+         s.afterBatch = std::move(afterBatch);
+         s.stop = false;
++        s.recordPackets = 0;
++        s.recordBytes = 0;
++        s.recordStarted = false;
++        s.recordPath.clear();
++        if (const char *recordPath = std::getenv("PS2X_GS_RECORD"); recordPath && *recordPath)
++        {
++            s.recordPath = recordPath;
++            if (const char *seconds = std::getenv("PS2X_GS_RECORD_SECONDS"); seconds && *seconds)
++                s.recordSeconds = std::max(0.001, std::atof(seconds));
++            else
++                s.recordSeconds = 10.0;
++            s.recordFile = std::fopen(recordPath, "wb");
++            const bool headerOk = s.recordFile &&
++                                  std::fwrite(kReplayMagic.data(), 1, kReplayMagic.size(), s.recordFile) == kReplayMagic.size() &&
++                                  writeU32(s.recordFile, kReplayVersion) && writeU32(s.recordFile, 0u);
++            if (!headerOk)
++            {
++                if (s.recordFile)
++                    std::fclose(s.recordFile);
++                s.recordFile = nullptr;
++                std::fprintf(stderr, "[gs-replay] cannot create %s\n", recordPath);
++            }
++            else
++                std::fprintf(stderr, "[gs-replay] recording %.3f s to %s\n", s.recordSeconds, recordPath);
++        }
+         s.thread = std::thread(loop);
+         s.threadId = s.thread.get_id();
+         std::fprintf(stderr, "[gs-stage] GS frontend on its own thread, pipelined behind VU1 (PS2X_GS_PIPELINE=0 disables)\n");
+@@ -103,6 +279,10 @@ namespace ps2_gs_stage
+         s.work.notify_all();
+         s.thread.join();
+         s.threadId = {};
++        {
++            std::lock_guard<std::mutex> lock(s.mutex);
++            closeRecording(s, "stopped");
++        }
+     }
+ 
+     bool running()
+@@ -119,6 +299,7 @@ namespace ps2_gs_stage
+     {
+         Stage &s = stage();
+         std::unique_lock<std::mutex> lock(s.mutex);
++        recordPacket(s, path, data, size);
+         s.space.wait(lock, [&s, size] { return s.queuedBytes == 0 || s.queuedBytes + size <= kMaxQueuedBytes; });
+         Packet p;
+         p.path = path;
+diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
+index 757a92c..54e2df2 100644
+--- a/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -711,7 +711,10 @@ bool PS2Runtime::syncCoreSubsystems()
+         const char *pipeline = std::getenv("PS2X_GS_PIPELINE");
+         return worker && worker[0] == '1' && !(pipeline && pipeline[0] == '0');
+     }();
+-    if (gsPipeline)
++    // GOW-Port: PS2X_GS_REPLAY initializes only the frontend and exits after replaying the file; it does not need
++    // the live worker/pipeline to be enabled.
++    const char *const gsReplay = std::getenv("PS2X_GS_REPLAY");
++    if (gsPipeline || (gsReplay && *gsReplay))
+         ps2_gs_stage::start([this](GifPathId path, const uint8_t *data, uint32_t size)
+                             { m_gs.processGIFPacket(data, size, path); },
+                             [this]
+diff --git a/ps2xTest/CMakeLists.txt b/ps2xTest/CMakeLists.txt
+index 9cd85a2..1b065c3 100644
+--- a/ps2xTest/CMakeLists.txt
++++ b/ps2xTest/CMakeLists.txt
+@@ -29,6 +29,7 @@ add_library(ps2_test_lib STATIC
+     src/ps2_vu1_tests.cpp
+     src/ps2_vu_tests.cpp
+     src/ps2_gs_tests.cpp
++    src/ps2_gs_replay_tests.cpp # GOW-Port: grabacion y replay aislado de paquetes GIF.
+     src/ps2_gpu_profile_tests.cpp # GOW-Port: ventanas y lecturas de timestamps sin espera.
+     src/ps2_gpu_upload_ring_tests.cpp # GOW-Port: datos pendientes y fallback de uploads.
+     src/ps2_gs_shared_queue_tests.cpp # GOW-Port: FIFO y capturas bajo demanda.
+diff --git a/ps2xTest/src/main.cpp b/ps2xTest/src/main.cpp
+index 77d559a..f5e6337 100644
+--- a/ps2xTest/src/main.cpp
++++ b/ps2xTest/src/main.cpp
+@@ -13,6 +13,7 @@ void register_ps2_memory_tests();
+ void register_ps2_vu1_tests();
+ void register_ps2_vu_tests();
+ void register_ps2_gs_tests();
++void register_ps2_gs_replay_tests(); // GOW-Port
+ void register_ps2_gpu_profile_tests(); // GOW-Port
+ void runGpuUploadRingTests(); // GOW-Port
+ void runGsSharedQueueTests(); // GOW-Port
+@@ -39,6 +40,7 @@ int main()
+     register_ps2_vu1_tests();
+     register_ps2_vu_tests();
+     register_ps2_gs_tests();
++    register_ps2_gs_replay_tests();
+     register_ps2_gpu_profile_tests();
+     runGpuUploadRingTests();
+     runGsSharedQueueTests();
+diff --git a/ps2xTest/src/ps2_gs_replay_tests.cpp b/ps2xTest/src/ps2_gs_replay_tests.cpp
+new file mode 100644
+index 0000000..3f1803b
+--- /dev/null
++++ b/ps2xTest/src/ps2_gs_replay_tests.cpp
+@@ -0,0 +1,87 @@
++#include "MiniTest.h"
++#include "runtime/gs/gs_stage.h"
++
++#include <array>
++#include <chrono>
++#include <cstdlib>
++#include <filesystem>
++#include <string>
++#include <vector>
++
++namespace
++{
++    void setEnv(const char *name, const char *value)
++    {
++#ifdef _WIN32
++        _putenv_s(name, value ? value : "");
++#else
++        if (value)
++            setenv(name, value, 1);
++        else
++            unsetenv(name);
++#endif
++    }
++
++    struct SeenPacket
++    {
++        GifPathId path;
++        std::vector<uint8_t> data;
++    };
++}
++
++void register_ps2_gs_replay_tests()
++{
++    MiniTest::Case("GS replay", [](TestCase &tc)
++    {
++        tc.Run("record preserves packet paths bytes and order", [](TestCase &t)
++        {
++            const auto unique = std::chrono::steady_clock::now().time_since_epoch().count();
++            const std::filesystem::path file = std::filesystem::temp_directory_path() /
++                                               ("ps2x_gs_replay_" + std::to_string(unique) + ".bin");
++            setEnv("PS2X_GS_RECORD", file.string().c_str());
++            setEnv("PS2X_GS_RECORD_SECONDS", "60");
++            std::vector<SeenPacket> live;
++            ps2_gs_stage::start([&](GifPathId path, const uint8_t *data, uint32_t size)
++            {
++                live.push_back({path, std::vector<uint8_t>(data, data + size)});
++            }, [] {});
++            const std::array<uint8_t, 5> a{{1, 2, 3, 4, 5}};
++            const std::array<uint8_t, 3> b{{9, 8, 7}};
++            ps2_gs_stage::push(GifPathId::Path1, a.data(), static_cast<uint32_t>(a.size()));
++            ps2_gs_stage::push(GifPathId::Path3, b.data(), static_cast<uint32_t>(b.size()));
++            ps2_gs_stage::waitIdle();
++            ps2_gs_stage::stop();
++            setEnv("PS2X_GS_RECORD", nullptr);
++            setEnv("PS2X_GS_RECORD_SECONDS", nullptr);
++
++            std::vector<SeenPacket> replayed;
++            const ps2_gs_stage::ReplayStats stats = ps2_gs_stage::replayFile(file.string().c_str(),
++                [&](GifPathId path, const uint8_t *data, uint32_t size)
++                {
++                    replayed.push_back({path, std::vector<uint8_t>(data, data + size)});
++                });
++            t.IsTrue(stats.ok, "a complete recording should replay successfully");
++            t.Equals(stats.packets, 2ull, "replay should report both packets");
++            t.Equals(stats.bytes, 8ull, "replay should report payload bytes");
++            t.Equals(live.size(), static_cast<size_t>(2), "live stage should process both packets");
++            t.Equals(replayed.size(), static_cast<size_t>(2), "replay should process both packets");
++            if (replayed.size() == 2)
++            {
++                t.Equals(replayed[0].path, GifPathId::Path1, "first replay path should be PATH1");
++                t.Equals(replayed[1].path, GifPathId::Path3, "second replay path should be PATH3");
++                t.Equals(replayed[0].data, std::vector<uint8_t>(a.begin(), a.end()), "first payload should be exact");
++                t.Equals(replayed[1].data, std::vector<uint8_t>(b.begin(), b.end()), "second payload should be exact");
++            }
++
++            const auto truncated = file.string() + ".truncated";
++            std::filesystem::copy_file(file, truncated, std::filesystem::copy_options::overwrite_existing);
++            std::filesystem::resize_file(truncated, std::filesystem::file_size(truncated) - 1u);
++            const ps2_gs_stage::ReplayStats bad = ps2_gs_stage::replayFile(truncated.c_str(),
++                [](GifPathId, const uint8_t *, uint32_t) {});
++            std::error_code ignored;
++            std::filesystem::remove(file, ignored);
++            std::filesystem::remove(truncated, ignored);
++            t.IsFalse(bad.ok, "a recording without its complete footer must be rejected");
++        });
++    });
++}
