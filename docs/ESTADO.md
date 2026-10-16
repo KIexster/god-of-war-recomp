@@ -7220,7 +7220,10 @@ del reproductor de vídeo (13 entradas de Waffle, privadas); diagnósticos `GOW_
   emitido pasa por el servicio DMA nativo (`eeDmaStore`) o por los registros de pantalla nativos.
 - Con el cambio (`bin\waffle9`): `GOW_IO_HIST` ya no lista ningún acceso durante el vídeo; `Semo01` se ve igual
   (49 marcas `[MPEG:sync]`, capturas correctas).
-- **No es solo rendimiento:** con `tools/pruebas/videos.py` (PR #107) un vídeo pedido desde el menú de extras
-  (`GOW_BONUS_MOVIE`, `D01MP03`) fallaba sin la tabla: llamada indirecta a `0x0` en `0x161c68` y el hilo principal
-  dormido, sin imágenes. Con la tabla: correcto, 270 imágenes a 30,00/s, 8,01 s de imagen y 8,00 s de audio,
-  deriva A/V 0,01 s, sin muestras saturadas ni bloques repetidos.
+- El fallo de un vídeo pedido desde el menú de extras (`tools/pruebas/videos.py` de la PR #107, `GOW_BONUS_MOVIE`):
+  llamada virtual a `0x0` en `0x161c68` (método `+0xB4` de la tabla de un objeto global en `-0x3D48($s0)`, aún sin
+  construir) y el hilo principal dormido. **No lo arregla la tabla `[mmio]`** (una primera ejecución correcta con
+  ella resultó ser casualidad): es intermitente, 3 de 9 intentos con `D01MP03`; luego 3/3 correctos sin la tabla
+  (`waffle5`) y 3/3 con ella (`waffle9`). Ocurre cuando el arnés fuerza la petición (`GOW_BONUS_MOVIE_DELAY` segundos
+  después de que el menú empiece a actualizarse) antes de que el título haya construido ese objeto. Ejecución
+  correcta: 270 imágenes a 30,00/s, 8,01 s de imagen y 8,00 s de audio, deriva A/V 0,01 s.
