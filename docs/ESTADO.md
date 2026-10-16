@@ -7227,3 +7227,22 @@ del reproductor de vídeo (13 entradas de Waffle, privadas); diagnósticos `GOW_
   (`waffle5`) y 3/3 con ella (`waffle9`). Ocurre cuando el arnés fuerza la petición (`GOW_BONUS_MOVIE_DELAY` segundos
   después de que el menú empiece a actualizarse) antes de que el título haya construido ese objeto. Ejecución
   correcta: 270 imágenes a 30,00/s, 8,01 s de imagen y 8,00 s de audio, deriva A/V 0,01 s.
+
+### Validación de los 67 vídeos y VBlank NTSC (2026-10-16)
+
+- `tools/pruebas/videos.py` (PR #107) con el ejecutable de `main` + tabla `[mmio]`, una sesión por vídeo (`--batch 1`):
+  25/67 correctos a la primera; 41 fallos eran la llamada virtual nula del arnés al forzar la petición desde el menú
+  de extras (`missing-target` en `0x161c68`; el vídeo ni se carga). Reintentando esos (hasta 3 sesiones,
+  `logs/tools/reintentar_videos.py`, privado): **61/67 correctos**. En lotes la 2.ª petición forzada falla casi
+  siempre; con `GOW_BONUS_MOVIE_DELAY=20` en vez de 8 fallaron 5 de 7 sesiones.
+- Fallos reales: BONUS03 y BONUS06 (deriva A/V 0,80 y 0,44 s), SEMO10 (deriva 0,46 s y audio faltante), SEMO08
+  (214,6 s de audio para 210,2 s de imagen, igual que en Waffle565), P04MP05 (se detiene, abierto también en Waffle565)
+  y BONUS20 (imagen correcta, RMS 0 durante 208 s: por comprobar si el vídeo tiene audio).
+- Causa de las derivas de BONUS03/06: el VBlank del runtime era de 16 667 µs (59,9988 Hz) y la PS2 NTSC da
+  60/1,001 Hz (59,94). Los vídeos se presentaban a 30,00 imágenes/s en lugar de 29,97 y el audio quedaba atrás un
+  0,1 %: 436 s × 0,001 = 0,44 s (BONUS06), 812 s → 0,81 s (BONUS03).
+- `patches/ps2recomp-vblank-ntsc.patch`: periodo del VBlank = 16 683 350 ns y kEeClockHz × 1001 / 60000 ciclos.
+  Prueba `VBlank field period is the NTSC 60/1.001 Hz field` (falla con el valor anterior; comprobado).
+- Con el cambio (`bin\waffle10`): BONUS06 correcto (29,97 imágenes/s, deriva 0,01 s), BONUS03 correcto (deriva
+  0,08 s), SEMO10 correcto (deriva 0,01 s, sin audio faltante). SEMO08, P04MP05 y BONUS20 siguen igual (otras causas).
+  Barco con la cámara quieta: `guest_flip_hz` mediana 56,15 (54,16–59,98), velocidad 1,00; el techo pasa a 59,94.
