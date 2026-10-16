@@ -7189,3 +7189,22 @@ del reproductor de vídeo (13 entradas de Waffle, privadas); diagnósticos `GOW_
   `[gow-perf]` y no atendió WM_CLOSE; antes, `w1_dump` (`waffle1`, sin cambios propios) tampoco atendió WM_CLOSE.
   El arnés vuelca ahora las pilas de todos los hilos (`pilas.exe`, privado) si a los 40 s no hay `[gow-perf]`;
   0 apariciones en las 14 ejecuciones siguientes.
+
+### Vibración fuera del hilo del juego; UNPACK SSE de 16/8 bits descartado (2026-10-16)
+
+- Perfil por muestreo (`muestrear4`, 150 s, barco con la cámara quieta, `bin\waffle5`): en el hilo del EE el 1,9 % de
+  las muestras estaba en `openSonyPads ← sonyRumble ← ps2PadWindowsRumble`. Sin un mando Sony conectado, cada cambio
+  de motores del juego volvía a enumerar los dispositivos HID (SetupDi + `CreateFile` en cada uno) como mucho cada
+  2 s, en el hilo del juego. En dos trazas del trabajador apareció un cuadro aislado de 73-74 ms.
+- `patches/ps2recomp-pad-rumble-scan.patch` hace ese escaneo en un hilo aparte; la vibración usa los mandos ya
+  abiertos. Con el cambio (`bin\waffle7b`, perfil de 120 s) `openSonyPads` no aparece en el hilo del EE. Sin prueba
+  en `ps2xTest`: es código de Windows con dispositivos HID reales.
+- A/B alterno a tres bandas, 4 rondas de 130 s (`guest_flip_hz`, no FPS físicos), `waffle5` = `main`:
+  `waffle5` 59,15 / 56,15 / 57,54 / 54,97; `waffle7b` (vibración) 56,56 / 55,17 / 58,54 / 58,57: neutro en media;
+  `waffle8b` (UNPACK V4/V3 de 16 y 8 bits con SSE4.1) 51,56 / 51,95 / 58,74 / 52,16: peor en 3 de 4, descartado
+  (la prueba diferencial pasaba; queda por entender por qué es más lento que el bucle escalar).
+- Error de procedimiento corregido: `waffle6/7/8` se compilaron sin `ps2recomp-dma-buffers` (copia de trabajo
+  revertida), así que sus primeras comparaciones no valen; las de esta sección usan `waffle7b/8b`, con la base de `main`.
+- Cuelgue de la presentación: reapareció una vez en `waffle6` (`runs\ab6_3B`: 4 líneas `[gow-perf]` y luego nada,
+  el juego siguió 148 s). El vigilante del arnés detecta ahora 15 s sin líneas nuevas y vuelca las pilas. 0 apariciones
+  en las 38 ejecuciones siguientes (`caza5_*`, `caza6_*`, `sep_*`, `sepb_*`); 4 en total desde la migración.
