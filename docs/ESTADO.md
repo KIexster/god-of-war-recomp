@@ -7146,3 +7146,26 @@ Observación aparte: el ejecutable de la PR #101 con `GOW_PERF_DIAG=1` se quedó
 **Próximos pasos:** portar checkpoint-fast y el VBlank sin bloqueo a la base de Waffle y medir A/B; tabla `[mmio]`
 del reproductor de vídeo (13 entradas de Waffle, privadas); diagnósticos `GOW_SAMPLER`, `GOW_STALL_DIAG`,
 `GOW_SPU2_PERF`.
+
+### Rutas rápidas del UNPACK de VIF1 sobre la base de Waffle565 (2026-10-16)
+
+- Muestreo (`muestrear`, 30 s, barco con la cámara quieta, `bin\waffle2`): en el hilo trabajador (VIF1 + VU1)
+  `PS2Memory::processVIF1Data` era el 18,5 % de las muestras, más que la VU1 nativa (`runNative` 11,3 %). El
+  runtime de Waffle descomprime cada vector por la ruta genérica.
+- `patches/ps2recomp-vif1-unpack-rapido.patch` porta las rutas rápidas de la base anterior (un bucle por formato
+  sin máscara y la ruta SSE con máscara o STMOD 1-3). Diferencia con la versión anterior: STMOD 3 también guarda el
+  dato en ROW, como la ruta genérica de Waffle (y PCSX2), así que sin máscara solo STMOD 0 va por el bucle simple.
+- Prueba `VIF1 UNPACK fast paths match the generic path`: compara las dos rutas (interruptor
+  `ps2_vif1::setUnpackFastPaths`, solo para pruebas) en memoria de VU1 y ROW para todos los formatos, máscara,
+  STMOD 0-3, cinco ciclos CL/WL y extensión de signo. Falla si se quita el caso STMOD 3 (comprobado).
+- A/B alterno, 3 rondas de 130 s, misma escena, `GOW_PERF_DIAG=frames` (`guest_flip_hz` de las 12 últimas
+  ventanas, no FPS físicos):
+
+| Ronda | A `waffle2` (sin cambio) mediana (mín–máx) | B `waffle3` (con el parche) mediana (mín–máx) |
+|---|---|---|
+| 1 | 47,35 (43,53–59,96) | 50,94 (49,56–52,76) |
+| 2 | 44,75 (42,55–60,16) | 53,76 (48,08–60,00) |
+| 3 | 46,55 (43,55–59,98) | 54,00 (51,00–59,80) |
+
+  Velocidad del juego 1,00 en todas. Sigue por debajo de 60: lo siguiente son las reservas de memoria del hilo
+  trabajador (`RtlAllocateHeap` ~3,9 % de sus muestras) y la VU1 nativa.
