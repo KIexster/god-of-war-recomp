@@ -1,0 +1,129 @@
+diff --git a/ps2xRuntime/src/lib/ps2_memory.cpp b/ps2xRuntime/src/lib/ps2_memory.cpp
+index 3f99c2b..f61d4b9 100644
+--- a/ps2xRuntime/src/lib/ps2_memory.cpp
++++ b/ps2xRuntime/src/lib/ps2_memory.cpp
+@@ -1,3 +1,4 @@
++#include <mutex>
+ #include "runtime/ps2_memory.h"
+ #include "runtime/gs/gs_stage.h"
+ #include "runtime/gs/gs_display.h"
+@@ -1788,9 +1789,39 @@ void PS2Memory::appendGuestBytes(uint32_t address, uint32_t bytes, std::vector<u
+     }
+ }
+ 
++// GOW-Port: búferes de las transferencias DMA para reutilizar. sendDma/sendDmaChain aplanan la cadena en un vector
++// (en el barco, ~2,6 MB por cuadro) que antes nacía vacío, crecía realojándose y se liberaba al acabar el trabajo del
++// GS; ahora vuelve aquí con su capacidad (con un tope de búferes guardados).
++namespace
++{
++    std::mutex g_dmaBufferMutex;
++    std::vector<std::vector<uint8_t>> g_dmaBuffers;
++    constexpr size_t kMaxDmaBuffers = 4u;
++
++    std::vector<uint8_t> takeDmaBuffer()
++    {
++        std::lock_guard<std::mutex> lock(g_dmaBufferMutex);
++        if (g_dmaBuffers.empty())
++            return {};
++        std::vector<uint8_t> buffer = std::move(g_dmaBuffers.back());
++        g_dmaBuffers.pop_back();
++        buffer.clear();
++        return buffer;
++    }
++
++    void giveDmaBuffer(std::vector<uint8_t> &&buffer)
++    {
++        if (buffer.capacity() == 0u)
++            return;
++        std::lock_guard<std::mutex> lock(g_dmaBufferMutex);
++        if (g_dmaBuffers.size() < kMaxDmaBuffers)
++            g_dmaBuffers.push_back(std::move(buffer));
++    }
++}
++
+ void PS2Memory::sendDma(DmaPath path, uint32_t address, uint32_t qwc)
+ {
+-    std::vector<uint8_t> bytes;
++    std::vector<uint8_t> bytes = takeDmaBuffer();
+     appendGuestBytes(address, qwc * 16u, bytes);
+     deliverDma(path, std::move(bytes));
+ }
+@@ -1806,7 +1837,7 @@ void PS2Memory::sendDmaChain(DmaPath path, uint32_t tagAddress)
+     const bool transferTags = path != DmaPath::Gif && config != m_ioRegisters.end() && (config->second & 0x40u) != 0u;
+     uint32_t returnStack[2] = {};
+     uint32_t depth = 0u;
+-    std::vector<uint8_t> bytes;
++    std::vector<uint8_t> bytes = takeDmaBuffer();
+     int tags = 0;
+     for (; tags < kMaxTags; ++tags)
+     {
+@@ -1910,6 +1941,7 @@ void PS2Memory::deliverDma(DmaPath path, std::vector<uint8_t> &&bytes)
+     if (path == DmaPath::Vif0)
+     {
+         processVIF0Data(bytes.data(), size);
++        giveDmaBuffer(std::move(bytes));
+         return;
+     }
+     if (m_gsWorkerEnabled)
+@@ -1937,6 +1969,7 @@ void PS2Memory::deliverDma(DmaPath path, std::vector<uint8_t> &&bytes)
+     }
+     if (m_gifArbiter)
+         m_gifArbiter->drain();
++    giveDmaBuffer(std::move(bytes));
+ }
+ 
+ // GOW-Port: PS2X_GS_WORKER_TRACE (see PS2Runtime::dispatchGuestBranch): worker kick/start/done times.
+@@ -1977,6 +2010,8 @@ void PS2Memory::runGsWorkerJob(GsWorkerJob &job)
+     }
+     if (m_gifArbiter)
+         m_gifArbiter->drain();
++    for (GsWorkerItem &item : job.items)
++        giveDmaBuffer(std::move(item.data));
+ }
+ 
+ void PS2Memory::gsWorkerLoop()
+diff --git a/ps2xTest/src/ps2_memory_tests.cpp b/ps2xTest/src/ps2_memory_tests.cpp
+index 60b4405..160a16c 100644
+--- a/ps2xTest/src/ps2_memory_tests.cpp
++++ b/ps2xTest/src/ps2_memory_tests.cpp
+@@ -467,6 +467,40 @@ void register_ps2_memory_tests()
+             t.IsTrue(cases > 1000u, "every format, mask, mode and cycle combination should be covered");
+         });
+ 
++        tc.Run("DMA sends reuse buffers without replaying earlier data", [](TestCase &t)
++        {
++            // GOW-Port: los búferes de sendDma se reutilizan (ps2recomp-dma-buffers). Un envío corto después de uno
++            // largo no debe volver a procesar los bytes que el primero dejó en el búfer.
++            PS2Memory mem;
++            t.IsTrue(mem.initialize(), "PS2Memory initialize should succeed");
++            const auto writePacket = [&mem](uint32_t address, uint32_t vuAddr, uint32_t vectors, uint32_t fill)
++            {
++                std::vector<uint8_t> packet;
++                appendU32(packet, 0u); // NOP
++                appendU32(packet, 0u);
++                appendU32(packet, 0u);
++                appendU32(packet, makeVifCmd(0x6Cu, static_cast<uint8_t>(vectors), static_cast<uint16_t>(vuAddr))); // UNPACK V4-32
++                for (uint32_t i = 0; i < vectors * 4u; ++i)
++                    appendU32(packet, fill + i);
++                std::memcpy(mem.getRDRAM() + address, packet.data(), packet.size());
++                return static_cast<uint32_t>(packet.size() / 16u);
++            };
++            const uint32_t longQwc = writePacket(0x100000u, 0x000u, 64u, 0x11110000u);
++            mem.sendDma(PS2Memory::DmaPath::Vif1, 0x100000u, longQwc);
++            uint32_t first = 0;
++            std::memcpy(&first, mem.getVU1Data() + 63u * 16u, 4u);
++            t.Equals(first, 0x11110000u + 63u * 4u, "the long UNPACK should reach VU1 memory");
++
++            std::memset(mem.getVU1Data(), 0, 64u * 16u);
++            const uint32_t shortQwc = writePacket(0x200000u, 0x200u, 2u, 0x22220000u);
++            mem.sendDma(PS2Memory::DmaPath::Vif1, 0x200000u, shortQwc);
++            uint32_t second = 0, stale = 0;
++            std::memcpy(&second, mem.getVU1Data() + 0x201u * 16u, 4u);
++            std::memcpy(&stale, mem.getVU1Data() + 63u * 16u, 4u);
++            t.Equals(second, 0x22220000u + 4u, "the short UNPACK should reach VU1 memory");
++            t.Equals(stale, 0u, "bytes left from the long send must not be processed again");
++        });
++
+         tc.Run("VIF MPG num zero uploads 256 instructions", [](TestCase &t)
+         {
+             PS2Memory mem;
