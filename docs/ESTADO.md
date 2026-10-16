@@ -7286,3 +7286,20 @@ del reproductor de vídeo (13 entradas de Waffle, privadas); diagnósticos `GOW_
   59,9 con el cambio; imágenes perdidas 413 / 293 / 277 / 359 / 208 / 455 → 102 / 34 / 58 / 169 / 58 / 166.
   Cuadros del juego (mediana) 58,9 / 58,9 / 59,9 / 59,0 / 58,9 / 59,0 antes y 59,9 / 55,0 / 55,9 / 58,1 / 56,0 /
   59,9 con el cambio: posible bajada pequeña, sin confirmar (la velocidad del juego queda en 1,00–1,01 en ambos).
+
+### Paquetes GIF en lotes hacia la etapa GS (2026-10-16)
+
+Cronómetros por fase del hilo de trabajo (diagnóstico temporal, no subido) en combate en el barco: dos trabajos por
+cuadro de ~7,5 ms; la VU1 se lleva ~88 % (~930 llamadas por trabajo) y pasar los paquetes a la etapa GS ~13 % (~2850
+`push` por trabajo, cada uno con bloqueo, copia y a menudo un despertar del hilo de la etapa). El "modo lento" que se
+veía entre partidas es carga de la escena: las partidas lentas hacen hasta un 50 % más de llamadas a la VU1 con el
+mismo coste por ciclo (3,8-4,0 ns).
+
+`ps2recomp-gs-stage-lotes.patch`: el trabajador acumula los paquetes (cabecera de 16 bytes con ruta y tamaño, datos
+alineados a 16) y los entrega a la etapa cada `PS2X_GS_STAGE_BATCH` bytes (16384 por defecto; 0 = uno a uno), al
+final de cada trabajo y antes de esperar a la etapa desde el propio hilo productor. Prueba: "GS stage batches packets
+and delivers them in order with exact sizes".
+
+A/B en combate, 5 rondas alternas (trabajo por cuadro, mediana / cuadros con trabajo > 15 ms), antes → después:
+13,15/9 % → 12,98/6 %; 14,04/22 % → 13,58/10 %; 14,47/30 % → 11,39/1 %; 13,65/12 % → 12,82/2 %; 14,48/30 % →
+13,24/4 %. Las 5 a favor; mediana de medianas 14,04 → 12,98 ms, periodo de cuadro mediano 17,3 → 16,9 ms.
