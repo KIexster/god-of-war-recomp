@@ -32,6 +32,11 @@ rojo por debajo. `GOW_FPS=1` lo muestra desde el inicio. Mientras se ve, cada se
 (`logs\ejecutar_err.log`) una línea `[gow-fps] t=<s> juego=<fps> min=<mínimo en ventanas de 0,25 s> pantalla=<Hz>`, para
 localizar después dónde hubo tirones.
 
+Desde 2026-10-16 muestra también las **imágenes** por segundo que llegan de verdad a la ventana (`imagenes=` y
+`min_imagenes=` en el registro); el color sigue a la peor de las dos cifras. Si el juego va a 60 y las imágenes no, el
+tirón viene de la presentación, no del juego. `PS2X_GS_PRESENT_LATEST=1` vuelve a mostrar siempre el cuadro más reciente
+(comportamiento anterior, con imágenes perdidas cuando el ritmo del juego es irregular).
+
 ## Validación
 
 `scripts\probar_pad2.cmd` compila y ejecuta una prueba independiente del juego. Comprueba el orden

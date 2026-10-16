@@ -1,0 +1,37 @@
+diff --git a/ps2xRuntime/src/lib/gs/gpu/gs_gl.cpp b/ps2xRuntime/src/lib/gs/gpu/gs_gl.cpp
+index 89d3258..1da4e2c 100644
+--- a/ps2xRuntime/src/lib/gs/gpu/gs_gl.cpp
++++ b/ps2xRuntime/src/lib/gs/gpu/gs_gl.cpp
+@@ -152,17 +152,27 @@ namespace GSSharedPresent
+         if (!Active())
+             return false;
+         std::lock_guard<std::mutex> lock(s_sharedMutex);
+-        int newest = -1;
+-        uint64_t sequence = s_readingSlot >= 0 ? s_sharedSlots[s_readingSlot].frame.sequence : 0u;
++        // GOW-Port: los cuadros se muestran en orden (el siguiente aún no mostrado), no siempre el más reciente: con el
++        // ritmo irregular del juego (cuadros de 10 a 22 ms) dos cuadros podían caer en un mismo refresco de la ventana y
++        // el primero no se veía nunca (60 cuadros del juego, 44 imágenes en pantalla). Solo se salta al más reciente si
++        // hay 3 o más pendientes, para no acumular retraso. PS2X_GS_PRESENT_LATEST=1: siempre el más reciente.
++        static const bool latestOnly = [] { const char *v = std::getenv("PS2X_GS_PRESENT_LATEST"); return v && v[0] == '1'; }();
++        const uint64_t shown = s_readingSlot >= 0 ? s_sharedSlots[s_readingSlot].frame.sequence : 0u;
++        int newest = -1, oldest = -1, pending = 0;
+         for (int i = 0; i < static_cast<int>(s_sharedSlots.size()); ++i)
+         {
+             const SharedSlot &slot = s_sharedSlots[i];
+-            if (!slot.reading && slot.frame.sequence > sequence && slot.produced && completed(s_hostApi, slot.produced))
++            if (!slot.reading && slot.frame.sequence > shown && slot.produced && completed(s_hostApi, slot.produced))
+             {
+-                newest = i;
+-                sequence = slot.frame.sequence;
++                ++pending;
++                if (newest < 0 || slot.frame.sequence > s_sharedSlots[newest].frame.sequence)
++                    newest = i;
++                if (oldest < 0 || slot.frame.sequence < s_sharedSlots[oldest].frame.sequence)
++                    oldest = i;
+             }
+         }
++        if (!latestOnly && pending > 0 && pending < 3)
++            newest = oldest;
+         if (newest >= 0)
+         {
+             releaseReading();

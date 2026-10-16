@@ -7268,3 +7268,21 @@ del reproductor de vídeo (13 entradas de Waffle, privadas); diagnósticos `GOW_
 - Descartado: caché de registros VF/ACC en los bloques de la VU1 nativa (`vu1n_gen.py --regcache`, no subido): menos
   lecturas generadas (ACC 3052 → 1636) pero el mismo coste, ~3,8 ns por ciclo de VU1 (el compilador ya reenviaba los
   valores); `GOW_VU1N_VERIFY=20000` daba el mismo único desajuste que sin el cambio (ejecución 15759, ya existente).
+
+### Imágenes perdidas en la presentación (2026-10-16, partida del usuario)
+
+- Partida del usuario con el medidor (`jugar.cmd`, 274 s de juego): el juego daba ~60 cuadros/s de mediana, pero en
+  28 segundos llegaron a la ventana bastantes menos imágenes (p. ej. 60 cuadros del juego y 44 imágenes). Es la caída
+  que se veía "con muchos enemigos" y que el medidor de cuadros del juego no registraba. En combate denso además el
+  juego baja a 44–56 (EE ~3,8 s y VU1 ~3,7 s por ventana de 5 s).
+- Causa: el ritmo del juego es irregular (cuadros de 10 a 22 ms; los VBlank que recibe llegan cada 10,8–23,3 ms) y
+  `GSSharedPresent::Acquire` tomaba siempre el cuadro más reciente: si dos cuadros caían en un mismo refresco de la
+  ventana, el primero no se veía.
+- `patches/ps2recomp-present-orden.patch`: se muestra el siguiente cuadro aún no mostrado; solo se salta al más
+  reciente con 3 o más pendientes. `PS2X_GS_PRESENT_LATEST=1` vuelve al comportamiento anterior.
+  `patches/ps2recomp-fps-imagenes.patch`: el medidor (F2) y la línea `[gow-fps]` cuentan también las imágenes.
+- A/B alterno, 6 rondas de 130 s con combate continuo (el guion por defecto), segundos 40-130:
+  imágenes por segundo (mediana) 55,0 / 55,9 / 58,0 / 54,9 / 56,0 / 54,9 antes, 59,9 / 59,4 / 58,9 / 59,6 / 59,9 /
+  59,9 con el cambio; imágenes perdidas 413 / 293 / 277 / 359 / 208 / 455 → 102 / 34 / 58 / 169 / 58 / 166.
+  Cuadros del juego (mediana) 58,9 / 58,9 / 59,9 / 59,0 / 58,9 / 59,0 antes y 59,9 / 55,0 / 55,9 / 58,1 / 56,0 /
+  59,9 con el cambio: posible bajada pequeña, sin confirmar (la velocidad del juego queda en 1,00–1,01 en ambos).

@@ -1,0 +1,121 @@
+diff --git a/ps2xRuntime/src/lib/gs/gs_host_present.cpp b/ps2xRuntime/src/lib/gs/gs_host_present.cpp
+index 4ffe16b..5f90be1 100644
+--- a/ps2xRuntime/src/lib/gs/gs_host_present.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_host_present.cpp
+@@ -1,4 +1,5 @@
+ // GOW-Port: contexto host, selección de frames y dibujo raylib usados por el port.
++#include <atomic>
+ #include "runtime/gs/gs_host_present.h"
+ #include "rlgl.h"
+ #include "runtime/gs/gs_frontend.h"
+@@ -11,6 +12,10 @@
+ #include <cstring>
+ #include <iostream>
+ 
++// GOW-Port: imágenes nuevas presentadas en la ventana (medidor de FPS de ps2_runtime.cpp).
++std::atomic<uint64_t> g_gowPresentedFrames{0};
++
++
+ namespace
+ {
+     constexpr uint32_t kWidth = 640u;
+@@ -162,6 +167,7 @@ void GSHostPresentation::blankFallback()
+     current.borrowed = false;
+     current.blank = true;
+     uploaded = true;
++    g_gowPresentedFrames.fetch_add(1, std::memory_order_relaxed); // GOW-Port: medidor de FPS (F2)
+ }
+ 
+ GSHostPresentation::View GSHostPresentation::prepare(GS &gs, uint64_t vsyncTick)
+@@ -198,6 +204,7 @@ GSHostPresentation::View GSHostPresentation::prepare(GS &gs, uint64_t vsyncTick)
+             {
+                 gs.recordAcquiredSharedFrame(frame);
+                 lastSharedSequence = frame.sequence;
++                g_gowPresentedFrames.fetch_add(1, std::memory_order_relaxed); // GOW-Port: medidor de FPS (F2)
+             }
+             if (!frame.blank && frame.texture != 0u && frame.width != 0u && frame.height != 0u)
+             {
+@@ -255,6 +262,7 @@ GSHostPresentation::View GSHostPresentation::prepare(GS &gs, uint64_t vsyncTick)
+         }
+         UpdateTextureRec(fallback, Rectangle{0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height)}, scratch.data());
+         uploaded = true;
++    g_gowPresentedFrames.fetch_add(1, std::memory_order_relaxed); // GOW-Port: medidor de FPS (F2)
+         uploadedBlank = false;
+         current.texture = fallback;
+         current.width = width;
+@@ -279,6 +287,7 @@ GSHostPresentation::View GSHostPresentation::prepare(GS &gs, uint64_t vsyncTick)
+     }
+     UpdateTexture(fallback, upload.data());
+     uploaded = true;
++    g_gowPresentedFrames.fetch_add(1, std::memory_order_relaxed); // GOW-Port: medidor de FPS (F2)
+     uploadedBlank = false;
+     current.texture = fallback;
+     current.width = width;
+diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
+index 76c569b..757a92c 100644
+--- a/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -1539,6 +1539,7 @@ void gowDumpBranchRing(const char *why)
+ // las entradas por segundo a la función de cuadro del juego (GOW_PERF_FRAME_PC; en God of War vid::Flip, 0x001837B8),
+ // "pantalla" los refrescos de la ventana. Mientras se ve escribe una línea [gow-fps] por segundo en el registro
+ // (con el mínimo de cada segundo medido en ventanas de 0,25 s), para localizar tirones al jugar.
++extern std::atomic<uint64_t> g_gowPresentedFrames; // gs_host_present.cpp
+ namespace
+ {
+     std::atomic<uint64_t> g_gowFpsGuestFrames{0};
+@@ -1559,7 +1560,8 @@ namespace
+         std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+         std::chrono::steady_clock::time_point windowStart = start, secondStart = start;
+         uint64_t windowGuest = 0, windowHost = 0, secondGuest = 0, secondHost = 0, hostFrames = 0;
+-        double guestFps = 0.0, hostFps = 0.0, secondMin = 1e9;
++        uint64_t windowShown = 0, secondShown = 0;
++        double guestFps = 0.0, hostFps = 0.0, shownFps = 0.0, secondMin = 1e9, secondShownMin = 1e9;
+ 
+         void frame(PS2Runtime &runtime)
+         {
+@@ -1570,12 +1572,16 @@ namespace
+                 return;
+             const auto now = std::chrono::steady_clock::now();
+             const uint64_t guest = g_gowFpsGuestFrames.load(std::memory_order_relaxed);
++            const uint64_t shown = g_gowPresentedFrames.load(std::memory_order_relaxed);
+             const double window = std::chrono::duration<double>(now - windowStart).count();
+             if (window >= 0.25)
+             {
+                 guestFps = static_cast<double>(guest - windowGuest) / window;
+                 hostFps = static_cast<double>(hostFrames - windowHost) / window;
++                shownFps = static_cast<double>(shown - windowShown) / window;
+                 secondMin = std::min(secondMin, guestFps);
++                secondShownMin = std::min(secondShownMin, shownFps);
++                windowShown = shown;
+                 windowStart = now;
+                 windowGuest = guest;
+                 windowHost = hostFrames;
+@@ -1583,19 +1589,24 @@ namespace
+             const double second = std::chrono::duration<double>(now - secondStart).count();
+             if (second >= 1.0)
+             {
+-                std::fprintf(stderr, "[gow-fps] t=%.0f juego=%.1f min=%.1f pantalla=%.1f\n",
++                std::fprintf(stderr, "[gow-fps] t=%.0f juego=%.1f min=%.1f imagenes=%.1f min_imagenes=%.1f pantalla=%.1f\n",
+                              std::chrono::duration<double>(now - start).count(),
+                              static_cast<double>(guest - secondGuest) / second, secondMin,
++                             static_cast<double>(shown - secondShown) / second, secondShownMin,
+                              static_cast<double>(hostFrames - secondHost) / second);
++                secondShown = shown;
++                secondShownMin = 1e9;
+                 secondStart = now;
+                 secondGuest = guest;
+                 secondHost = hostFrames;
+                 secondMin = 1e9;
+             }
+             (void)runtime;
+-            char text[96];
+-            std::snprintf(text, sizeof(text), "%.0f FPS  (pantalla %.0f Hz)", guestFps, hostFps);
+-            const Color colour = guestFps >= 57.0 ? GREEN : guestFps >= 45.0 ? YELLOW : RED;
++            char text[128];
++            // "juego": cuadros que produce el juego; "imagenes": cuadros nuevos que llegan a la ventana.
++            std::snprintf(text, sizeof(text), "%.0f FPS juego  %.0f imagenes  (pantalla %.0f Hz)", guestFps, shownFps, hostFps);
++            const double worst = std::min(guestFps, shownFps);
++            const Color colour = worst >= 57.0 ? GREEN : worst >= 45.0 ? YELLOW : RED;
+             const int size = std::max(20, GetScreenHeight() / 30); // ~36 px a 1080p
+             const int pad = size / 2;
+             DrawRectangle(pad, pad, MeasureText(text, size) + pad, size + pad / 2, Color{0, 0, 0, 170});
