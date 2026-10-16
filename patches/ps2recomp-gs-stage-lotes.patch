@@ -1,0 +1,216 @@
+diff --git a/ps2xRuntime/include/runtime/gs/gs_stage.h b/ps2xRuntime/include/runtime/gs/gs_stage.h
+index 4de5d6b..30fc3c9 100644
+--- a/ps2xRuntime/include/runtime/gs/gs_stage.h
++++ b/ps2xRuntime/include/runtime/gs/gs_stage.h
+@@ -23,8 +23,13 @@ namespace ps2_gs_stage
+     bool onStageThread();
+ 
+     // Queues a copy of the packet (blocks while too much is queued, so the worker cannot run far ahead).
++    // GOW-Port: packets are batched (PS2X_GS_STAGE_BATCH) and reach the stage on flush(); the worker flushes at the
++    // end of every job, before it reports idle.
+     void push(GifPathId path, const uint8_t *data, uint32_t size);
+ 
++    // Hands the packets pushed so far to the stage. Call from the thread that pushes.
++    void flush();
++
+     // Returns when every queued packet has been processed. No-op on the stage thread itself.
+     void waitIdle();
+ }
+diff --git a/ps2xRuntime/src/lib/gs/gs_stage.cpp b/ps2xRuntime/src/lib/gs/gs_stage.cpp
+index 786cb51..710a1ad 100644
+--- a/ps2xRuntime/src/lib/gs/gs_stage.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_stage.cpp
+@@ -2,6 +2,9 @@
+ 
+ #include <condition_variable>
+ #include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <atomic>
+ #include <deque>
+ #include <mutex>
+ #include <thread>
+@@ -9,12 +12,28 @@
+ 
+ namespace
+ {
++    // GOW-Port: a queued packet carries a run of GIF packets back to back, each behind a 16-byte record header
++    // (path, size) and padded to 16 bytes. The worker emits thousands of small XGKICK packets per frame; one lock,
++    // copy and stage wake per packet cost ~1 ms of every ~7 ms worker job in combat.
+     struct Packet
+     {
+-        GifPathId path = GifPathId::Path1;
+         std::vector<uint8_t> data;
+     };
+ 
++    constexpr size_t kRecordHeader = 16;
++
++    // GOW-Port: PS2X_GS_STAGE_BATCH=<bytes> (default 16384): the worker hands packets to the stage once this many
++    // bytes are pending (and always at the end of a worker job, see flush()). 0 hands over every packet at once.
++    size_t batchBytes()
++    {
++        static const size_t bytes = []
++        {
++            const char *v = std::getenv("PS2X_GS_STAGE_BATCH");
++            return v ? static_cast<size_t>(std::strtoull(v, nullptr, 10)) : static_cast<size_t>(16384);
++        }();
++        return bytes;
++    }
++
+     // Bound on queued bytes: enough for several XGKICK packets of a batch, small enough that the worker never
+     // runs a whole frame ahead of the GS frontend.
+     constexpr size_t kMaxQueuedBytes = 4u << 20;
+@@ -27,6 +46,8 @@ namespace
+         std::condition_variable idle;   // waitIdle
+         std::deque<Packet> queue;
+         std::vector<std::vector<uint8_t>> spare; // recycled buffers (avoid an allocation per packet)
++        std::vector<uint8_t> pending;            // producer side only: records not handed to the stage yet
++        std::atomic<std::thread::id> producer{}; // thread that fills `pending` (the GS worker)
+         size_t queuedBytes = 0;
+         bool busy = false;
+         bool stop = false;
+@@ -68,7 +89,15 @@ namespace
+             }
+             s.space.notify_all();
+             for (const Packet &p : batch)
+-                s.process(p.path, p.data.data(), static_cast<uint32_t>(p.data.size()));
++            {
++                for (size_t at = 0; at + kRecordHeader <= p.data.size();)
++                {
++                    uint32_t header[2];
++                    std::memcpy(header, p.data.data() + at, sizeof(header));
++                    s.process(static_cast<GifPathId>(header[0]), p.data.data() + at + kRecordHeader, header[1]);
++                    at += kRecordHeader + ((static_cast<size_t>(header[1]) + 15u) & ~static_cast<size_t>(15u));
++                }
++            }
+             if (s.afterBatch)
+                 s.afterBatch();
+         }
+@@ -118,16 +147,44 @@ namespace ps2_gs_stage
+     void push(GifPathId path, const uint8_t *data, uint32_t size)
+     {
+         Stage &s = stage();
++        if (s.producer.load(std::memory_order_relaxed) != std::this_thread::get_id())
++            s.producer.store(std::this_thread::get_id(), std::memory_order_relaxed);
++        if (s.pending.capacity() == 0)
++        {
++            std::lock_guard<std::mutex> lock(s.mutex);
++            if (!s.spare.empty())
++            {
++                s.pending = std::move(s.spare.back());
++                s.spare.pop_back();
++            }
++        }
++        const size_t at = s.pending.size();
++        const size_t padded = (static_cast<size_t>(size) + 15u) & ~static_cast<size_t>(15u);
++        s.pending.resize(at + kRecordHeader + padded);
++        const uint32_t header[4] = {static_cast<uint32_t>(path), size, 0u, 0u};
++        std::memcpy(s.pending.data() + at, header, sizeof(header));
++        if (size != 0u)
++            std::memcpy(s.pending.data() + at + kRecordHeader, data, size);
++        if (s.pending.size() >= batchBytes())
++            flush();
++    }
++
++    void flush()
++    {
++        Stage &s = stage();
++        if (s.pending.empty())
++            return;
++        const size_t size = s.pending.size();
+         std::unique_lock<std::mutex> lock(s.mutex);
+         s.space.wait(lock, [&s, size] { return s.queuedBytes == 0 || s.queuedBytes + size <= kMaxQueuedBytes; });
+         Packet p;
+-        p.path = path;
++        p.data = std::move(s.pending);
++        s.pending = {};
+         if (!s.spare.empty())
+         {
+-            p.data = std::move(s.spare.back());
++            s.pending = std::move(s.spare.back());
+             s.spare.pop_back();
+         }
+-        p.data.assign(data, data + size);
+         s.queuedBytes += size;
+         const bool wasEmpty = s.queue.empty();
+         s.queue.push_back(std::move(p));
+@@ -141,6 +198,8 @@ namespace ps2_gs_stage
+         if (!running() || onStageThread())
+             return;
+         Stage &s = stage();
++        if (s.producer.load(std::memory_order_relaxed) == std::this_thread::get_id())
++            flush(); // GOW-Port: the producer's own pending records must reach the stage before it waits for idle
+         std::unique_lock<std::mutex> lock(s.mutex);
+         s.idle.wait(lock, [&s] { return s.queue.empty() && !s.busy; });
+     }
+diff --git a/ps2xRuntime/src/lib/ps2_memory.cpp b/ps2xRuntime/src/lib/ps2_memory.cpp
+index 2204301..44b8d75 100644
+--- a/ps2xRuntime/src/lib/ps2_memory.cpp
++++ b/ps2xRuntime/src/lib/ps2_memory.cpp
+@@ -2018,6 +2018,7 @@ void PS2Memory::runGsWorkerJob(GsWorkerJob &job)
+     }
+     if (m_gifArbiter)
+         m_gifArbiter->drain();
++    ps2_gs_stage::flush(); // GOW-Port: batched GIF packets reach the stage before the worker reports idle
+     for (GsWorkerItem &item : job.items)
+         giveDmaBuffer(std::move(item.data));
+ }
+diff --git a/ps2xTest/src/ps2_gs_tests.cpp b/ps2xTest/src/ps2_gs_tests.cpp
+index 916c65a..317960a 100644
+--- a/ps2xTest/src/ps2_gs_tests.cpp
++++ b/ps2xTest/src/ps2_gs_tests.cpp
+@@ -4,6 +4,7 @@
+ #include "ps2_stubs.h"
+ #include "ps2_syscalls.h"
+ #include "runtime/gs/gs_frontend.h"
++#include "runtime/gs/gs_stage.h"
+ #include "runtime/ee_scheduler.h"
+ #include "runtime/gs/ps2_gs_memory.h"
+ #include "runtime/gs/ps2_gs_psmct32.h"
+@@ -16,6 +17,7 @@
+ #include <chrono>
+ #include <cstdint>
+ #include <cstring>
++#include <mutex>
+ #include <thread>
+ #include <vector>
+ 
+@@ -1178,5 +1180,38 @@ void register_ps2_gs_tests()
+             t.IsTrue(pattern2Ok,
+                      "second T4HL transfer to a different DBP should be byte-correct, proving the discarded excess bytes from the first transfer did not leak into subsequent transfer state");
+         });
++        tc.Run("GS stage batches packets and delivers them in order with exact sizes", [](TestCase &t)
++        {
++            // GOW-Port: ps2recomp-gs-stage-lotes. El trabajador agrupa los paquetes GIF antes de pasarlos a la etapa;
++            // cada paquete debe llegar en orden, con su ruta y su tamaño exacto (aunque no sea múltiplo de 16), y
++            // waitIdle desde el hilo productor debe entregar también los que aún esperaban en el lote.
++            struct Seen { GifPathId path; std::vector<uint8_t> bytes; };
++            std::mutex seenMutex;
++            std::vector<Seen> seen;
++            ps2_gs_stage::start([&](GifPathId path, const uint8_t *data, uint32_t size)
++                                {
++                                    std::lock_guard<std::mutex> lock(seenMutex);
++                                    seen.push_back(Seen{path, std::vector<uint8_t>(data, data + size)});
++                                },
++                                nullptr);
++            const GifPathId paths[3] = {GifPathId::Path1, GifPathId::Path2, GifPathId::Path3};
++            const uint32_t sizes[6] = {16u, 20u, 0u, 48u, 40000u, 3u};
++            std::vector<std::vector<uint8_t>> sent;
++            for (uint32_t i = 0; i < 6u; ++i)
++            {
++                std::vector<uint8_t> bytes(sizes[i]);
++                for (uint32_t b = 0; b < sizes[i]; ++b)
++                    bytes[b] = static_cast<uint8_t>(i * 37u + b);
++                ps2_gs_stage::push(paths[i % 3u], bytes.data(), sizes[i]);
++                sent.push_back(std::move(bytes));
++            }
++            ps2_gs_stage::waitIdle();
++            ps2_gs_stage::stop();
++            t.Equals(seen.size(), static_cast<size_t>(6u), "every pushed packet should reach the stage");
++            bool same = seen.size() == 6u;
++            for (uint32_t i = 0; same && i < 6u; ++i)
++                same = seen[i].path == paths[i % 3u] && seen[i].bytes == sent[i];
++            t.IsTrue(same, "packets should arrive in order with their path and exact bytes");
++        });
+     });
+ }
