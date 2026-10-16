@@ -33,6 +33,8 @@ $padRumbleScanPatch = Join-Path $RepoRoot 'patches\ps2recomp-pad-rumble-scan.pat
 $vblankNtscPatch = Join-Path $RepoRoot 'patches\ps2recomp-vblank-ntsc.patch'
 # GOW-Port: diagnóstico opcional de la traza por cuadro (PS2X_GS_WORKER_TRACE_SECS/_PCS, VBlank, IRQ del GS, hilos).
 $gsWorkerTracePatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-worker-trace.patch'
+# GOW-Port: medidor de FPS en pantalla (F2 o GOW_FPS=1) y línea [gow-fps] por segundo en el registro.
+$fpsOverlayPatch = Join-Path $RepoRoot 'patches\ps2recomp-fps-overlay.patch'
 # GOW-Port: VF0 y VI0 de VU0 son constantes (PR #79), no incluido en el runtime de Waffle565.
 $vu0Vf0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vf0.patch'
 $vu0Vi0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vi0.patch'
@@ -87,6 +89,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $dmaBuffersPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $padRumbleScanPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vblankNtscPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsWorkerTracePatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $fpsOverlayPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner

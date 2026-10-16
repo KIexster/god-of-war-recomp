@@ -185,6 +185,8 @@ scripts\3_ejecutar.cmd          :: 60 segundos, saída em logs\
 scripts\3_ejecutar_manual.cmd   :: sem limite
 ```
 
+**F2** mostra um medidor de FPS (também com `GOW_FPS=1`); veja [`docs/CONTROLES.md`](docs/CONTROLES.md#medidor-de-fps).
+
 **5. IOP nativo (opcional, como no port do Waffle565).** Compila antecipadamente os 8 módulos IRX do jogo
 e encurta o carregamento (a partida começa em ~21 s em vez de ~34 s). Uma execução extrai os módulos e a
 compilação seguinte os usa:
