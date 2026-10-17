@@ -1,0 +1,99 @@
+diff --git a/ps2xRuntime/include/runtime/ee_scheduler.h b/ps2xRuntime/include/runtime/ee_scheduler.h
+index 1cf4c2c..d92afc8 100644
+--- a/ps2xRuntime/include/runtime/ee_scheduler.h
++++ b/ps2xRuntime/include/runtime/ee_scheduler.h
+@@ -442,6 +442,7 @@ private:
+     uint32_t m_pendingEeTimerInterrupts = 0;
+     uint64_t m_eeCycle = 0;
+     uint64_t m_sliceEndCycle = kDefaultTimeSliceCycles;
++    uint32_t m_hostCatchUpCounter = 0; // GOW-Port: checkpoints since the EE clock was last compared with the host clock
+     std::thread::id m_executorThread{};
+     std::atomic<bool> m_running{false};
+     std::atomic<bool> m_guestExecuting{false};
+diff --git a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+index 7b2ac63..a479c70 100644
+--- a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
++++ b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+@@ -58,6 +58,9 @@ namespace
+     constexpr uint64_t kVBlankPeriodCycles = EeScheduler::kEeClockHz * 1001ull / 60000ull; // GOW-Port: campo NTSC (59,94 Hz)
+     constexpr uint64_t kVBlankDurationCycles = microsecondsToEeCycles(500u);
+     constexpr uint64_t kAlarmTickCycles = microsecondsToEeCycles(kAlarmTickMicroseconds);
++    // GOW-Port: every this many checkpoints (~0.1 ms of host time in play) the EE clock catches up with the host clock
++    // when it fell behind (see checkpointDue).
++    constexpr uint32_t kHostCatchUpEvery = 2048u;
+     // GOW-Port: pacing points per field (see VBlankStart). 64 (was 16): busy-waits run the EE clock up to one step ahead
+     // of the wall clock, and when the GS finishes the game first sleeps that lead off (~1 ms with 16 steps).
+     constexpr uint64_t kPaceSteps = 64u;
+@@ -370,6 +373,14 @@ void EeScheduler::postEvent(EeEvent event)
+ bool EeScheduler::checkpointDue(uint32_t cycles) noexcept
+ {
+     accountCycles(cycles);
++    // GOW-Port: pacing keeps the EE clock from running ahead of the host clock; this keeps it from falling behind. With
++    // 16 cycles per checkpoint, long stretches of EE work (leaving a movie, loading a menu) accrued less guest time than
++    // the wall clock: the IOP, which runs on EE cycles, fell behind and the audio ran dry (~0.13 s at every movie end).
++    if (++m_hostCatchUpCounter >= kHostCatchUpEvery)
++    {
++        m_hostCatchUpCounter = 0;
++        catchUpToHost(kVBlankPeriodCycles);
++    }
+ 
+     if (m_checkpointPending.load(std::memory_order_acquire) ||
+         m_stopRequested.load(std::memory_order_acquire))
+diff --git a/ps2xTest/src/ps2_runtime_interrupt_tests.cpp b/ps2xTest/src/ps2_runtime_interrupt_tests.cpp
+index 92d057d..d8a00ca 100644
+--- a/ps2xTest/src/ps2_runtime_interrupt_tests.cpp
++++ b/ps2xTest/src/ps2_runtime_interrupt_tests.cpp
+@@ -117,6 +117,27 @@ namespace
+             }
+         }
+     }
++    // GOW-Port: invitado lento: pocos ciclos por unidad de tiempo real (cada punto de control espera 20 µs).
++    constexpr uint32_t kSlowGuestPc = 0x00160800u;
++    uint64_t g_slowCalls = 0u;
++    double g_slowDueMs = 0.0;
++    std::chrono::steady_clock::time_point g_slowStart;
++
++    void schedulerSlowGuest(uint8_t *, R5900Context *ctx, PS2Runtime *runtime)
++    {
++        for (;;)
++        {
++            ++g_slowCalls;
++            for (const auto until = std::chrono::steady_clock::now() + std::chrono::microseconds(20); std::chrono::steady_clock::now() < until;) {} // espera activa: precisa en cualquier sistema
++            if (runtime->eeCheckpointDue() || g_slowCalls > 200000u)
++            {
++                g_slowDueMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - g_slowStart).count();
++                ctx->pc = 0u;
++                runtime->requestStop();
++                return;
++            }
++        }
++    }
+     constexpr uint32_t kTimer2WaitPc = 0x00160500u;
+     constexpr uint32_t kTimer2ResumePc = 0x00160510u;
+     constexpr uint32_t kTimer2HandlerPc = 0x00160520u;
+@@ -638,6 +659,25 @@ void register_ps2_runtime_interrupt_tests()
+                      "the first VBlank should be due after one field of 16-cycle checkpoints");
+         });
+ 
++        tc.Run("a slow guest still reaches the first VBlank on host time", [](TestCase &t)
++        {
++            // GOW-Port: ps2recomp-ee-ponerse-al-dia. Si el EE gasta menos ciclos que el tiempo real (16 por punto de
++            // control), su reloj se pone al día con el del host: el primer VBlank llega a los ~16,7 ms reales y no
++            // cuando el invitado ha sumado un campo de ciclos (aquí, decenas de segundos).
++            TestEnv env;
++            t.IsTrue(env.runtime.memory().initialize(), "runtime memory initialize should succeed");
++            env.runtime.registerFunction(kSlowGuestPc, schedulerSlowGuest);
++            g_slowCalls = 0u;
++            g_slowDueMs = 0.0;
++            R5900Context mainContext{};
++            mainContext.pc = kSlowGuestPc;
++            g_slowStart = std::chrono::steady_clock::now();
++            env.runtime.eeScheduler().reset(env.rdram.data(), mainContext);
++            env.runtime.eeScheduler().run();
++            t.IsTrue(g_slowCalls <= 200000u, "the first VBlank should become due");
++            t.IsTrue(g_slowDueMs < 2000.0, "the EE clock should catch up with the host clock instead of lagging behind");
++        });
++
+         tc.Run("VBlank IRQ invocation completes before the resumed base context", [](TestCase &t)
+         {
+             TestEnv env;
