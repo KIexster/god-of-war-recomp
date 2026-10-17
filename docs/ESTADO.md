@@ -7375,3 +7375,17 @@ tiempos ya no recorre las 2048 ranuras. Reproducción determinista (4000 ejecuci
 Descartados: precarga de la ranura del sucesor (reproducción 378-382 -> 383-391 ms; en el juego neutra) y no invalidar
 el código traducido cuando un MPG sube bytes idénticos (el juego cambia de microprograma de verdad: el bucle de
 invalidación seguía apareciendo en el perfil).
+
+### Redondeo de la VU con el MXCSR (2026-10-17)
+
+El juego llama a la VU1 ~110 000 veces por segundo (~1900 por cuadro), siempre por tres entradas (0x0000, 0x0018 y
+0x0030), de 5-9 µs cada una (estadística temporal por dirección de inicio). Cada `VU1Interpreter::run` cambiaba el
+redondeo con `fegetround` + `fesetround` dos veces: ~77 ns frente a ~8 ns con `_mm_getcsr`/`_mm_setcsr`
+(microprueba, MSVC /O2).
+
+`ps2recomp-vu-redondeo.patch`: en x86-64 solo se cambia el MXCSR (toda la aritmética de float va por SSE); en otras
+arquitecturas sigue `fesetround`. Prueba: "VU1 runs round toward zero and restore the host rounding mode".
+Reproducción: 0 diferencias. Combate, 2 rondas: trabajo mediano 12,69 -> 12,44 y 13,68 -> 13,36 ms.
+
+Nota para jugar: `GOW_PERF_DIAG=1` activa la contabilidad completa (lee el reloj en cada cambio de cubeta, miles de
+veces por cuadro); para medir cuadros basta `GOW_PERF_DIAG=frames`.
