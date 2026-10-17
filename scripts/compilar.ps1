@@ -55,6 +55,8 @@ $vu1Ranura64Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-ranura64.patch'
 $vuRedondeoPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu-redondeo.patch'
 # GOW-Port: un MPG solo invalida los bloques de la VU1 nativa que leen el rango escrito.
 $vu1InvalidacionRangoPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-invalidacion-rango.patch'
+# GOW-Port: el reloj del EE se pone al día con el del host si se queda atrás (cada 2048 puntos de control).
+$eePonerseAlDiaPatch = Join-Path $RepoRoot 'patches\ps2recomp-ee-ponerse-al-dia.patch'
 # GOW-Port: VF0 y VI0 de VU0 son constantes (PR #79), no incluido en el runtime de Waffle565.
 $vu0Vf0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vf0.patch'
 $vu0Vi0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vi0.patch'
@@ -120,6 +122,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $ciclosMitadPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1Ranura64Patch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vuRedondeoPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1InvalidacionRangoPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $eePonerseAlDiaPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
