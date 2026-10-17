@@ -1,0 +1,79 @@
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+index ee0c637..e859702 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+@@ -8,6 +8,9 @@
+ #include "ps2_vu1_step.inl"
+ 
+ #include <algorithm>
++#if defined(__x86_64__) || defined(_M_X64)
++#include <xmmintrin.h> // GOW-Port: MXCSR rounding in run()
++#endif
+ #include <bit>
+ #include <atomic>
+ #include <cfenv>
+@@ -1912,8 +1915,15 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
+     m_activeMemory = memory;
+ 
+     ps2_perf::Scope perf(ps2_perf::Bucket::Vu); // GOW-Port: VU0/VU1; las llamadas al GS se descuentan.
++    // GOW-Port: VU float rounding (toward zero) for the run. On x86-64 every float operation goes through SSE, so the
++    // MXCSR alone is switched (~8 ns instead of ~77 ns for fegetround + fesetround twice; ~1900 runs per frame).
++#if defined(__x86_64__) || defined(_M_X64)
++    const unsigned previousCsr = _mm_getcsr();
++    _mm_setcsr((previousCsr & ~0x6000u) | 0x6000u);
++#else
+     const int previousRoundingMode = std::fegetround();
+     const bool useVuRounding = std::fesetround(FE_TOWARDZERO) == 0;
++#endif
+     StepContext context{vuCode, codeSize, vuData, dataSize, &gs, memory, m_cycle + maxCycles, false};
+     m_lastRunHitBudget = false; // GOW-Port: funciona también con un despachador compilado.
+     const uint32_t runStartPc = m_state.pc;
+@@ -2240,8 +2250,12 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
+         if (++endMacRuns % 20000u == 0u)
+             std::fprintf(stderr, "[vu1-endmac] ours runs=%u mac12=%u mac0=%u other=%u\n", endMacRuns, endMacCount[0], endMacCount[1], endMacCount[2]);
+     }
++#if defined(__x86_64__) || defined(_M_X64)
++    _mm_setcsr(previousCsr);
++#else
+     if (useVuRounding && previousRoundingMode != -1)
+         std::fesetround(previousRoundingMode);
++#endif
+ }
+ 
+ // GOW-Port: GOW_VU1C_VERIFICAR. Antes de un bloque compilado se ejecutan sus pares con el interprete desde el
+diff --git a/ps2xTest/src/ps2_vu1_tests.cpp b/ps2xTest/src/ps2_vu1_tests.cpp
+index fdf950d..ac77dc9 100644
+--- a/ps2xTest/src/ps2_vu1_tests.cpp
++++ b/ps2xTest/src/ps2_vu1_tests.cpp
+@@ -1,4 +1,5 @@
+ #include "MiniTest.h"
++#include <cfenv>
+ #include "runtime/gs/ps2_gif_arbiter.h"
+ #include "runtime/gs/gs_frontend.h"
+ #include "runtime/gs/ps2_gs_psmct32.h"
+@@ -302,6 +303,25 @@ void register_ps2_vu1_tests()
+             t.Equals(vu1.state().vf[3][3], -4.0f, "ADD.xz should preserve w");
+         });
+ 
++        tc.Run("VU1 runs round toward zero and restore the host rounding mode", [](TestCase &t)
++        {
++            // GOW-Port: ps2recomp-vu-redondeo. run() cambia el redondeo con el MXCSR en x86-64 (antes fegetround y
++            // fesetround): dentro, hacia cero; al salir, el modo que había.
++            Vu1Fixture fx;
++            t.IsTrue(fx.initialize(), "VU1 fixture should initialize");
++            writeVuInstructionPair(fx.code, 0u, 0u, makeVuUpper(0x28u, 0x8u, 2u, 1u, 3u)); // ADD.x vf3, vf1, vf2
++            VU1Interpreter vu1;
++            vu1.state().vf[1][0] = 1.0f;
++            vu1.state().vf[2][0] = std::ldexp(1.5f, -24); // 0,75 ulp de 1,0: al más cercano sube, hacia cero no
++            std::fesetround(FE_TONEAREST);
++            vu1.execute(fx.code, PS2_VU1_CODE_SIZE, fx.data, PS2_VU1_DATA_SIZE, fx.gs, &fx.mem, 0u, 0u, 0u, 1u);
++            vu1.resume(fx.code, PS2_VU1_CODE_SIZE, fx.data, PS2_VU1_DATA_SIZE, fx.gs, &fx.mem, 0u, 0u, 3u);
++            t.Equals(vu1.state().vf[3][0], 1.0f, "the VU ADD should round toward zero");
++            t.Equals(std::fegetround(), FE_TONEAREST, "the host rounding mode should be restored after the run");
++            volatile float a = 1.0f, b = std::ldexp(1.5f, -24);
++            t.IsTrue(a + b > 1.0f, "host float math should round to nearest again");
++        });
++
+         tc.Run("LOI commits the lower immediate after the upper instruction", [](TestCase &t)
+         {
+             Vu1Fixture fx;
