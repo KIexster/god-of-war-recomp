@@ -7359,3 +7359,19 @@ diferencia (16,70/16,68/16,66 frente a 16,66/16,75/16,68). Paso de tiempo del ju
 `ps2recomp-ciclos-mitad.patch`: `kGeneratedCheckpointCycles` 32 -> 16, `kGuestDispatchCycles` 8 -> 4 (y el valor
 por defecto de `PS2Runtime::eeCheckpointDue`). Prueba: "generated checkpoints charge 16 EE cycles each". Con la
 compilación final, 2 rondas frente a la anterior: 17,03/18,59/49 -> 16,67/17,63/70; 16,98/18,40/52 -> 16,72/18,00/63.
+
+### Despachador de la VU1 nativa: ranura de 64 bytes (2026-10-17)
+
+Perfil por dirección (`muestrear4` con `MUESTREO_DIRS`) de `VU1Interpreter::runNative` en combate: el salto más
+caliente es la lectura de `sl.known` (fallo de caché: 2048 ranuras de 128 bytes = 256 KB) y, tras cada bloque, la
+lectura de `cyc[pairs - 1]` de su tabla de tiempos y las escrituras del historial.
+
+`ps2recomp-vu1-ranura64.patch`: los campos de memo por predecesor pasan de la ranura a `BlockTiming` (solo los usan
+los bloques que leen flags de entrada) y la ranura guarda `idleLast` (= idle[pairs - 1]): cabe en una línea de caché
+(static_assert) y el fin de un bloque con tabla ociosa no lee la tabla. Al reemplazar una entrada de la caché de
+tiempos ya no recorre las 2048 ranuras. Reproducción determinista (4000 ejecuciones de combate x 19): 0 diferencias;
+381,9/392,2/400,4 -> 384,2/379,0/383,6 ms (~2 %). En el juego, por debajo del ruido (3 rondas: 2 a favor).
+
+Descartados: precarga de la ranura del sucesor (reproducción 378-382 -> 383-391 ms; en el juego neutra) y no invalidar
+el código traducido cuando un MPG sube bytes idénticos (el juego cambia de microprograma de verdad: el bucle de
+invalidación seguía apareciendo en el perfil).
