@@ -43,6 +43,8 @@ $presentOrdenPatch = Join-Path $RepoRoot 'patches\ps2recomp-present-orden.patch'
 $stageLotesPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-stage-lotes.patch'
 # GOW-Port: pantalla completa sin bordes por defecto (F11) y depurador oculto al empezar (F1).
 $pantallaPatch = Join-Path $RepoRoot 'patches\ps2recomp-pantalla-completa.patch'
+# GOW-Port: los ciclos de los puntos de control del EE se pasan al IOP solo cuando vence su lote.
+$iopAcumuladoPatch = Join-Path $RepoRoot 'patches\ps2recomp-iop-acumulado.patch'
 # GOW-Port: VF0 y VI0 de VU0 son constantes (PR #79), no incluido en el runtime de Waffle565.
 $vu0Vf0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vf0.patch'
 $vu0Vi0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vi0.patch'
@@ -102,6 +104,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $fpsImagenesPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $presentOrdenPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $stageLotesPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $pantallaPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $iopAcumuladoPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
