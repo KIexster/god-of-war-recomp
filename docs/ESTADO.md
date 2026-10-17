@@ -7341,3 +7341,21 @@ A/B en combate, 3 rondas (periodo mediano / p90 / % de cuadros <= 17 ms), 16 →
 17,15/18,97/43 → 16,71/18,02/60; 17,13/19,01/43 → 16,71/17,89/61. 64 frente a 256 puntos: sin diferencia clara
 (16,71/16,72/16,67 frente a 16,67/16,68/17,06). El paso de tiempo del juego (`[gow-animation] delta`) sigue en
 ~0,01668-0,01679 s (1/59,94) en ambos casos: la velocidad no cambia.
+
+### Coste de ciclos del EE a la mitad (2026-10-16)
+
+Con 64 puntos de ritmo, la parte en serie del cuadro (fin del trabajo de la VU1 -> siguiente flip) seguía en ~3,7 ms,
+de los que el EE dormía ~3,1 ms y trabajaba ~0,6 ms (traza local con los momentos en que duerme). El recompilador
+cobra 32 ciclos del EE por salto hacia atrás del código generado y 8 por despacho, sin mirar cuántas instrucciones
+hay; como el reloj del EE va atado al real, una estimación alta obliga al juego a dormir tiempo de PS2 que nunca
+gastó.
+
+Experimento con un divisor temporal (A/B en combate, 3 rondas, periodo mediano / p90 / % <= 17 ms): divisor 1 -> 2:
+17,23/18,98/39 -> 16,67/17,66/67; 17,18/18,97/42 -> 16,67/17,69/67; 16,74/18,07/59 -> 16,68/17,68/68. Por tramos de
+trabajo de la VU1: 12-14 ms pasa de 17,0 a 16,6 ms de cuadro y 14-16 ms de 18,1 a 17,0. Divisor 2 frente a 4: sin
+diferencia (16,70/16,68/16,66 frente a 16,66/16,75/16,68). Paso de tiempo del juego (`[gow-animation] delta`)
+~0,01667-0,01669 s en todos los casos: la velocidad no cambia.
+
+`ps2recomp-ciclos-mitad.patch`: `kGeneratedCheckpointCycles` 32 -> 16, `kGuestDispatchCycles` 8 -> 4 (y el valor
+por defecto de `PS2Runtime::eeCheckpointDue`). Prueba: "generated checkpoints charge 16 EE cycles each". Con la
+compilación final, 2 rondas frente a la anterior: 17,03/18,59/49 -> 16,67/17,63/70; 16,98/18,40/52 -> 16,72/18,00/63.

@@ -8,7 +8,7 @@ Generado por `tools/estado/generar.py` a partir de `docs/estado/datos.toml` y `c
 
 | Librería | Funciones | Estado | Nota |
 |---|---:|---|---|
-| `libmpeg` | 103 | 🔧 Parcial | Vídeos con libmpeg2 nativo y sonido (Waffle565 reproduce todos los del disco); aquí se juega con GOW_SKIP_FMV y falta repetirlo |
+| `libmpeg` | 103 | 🔧 Parcial | Vídeos con libmpeg2 nativo y sonido: 61 de 67 correctos aquí; fallan SEMO08 (deriva), P04MP05 (se detiene) y BONUS20 (sin audio) |
 | `libipu` | 5 | 🔧 Parcial | sceIpuInit corregido; la ruta MPEG por software funciona, sin verificar todas las operaciones de la IPU |
 | `libgraph` | 7 | ✅ Funciona |  |
 | `libdma` | 8 | ✅ Funciona |  |
@@ -38,7 +38,7 @@ Generado por `tools/estado/generar.py` a partir de `docs/estado/datos.toml` y `c
 | EE | Controlador DMA | 2 | ✅ Funciona | Servicio DMA nativo: las cadenas van directas a VIF1/VU1 y al GS, sin modelo del controlador; búferes reutilizables |
 | EE | Temporizadores | 1 | ✅ Funciona | Reloj nativo del EE: el recompilador convierte las lecturas de los temporizadores en llamadas al reloj |
 | GS / VU | GS: primitivas y framebuffer | 3 | 🔧 Parcial | Renderizador OpenGL nativo por render targets (Waffle565), resolución interna 2x; menú, barco, combate y HUD correctos aquí, 4 zonas en Waffle565; falta un recorrido completo |
-| GS / VU | VIF1 y VU1 | 3 | 🔧 Parcial | VU1 nativa compilada por adelantado (100 % de los bloques en el barco) y UNPACK rápido; barco a ~53-56 flips/s, objetivo 60 |
+| GS / VU | VIF1 y VU1 | 3 | 🔧 Parcial | VU1 nativa compilada por adelantado y UNPACK rápido; combate en el barco con cuadro mediano de 16,7 ms (59,94 Hz) y ~2/3 de los cuadros a 60; quedan picos cuando la VU1 pasa de ~15 ms |
 | GS / VU | GS: texturas, CLUT y fuentes | 2 | 🔧 Parcial | Almacén nativo de texturas y CLUT en lugar de un modelo de VRAM; HUD y fuentes del menú correctos en las capturas |
 | GS / VU | GIF (PATH1-3) | 2 | ✅ Funciona |  |
 | GS / VU | IPU: vídeo FMV | 2 | 🔧 Parcial | Sin IPU: el decodificador MPEG nativo toma los datos del PSS; Waffle565 verificó todos los vídeos con sonido |

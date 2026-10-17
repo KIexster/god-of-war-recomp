@@ -1,0 +1,85 @@
+diff --git a/ps2xRuntime/include/ps2_runtime.h b/ps2xRuntime/include/ps2_runtime.h
+index 465be28..2856bbb 100644
+--- a/ps2xRuntime/include/ps2_runtime.h
++++ b/ps2xRuntime/include/ps2_runtime.h
+@@ -402,7 +402,7 @@ public:
+     EeScheduler &eeScheduler();
+     const EeScheduler &eeScheduler() const;
+     void postEeEvent(EeEvent event);
+-    bool eeCheckpointDue(uint32_t cycles = 32u) noexcept;
++    bool eeCheckpointDue(uint32_t cycles = 16u) noexcept; // GOW-Port: EeScheduler::kGeneratedCheckpointCycles
+     [[noreturn]] void eeWaitVSyncTicks(uint32_t ticks, uint32_t resumePc);
+ 
+     struct EeExitHandlerRegistration
+diff --git a/ps2xRuntime/include/runtime/ee_scheduler.h b/ps2xRuntime/include/runtime/ee_scheduler.h
+index 417013f..1cf4c2c 100644
+--- a/ps2xRuntime/include/runtime/ee_scheduler.h
++++ b/ps2xRuntime/include/runtime/ee_scheduler.h
+@@ -264,8 +264,11 @@ public:
+     static constexpr int kLastThreadId = 255;
+     static constexpr int kPriorityCount = 128;
+     static constexpr uint64_t kEeClockHz = 294912000ull;
+-    static constexpr uint32_t kGeneratedCheckpointCycles = 32u;
+-    static constexpr uint32_t kGuestDispatchCycles = 8u;
++    // GOW-Port: EE cycles charged per backward edge of generated code and per dispatch (was 32 and 8). The EE clock
++    // is paced to the host clock, so an overestimate makes the game sleep off guest time it never spent: with half the
++    // cost, frames whose VU1/GS work runs long still make the next field (docs/ESTADO.md, ritmo del EE).
++    static constexpr uint32_t kGeneratedCheckpointCycles = 16u;
++    static constexpr uint32_t kGuestDispatchCycles = 4u;
+     static constexpr uint64_t kDefaultTimeSliceCycles = 65536ull;
+ 
+     explicit EeScheduler(PS2Runtime &runtime);
+diff --git a/ps2xTest/src/ps2_runtime_interrupt_tests.cpp b/ps2xTest/src/ps2_runtime_interrupt_tests.cpp
+index a4c09fa..92d057d 100644
+--- a/ps2xTest/src/ps2_runtime_interrupt_tests.cpp
++++ b/ps2xTest/src/ps2_runtime_interrupt_tests.cpp
+@@ -100,6 +100,23 @@ namespace
+             }
+         }
+     }
++    // GOW-Port: cuenta los puntos de control del código generado hasta el primer VBlank.
++    constexpr uint32_t kCheckpointCostPc = 0x00160700u;
++    uint64_t g_checkpointCalls = 0u;
++
++    void schedulerCheckpointCost(uint8_t *, R5900Context *ctx, PS2Runtime *runtime)
++    {
++        for (;;)
++        {
++            ++g_checkpointCalls;
++            if (runtime->eeCheckpointDue())
++            {
++                ctx->pc = 0u;
++                runtime->requestStop();
++                return;
++            }
++        }
++    }
+     constexpr uint32_t kTimer2WaitPc = 0x00160500u;
+     constexpr uint32_t kTimer2ResumePc = 0x00160510u;
+     constexpr uint32_t kTimer2HandlerPc = 0x00160520u;
+@@ -602,6 +619,25 @@ void register_ps2_runtime_interrupt_tests()
+                      "the EE clock should stay within one 1/64-field pacing step of the host clock");
+         });
+ 
++        tc.Run("generated checkpoints charge 16 EE cycles each", [](TestCase &t)
++        {
++            // GOW-Port: ps2recomp-ciclos-mitad. Un salto hacia atrás del código generado cuesta 16 ciclos del EE (antes
++            // 32): el primer VBlank llega tras un campo NTSC, es decir, tras campo / 16 puntos de control.
++            TestEnv env;
++            t.IsTrue(env.runtime.memory().initialize(), "runtime memory initialize should succeed");
++            env.runtime.registerFunction(kCheckpointCostPc, schedulerCheckpointCost);
++            g_checkpointCalls = 0u;
++            R5900Context mainContext{};
++            mainContext.pc = kCheckpointCostPc;
++            env.runtime.eeScheduler().reset(env.rdram.data(), mainContext);
++            env.runtime.eeScheduler().run();
++            const uint64_t field = EeScheduler::kEeClockHz * 1001ull / 60000ull;
++            const uint64_t charged = g_checkpointCalls * 16u + EeScheduler::kGuestDispatchCycles;
++            t.Equals(EeScheduler::kGeneratedCheckpointCycles, 16u, "a generated checkpoint should charge 16 cycles");
++            t.IsTrue(charged >= field && charged < field + 32u,
++                     "the first VBlank should be due after one field of 16-cycle checkpoints");
++        });
++
+         tc.Run("VBlank IRQ invocation completes before the resumed base context", [](TestCase &t)
+         {
+             TestEnv env;

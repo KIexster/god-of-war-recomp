@@ -18,7 +18,7 @@ hasta = 0x0029BBA4
 nombre = "libmpeg"
 inicio = 0x0026F228
 estado = "parcial"
-nota = { es = "Vídeos con libmpeg2 nativo y sonido (Waffle565 reproduce todos los del disco); aquí se juega con GOW_SKIP_FMV y falta repetirlo", en = "Movies through native libmpeg2 with sound (Waffle565 plays every movie of the disc); runs here use GOW_SKIP_FMV, still to be repeated", pt = "Vídeos com libmpeg2 nativo e som (o Waffle565 reproduz todos os do disco); aqui se joga com GOW_SKIP_FMV e falta repetir" }
+nota = { es = "Vídeos con libmpeg2 nativo y sonido: 61 de 67 correctos aquí; fallan SEMO08 (deriva), P04MP05 (se detiene) y BONUS20 (sin audio)", en = "Movies through native libmpeg2 with sound: 61 of 67 correct here; SEMO08 (drift), P04MP05 (stops) and BONUS20 (no audio) fail", pt = "Vídeos com libmpeg2 nativo e som: 61 de 67 corretos aqui; falham SEMO08 (deriva), P04MP05 (para) e BONUS20 (sem áudio)" }
 
 [[librerias.grupo]]
 nombre = "libipu"
@@ -183,7 +183,7 @@ nombre = "GS / VU"
   nombre = { es = "VIF1 y VU1", en = "VIF1 and VU1", pt = "VIF1 e VU1" }
   estado = "parcial"
   peso = 3
-  nota = { es = "VU1 nativa compilada por adelantado (100 % de los bloques en el barco) y UNPACK rápido; barco a ~53-56 flips/s, objetivo 60", en = "Ahead-of-time native VU1 (100% of the blocks on the ship) and fast UNPACK; ship at ~53-56 flips/s, target 60", pt = "VU1 nativa compilada antecipadamente (100 % dos blocos no barco) e UNPACK rápido; barco a ~53-56 flips/s, objetivo 60" }
+  nota = { es = "VU1 nativa compilada por adelantado y UNPACK rápido; combate en el barco con cuadro mediano de 16,7 ms (59,94 Hz) y ~2/3 de los cuadros a 60; quedan picos cuando la VU1 pasa de ~15 ms", en = "Ahead-of-time native VU1 and fast UNPACK; ship combat with a 16.7 ms median frame (59.94 Hz) and ~2/3 of the frames at 60; spikes remain when VU1 work exceeds ~15 ms", pt = "VU1 nativa compilada antecipadamente e UNPACK rápido; combate no barco com quadro mediano de 16,7 ms (59,94 Hz) e ~2/3 dos quadros a 60; restam picos quando a VU1 passa de ~15 ms" }
 
   [[hardware.grupo.componente]]
   corto = "Tex/CLUT"
