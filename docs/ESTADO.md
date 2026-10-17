@@ -7424,3 +7424,15 @@ margen de un campo (`slack`): si el reloj del EE va más de un campo por detrás
 el problema de audio desaparecía pero el periodo de cuadro en combate subía a 17,2-17,5 ms; con un campo (y con
 50 ms) los vídeos A01MP01, SEMO01, P01MP01 y BONUS06 pasan y el combate sigue en 16,66-16,70 ms (2 rondas).
 Prueba: "a slow guest still reaches the first VBlank on host time" (falla sin el cambio).
+
+### Pruebas de vídeo congeladas: el mando del jugador (2026-10-17)
+
+Las validaciones de vídeo se congelaban a partir de un punto distinto en cada tanda (llamada nula desde 0x161C68
+justo después de la petición forzada). La única diferencia entre los registros buenos y malos era
+`[pad] gamepad slot 0: Xbox Controller`: el usuario jugaba a otro juego con su mando mientras corrían las pruebas, y
+raylib lee los mandos aunque la ventana no tenga el foco. La entrada movía el menú del título y la petición del vídeo
+caía en un estado sin el método +0xB4 del objeto `*0x29C2B8`. Sin mando, 14 de 14 correctos; con mando, 6 de 10
+congelados. Las esperas de 8, 20 y 30 s (`GOW_BONUS_MOVIE_DELAY`) solo cambiaban la suerte.
+
+`ps2recomp-prueba-sin-mando.patch`: con `GOW_PAD_TEST=1`, `ps2_pad.cpp` no usa ningún mando físico; solo el guion
+controla el juego. Nota: en partida normal el juego también recibe el mando sin tener el foco.
