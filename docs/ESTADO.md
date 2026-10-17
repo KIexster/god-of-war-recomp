@@ -7389,3 +7389,20 @@ Reproducción: 0 diferencias. Combate, 2 rondas: trabajo mediano 12,69 -> 12,44 
 
 Nota para jugar: `GOW_PERF_DIAG=1` activa la contabilidad completa (lee el reloj en cada cambio de cubeta, miles de
 veces por cuadro); para medir cuadros basta `GOW_PERF_DIAG=frames`.
+
+### VU1 nativa: un MPG solo invalida los bloques que lee (2026-10-17)
+
+Contadores temporales en combate: ~550 000 entradas a `runNative`, ~4200 cambios de generación del código de la VU1
+(el juego cambia de microprograma ~14 veces por cuadro) y ~260 000 resoluciones de ranura (`slotFor`) cada 5 s: cada
+cambio invalidaba las 2048 ranuras, también las del código residente (las entradas 0x0000/0x0018/0x0030 y rutinas
+comunes).
+
+`ps2recomp-vu1-invalidacion-rango.patch`: `PS2Memory` anota el rango escrito por cada generación (MPG del VIF1; las
+demás escrituras, toda la memoria) en un registro de 64 entradas (`vu1CodeWritesSince`), y `runNative` solo descarta
+las ranuras cuyo bloque lee ese rango ([pc, pc + (pares + 1) * 8)); si el registro no cubre todas las generaciones,
+descarta todo como antes. Prueba: "VIF MPG logs the VU1 code range of each generation".
+
+Resultado: ~134 000 resoluciones cada 5 s (la mitad; las que quedan son del microprograma recién cargado).
+Verificación nativa contra el motor exacto (`GOW_VU1N_VERIFY=200000`, combate): 12 discrepancias, las mismas 12 que
+la base (diferencias de 1 en el último bit de un resultado, ya conocidas); ninguna nueva. En el juego la ganancia está
+por debajo del ruido entre partidas.

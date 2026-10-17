@@ -1,0 +1,166 @@
+diff --git a/ps2xRuntime/include/runtime/ps2_memory.h b/ps2xRuntime/include/runtime/ps2_memory.h
+index 7aa72b9..746e1ab 100644
+--- a/ps2xRuntime/include/runtime/ps2_memory.h
++++ b/ps2xRuntime/include/runtime/ps2_memory.h
+@@ -285,6 +285,12 @@ public:
+     uint64_t vifWriteCount() const { return m_vifWriteCount.load(std::memory_order_relaxed); }
+     uint64_t getVU0CodeGeneration() const { return m_vu0CodeGeneration.load(std::memory_order_relaxed); }
+     uint64_t getVU1CodeGeneration() const { return m_vu1CodeGeneration.load(std::memory_order_relaxed); }
++    // GOW-Port: the byte range of VU1 code memory written by each generation (VIF1 MPG; other writes log the whole
++    // memory). Fills `out` with the writes of generations (from, to] and returns true, or false when the log no longer
++    // holds all of them (the caller then drops everything). The native VU1 dispatcher keeps the blocks outside them.
++    struct Vu1CodeWrite { uint64_t generation; uint32_t lo, hi; };
++    static constexpr size_t kVu1CodeLog = 64;
++    bool vu1CodeWritesSince(uint64_t from, uint64_t to, Vu1CodeWrite *out, size_t &count) const;
+ 
+     // Read/write memory
+     uint8_t read8(uint32_t address);
+@@ -423,6 +429,8 @@ public:
+     std::atomic<uint64_t> m_vifWriteCount{0};
+     std::atomic<uint64_t> m_vu0CodeGeneration{0};
+     std::atomic<uint64_t> m_vu1CodeGeneration{0};
++    mutable std::mutex m_vu1CodeLogMutex; // GOW-Port: m_vu1CodeLog and the generation it records advance together
++    std::array<Vu1CodeWrite, kVu1CodeLog> m_vu1CodeLog{};
+     // I/O registers
+     std::unordered_map<uint32_t, uint32_t> m_ioRegisters;
+ 
+@@ -506,7 +514,8 @@ public:
+     bool isAddressInRegion(uint32_t address, const CodeRegion &region);
+     void markModified(uint32_t address, uint32_t size);
+     void markVU0CodeModified() { m_vu0CodeGeneration.fetch_add(1, std::memory_order_relaxed); }
+-    void markVU1CodeModified() { m_vu1CodeGeneration.fetch_add(1, std::memory_order_relaxed); }
++    void markVU1CodeModified() { markVU1CodeModified(0u, PS2_VU1_CODE_SIZE); }
++    void markVU1CodeModified(uint32_t lo, uint32_t hi);
+     bool isScratchpad(uint32_t address) const;
+     uint8_t *mapVuMemory(uint32_t physAddr, uint32_t size, uint32_t &offset, uint32_t &limit);
+     const uint8_t *mapVuMemory(uint32_t physAddr, uint32_t size, uint32_t &offset, uint32_t &limit) const;
+diff --git a/ps2xRuntime/src/lib/ps2_memory.cpp b/ps2xRuntime/src/lib/ps2_memory.cpp
+index 44b8d75..cf1bd98 100644
+--- a/ps2xRuntime/src/lib/ps2_memory.cpp
++++ b/ps2xRuntime/src/lib/ps2_memory.cpp
+@@ -1994,6 +1994,30 @@ static void gsWorkerTrace(const char *what, size_t bytes)
+                      std::chrono::duration<double, std::micro>(now.time_since_epoch()).count(), what, bytes);
+ }
+ 
++void PS2Memory::markVU1CodeModified(uint32_t lo, uint32_t hi)
++{
++    std::lock_guard<std::mutex> lock(m_vu1CodeLogMutex);
++    const uint64_t generation = m_vu1CodeGeneration.load(std::memory_order_relaxed) + 1u;
++    m_vu1CodeLog[generation % kVu1CodeLog] = Vu1CodeWrite{generation, lo, hi};
++    m_vu1CodeGeneration.store(generation, std::memory_order_relaxed);
++}
++
++bool PS2Memory::vu1CodeWritesSince(uint64_t from, uint64_t to, Vu1CodeWrite *out, size_t &count) const
++{
++    std::lock_guard<std::mutex> lock(m_vu1CodeLogMutex);
++    if (to <= from || to - from > kVu1CodeLog || to - from > count)
++        return false;
++    count = 0;
++    for (uint64_t g = from + 1u; g <= to; ++g)
++    {
++        const Vu1CodeWrite &w = m_vu1CodeLog[g % kVu1CodeLog];
++        if (w.generation != g)
++            return false;
++        out[count++] = w;
++    }
++    return true;
++}
++
+ void PS2Memory::runGsWorkerJob(GsWorkerJob &job)
+ {
+     size_t traceBytes = 0;
+diff --git a/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp b/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
+index c02fccc..befe135 100644
+--- a/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
++++ b/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
+@@ -492,7 +492,7 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
+                 if (pos + copyBytes <= sizeBytes)
+                 {
+                     std::memcpy(m_vu1Code + destAddr, data + pos, copyBytes);
+-                    markVU1CodeModified();
++                    markVU1CodeModified(destAddr, destAddr + copyBytes); // GOW-Port: only that range changed
+                 }
+                 else
+                     std::fprintf(stderr, "[vif1] MPG cut: dest=%x bytes=%u have=%u\n", destAddr, copyBytes, sizeBytes - pos);
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_native.inl b/ps2xRuntime/src/lib/vu/ps2_vu1_native.inl
+index 12c1174..4261224 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_native.inl
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_native.inl
+@@ -713,9 +713,32 @@ bool VU1Interpreter::runNative(StepContext &context)
+     const uint64_t generation = context.memory ? context.memory->getVU1CodeGeneration() : 0u;
+     if (generation != ns.generation)
+     {
++        // GOW-Port: the game swaps microprograms ~14 times a frame; dropping every slot made the resident code (the
++        // MSCAL entry stubs and shared routines) resolve again each time (~870 slotFor per frame). Only the blocks that
++        // read the written ranges are dropped: a block reads [pc, pc + (pairs + 1) * 8), at most 65 pairs.
++        PS2Memory::Vu1CodeWrite writes[PS2Memory::kVu1CodeLog];
++        size_t count = PS2Memory::kVu1CodeLog;
++        if (context.memory && ns.generation != ~0ull &&
++            context.memory->vu1CodeWritesSince(ns.generation, generation, writes, count))
++        {
++            for (size_t w = 0; w < count; ++w)
++            {
++                const uint32_t lo = writes[w].lo, hi = std::min<uint32_t>(writes[w].hi, PS2_VU1_CODE_SIZE);
++                const uint32_t first = lo > 66u * 8u ? (lo - 66u * 8u) >> 3 : 0u;
++                for (uint32_t i = first; i < (hi + 7u) >> 3; ++i)
++                {
++                    NativeState::Slot &sl = ns.slots[i];
++                    if (sl.known && (i << 3) + (static_cast<uint32_t>(sl.pairs) + 1u) * 8u > lo)
++                        sl.known = false;
++                }
++            }
++        }
++        else
++        {
++            for (NativeState::Slot &sl : ns.slots)
++                sl.known = false;
++        }
+         ns.generation = generation;
+-        for (NativeState::Slot &sl : ns.slots)
+-            sl.known = false;
+     }
+ 
+     const unsigned savedCsr = _mm_getcsr();
+diff --git a/ps2xTest/src/ps2_memory_tests.cpp b/ps2xTest/src/ps2_memory_tests.cpp
+index 160a16c..5a31274 100644
+--- a/ps2xTest/src/ps2_memory_tests.cpp
++++ b/ps2xTest/src/ps2_memory_tests.cpp
+@@ -531,6 +531,38 @@ void register_ps2_memory_tests()
+             t.IsTrue(matches, "MPG num=0 should copy 2048 bytes into VU1 code memory");
+         });
+ 
++        tc.Run("VIF MPG logs the VU1 code range of each generation", [](TestCase &t)
++        {
++            // GOW-Port: ps2recomp-vu1-invalidacion-rango. Cada MPG anota el rango de código que escribe; el despachador
++            // de la VU1 nativa solo descarta los bloques que lo leen.
++            PS2Memory mem;
++            t.IsTrue(mem.initialize(), "PS2Memory initialize should succeed");
++            const auto mpg = [&mem](uint16_t imm, uint8_t num, uint8_t fill)
++            {
++                std::vector<uint8_t> packet;
++                appendU32(packet, makeVifCmd(0x4Au, num, imm));
++                for (uint32_t i = 0; i < num * 8u; ++i)
++                    packet.push_back(static_cast<uint8_t>(fill + i));
++                mem.processVIF1Data(packet.data(), static_cast<uint32_t>(packet.size()));
++            };
++            const uint64_t g0 = mem.getVU1CodeGeneration();
++            mpg(0x100u, 4u, 0x10u); // 0x800-0x820
++            mpg(0x200u, 2u, 0x30u); // 0x1000-0x1010
++            const uint64_t g2 = mem.getVU1CodeGeneration();
++            PS2Memory::Vu1CodeWrite writes[PS2Memory::kVu1CodeLog];
++            size_t count = PS2Memory::kVu1CodeLog;
++            t.IsTrue(g2 == g0 + 2u, "each MPG should start one generation");
++            t.IsTrue(mem.vu1CodeWritesSince(g0, g2, writes, count), "the log should hold both writes");
++            t.Equals(count, static_cast<size_t>(2u), "two writes should be reported");
++            t.IsTrue(writes[0].lo == 0x800u && writes[0].hi == 0x820u, "the first MPG range should be logged");
++            t.IsTrue(writes[1].lo == 0x1000u && writes[1].hi == 0x1010u, "the second MPG range should be logged");
++            for (uint32_t i = 0; i < PS2Memory::kVu1CodeLog + 1u; ++i)
++                mpg(0x300u, 1u, static_cast<uint8_t>(i));
++            count = PS2Memory::kVu1CodeLog;
++            t.IsFalse(mem.vu1CodeWritesSince(g2, mem.getVU1CodeGeneration(), writes, count),
++                      "generations older than the log should make the caller drop everything");
++        });
++
+         tc.Run("VIF UNPACK num zero uploads 256 vectors", [](TestCase &t)
+         {
+             PS2Memory mem;

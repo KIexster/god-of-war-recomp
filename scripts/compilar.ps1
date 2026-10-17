@@ -53,6 +53,8 @@ $ciclosMitadPatch = Join-Path $RepoRoot 'patches\ps2recomp-ciclos-mitad.patch'
 $vu1Ranura64Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-ranura64.patch'
 # GOW-Port: el redondeo de cada ejecución de la VU se cambia con el MXCSR en x86-64 (no fegetround/fesetround).
 $vuRedondeoPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu-redondeo.patch'
+# GOW-Port: un MPG solo invalida los bloques de la VU1 nativa que leen el rango escrito.
+$vu1InvalidacionRangoPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-invalidacion-rango.patch'
 # GOW-Port: VF0 y VI0 de VU0 son constantes (PR #79), no incluido en el runtime de Waffle565.
 $vu0Vf0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vf0.patch'
 $vu0Vi0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vi0.patch'
@@ -117,6 +119,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $ritmoFinoPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $ciclosMitadPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1Ranura64Patch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vuRedondeoPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1InvalidacionRangoPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
