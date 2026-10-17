@@ -1,8 +1,18 @@
 diff --git a/ps2xRuntime/include/runtime/ee_scheduler.h b/ps2xRuntime/include/runtime/ee_scheduler.h
-index 1cf4c2c..d92afc8 100644
+index 1cf4c2c..f9954bd 100644
 --- a/ps2xRuntime/include/runtime/ee_scheduler.h
 +++ b/ps2xRuntime/include/runtime/ee_scheduler.h
-@@ -442,6 +442,7 @@ private:
+@@ -286,7 +286,8 @@ public:
+     // GOW-Port: for a guest busy-wait that never blocks (the movie player): when guest time has fallen behind the
+     // host clock (a scheduled event's host deadline has passed but its guest cycle is not reached), account the
+     // missing cycles (at most maxCycles) so guest time, EE timers and the IOP keep real time. Returns cycles added.
+-    uint64_t catchUpToHost(uint64_t maxCycles) noexcept;
++    // GOW-Port: `slack`: only deadlines due on the host clock for longer than that count (the EE clock may lag that much).
++    uint64_t catchUpToHost(uint64_t maxCycles, std::chrono::nanoseconds slack = std::chrono::nanoseconds(0)) noexcept;
+     [[nodiscard]] bool isExecutingGuest() const noexcept;
+ 
+     // Kernel object API. All calls except postEvent/requestStop execute on the
+@@ -442,6 +443,7 @@ private:
      uint32_t m_pendingEeTimerInterrupts = 0;
      uint64_t m_eeCycle = 0;
      uint64_t m_sliceEndCycle = kDefaultTimeSliceCycles;
@@ -11,7 +21,7 @@ index 1cf4c2c..d92afc8 100644
      std::atomic<bool> m_running{false};
      std::atomic<bool> m_guestExecuting{false};
 diff --git a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
-index 7b2ac63..a479c70 100644
+index 7b2ac63..b33dadd 100644
 --- a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
 +++ b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
 @@ -58,6 +58,9 @@ namespace
@@ -24,21 +34,37 @@ index 7b2ac63..a479c70 100644
      // GOW-Port: pacing points per field (see VBlankStart). 64 (was 16): busy-waits run the EE clock up to one step ahead
      // of the wall clock, and when the GS finishes the game first sleeps that lead off (~1 ms with 16 steps).
      constexpr uint64_t kPaceSteps = 64u;
-@@ -370,6 +373,14 @@ void EeScheduler::postEvent(EeEvent event)
+@@ -370,6 +373,15 @@ void EeScheduler::postEvent(EeEvent event)
  bool EeScheduler::checkpointDue(uint32_t cycles) noexcept
  {
      accountCycles(cycles);
 +    // GOW-Port: pacing keeps the EE clock from running ahead of the host clock; this keeps it from falling behind. With
 +    // 16 cycles per checkpoint, long stretches of EE work (leaving a movie, loading a menu) accrued less guest time than
 +    // the wall clock: the IOP, which runs on EE cycles, fell behind and the audio ran dry (~0.13 s at every movie end).
++    // A lag of up to one field is left alone: catching up within the frame cost ~0.6 ms of frame period in combat.
 +    if (++m_hostCatchUpCounter >= kHostCatchUpEvery)
 +    {
 +        m_hostCatchUpCounter = 0;
-+        catchUpToHost(kVBlankPeriodCycles);
++        catchUpToHost(kVBlankPeriodCycles, kVBlankPeriod); // up to one field of lag is left alone (frame timing)
 +    }
  
      if (m_checkpointPending.load(std::memory_order_acquire) ||
          m_stopRequested.load(std::memory_order_acquire))
+@@ -413,12 +425,12 @@ void EeScheduler::accountCycles(uint32_t cycles) noexcept
+     }
+ }
+ 
+-uint64_t EeScheduler::catchUpToHost(uint64_t maxCycles) noexcept
++uint64_t EeScheduler::catchUpToHost(uint64_t maxCycles, std::chrono::nanoseconds slack) noexcept
+ {
+     uint64_t target = 0u;
+     {
+         std::lock_guard lock(m_eventMutex);
+-        const auto now = std::chrono::steady_clock::now();
++        const auto now = std::chrono::steady_clock::now() - slack;
+         for (const ScheduledEvent &item : m_deadlines)
+         {
+             if (item.hostDeadline <= now && item.deadlineCycle > m_eeCycle && item.deadlineCycle > target)
 diff --git a/ps2xTest/src/ps2_runtime_interrupt_tests.cpp b/ps2xTest/src/ps2_runtime_interrupt_tests.cpp
 index 92d057d..d8a00ca 100644
 --- a/ps2xTest/src/ps2_runtime_interrupt_tests.cpp
