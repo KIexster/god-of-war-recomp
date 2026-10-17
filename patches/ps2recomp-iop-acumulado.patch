@@ -127,12 +127,12 @@ index 5ad408b..c074ce0 100644
  }
  
  ps2x::iop::DebugSnapshot PS2Runtime::iopDebugSnapshot() const
-diff --git a/ps2xTest/src/ps2_spu2_tests.cpp b/ps2xTest/src/ps2_spu2_tests.cpp
-index 3ff7e65..35ef470 100644
---- a/ps2xTest/src/ps2_spu2_tests.cpp
-+++ b/ps2xTest/src/ps2_spu2_tests.cpp
-@@ -199,6 +199,55 @@ void register_ps2_spu2_tests()
-                      "an idle IOP should still produce audio frames up to the last cycle run");
+diff --git a/ps2xTest/src/ps2_iop_tests.cpp b/ps2xTest/src/ps2_iop_tests.cpp
+index 4be26c5..aabf2bb 100644
+--- a/ps2xTest/src/ps2_iop_tests.cpp
++++ b/ps2xTest/src/ps2_iop_tests.cpp
+@@ -28,6 +28,55 @@ void register_ps2_iop_tests()
+                       "unsupported devices must not fall through to cdrom0");
          });
  
 +        tc.Run("IOP batches are due exactly after eeCyclesUntilBatch EE cycles", [](TestCase &t)
@@ -184,6 +184,6 @@ index 3ff7e65..35ef470 100644
 +            t.Equals(batchesSummed, batchesStepped, "summed accrual should run every batch on the same checkpoint");
 +        });
 +
-         tc.Run("reaching IRQA with IRQs enabled raises the SPU2 interrupt", [](TestCase &t)
+         tc.Run("HLE services activate only after a recognized module load", [](TestCase &t)
          {
-             Spu2 spu;
+             iop_test::Host host;
