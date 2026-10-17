@@ -59,6 +59,8 @@ $vu1InvalidacionRangoPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-invalida
 $eePonerseAlDiaPatch = Join-Path $RepoRoot 'patches\ps2recomp-ee-ponerse-al-dia.patch'
 # GOW-Port: con GOW_PAD_TEST=1 se ignoran los mandos físicos (solo el guion de la prueba controla el juego).
 $pruebaSinMandoPatch = Join-Path $RepoRoot 'patches\ps2recomp-prueba-sin-mando.patch'
+# GOW-Port: la presentación usa los registros de pantalla capturados al empezar cada VBlank (sin parpadeos del menú en los vídeos).
+$pantallaLatchPatch = Join-Path $RepoRoot 'patches\ps2recomp-pantalla-latch.patch'
 # GOW-Port: VF0 y VI0 de VU0 son constantes (PR #79), no incluido en el runtime de Waffle565.
 $vu0Vf0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vf0.patch'
 $vu0Vi0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vi0.patch'
@@ -126,6 +128,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $vuRedondeoPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1InvalidacionRangoPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $eePonerseAlDiaPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $pruebaSinMandoPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $pantallaLatchPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
