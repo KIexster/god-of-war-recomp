@@ -45,6 +45,8 @@ $stageLotesPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-stage-lotes.patch'
 $pantallaPatch = Join-Path $RepoRoot 'patches\ps2recomp-pantalla-completa.patch'
 # GOW-Port: los ciclos de los puntos de control del EE se pasan al IOP solo cuando vence su lote.
 $iopAcumuladoPatch = Join-Path $RepoRoot 'patches\ps2recomp-iop-acumulado.patch'
+# GOW-Port: 64 puntos de ritmo por campo (antes 16): menos adelanto del reloj del EE que dormir al terminar la GS.
+$ritmoFinoPatch = Join-Path $RepoRoot 'patches\ps2recomp-ritmo-fino.patch'
 # GOW-Port: VF0 y VI0 de VU0 son constantes (PR #79), no incluido en el runtime de Waffle565.
 $vu0Vf0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vf0.patch'
 $vu0Vi0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vi0.patch'
@@ -105,6 +107,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $presentOrdenPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $stageLotesPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $pantallaPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $iopAcumuladoPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $ritmoFinoPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner

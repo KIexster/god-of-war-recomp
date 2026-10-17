@@ -1,0 +1,105 @@
+diff --git a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+index 377be77..7b2ac63 100644
+--- a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
++++ b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+@@ -58,7 +58,9 @@ namespace
+     constexpr uint64_t kVBlankPeriodCycles = EeScheduler::kEeClockHz * 1001ull / 60000ull; // GOW-Port: campo NTSC (59,94 Hz)
+     constexpr uint64_t kVBlankDurationCycles = microsecondsToEeCycles(500u);
+     constexpr uint64_t kAlarmTickCycles = microsecondsToEeCycles(kAlarmTickMicroseconds);
+-    constexpr uint64_t kPaceSteps = 16u; // pacing points per field (see VBlankStart)
++    // GOW-Port: pacing points per field (see VBlankStart). 64 (was 16): busy-waits run the EE clock up to one step ahead
++    // of the wall clock, and when the GS finishes the game first sleeps that lead off (~1 ms with 16 steps).
++    constexpr uint64_t kPaceSteps = 64u;
+ 
+     template <typename Map>
+     int allocatePositiveId(int &nextId, const Map &objects)
+@@ -1974,7 +1976,7 @@ void EeScheduler::processDueDeadlines()
+                               scheduled.hostDeadline + kVBlankPeriod,
+                               EeEvent{EeEventType::VBlankStart, 0, 0});
+                 // GOW-Port: pacing points on the VBlank grid (cycle and host deadline in lockstep, no-op event). The
+-                // guest clock may not run ahead of the wall clock by more than 1/16 field inside a frame: recompiled
++                // guest clock may not run ahead of the wall clock by more than 1/64 field inside a frame: recompiled
+                 // busy-waits (vid::WaitForDMAComplete polling the GS-done flag) otherwise burn guest cycles ~10x
+                 // faster than real time, the FINISH and the game's frame-clock read land late in guest time and its
+                 // frame step (>= 1 field) ran 3 % fast at 60 fps (docs/performance.md, game speed).
+diff --git a/ps2xTest/src/ps2_runtime_interrupt_tests.cpp b/ps2xTest/src/ps2_runtime_interrupt_tests.cpp
+index 92b381d..a4c09fa 100644
+--- a/ps2xTest/src/ps2_runtime_interrupt_tests.cpp
++++ b/ps2xTest/src/ps2_runtime_interrupt_tests.cpp
+@@ -3,6 +3,7 @@
+ #include "ps2_syscalls.h"
+ #include "runtime/ee_scheduler.h"
+ 
++#include <algorithm>
+ #include <atomic>
+ #include <chrono>
+ #include <cstdint>
+@@ -66,6 +67,39 @@ namespace
+     constexpr uint32_t kEventWaitPc = 0x00160400u;
+     constexpr uint32_t kEventResumePc = 0x00160410u;
+     constexpr uint32_t kEventProducerPc = 0x00160420u;
++    // GOW-Port: función invitada que solo gasta ciclos (como un bucle de sondeo recompilado) y mide cuánto se
++    // adelanta el reloj del EE al reloj real.
++    constexpr uint32_t kPaceBurnPc = 0x00160600u;
++    constexpr uint64_t kPaceBurnChunk = 1024u;
++    std::chrono::steady_clock::time_point g_paceStart;
++    uint64_t g_paceCycles = 0u;
++    double g_paceMaxLeadUs = 0.0;
++
++    void schedulerPaceBurn(uint8_t *, R5900Context *ctx, PS2Runtime *runtime)
++    {
++        const uint64_t field = EeScheduler::kEeClockHz * 1001ull / 60000ull;
++        for (;;)
++        {
++            g_paceCycles += kPaceBurnChunk;
++            if (g_paceCycles > field + field / 8u) // el primer campo no tiene puntos de ritmo
++            {
++                const double guestUs = static_cast<double>(g_paceCycles) * 1e6 / static_cast<double>(EeScheduler::kEeClockHz);
++                const double wallUs = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - g_paceStart).count();
++                g_paceMaxLeadUs = std::max(g_paceMaxLeadUs, guestUs - wallUs);
++            }
++            if (g_paceCycles >= 4u * field)
++            {
++                ctx->pc = 0u;
++                runtime->requestStop();
++                return;
++            }
++            if (runtime->eeCheckpointDue(static_cast<uint32_t>(kPaceBurnChunk)))
++            {
++                ctx->pc = kPaceBurnPc;
++                return;
++            }
++        }
++    }
+     constexpr uint32_t kTimer2WaitPc = 0x00160500u;
+     constexpr uint32_t kTimer2ResumePc = 0x00160510u;
+     constexpr uint32_t kTimer2HandlerPc = 0x00160520u;
+@@ -546,6 +580,28 @@ void register_ps2_runtime_interrupt_tests()
+             t.IsTrue(g_vsyncCycle < field + 4096u, "the first VBlank should arrive right after one NTSC field");
+         });
+ 
++        tc.Run("EE clock never runs more than 1/64 field ahead of the host clock", [](TestCase &t)
++        {
++            // GOW-Port: ps2recomp-ritmo-fino. Los bucles de sondeo gastan ciclos del EE mucho más deprisa que el
++            // tiempo real; con 16 puntos de ritmo por campo el reloj del EE llegaba a ir ~1 ms por delante, y al
++            // terminar la GS el juego dormía ese adelanto antes de seguir (~0,5 ms de media por cuadro). Con 64
++            // puntos el adelanto no pasa de ~0,26 ms.
++            TestEnv env;
++            t.IsTrue(env.runtime.memory().initialize(), "runtime memory initialize should succeed");
++            env.runtime.registerFunction(kPaceBurnPc, schedulerPaceBurn);
++            g_paceCycles = 0u;
++            g_paceMaxLeadUs = 0.0;
++            R5900Context mainContext{};
++            mainContext.pc = kPaceBurnPc;
++            g_paceStart = std::chrono::steady_clock::now();
++            env.runtime.eeScheduler().reset(env.rdram.data(), mainContext);
++            env.runtime.eeScheduler().run();
++            const double fieldUs = 1e6 * 1001.0 / 60000.0;
++            t.IsTrue(g_paceCycles >= 4u * (EeScheduler::kEeClockHz * 1001ull / 60000ull), "the guest should burn four fields");
++            t.IsTrue(g_paceMaxLeadUs < fieldUs / 40.0,
++                     "the EE clock should stay within one 1/64-field pacing step of the host clock");
++        });
++
+         tc.Run("VBlank IRQ invocation completes before the resumed base context", [](TestCase &t)
+         {
+             TestEnv env;
