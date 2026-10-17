@@ -7412,7 +7412,8 @@ por debajo del ruido entre partidas.
 La validación de vídeos con la versión del 17 dio primero 0 de 67, por dos causas:
 
 1. Arnés: la copia local de `videos.py` había vuelto a `GOW_BONUS_MOVIE_DELAY` 8; la petición llegaba antes de que el
-   menú construyera su objeto (llamada nula en 0x161c68). Con 30 s, el vídeo se reproduce entero.
+   menú construyera su objeto (llamada nula en 0x161c68). Con 20 s funciona; con 30 s llega cuando el título ya pasó
+   a la demostración automática por inactividad y vuelve la llamada nula (el juego queda congelado tras la petición).
 2. Real, de #120 (16 ciclos por punto de control): ~6 300-6 700 muestras sin audio (~0,13 s) al final de cada vídeo.
    Bisección con A01MP01 y P01MP01 sobre las compilaciones del día: hasta el ritmo de 64 puntos, correctos; desde
    los ciclos a la mitad, fallan todas. En los tramos largos de trabajo del EE (salir de un vídeo) el reloj del EE
