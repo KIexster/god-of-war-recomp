@@ -1,0 +1,133 @@
+diff --git a/ps2xRuntime/include/runtime/gs/gs_frontend.h b/ps2xRuntime/include/runtime/gs/gs_frontend.h
+index 6728c64..a5d3d7e 100644
+--- a/ps2xRuntime/include/runtime/gs/gs_frontend.h
++++ b/ps2xRuntime/include/runtime/gs/gs_frontend.h
+@@ -135,6 +135,11 @@ public:
+     void setDebugHistoryPaused(bool paused);
+     bool getPreferredDisplaySource(GSFrameReg &outSource, uint32_t &outDestFbp) const;
+     void latchHostPresentationFrame();
++    // GOW-Port: captures the display registers the CRTC scans out in a field, when the field's VBlank starts (before the
++    // game's VBlank handler runs; called by the EE scheduler). Presentation uses this snapshot, not the registers at
++    // whatever moment the host presents: the movie player sets DISPFB2 to its other buffer and back within ~0.1 ms every
++    // 4 fields, which the console never shows, and a present that caught it flashed the stale menu kept in that buffer.
++    void latchDisplayField();
+     // GOW-Port: el host registra la textura adquirida, nunca el request posterior.
+     bool usesSharedPresentation() const;
+     void recordAcquiredSharedFrame(const GSSharedPresent::Frame &frame);
+@@ -188,6 +193,9 @@ private:
+     uint8_t *m_localMemoryStorage = nullptr;
+     uint32_t m_localMemorySize = 0u;
+     struct GSRegisters *m_privRegs = nullptr;
++    mutable std::mutex m_fieldMutex; // GOW-Port: latchDisplayField
++    uint64_t m_field[7]{};           // pmode, smode2, dispfb1, display1, dispfb2, display2, bgcolor
++    bool m_fieldValid = false;
+     mutable std::recursive_mutex m_stateMutex;
+     mutable std::mutex m_backendLifetimeMutex;
+     mutable std::mutex m_presentationMutex;
+diff --git a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+index b33dadd..07d0af8 100644
+--- a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
++++ b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+@@ -2023,6 +2023,7 @@ void EeScheduler::processEvent(const EeEvent &event)
+                                  std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now().time_since_epoch()).count());
+             }
+         }
++        m_runtime.gs().latchDisplayField(); // GOW-Port: what the CRTC shows in this field (gs_frontend.h)
+         m_runtime.memory().gs().vsyncTick.store(m_vsyncTick, std::memory_order_release);
+         if ((m_vsyncTick & 1u) != 0u)
+         {
+diff --git a/ps2xRuntime/src/lib/gs/gs_frontend.cpp b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+index 0dc9480..1180a14 100644
+--- a/ps2xRuntime/src/lib/gs/gs_frontend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+@@ -342,6 +342,10 @@ void GS::init(uint8_t *vram, uint32_t vramSize, GSRegisters *privRegs)
+ void GS::reset()
+ {
+     std::lock_guard<std::recursive_mutex> lock(m_stateMutex);
++    {
++        std::lock_guard<std::mutex> fieldLock(m_fieldMutex); // GOW-Port: no latched field from before the reset
++        m_fieldValid = false;
++    }
+     std::memset(m_ctx, 0, sizeof(m_ctx));
+     m_gifInput = {}; // GOW-Port: reset tambien descarta etiquetas/registros incompletos.
+     m_prim = {};
+@@ -730,18 +734,37 @@ void GS::refreshDisplaySnapshot()
+     snapshotVRAM();
+ }
+ 
++void GS::latchDisplayField()
++{
++    if (!m_privRegs)
++        return;
++    const uint64_t field[7] = {m_privRegs->pmode, m_privRegs->smode2, m_privRegs->dispfb1, m_privRegs->display1,
++                               m_privRegs->dispfb2, m_privRegs->display2, m_privRegs->bgcolor};
++    std::lock_guard<std::mutex> lock(m_fieldMutex);
++    std::memcpy(m_field, field, sizeof(field));
++    m_fieldValid = true;
++}
++
+ GSPresentationRequest GS::buildPresentationRequestUnlocked() const
+ {
+     GSPresentationRequest request{};
+     if (!m_privRegs)
+         return request;
+-    request.pmode = m_privRegs->pmode;
+-    request.smode2 = m_privRegs->smode2;
+-    request.dispfb1 = m_privRegs->dispfb1;
+-    request.display1 = m_privRegs->display1;
+-    request.dispfb2 = m_privRegs->dispfb2;
+-    request.display2 = m_privRegs->display2;
+-    request.bgcolor = m_privRegs->bgcolor;
++    // GOW-Port: the display state latched at the field's VBlank (latchDisplayField), when there is one.
++    uint64_t field[7] = {m_privRegs->pmode, m_privRegs->smode2, m_privRegs->dispfb1, m_privRegs->display1,
++                         m_privRegs->dispfb2, m_privRegs->display2, m_privRegs->bgcolor};
++    {
++        std::lock_guard<std::mutex> lock(m_fieldMutex);
++        if (m_fieldValid)
++            std::memcpy(field, m_field, sizeof(field));
++    }
++    request.pmode = field[0];
++    request.smode2 = field[1];
++    request.dispfb1 = field[2];
++    request.display1 = field[3];
++    request.dispfb2 = field[4];
++    request.display2 = field[5];
++    request.bgcolor = field[6];
+     request.vsyncTick = m_privRegs->vsyncTick.load(std::memory_order_acquire);
+     request.contextFrames[0] = m_ctx[0].frame;
+     request.contextFrames[1] = m_ctx[1].frame;
+diff --git a/ps2xTest/src/ps2_gs_shared_queue_tests.cpp b/ps2xTest/src/ps2_gs_shared_queue_tests.cpp
+index 5ddaa4d..d22b1cd 100644
+--- a/ps2xTest/src/ps2_gs_shared_queue_tests.cpp
++++ b/ps2xTest/src/ps2_gs_shared_queue_tests.cpp
+@@ -193,6 +193,30 @@ void runGsSharedQueueTests()
+             }
+         });
+ 
++        t.Run("presentation uses the display state latched at VBlank, not a transient write", [](TestCase &t)
++        {
++            // GOW-Port: ps2recomp-pantalla-latch. El reproductor de vídeo pone DISPFB2 en su otro búfer y lo devuelve
++            // ~0,1 ms después; la consola no lo muestra nunca. La presentación usa los registros capturados al empezar
++            // el VBlank del campo (latchDisplayField), así que una escritura transitoria posterior no se ve.
++            Fixture f;
++            f.registers.pmode = 2u;
++            f.registers.dispfb2 = 0x68u;
++            f.gs.latchDisplayField();      // VBlank: el campo muestra 0x68
++            f.registers.dispfb2 = 0xD0u;   // escritura transitoria a mitad del campo
++            f.gs.latchHostPresentationFrame();
++            f.registers.dispfb2 = 0x68u;   // ...deshecha enseguida
++            f.registers.vsyncTick.store(32u);
++            f.gs.latchDisplayField();      // siguiente VBlank
++            f.gs.latchHostPresentationFrame();
++            f.recording.release();
++            f.threaded->ReadVram(0u, 0u, 1u, 0u, 0u);
++            t.Equals(f.recording.requests.size(), size_t(2u), "both presentations should reach the backend");
++            bool same = f.recording.requests.size() == 2u;
++            for (size_t i = 0; same && i < 2u; ++i)
++                same = f.recording.requests[i].dispfb2 == 0x68u && f.recording.requests[i].pmode == 2u;
++            t.IsTrue(same, "the transient DISPFB2 written after the VBlank latch must not be presented");
++        });
++
+         t.Run("shared diagnostics read on worker with latched CRTC and cache generation", [](TestCase &t)
+         {
+             Fixture f;

@@ -7436,3 +7436,17 @@ congelados. Las esperas de 8, 20 y 30 s (`GOW_BONUS_MOVIE_DELAY`) solo cambiaban
 
 `ps2recomp-prueba-sin-mando.patch`: con `GOW_PAD_TEST=1`, `ps2_pad.cpp` no usa ningún mando físico; solo el guion
 controla el juego. Nota: en partida normal el juego también recibe el mando sin tener el foco.
+
+### Parpadeo del menú en mitad de los vídeos (2026-10-17)
+
+El usuario veía durante unos milisegundos el fondo del menú principal en mitad de las cinemáticas. Registro de cada
+presentación (diagnóstico local) en BONUS14: casi todas muestran el búfer del vídeo (FBP 0x68), pero cada ~1000
+presentaciones (~17 s) 2-3 muestran FBP 0xD0, cuyo render target no se dibujaba desde antes del vídeo (el menú).
+Registro de las escrituras de los registros de pantalla: el reproductor pone `DISPFB2` = 0xD0 y lo devuelve a 0x68
+~130 µs después, cada 66,7 ms. La consola no lo muestra nunca (la CRTC no ve un valor que solo dura una fracción de
+línea); el port tomaba la foto de los registros desde el hilo de la ventana en cualquier momento y a veces caía dentro.
+
+`ps2recomp-pantalla-latch.patch`: `GS::latchDisplayField()` captura los registros de pantalla al empezar cada VBlank
+(lo llama el planificador del EE antes de publicar `vsyncTick`) y la presentación usa esa foto. Prueba: "presentation
+uses the display state latched at VBlank, not a transient write". Resultado en A01MP01: 1579 presentaciones del
+vídeo, todas de FBP 0x68 y ninguna con contenido viejo.
