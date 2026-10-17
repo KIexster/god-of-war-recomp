@@ -1,0 +1,93 @@
+diff --git a/ps2xRuntime/include/runtime/ps2_vu1_native.h b/ps2xRuntime/include/runtime/ps2_vu1_native.h
+index 14823e2..6b2e308 100644
+--- a/ps2xRuntime/include/runtime/ps2_vu1_native.h
++++ b/ps2xRuntime/include/runtime/ps2_vu1_native.h
+@@ -121,6 +121,12 @@ struct VU1Interpreter::NativeState
+         struct Cached { std::vector<uint16_t> sig; std::vector<uint8_t> cyc; uint32_t id = 0; };
+         std::vector<Cached> cache; // timings for in-flight entry states seen so far (loops repeat the same few)
+         uint32_t next = 0;
++        // Entry timing by predecessor (blocks that read entry flags): when the block before ran for maxLat cycles or more
++        // and nothing from the exact engine is still in flight, that block and its timing table alone decide the entry
++        // state; the timing found for it is reused. GOW-Port: kept here, not in the dispatch slot (Slot fits one line).
++        const BlockTiming *memoPred = nullptr;
++        const uint8_t *memoCyc = nullptr;
++        uint32_t memoPredId = 0, memoId = 0;
+     };
+     std::unordered_map<uint64_t, BlockTiming> timings;
+     // Per pc slot, what the dispatch loop touches for every block (one cache line).
+@@ -129,13 +135,8 @@ struct VU1Interpreter::NativeState
+         VU1NativeFn fn = nullptr; // null: no native block at this pc
+         const uint8_t *idle = nullptr;
+         BlockTiming *bt = nullptr;
+-        // Entry timing by predecessor (blocks that read entry flags): when the block before ran for maxLat cycles or more
+-        // and nothing from the exact engine is still in flight, that block and its timing table alone decide the entry
+-        // state; the timing found for it is reused.
+-        const BlockTiming *memoPred = nullptr;
+-        const uint8_t *memoCyc = nullptr;
+-        uint32_t memoPredId = 0, memoId = 0;
+         uint16_t pairs = 0;
++        uint8_t idleLast = 0; // GOW-Port: idle[pairs - 1], so the end cycle of an idle-timed block needs no table read
+         bool known = false;
+         bool readsEntryFlags = false;
+         bool memoable = false;   // its entry timing does not depend on FDIV/EFU state
+@@ -144,6 +145,7 @@ struct VU1Interpreter::NativeState
+         struct Scalar { uint8_t pair, latency; bool fdiv; } scalar[2] = {};
+     };
+     static constexpr uint8_t kScalarMany = 0xFF;
++    static_assert(sizeof(Slot) == 64, "GOW-Port: one dispatch slot per cache line");
+     Slot slots[2048];
+     // Native blocks run since native entry (or the last sync), newest last; histCount counts them all (the ring keeps the
+     // last kHist). A write is ready less than maxLat cycles after its block ended, so only blocks that ended less than
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_native.inl b/ps2xRuntime/src/lib/vu/ps2_vu1_native.inl
+index 9b820dc..12c1174 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_native.inl
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_native.inl
+@@ -478,16 +478,16 @@ const uint8_t *VU1NativeAccess::blockTiming(VU1Interpreter &vu, VU1Interpreter::
+     const NS::Hist *pred = ns.histCount ? &ns.hist[(ns.histNext + NS::kHist - 1u) % NS::kHist] : nullptr;
+     const bool memoOk = pred && sl.memoable && pred->end == start && pred->end - pred->start >= ns.maxLat &&
+                         ns.arraysReadyBy <= start;
+-    if (memoOk && sl.memoPred == pred->bt && sl.memoPredId == pred->cycId && sl.memoCyc)
++    if (memoOk && bt.memoPred == pred->bt && bt.memoPredId == pred->cycId && bt.memoCyc)
+     {
+-        cycId = sl.memoId;
+-        return sl.memoCyc;
++        cycId = bt.memoId;
++        return bt.memoCyc;
+     }
+     const NS::BlockTiming *predBt = memoOk ? pred->bt : nullptr;
+     const uint32_t predId = memoOk ? pred->cycId : 0u;
+     const auto remember = [&](const uint8_t *cyc, uint32_t id) {
+         if (predBt)
+-            sl.memoPred = predBt, sl.memoPredId = predId, sl.memoCyc = cyc, sl.memoId = id;
++            bt.memoPred = predBt, bt.memoPredId = predId, bt.memoCyc = cyc, bt.memoId = id;
+         cycId = id;
+         return cyc;
+     };
+@@ -578,9 +578,7 @@ const uint8_t *VU1NativeAccess::blockTiming(VU1Interpreter &vu, VU1Interpreter::
+     slot.sig = ns.sig;
+     slot.cyc = std::move(cyc);
+     slot.id = ns.nextCycId++;
+-    for (NS::Slot &other : ns.slots) // may point into the cache slot replaced here
+-        if (other.bt == &bt)
+-            other.memoCyc = nullptr;
++    bt.memoCyc = nullptr; // may point into the cache slot replaced here
+     return remember(slot.cyc.data(), slot.id);
+ }
+ 
+@@ -619,7 +617,7 @@ VU1N_INLINE void VU1NativeAccess::finishBlockTiming(VU1Interpreter &vu, const VU
+ {
+     using NS = VU1Interpreter::NativeState;
+     NS &ns = *vu.m_native;
+-    const uint64_t end = start + cyc[sl.pairs - 1u] + 1u;
++    const uint64_t end = start + (cyc == sl.idle ? sl.idleLast : cyc[sl.pairs - 1u]) + 1u;
+     NS::Hist &h = ns.hist[ns.histNext];
+     h.bt = sl.bt;
+     h.cyc = cyc;
+@@ -670,6 +668,7 @@ VU1Interpreter::NativeState::Slot &VU1NativeAccess::slotFor(VU1Interpreter &vu,
+                 bt.readsEntryFlags = it->second.readsEntryFlags;
+                 sl.fn = it->second.fn;
+                 sl.idle = it->second.cyc.data();
++                sl.idleLast = it->second.cyc[count - 1u];
+                 sl.bt = &bt;
+                 sl.readsEntryFlags = bt.readsEntryFlags;
+                 sl.memoable = bt.scalarRead == 0u;

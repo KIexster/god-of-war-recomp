@@ -49,6 +49,8 @@ $iopAcumuladoPatch = Join-Path $RepoRoot 'patches\ps2recomp-iop-acumulado.patch'
 $ritmoFinoPatch = Join-Path $RepoRoot 'patches\ps2recomp-ritmo-fino.patch'
 # GOW-Port: 16 ciclos del EE por salto hacia atrás del código generado y 4 por despacho (antes 32 y 8).
 $ciclosMitadPatch = Join-Path $RepoRoot 'patches\ps2recomp-ciclos-mitad.patch'
+# GOW-Port: ranura de despacho de la VU1 nativa en una línea de caché (memo en BlockTiming, idleLast).
+$vu1Ranura64Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-ranura64.patch'
 # GOW-Port: VF0 y VI0 de VU0 son constantes (PR #79), no incluido en el runtime de Waffle565.
 $vu0Vf0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vf0.patch'
 $vu0Vi0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vi0.patch'
@@ -111,6 +113,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $pantallaPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $iopAcumuladoPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $ritmoFinoPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $ciclosMitadPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1Ranura64Patch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
