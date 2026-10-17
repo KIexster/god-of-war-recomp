@@ -1,0 +1,189 @@
+diff --git a/ps2xIOP/include/ps2x/iop/iop_subsystem.h b/ps2xIOP/include/ps2x/iop/iop_subsystem.h
+index 4027621..1f4b9a1 100644
+--- a/ps2xIOP/include/ps2x/iop/iop_subsystem.h
++++ b/ps2xIOP/include/ps2x/iop/iop_subsystem.h
+@@ -31,6 +31,9 @@ namespace ps2x::iop
+         // is due, then runPendingEeCycles runs it (same result as runEeCycles).
+         [[nodiscard]] bool accrueEeCycles(uint64_t eeCycles) noexcept;
+         void runPendingEeCycles() noexcept;
++        // GOW-Port: EE cycles that accrueEeCycles still needs before it returns true (>= 1). The caller may add up
++        // that many cycles on its side and accrue them at once: same batches at the same EE cycles.
++        [[nodiscard]] uint64_t eeCyclesUntilBatch() const noexcept;
+ 
+         [[nodiscard]] RpcAbi selectRpcAbi(const RpcAbiRequest &request) const;
+         [[nodiscard]] bool canBindRpc(uint32_t sid) const noexcept;
+diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_emulator.cpp
+index ac8e640..3810d65 100644
+--- a/ps2xIOP/src/emulator/iop_emulator.cpp
++++ b/ps2xIOP/src/emulator/iop_emulator.cpp
+@@ -1137,6 +1137,15 @@ namespace ps2x::iop::detail
+         return m_impl->pendingIopCycles >= kIopCycleBatch;
+     }
+ 
++    uint64_t IopEmulator::eeCyclesUntilBatch() const noexcept
++    {
++        // accrueEeCycles(n) returns true once (carry + n) / 8 + pending >= kIopCycleBatch.
++        const uint64_t pending = m_impl->pendingIopCycles;
++        if (pending >= kIopCycleBatch)
++            return 1u;
++        return (kIopCycleBatch - pending) * 8u - m_impl->eeCycleCarry;
++    }
++
+     void IopEmulator::runPendingEeCycles() noexcept
+     {
+         const uint64_t cycles = m_impl->pendingIopCycles;
+diff --git a/ps2xIOP/src/emulator/iop_emulator.h b/ps2xIOP/src/emulator/iop_emulator.h
+index eab568e..afdc1f7 100644
+--- a/ps2xIOP/src/emulator/iop_emulator.h
++++ b/ps2xIOP/src/emulator/iop_emulator.h
+@@ -27,6 +27,7 @@ namespace ps2x::iop::detail
+         void runEeCycles(uint64_t eeCycles) noexcept;
+         [[nodiscard]] bool accrueEeCycles(uint64_t eeCycles) noexcept;
+         void runPendingEeCycles() noexcept;
++        [[nodiscard]] uint64_t eeCyclesUntilBatch() const noexcept; // GOW-Port: see IopSubsystem
+         [[nodiscard]] RpcResult handleRpc(const RpcRequest &request);
+         [[nodiscard]] bool hasRpcServer(uint32_t sid) const noexcept;
+         void onSifTransfer(const SifTransfer &transfer);
+diff --git a/ps2xIOP/src/iop_subsystem.cpp b/ps2xIOP/src/iop_subsystem.cpp
+index 5d08f69..cd27e27 100644
+--- a/ps2xIOP/src/iop_subsystem.cpp
++++ b/ps2xIOP/src/iop_subsystem.cpp
+@@ -176,6 +176,11 @@ namespace ps2x::iop
+         return m_impl->emulator.accrueEeCycles(eeCycles);
+     }
+ 
++    uint64_t IopSubsystem::eeCyclesUntilBatch() const noexcept
++    {
++        return m_impl->emulator.eeCyclesUntilBatch();
++    }
++
+     void IopSubsystem::runPendingEeCycles() noexcept
+     {
+         m_impl->emulator.runPendingEeCycles();
+diff --git a/ps2xRuntime/include/ps2_runtime.h b/ps2xRuntime/include/ps2_runtime.h
+index 7a0f4d6..465be28 100644
+--- a/ps2xRuntime/include/ps2_runtime.h
++++ b/ps2xRuntime/include/ps2_runtime.h
+@@ -490,7 +490,16 @@ private:
+     [[nodiscard]] bool canBindIopRpc(uint32_t sid) const noexcept;
+     [[nodiscard]] ps2x::iop::RpcResult handleIopRpc(uint8_t *rdram, R5900Context *ctx, ps2x::iop::RpcRequest request);
+     void notifyIopSifTransfer(uint8_t *rdram, const ps2x::iop::SifTransfer &transfer);
+-    void advanceIopEeCycles(uint64_t eeCycles) noexcept;
++    // GOW-Port: called at every EE checkpoint (tens of millions per second, every 8 guest cycles). The cycles are
++    // added up here and handed to the IOP only when its next batch is due (eeCyclesUntilBatch): same IOP batches at
++    // the same EE cycles, without three calls into the IOP library per checkpoint (~25 % of the EE thread).
++    void advanceIopEeCycles(uint64_t eeCycles) noexcept
++    {
++        m_iopEeCycles += eeCycles;
++        if (m_iopEeCycles >= m_iopEeCyclesDue)
++            flushIopEeCycles();
++    }
++    void flushIopEeCycles() noexcept;
+     void resetIop();
+     void shutdownHostGraphics(); // GOW-Port: destruir GS antes de cerrar el contexto raylib.
+ 
+@@ -505,6 +514,7 @@ private:
+     bool m_hostWindowOwned = false;
+     std::unique_ptr<PS2IopHostAdapter> m_iopHost;
+     std::unique_ptr<ps2x::iop::IopSubsystem> m_iopSubsystem;
++    uint64_t m_iopEeCycles = 0, m_iopEeCyclesDue = 0; // GOW-Port: see advanceIopEeCycles
+     PS2AudioBackend m_audioBackend;
+     PSPadBackend m_padBackend;
+     PS2RomDevice m_romDevice;
+diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
+index 5ad408b..c074ce0 100644
+--- a/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -620,19 +620,25 @@ void PS2Runtime::notifyIopSifTransfer(uint8_t *rdram, const ps2x::iop::SifTransf
+     m_iopSubsystem->onSifTransfer(transfer);
+ }
+ 
+-void PS2Runtime::advanceIopEeCycles(uint64_t eeCycles) noexcept
++void PS2Runtime::flushIopEeCycles() noexcept
+ {
+-    // Called at every EE checkpoint (millions/s): only the batched IOP run is timed, the accrual is a few adds
+-    // (the perf scope reads the host clock twice, which was ~40 % of the EE thread with GOW_PERF_DIAG=1).
+-    if (!m_iopSubsystem->accrueEeCycles(eeCycles))
+-        return;
+-    ps2_perf::Scope perf(ps2_perf::Bucket::Iop);
+-    m_iopSubsystem->runPendingEeCycles();
++    // Only the batched IOP run is timed (the perf scope reads the host clock twice, which was ~40 % of the EE thread
++    // with GOW_PERF_DIAG=1 when it wrapped every accrual).
++    const uint64_t eeCycles = m_iopEeCycles;
++    m_iopEeCycles = 0;
++    if (m_iopSubsystem->accrueEeCycles(eeCycles))
++    {
++        ps2_perf::Scope perf(ps2_perf::Bucket::Iop);
++        m_iopSubsystem->runPendingEeCycles();
++    }
++    m_iopEeCyclesDue = m_iopSubsystem->eeCyclesUntilBatch();
+ }
+ 
+ void PS2Runtime::resetIop()
+ {
+     m_iopSubsystem->reset();
++    m_iopEeCycles = 0; // GOW-Port: the IOP's own accrual restarts; ask it again on the next checkpoint
++    m_iopEeCyclesDue = 0;
+ }
+ 
+ ps2x::iop::DebugSnapshot PS2Runtime::iopDebugSnapshot() const
+diff --git a/ps2xTest/src/ps2_iop_tests.cpp b/ps2xTest/src/ps2_iop_tests.cpp
+index 4be26c5..aabf2bb 100644
+--- a/ps2xTest/src/ps2_iop_tests.cpp
++++ b/ps2xTest/src/ps2_iop_tests.cpp
+@@ -28,6 +28,55 @@ void register_ps2_iop_tests()
+                       "unsupported devices must not fall through to cdrom0");
+         });
+ 
++        tc.Run("IOP batches are due exactly after eeCyclesUntilBatch EE cycles", [](TestCase &t)
++        {
++            // GOW-Port: PS2Runtime suma los ciclos de los puntos de control del EE y los pasa al IOP solo cuando
++            // vence su lote (eeCyclesUntilBatch). Debe vencer en el mismo ciclo que pasándolos de 8 en 8, también
++            // con restos que no son múltiplo de 8.
++            iop_test::Host host;
++            ps2x::iop::IopSubsystem subsystem(host);
++            bool ok = subsystem.accrueEeCycles(5u) == false;
++            for (int batch = 0; ok && batch < 4; ++batch)
++            {
++                const uint64_t due = subsystem.eeCyclesUntilBatch();
++                ok = due >= 1u && (due < 2u || !subsystem.accrueEeCycles(due - 1u)) &&
++                     subsystem.eeCyclesUntilBatch() == (due < 2u ? due : 1u) && subsystem.accrueEeCycles(1u);
++                subsystem.runPendingEeCycles();
++                ok = ok && subsystem.accrueEeCycles(3u) == false; // resto que no es múltiplo de 8
++            }
++            t.IsTrue(ok, "the batch should be due on the exact EE cycle eeCyclesUntilBatch reports");
++
++            iop_test::Host hostA, hostB;
++            ps2x::iop::IopSubsystem stepped(hostA), summed(hostB);
++            uint64_t pending = 0, due = summed.eeCyclesUntilBatch();
++            uint32_t batchesStepped = 0, batchesSummed = 0;
++            for (uint32_t i = 0; i < 20000u; ++i)
++            {
++                const uint64_t cycles = 1u + (i * 7u) % 13u;
++                if (stepped.accrueEeCycles(cycles))
++                {
++                    ++batchesStepped;
++                    stepped.runPendingEeCycles();
++                }
++                pending += cycles;
++                if (pending >= due)
++                {
++                    const bool run = summed.accrueEeCycles(pending);
++                    pending = 0;
++                    if (run)
++                    {
++                        ++batchesSummed;
++                        summed.runPendingEeCycles();
++                    }
++                    due = summed.eeCyclesUntilBatch();
++                }
++                if (batchesStepped != batchesSummed)
++                    break;
++            }
++            t.IsTrue(batchesStepped > 10u, "the run should cover several IOP batches");
++            t.Equals(batchesSummed, batchesStepped, "summed accrual should run every batch on the same checkpoint");
++        });
++
+         tc.Run("HLE services activate only after a recognized module load", [](TestCase &t)
+         {
+             iop_test::Host host;

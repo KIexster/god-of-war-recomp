@@ -7303,3 +7303,23 @@ and delivers them in order with exact sizes".
 A/B en combate, 5 rondas alternas (trabajo por cuadro, mediana / cuadros con trabajo > 15 ms), antes → después:
 13,15/9 % → 12,98/6 %; 14,04/22 % → 13,58/10 %; 14,47/30 % → 11,39/1 %; 13,65/12 % → 12,82/2 %; 14,48/30 % →
 13,24/4 %. Las 5 a favor; mediana de medianas 14,04 → 12,98 ms, periodo de cuadro mediano 17,3 → 16,9 ms.
+
+### Ciclos del IOP acumulados en el lado del EE (2026-10-16)
+
+Perfil por muestreo (con símbolos) de una partida en combate con los lotes de la etapa GS: el hilo de trabajo
+espera ~44 % del tiempo; el hilo del EE está ocupado ~88 %, y ~30 % de él es contabilidad de los puntos de control
+(cada 8 ciclos del EE, decenas de millones por segundo): `IopEmulator::accrueEeCycles` 15 %, `checkpointDue` 6 %,
+`advanceEeTimers` 2,5 %, `advanceIopEeCycles` 2,2 %, `eeCheckpointDue` 2,2 %, `IopSubsystem::accrueEeCycles` 1,7 %.
+El IOP solo hace algo cada lote de 512 ciclos suyos (4096 del EE).
+
+`ps2recomp-iop-acumulado.patch`: `PS2Runtime::advanceIopEeCycles` (ahora en línea) suma los ciclos y llama al IOP solo
+cuando vence su lote, que el IOP informa con `eeCyclesUntilBatch()`: mismos lotes en el mismo punto de control que
+antes. Prueba: "IOP batches are due exactly after eeCyclesUntilBatch EE cycles" (también compara con la acumulación
+paso a paso durante ~30 lotes).
+
+Resultado: el hilo del EE pasa de ~88 % a ~64 % de muestras en el ejecutable (espera ~31 % en vez de ~8 %). Los
+cuadros del combate en el barco no cambian (3 rondas: trabajo 12,32/13,28, 10,92/9,67, 12,47/12,83 ms; periodo
+16,70/16,95, 16,83/16,68, 16,68/16,81 ms): ahí manda el hilo de trabajo (VU1). Es margen para escenas donde
+manda la lógica del EE.
+
+Nota: `ps2xTest/src/ps2_spu2_tests.cpp` no está en `ps2xTest/CMakeLists.txt`; sus pruebas no se ejecutan.
