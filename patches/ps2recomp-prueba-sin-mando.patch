@@ -1,0 +1,21 @@
+diff --git a/ps2xRuntime/src/lib/ps2_pad.cpp b/ps2xRuntime/src/lib/ps2_pad.cpp
+index b008aea..96deb57 100644
+--- a/ps2xRuntime/src/lib/ps2_pad.cpp
++++ b/ps2xRuntime/src/lib/ps2_pad.cpp
+@@ -1,3 +1,4 @@
++#include <cstdlib>
+ #include "runtime/ps2_pad.h"
+ #include "ps2_host_backend.h"
+ #include <cstdio>
+@@ -64,6 +65,11 @@ bool PSPadBackend::readState(int /*port*/, int /*slot*/, uint8_t *data, size_t s
+     for (int i = 0; i < 4 && kGamepad < 0; ++i)
+         if (IsGamepadAvailable(i))
+             kGamepad = i;
++    // GOW-Port: with GOW_PAD_TEST=1 the test script alone drives the game; a gamepad switched on or touched while the
++    // automated tests run (the player using the PC meanwhile) changed the title menu's state and broke them.
++    static const bool scripted = [] { const char *v = std::getenv("GOW_PAD_TEST"); return v && v[0] == '1' && v[1] == 0; }();
++    if (scripted)
++        kGamepad = -1;
+     const bool useGamepad = kGamepad >= 0;
+     static int s_loggedGamepad = -2;
+     if (kGamepad != s_loggedGamepad)
