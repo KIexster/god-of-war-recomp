@@ -7323,3 +7323,21 @@ cuadros del combate en el barco no cambian (3 rondas: trabajo 12,32/13,28, 10,92
 manda la lógica del EE.
 
 Nota: `ps2xTest/src/ps2_spu2_tests.cpp` no está en `ps2xTest/CMakeLists.txt`; sus pruebas no se ejecutan.
+
+### Ritmo del EE: 64 puntos por campo (2026-10-16)
+
+Traza del cuadro en combate con los momentos en que el EE se duerme (diagnóstico local): tras el aviso de la GS el
+EE no seguía enseguida, sino que dormía en `processDueDeadlines` ~1-2,5 ms por cuadro, esperando puntos de ritmo
+(eventos `ExternalWake` 0xFFFFFFFF de la rejilla del VBlank). Mientras espera a la GS, el juego sondea
+(`vid::WaitForDMAComplete`), y cada vuelta suma ciclos del EE ~10 veces más rápido que el tiempo real; el ritmo deja
+que el reloj del EE vaya hasta un punto por delante del real (1/16 de campo, ~1 ms), y al terminar la GS el juego
+tiene que dormir ese adelanto antes de enviar el siguiente cuadro. En la PS2 no existe: es un artefacto de la
+emulación.
+
+`ps2recomp-ritmo-fino.patch`: 64 puntos por campo (adelanto máximo ~0,26 ms). Prueba: "EE clock never runs more
+than 1/64 field ahead of the host clock" (una función invitada que solo gasta ciclos; falla con 16 puntos).
+
+A/B en combate, 3 rondas (periodo mediano / p90 / % de cuadros <= 17 ms), 16 → 64: 16,91/18,45/55 → 16,73/18,09/59;
+17,15/18,97/43 → 16,71/18,02/60; 17,13/19,01/43 → 16,71/17,89/61. 64 frente a 256 puntos: sin diferencia clara
+(16,71/16,72/16,67 frente a 16,67/16,68/17,06). El paso de tiempo del juego (`[gow-animation] delta`) sigue en
+~0,01668-0,01679 s (1/59,94) en ambos casos: la velocidad no cambia.
