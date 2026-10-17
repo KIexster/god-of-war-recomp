@@ -1165,7 +1165,9 @@ namespace
     // the main menu the way the Treasures menu does, without unlocking it: its command handler 0x1BA2C8 writes the two
     // digits into the game's "BonusXX" buffer (0x29CC00) and sets the menu object's movie name (+0x1518) and +0x1520;
     // the menu update 0x1BA4F8 then starts it with 0x1B2D20(name, 3, 1) and returns to the menu when it ends. The
-    // request is made once, GOW_BONUS_MOVIE_DELAY seconds (default 10) after the menu update first runs. With a
+    // request is made once, at least GOW_BONUS_MOVIE_DELAY seconds (default 10) after the menu update first runs and only
+    // while the title state's handler table (*0x2C333C) has its +0x20 entry: in the states where it is null (early on,
+    // the attract demo) starting the movie jumps to 0 from 0x161C68 and the main thread dies. With a
     // GOW_MOVIE_OVERRIDE list, a request is made each time the movie thread is idle again (3 s after the previous movie
     // ended) while list entries remain; the load override then plays the next entry instead of the bonus movie.
     void gowDiagBonusMovie(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
@@ -1178,7 +1180,16 @@ namespace
         const bool listMode = movieOverrideList().size() > 1;
         const uint32_t movieState = readGuest32(rdram, 0x0029C838u);
         const bool wanted = listMode ? g_movieOverrideNext < movieOverrideList().size() : !done;
-        if (wanted && !inFlight && movieState == 0u && std::chrono::steady_clock::now() >= readyAt)
+        const uint32_t stateTable = readGuest32(rdram, 0x002C333Cu);
+        const bool menuReady = stateTable != 0u && readGuest32(rdram, stateTable + 0x20u) != 0u;
+        if (wanted && !inFlight && movieState == 0u && std::chrono::steady_clock::now() >= readyAt && !menuReady)
+        {
+            static bool told = false;
+            if (!told)
+                std::fprintf(stderr, "[gow-fmv] bonus request waits for the title state (table %08x)\n", stateTable);
+            told = true;
+        }
+        if (wanted && !inFlight && movieState == 0u && std::chrono::steady_clock::now() >= readyAt && menuReady)
         {
             done = true;
             uint8_t *name = padBuffer(rdram, 0x0029CC00u, 8);
