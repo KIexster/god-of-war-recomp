@@ -7406,3 +7406,20 @@ Resultado: ~134 000 resoluciones cada 5 s (la mitad; las que quedan son del micr
 Verificación nativa contra el motor exacto (`GOW_VU1N_VERIFY=200000`, combate): 12 discrepancias, las mismas 12 que
 la base (diferencias de 1 en el último bit de un resultado, ya conocidas); ninguna nueva. En el juego la ganancia está
 por debajo del ruido entre partidas.
+
+### Regresión de audio de #120 y reloj del EE al día (2026-10-17)
+
+La validación de vídeos con la versión del 17 dio primero 0 de 67, por dos causas:
+
+1. Arnés: la copia local de `videos.py` había vuelto a `GOW_BONUS_MOVIE_DELAY` 8; la petición llegaba antes de que el
+   menú construyera su objeto (llamada nula en 0x161c68). Con 30 s, el vídeo se reproduce entero.
+2. Real, de #120 (16 ciclos por punto de control): ~6 300-6 700 muestras sin audio (~0,13 s) al final de cada vídeo.
+   Bisección con A01MP01 y P01MP01 sobre las compilaciones del día: hasta el ritmo de 64 puntos, correctos; desde
+   los ciclos a la mitad, fallan todas. En los tramos largos de trabajo del EE (salir de un vídeo) el reloj del EE
+   iba por detrás del real, el IOP (que avanza con los ciclos del EE) también y el búfer de audio se vaciaba.
+
+`ps2recomp-ee-ponerse-al-dia.patch`: cada 2048 puntos de control, `checkpointDue` llama a `catchUpToHost` con un
+margen de un campo (`slack`): si el reloj del EE va más de un campo por detrás del real, se pone al día. Sin margen
+el problema de audio desaparecía pero el periodo de cuadro en combate subía a 17,2-17,5 ms; con un campo (y con
+50 ms) los vídeos A01MP01, SEMO01, P01MP01 y BONUS06 pasan y el combate sigue en 16,66-16,70 ms (2 rondas).
+Prueba: "a slow guest still reaches the first VBlank on host time" (falla sin el cambio).
