@@ -7451,6 +7451,21 @@ línea); el port tomaba la foto de los registros desde el hilo de la ventana en 
 uses the display state latched at VBlank, not a transient write". Resultado en A01MP01: 1579 presentaciones del
 vídeo, todas de FBP 0x68 y ninguna con contenido viejo.
 
+### VU1 nativa: medidas del despacho y regiones (descartado, 2026-10-17)
+
+Medida con `rdtsc` (1 de cada 16 bloques) en combate: ~105 M bloques nativos cada 5 s (~194 por ejecución de la
+VU1, ~137 ciclos de CPU por bloque); el tiempo de la VU1 se reparte en bloques ~73 %, despacho y contabilidad de
+tiempos ~26 %, coste fijo por ejecución ~1 %. El tiempo de los bloques está repartido por toda la memoria de código
+(0x0000-0x03FF 19 %, 0x2800-0x2BFF 14 %, 0x0C00-0x0FFF 14 %, el resto 1-9 % por zona): reescribir a mano unos pocos
+microprogramas (HLE) no daría una mejora grande.
+
+Experimento: regiones (rama local `vu1-regiones` del clon y `stash@{0}` del repositorio): el generador agrupaba los
+bloques de cada imagen unidos por saltos estáticos (426 regiones) en una función con `goto` entre bloques, misma
+contabilidad por bloque en línea; el despachador entraba en la región si todos sus bloques coincidían con el código
+cargado. Correcto (reproducción: 0 diferencias; ~97 % de los bloques dentro de regiones, 11,6 por llamada), pero sin
+ganancia medible: reproducción 377-381 frente a 382-397 ms; en el juego, tiempo de VU1 por ciclo 3,4-3,5 frente a
+3,6-3,7 ns en una ronda y 3,6 frente a 3,5 en otra. El coste del despacho son esperas de memoria al leer el estado de
+cada bloque, que la contabilidad necesita igual. Descartado por la complejidad que añade.
 ### sceCdStop en el IOP nativo (2026-10-17)
 
 Al probar los vídeos empezando una partida nueva y sustituyendo la intro (Semo01) por otro vídeo
