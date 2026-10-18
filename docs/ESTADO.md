@@ -7480,3 +7480,14 @@ imagen extra en ~40 % de los tramos de 30 imágenes; ni el disco, que responde a
 ~1 ms por imagen, son la causa; pendiente). BONUS20: su pista de audio en el disco son ~15 s de PCM muy bajo (RMS
 ~540) para 208 s de imagen; el port lo deja en silencio. Las cinco cinemáticas del barco (A01MP01-05), con el sonido
 por el dispositivo real: desfase <= 0,2 s y sin huecos.
+
+### DelayThread fuera de un hilo en el IOP nativo (2026-10-17)
+
+Con la misma prueba (partida nueva e intro sustituida) y el sonido silenciado, la llamada RPC "Stopping sound system"
+de 989snd agotaba su presupuesto de instrucciones: el bucle en 0x2D49C espera a que su manejador de alarma (0x2D664)
+ponga a 2 el contador en 0x44360, con `DelayThread(33 ms)` entre sondeos. El servidor RPC corre sin hilo actual y
+`DelayThread` volvía al momento sin que avanzara el reloj del IOP, así que la alarma nunca llegaba.
+`ps2recomp-iop-delay-fuera.patch`: fuera de un hilo, `DelayThread` usa la misma espera que `WaitSema` y
+`WaitEventFlag` (el emulador deja correr al resto del IOP) hasta que pasa el retraso. Prueba: "DelayThread outside a
+thread lets the IOP run for the delay". En combate en el barco no se produce ninguna de estas esperas; la intro
+sustituida ya no agota el presupuesto.
