@@ -7640,3 +7640,14 @@ micromemorias; esa compilación todavía no se ha medido.
 exacto, es decir, con `GOW_VU1_NATIVE_OFF=1` y el juego a ~6 cuadros/s. Ahora también guarda con la VU1 nativa activa,
 así que se puede capturar jugando a velocidad normal lo que aún falta. Es un diagnóstico activado por la variable; sin
 ella no cambia nada.
+
+## GS: agrupación conservadora de volúmenes de sombra (2026-10-18)
+
+Las pasadas de volúmenes con mezcla modular (`COLCLAMP=0`) leen el destino en el shader. El backend las separaba en una
+llamada por triángulo y colocaba una barrera entre todas las llamadas, unas 3.000 por cuadro en el barco. El parche
+`ps2recomp-gs-volumenes-agrupados.patch` mantiene juntos únicamente triángulos consecutivos cuyas áreas no se solapan;
+cuando dos triángulos pueden tocar el mismo píxel, conserva su orden y la barrera anterior. El análisis se limita a
+grupos de 64 para mantener acotado su coste. `GOW_GS_HW_VOLGROUP=0` restaura la ruta de una llamada por triángulo.
+
+La suite independiente cubre triángulos adyacentes, separados, solapados y el orden entre grupos. El efecto sobre FPS
+queda pendiente de una medición alternada dentro del juego; no se atribuye todavía una mejora de rendimiento.

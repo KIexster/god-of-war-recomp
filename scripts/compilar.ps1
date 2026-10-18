@@ -78,6 +78,9 @@ $gsPrioridadPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-prioridad-presenta
 # GOW-Port: las pasadas de niebla/DOF que leen el buffer Z como PSMCT24 lo leen en la GPU con el formato de Z (antes
 # se decodificaba en la CPU una VRAM sin la profundidad: sin niebla y 1024x1024 téxeles por cuadro).
 $gsZComoColorPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-z-como-color.patch'
+# GOW-Port: agrupa triángulos consecutivos sin píxeles comunes en las pasadas de volúmenes de sombra, reduciendo
+# llamadas y barreras de textura sin alterar el orden de los solapamientos.
+$gsVolumenesAgrupadosPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-volumenes-agrupados.patch'
 # GOW-Port: contexto OpenGL del GS en Linux con EGL (antes solo WGL: en Linux la ventana quedaba magenta).
 $gsEglLinuxPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-egl-linux.patch'
 # GOW-Port: GOW_VU1_CAPTURA también con la VU1 nativa activa (antes solo guardaba con GOW_VU1_NATIVE_OFF=1, a ~6 FPS).
@@ -158,6 +161,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $gsPrioridadPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsEglLinuxPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1CapturaNativaPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsZComoColorPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsVolumenesAgrupadosPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
