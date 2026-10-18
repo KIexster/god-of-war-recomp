@@ -72,6 +72,9 @@ $mpegFinProgramaPatch = Join-Path $RepoRoot 'patches\ps2recomp-mpeg-fin-programa
 # GOW-Port: los puntos de control del EE solo suman ciclos hasta el siguiente suceso (temporizador, lote del IOP,
 # plazo, fin de porción); antes cada uno hacía toda la contabilidad (más de un tercio del hilo del EE).
 $eeViaRapidaPatch = Join-Path $RepoRoot 'patches\ps2recomp-ee-via-rapida.patch'
+# GOW-Port: la etapa GS cede el lock del GS entre paquetes cuando la presentación lo espera (la ventana llegaba a
+# mostrar 2-8 imágenes por segundo con el juego a 60-120).
+$gsPrioridadPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-prioridad-presentacion.patch'
 # GOW-Port: VF0 y VI0 de VU0 son constantes (PR #79), no incluido en el runtime de Waffle565.
 $vu0Vf0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vf0.patch'
 $vu0Vi0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vi0.patch'
@@ -144,6 +147,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $cdStopPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $iopDelayFueraPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $mpegFinProgramaPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $eeViaRapidaPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsPrioridadPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner

@@ -7560,3 +7560,32 @@ es margen para más cuadros por segundo. Suite 454/454.
 Paso de tiempo del juego (0x17D860, guarda 0x29C64C): `delta = max(VBlanks desde el cuadro anterior, cuadros medidos
 con un temporizador y limitados a [1, 4]) / 60`. Nunca baja de 1/60 s: para más de 60 cuadros por segundo hará falta
 un VBlank del invitado más frecuente y otro cálculo del paso.
+
+### Presentación: la etapa GS cede el lock (2026-10-18)
+
+Con el juego por encima de 60 cuadros por segundo (experimento de 120 Hz, ver la entrada siguiente) la ventana
+llegaba a mostrar 2-8 imágenes por segundo en tramos de varios segundos. Las pilas del hilo principal durante la
+caída: `GSHostPresentation::prepare` → `GS::latchHostPresentationFrame`, esperando `m_stateMutex`. La etapa GS lo
+toma y lo suelta una vez por paquete, miles de veces por cuadro; el mutex no es justo y el hilo que lo suelta vuelve
+a cogerlo antes que el que espera. `ps2recomp-gs-prioridad-presentacion.patch`: la presentación registra una espera
+prioritaria (`ps2_gs_stage::priorityWaitBegin/End`) mientras toma el lock, y la etapa, entre paquetes y sin ningún
+lock, cede mientras la haya. Con 120 Hz, las imágenes mostradas pasan a 59,8-60,6 por segundo en todo el combate.
+Prueba: "GS stage yields between packets while a priority waiter is registered". Suite 455/455.
+
+Pendiente: con `PS2X_GS_HW_SCALE=4` (y a 60 Hz) la ventana sigue cayendo a 0,5-1,7 imágenes por segundo; es otra
+causa (sin investigar).
+
+### Experimento: lógica del juego a 120 Hz (2026-10-18, sin subir)
+
+Árbol local, `GOW_HZ=120`: el VBlank del EE (no el del IOP) cada 8,34 ms, y un override de 0x17D778 que sustituye el
+paso de tiempo por el tiempo real transcurrido, limitado a [1/120, 4/60] s (con la bandera 0x29C660 del juego, "solo
+VBlanks", su valor a la mitad). La primera versión, que solo dividía el resultado entre 2, iba a cámara lenta
+(velocidad 0,57): el término del temporizador ya está en sesentavos y limitado a un mínimo de 1. Con la versión
+corregida, la velocidad del juego (`GOW_DELTA_DIAG`) es 1,00. El bucle del juego da ~120 cuadros por segundo en escenas
+ligeras y 63-72 en el combate del barco: ahí limita la tubería VIF1/VU1/GS. La presentación del host sigue limitada a
+60 Hz. Sin revisar todavía: vídeos (cuentan VBlanks), cinemáticas, física y sonido a 120.
+
+Corrección sobre el cierre del juego en las pruebas de vídeos (entrada "el Stopping sound system era el cierre del
+juego"): la pantalla de muerte y la pausa tienen la opción "Quit Game", y el guion de botones del arnés pulsa X a
+horas fijas. Es muy probable que el cierre lo pidiera el propio menú del juego (escribe la bandera por un puntero, por
+eso no hay escritor directo en el ELF). No es un fallo del port.

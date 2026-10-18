@@ -1,0 +1,110 @@
+diff --git a/ps2xRuntime/include/runtime/gs/gs_stage.h b/ps2xRuntime/include/runtime/gs/gs_stage.h
+index 30fc3c9..44a41b6 100644
+--- a/ps2xRuntime/include/runtime/gs/gs_stage.h
++++ b/ps2xRuntime/include/runtime/gs/gs_stage.h
+@@ -32,4 +32,12 @@ namespace ps2_gs_stage
+ 
+     // Returns when every queued packet has been processed. No-op on the stage thread itself.
+     void waitIdle();
++
++    // GOW-Port: the stage takes and releases the GS state lock once per packet, thousands of times per frame, and
++    // the lock is not fair: the host presentation (main thread) waiting for it could wait for many frames (the
++    // window showed 2-8 pictures per second while the game ran at 60-120). Between packets, the stage yields while
++    // a priority waiter is registered. Bracket the lock acquisition of such a waiter with these (never call them
++    // on the stage thread).
++    void priorityWaitBegin();
++    void priorityWaitEnd();
+ }
+diff --git a/ps2xRuntime/src/lib/gs/gs_frontend.cpp b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+index 1180a14..2f8db17 100644
+--- a/ps2xRuntime/src/lib/gs/gs_frontend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+@@ -1,3 +1,4 @@
++#include "runtime/gs/gs_stage.h"
+ #include "runtime/gs/gs_frontend.h"
+ #include "runtime/gs/gs_backend.h"
+ // GOW-Port: CPU de referencia por defecto; OpenGL/cola seleccionables.
+@@ -778,7 +779,9 @@ void GS::latchHostPresentationFrame()
+ {
+     GSPresentationRequest request{};
+     {
+-        std::lock_guard<std::recursive_mutex> lock(m_stateMutex);
++        ps2_gs_stage::priorityWaitBegin(); // GOW-Port: the stage yields the lock (gs_stage.h)
++        std::unique_lock<std::recursive_mutex> lock(m_stateMutex);
++        ps2_gs_stage::priorityWaitEnd();
+         if (!m_backend || !m_privRegs)
+         {
+             std::lock_guard<std::mutex> presentationLock(m_presentationMutex);
+@@ -841,7 +844,9 @@ void GS::latchHostPresentationFrame()
+ 
+     if (hasFrame)
+     {
+-        std::lock_guard<std::recursive_mutex> lock(m_stateMutex);
++        ps2_gs_stage::priorityWaitBegin(); // GOW-Port: the stage yields the lock (gs_stage.h)
++        std::unique_lock<std::recursive_mutex> lock(m_stateMutex);
++        ps2_gs_stage::priorityWaitEnd();
+         recordPresentDebugEventUnlocked(displayFbp, sourceFbp, width, height, usedPreferred, request.vsyncTick);
+     }
+ }
+diff --git a/ps2xRuntime/src/lib/gs/gs_stage.cpp b/ps2xRuntime/src/lib/gs/gs_stage.cpp
+index 710a1ad..b6cb032 100644
+--- a/ps2xRuntime/src/lib/gs/gs_stage.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_stage.cpp
+@@ -63,6 +63,8 @@ namespace
+         return s;
+     }
+ 
++    std::atomic<int> g_priorityWaiters{0}; // GOW-Port: see priorityWaitBegin
++
+     void loop()
+     {
+         Stage &s = stage();
+@@ -94,6 +96,8 @@ namespace
+                 {
+                     uint32_t header[2];
+                     std::memcpy(header, p.data.data() + at, sizeof(header));
++                    while (g_priorityWaiters.load(std::memory_order_acquire) != 0)
++                        std::this_thread::yield();
+                     s.process(static_cast<GifPathId>(header[0]), p.data.data() + at + kRecordHeader, header[1]);
+                     at += kRecordHeader + ((static_cast<size_t>(header[1]) + 15u) & ~static_cast<size_t>(15u));
+                 }
+@@ -106,6 +110,9 @@ namespace
+ 
+ namespace ps2_gs_stage
+ {
++    void priorityWaitBegin() { g_priorityWaiters.fetch_add(1, std::memory_order_acq_rel); }
++    void priorityWaitEnd() { g_priorityWaiters.fetch_sub(1, std::memory_order_acq_rel); }
++
+     void start(ProcessFn process, std::function<void()> afterBatch)
+     {
+         Stage &s = stage();
+diff --git a/ps2xTest/src/ps2_gs_tests.cpp b/ps2xTest/src/ps2_gs_tests.cpp
+index 317960a..eb4ce1f 100644
+--- a/ps2xTest/src/ps2_gs_tests.cpp
++++ b/ps2xTest/src/ps2_gs_tests.cpp
+@@ -1213,5 +1213,25 @@ void register_ps2_gs_tests()
+                 same = seen[i].path == paths[i % 3u] && seen[i].bytes == sent[i];
+             t.IsTrue(same, "packets should arrive in order with their path and exact bytes");
+         });
++
++        tc.Run("GS stage yields between packets while a priority waiter is registered", [](TestCase &t)
++        {
++            // GOW-Port: ps2recomp-gs-prioridad-presentacion. La presentación espera el lock del GS con prioridad: la
++            // etapa no procesa más paquetes mientras haya una espera prioritaria registrada.
++            std::atomic<uint32_t> processed{0u};
++            ps2_gs_stage::start([&](GifPathId, const uint8_t *, uint32_t) { processed.fetch_add(1u); }, nullptr);
++            const uint8_t bytes[16] = {};
++            ps2_gs_stage::priorityWaitBegin();
++            for (int i = 0; i < 3; ++i)
++                ps2_gs_stage::push(GifPathId::Path3, bytes, sizeof(bytes));
++            ps2_gs_stage::flush();
++            std::this_thread::sleep_for(std::chrono::milliseconds(50));
++            const uint32_t whileWaiting = processed.load();
++            ps2_gs_stage::priorityWaitEnd();
++            ps2_gs_stage::waitIdle();
++            ps2_gs_stage::stop();
++            t.Equals(whileWaiting, 0u, "the stage should not process packets while a priority waiter is registered");
++            t.Equals(processed.load(), 3u, "the stage should process them once the waiter is gone");
++        });
+     });
+ }
