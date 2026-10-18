@@ -7466,3 +7466,17 @@ cargado. Correcto (reproducción: 0 diferencias; ~97 % de los bloques dentro de 
 ganancia medible: reproducción 377-381 frente a 382-397 ms; en el juego, tiempo de VU1 por ciclo 3,4-3,5 frente a
 3,6-3,7 ns en una ronda y 3,6 frente a 3,5 en otra. El coste del despacho son esperas de memoria al leer el estado de
 cada bloque, que la contabilidad necesita igual. Descartado por la complejidad que añade.
+### sceCdStop en el IOP nativo (2026-10-17)
+
+Al probar los vídeos empezando una partida nueva y sustituyendo la intro (Semo01) por otro vídeo
+(`GOW_MOVIE_OVERRIDE`), el IOP registraba `unhandled import cdvdman:15` y una llamada que agotaba su presupuesto de
+400 M instrucciones: `sceCdStop` no estaba implementada y el hilo que la esperaba quedaba en bucle; el vídeo no
+empezaba. `ps2recomp-cd-stop.patch`: sin lector no hay nada que parar, termina al momento (y llama a la función de
+aviso con SCECdFuncStop, como `sceCdSeek`). Con el cambio, A01MP02 se reproduce entero en ese caso (998 imágenes).
+Prueba: "IOP sceCdStop completes at once". En las partidas del usuario no había aparecido.
+
+Otros vídeos revisados: SEMO08 va a 29,32 imágenes/s (4,7 s de desfase en 210 s; el reproductor espera un ciclo de
+imagen extra en ~40 % de los tramos de 30 imágenes; ni el disco, que responde al momento, ni la decodificación,
+~1 ms por imagen, son la causa; pendiente). BONUS20: su pista de audio en el disco son ~15 s de PCM muy bajo (RMS
+~540) para 208 s de imagen; el port lo deja en silencio. Las cinco cinemáticas del barco (A01MP01-05), con el sonido
+por el dispositivo real: desfase <= 0,2 s y sin huecos.
