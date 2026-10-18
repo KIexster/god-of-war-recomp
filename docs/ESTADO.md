@@ -7533,3 +7533,30 @@ lo fija el override cada cuadro: 0.75 con `GOW_PANORAMICO=ampliado`, 9/16 si no 
 Verificado con capturas del GS a los 3 s de partida: sin la variable, el encuadre es el de siempre; con ella, la vista
 se ensancha sin deformar. Coste en combate en el barco: mediana de 59,9 a 54,9 cuadros por segundo del juego.
 Requiere `scripts\2_compilar.cmd` (regenera el C++ de 0x169238).
+
+### Hilo del EE: vía rápida de los puntos de control (2026-10-18)
+
+Perfil del combate en el barco (muestreador, 35 s, binario de `main`): el hilo del EE estaba ocupado ~85–90 % del
+cuadro y más de un tercio era contabilidad por punto de control: `EeScheduler::accountCycles` 18,9 %,
+`checkpointDue` 10,4 %, `PS2Memory::advanceEeTimers` 4,9 %, `PS2Runtime::eeCheckpointDue` 2,9 %. El código generado
+llama a `eeCheckpointDue` cada 16 ciclos del EE y cada llamada entregaba los ciclos a los temporizadores y al IOP y
+comprobaba plazo, porción de tiempo y puesta al día con el reloj real. El hilo del trabajador (VIF1/VU1) y los del
+GS esperaban ~50 % del tiempo.
+
+`ps2recomp-ee-via-rapida.patch`: `checkpointDue` (en línea) solo suma los ciclos mientras no se alcance
+`m_fastLimitCycle` (el mínimo de: próximo suceso de un temporizador, próximo lote del IOP, fin de la porción de
+tiempo y próxima puesta al día con el reloj real, ahora cada 2048 × 16 ciclos en vez de cada 2048 llamadas) ni el
+plazo siguiente (`m_nextDeadlineCycle`, que pueden adelantar otros hilos) y no haya nada pendiente. En ese ciclo
+(`checkpointDueSlow`) los temporizadores y el IOP reciben los ciclos de golpe: mismos sucesos en los mismos ciclos.
+Un acceso a un registro de temporizador (gancho `PS2Memory::setEeCycleSync`, solo en el hilo del EE) y la espera
+ociosa (`waitForEvent`) entregan antes los ciclos pendientes. Prueba: "an EE timer read sees the cycles of the
+checkpoint fast path" (falla si se quita el gancho).
+
+Resultado: en el mismo perfil el hilo del EE queda ocupado ~46 % (`eeCheckpointDue` 4,6 %); el resto es espera del
+ritmo de 60 Hz. A 60 Hz el periodo de cuadro no cambia (A/B alterno de 3 rondas, `ab_traza.sh`: mediana
+16,68/16,71/16,70 frente a 16,70/16,69/16,68 ms; % ≤17 ms 72/65/71 frente a 71/67/68), porque el EE no era el límite;
+es margen para más cuadros por segundo. Suite 454/454.
+
+Paso de tiempo del juego (0x17D860, guarda 0x29C64C): `delta = max(VBlanks desde el cuadro anterior, cuadros medidos
+con un temporizador y limitados a [1, 4]) / 60`. Nunca baja de 1/60 s: para más de 60 cuadros por segundo hará falta
+un VBlank del invitado más frecuente y otro cálculo del paso.

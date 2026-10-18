@@ -1,0 +1,328 @@
+diff --git a/ps2xRuntime/include/ps2_runtime.h b/ps2xRuntime/include/ps2_runtime.h
+index 2856bbb..e04a933 100644
+--- a/ps2xRuntime/include/ps2_runtime.h
++++ b/ps2xRuntime/include/ps2_runtime.h
+@@ -500,6 +500,11 @@ private:
+             flushIopEeCycles();
+     }
+     void flushIopEeCycles() noexcept;
++    // GOW-Port: EE cycles until the IOP's next batch is due (EeScheduler's checkpoint fast path stops there)
++    [[nodiscard]] uint64_t iopEeCyclesUntilBatch() const noexcept
++    {
++        return m_iopEeCyclesDue > m_iopEeCycles ? m_iopEeCyclesDue - m_iopEeCycles : 0u;
++    }
+     void resetIop();
+     void shutdownHostGraphics(); // GOW-Port: destruir GS antes de cerrar el contexto raylib.
+ 
+diff --git a/ps2xRuntime/include/runtime/ee_scheduler.h b/ps2xRuntime/include/runtime/ee_scheduler.h
+index f9954bd..b4d6029 100644
+--- a/ps2xRuntime/include/runtime/ee_scheduler.h
++++ b/ps2xRuntime/include/runtime/ee_scheduler.h
+@@ -281,8 +281,24 @@ public:
+     void run();
+     void requestStop();
+     void postEvent(EeEvent event);
+-    [[nodiscard]] bool checkpointDue(uint32_t cycles = kGeneratedCheckpointCycles) noexcept;
++    // GOW-Port: generated code calls this every few guest instructions (tens of millions of times per second). Until
++    // the next cycle at which anything can happen (m_fastLimitCycle: next EE timer event, next IOP batch, end of the
++    // time slice, next comparison with the host clock) or the next scheduled deadline, it only adds the cycles; the
++    // timers and the IOP get them in one go at that cycle (checkpointDueSlow), the same cycle as before.
++    [[nodiscard]] bool checkpointDue(uint32_t cycles = kGeneratedCheckpointCycles) noexcept
++    {
++        m_eeCycle += cycles != 0u ? cycles : 1u;
++        const uint64_t deadline = m_nextDeadlineCycle.load(std::memory_order_relaxed);
++        if (m_eeCycle < m_fastLimitCycle && (deadline == 0u || m_eeCycle < deadline) &&
++            !m_checkpointPending.load(std::memory_order_acquire))
++            return false;
++        return checkpointDueSlow();
++    }
+     void accountCycles(uint32_t cycles) noexcept;
++    // GOW-Port: hands the EE cycles counted since the last call to the EE timers and the IOP (EE executor only).
++    void syncAccountedCycles() noexcept;
++    // GOW-Port: the next checkpoint takes the slow path (something the fast-path limit depends on has changed).
++    void invalidateFastPath() noexcept { m_fastLimitCycle = 0u; }
+     // GOW-Port: for a guest busy-wait that never blocks (the movie player): when guest time has fallen behind the
+     // host clock (a scheduled event's host deadline has passed but its guest cycle is not reached), account the
+     // missing cycles (at most maxCycles) so guest time, EE timers and the IOP keep real time. Returns cycles added.
+@@ -380,6 +396,8 @@ private:
+     };
+ 
+     void assertExecutor() const;
++    bool checkpointDueSlow() noexcept; // GOW-Port: see checkpointDue
++    void updateFastLimit() noexcept;
+     [[nodiscard]] int allocateThreadId();
+     GuestThread &acquireInvocationThread();
+     void enqueueReady(GuestThread &thread, bool front = false);
+@@ -443,7 +461,9 @@ private:
+     uint32_t m_pendingEeTimerInterrupts = 0;
+     uint64_t m_eeCycle = 0;
+     uint64_t m_sliceEndCycle = kDefaultTimeSliceCycles;
+-    uint32_t m_hostCatchUpCounter = 0; // GOW-Port: checkpoints since the EE clock was last compared with the host clock
++    uint64_t m_nextHostCatchUpCycle = 0; // GOW-Port: EE cycle of the next comparison of the EE clock with the host clock
++    uint64_t m_accountedCycle = 0;       // GOW-Port: EE cycles already handed to the EE timers and the IOP
++    uint64_t m_fastLimitCycle = 0;       // GOW-Port: checkpointDue's fast path runs below this EE cycle
+     std::thread::id m_executorThread{};
+     std::atomic<bool> m_running{false};
+     std::atomic<bool> m_guestExecuting{false};
+diff --git a/ps2xRuntime/include/runtime/ps2_memory.h b/ps2xRuntime/include/runtime/ps2_memory.h
+index 746e1ab..e69d622 100644
+--- a/ps2xRuntime/include/runtime/ps2_memory.h
++++ b/ps2xRuntime/include/runtime/ps2_memory.h
+@@ -319,6 +319,18 @@ public:
+     // EE timers advance from the scheduler's emulated EE-cycle clock. The
+     // returned mask uses bits 0..3 for newly raised TIM0..TIM3 interrupts.
+     uint32_t advanceEeTimers(uint64_t eeCycles) noexcept;
++    // GOW-Port: EE cycles that can still be advanced without reaching a timer event (0: unknown, advance first).
++    [[nodiscard]] uint64_t eeCyclesUntilTimerEvent() const noexcept
++    {
++        return m_eeTimerBudget > m_eeTimerPendingCycles ? m_eeTimerBudget - m_eeTimerPendingCycles : 0u;
++    }
++    // GOW-Port: called before a timer register is read or written. The EE scheduler hands its cycles to the timers
++    // only at its next event (EeScheduler::checkpointDue); this brings them up to date first.
++    void setEeCycleSync(void (*sync)(void *), void *context) noexcept
++    {
++        m_eeCycleSync = sync;
++        m_eeCycleSyncContext = context;
++    }
+     // GOW-Port: native EE clock. A timer without compare/overflow events (no CMPE/OVFE/ZRET, e.g. the game's
+     // T0 = BUSCLK/256 and T1 = H-BLNK counters) is not stepped: its count is computed when read, from the guest
+     // EE cycle count since its epoch (the last COUNT write or clock change). Timers with events keep the stepping
+@@ -537,6 +549,8 @@ public:
+     uint64_t m_eeTimerPendingCycles = 0;
+     uint64_t m_eeTimerBudget = 0;
+     uint64_t m_eeCycleTotal = 0; // guest EE cycles seen by advanceEeTimers (the scheduler's EE cycle count)
++    void (*m_eeCycleSync)(void *) = nullptr; // GOW-Port: see setEeCycleSync
++    void *m_eeCycleSyncContext = nullptr;
+     uint32_t eeTimerCount(const EeTimer &timer) const noexcept;
+     uint32_t stepEeTimers(uint64_t eeCycles) noexcept;
+     void flushEeTimers() noexcept;
+diff --git a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+index 07d0af8..ed0d41e 100644
+--- a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
++++ b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+@@ -86,6 +86,17 @@ namespace
+ EeScheduler::EeScheduler(PS2Runtime &runtime)
+     : m_runtime(runtime)
+ {
++    // GOW-Port: a guest access to an EE timer register first gets the cycles the fast path has not handed over yet
++    // (only on the EE executor; elsewhere the timers stay as of the last checkpoint event, as before).
++    m_runtime.memory().setEeCycleSync(+[](void *context)
++                                      {
++                                          auto *self = static_cast<EeScheduler *>(context);
++                                          if (self->m_executorThread != std::this_thread::get_id())
++                                              return;
++                                          self->syncAccountedCycles();
++                                          self->m_fastLimitCycle = 0u; // a store may move the next timer event
++                                      },
++                                      this);
+ }
+ 
+ EeScheduler::~EeScheduler()
+@@ -123,6 +134,9 @@ void EeScheduler::reset(uint8_t *rdram, const R5900Context &mainContext)
+     m_insideInterrupt = false;
+     m_pendingEeTimerInterrupts = 0u;
+     m_eeCycle = 0u;
++    m_accountedCycle = 0u;
++    m_fastLimitCycle = 0u;
++    m_nextHostCatchUpCycle = 0u;
+     m_sliceEndCycle = kDefaultTimeSliceCycles;
+     m_stopRequested.store(false, std::memory_order_release);
+     m_checkpointPending.store(false, std::memory_order_release);
+@@ -370,53 +384,66 @@ void EeScheduler::postEvent(EeEvent event)
+     m_eventCv.notify_one();
+ }
+ 
+-bool EeScheduler::checkpointDue(uint32_t cycles) noexcept
++bool EeScheduler::checkpointDueSlow() noexcept
+ {
+-    accountCycles(cycles);
++    syncAccountedCycles();
+     // GOW-Port: pacing keeps the EE clock from running ahead of the host clock; this keeps it from falling behind. With
+     // 16 cycles per checkpoint, long stretches of EE work (leaving a movie, loading a menu) accrued less guest time than
+     // the wall clock: the IOP, which runs on EE cycles, fell behind and the audio ran dry (~0.13 s at every movie end).
+     // A lag of up to one field is left alone: catching up within the frame cost ~0.6 ms of frame period in combat.
+-    if (++m_hostCatchUpCounter >= kHostCatchUpEvery)
++    // (Every kHostCatchUpEvery checkpoints of kGeneratedCheckpointCycles, now counted in EE cycles.)
++    if (m_eeCycle >= m_nextHostCatchUpCycle)
+     {
+-        m_hostCatchUpCounter = 0;
++        m_nextHostCatchUpCycle = m_eeCycle + static_cast<uint64_t>(kHostCatchUpEvery) * kGeneratedCheckpointCycles;
+         catchUpToHost(kVBlankPeriodCycles, kVBlankPeriod); // up to one field of lag is left alone (frame timing)
+     }
+ 
++    bool due = false;
++    const uint64_t nextEventCycle = m_nextDeadlineCycle.load(std::memory_order_acquire);
+     if (m_checkpointPending.load(std::memory_order_acquire) ||
+         m_stopRequested.load(std::memory_order_acquire))
+     {
+-        return true;
++        due = true;
+     }
+-
+-    const uint64_t nextEventCycle = m_nextDeadlineCycle.load(std::memory_order_acquire);
+-    if (nextEventCycle != 0u && m_eeCycle >= nextEventCycle)
++    else if (nextEventCycle != 0u && m_eeCycle >= nextEventCycle)
+     {
+         m_checkpointPending.store(true, std::memory_order_release);
+-        return true;
++        due = true;
+     }
+-
+-    if (m_eeCycle < m_sliceEndCycle)
++    else if (m_eeCycle >= m_sliceEndCycle)
+     {
+-        return false;
+-    }
+-
+-    const GuestThread *running = currentThread();
+-    if (running != nullptr && hasReadyAtOrAbovePriority(running->currentPriority))
+-    {
+-        m_rescheduleRequested = true;
+-        m_timeSliceExpired = true;
+-        return true;
++        const GuestThread *running = currentThread();
++        if (running != nullptr && hasReadyAtOrAbovePriority(running->currentPriority))
++        {
++            m_rescheduleRequested = true;
++            m_timeSliceExpired = true;
++            due = true;
++        }
++        else
++        {
++            renewTimeSlice();
++        }
+     }
++    updateFastLimit();
++    return due;
++}
+ 
+-    renewTimeSlice();
+-    return false;
++void EeScheduler::updateFastLimit() noexcept
++{
++    const auto after = [this](uint64_t cycles)
++    { return cycles >= std::numeric_limits<uint64_t>::max() - m_eeCycle ? std::numeric_limits<uint64_t>::max() : m_eeCycle + cycles; };
++    uint64_t limit = std::min(m_nextHostCatchUpCycle, m_sliceEndCycle);
++    limit = std::min(limit, after(m_runtime.memory().eeCyclesUntilTimerEvent()));
++    limit = std::min(limit, after(m_runtime.iopEeCyclesUntilBatch()));
++    m_fastLimitCycle = limit;
+ }
+ 
+-void EeScheduler::accountCycles(uint32_t cycles) noexcept
++void EeScheduler::syncAccountedCycles() noexcept
+ {
+-    const uint64_t elapsed = std::max<uint64_t>(1u, cycles);
+-    m_eeCycle += elapsed;
++    const uint64_t elapsed = m_eeCycle - m_accountedCycle;
++    if (elapsed == 0u)
++        return;
++    m_accountedCycle = m_eeCycle;
+     m_pendingEeTimerInterrupts |= m_runtime.memory().advanceEeTimers(elapsed);
+     m_runtime.advanceIopEeCycles(elapsed);
+     if (m_pendingEeTimerInterrupts != 0u)
+@@ -425,6 +452,13 @@ void EeScheduler::accountCycles(uint32_t cycles) noexcept
+     }
+ }
+ 
++void EeScheduler::accountCycles(uint32_t cycles) noexcept
++{
++    m_eeCycle += std::max<uint64_t>(1u, cycles);
++    syncAccountedCycles();
++    m_fastLimitCycle = 0u; // GOW-Port: a jump of the EE clock (catch-up, idle wait): recompute at the next checkpoint
++}
++
+ uint64_t EeScheduler::catchUpToHost(uint64_t maxCycles, std::chrono::nanoseconds slack) noexcept
+ {
+     uint64_t target = 0u;
+@@ -2152,6 +2186,7 @@ void EeScheduler::writeGuestU32(uint32_t address, uint32_t value)
+ 
+ void EeScheduler::waitForEvent()
+ {
++    syncAccountedCycles(); // GOW-Port: the idle wait below reads the EE timers' distance to their next event
+     ps2_perf::Scope perf(ps2_perf::Bucket::GuestWait);
+     std::unique_lock lock(m_eventMutex);
+     if (!m_events.empty() || m_stopRequested.load(std::memory_order_acquire))
+diff --git a/ps2xRuntime/src/lib/ps2_memory.cpp b/ps2xRuntime/src/lib/ps2_memory.cpp
+index cf1bd98..cb2f58d 100644
+--- a/ps2xRuntime/src/lib/ps2_memory.cpp
++++ b/ps2xRuntime/src/lib/ps2_memory.cpp
+@@ -447,6 +447,8 @@ uint32_t PS2Memory::eeTimerLoad(uint32_t address) noexcept
+     uint32_t offset = 0u;
+     if (!decodeEeTimerRegister(eeTimerPhysical(address), index, offset))
+         return 0u;
++    if (m_eeCycleSync)
++        m_eeCycleSync(m_eeCycleSyncContext);
+     flushEeTimers();
+     const EeTimer &timer = m_eeTimers[index];
+     switch (offset)
+@@ -479,6 +481,8 @@ bool PS2Memory::eeTimerStore(uint32_t address, uint32_t value) noexcept
+     uint32_t offset = 0u;
+     if (!decodeEeTimerRegister(eeTimerPhysical(address), index, offset))
+         return false;
++    if (m_eeCycleSync)
++        m_eeCycleSync(m_eeCycleSyncContext);
+     flushEeTimers();
+     m_eeTimerBudget = 0; // recompute the distance to the next interrupt at the next advance
+     EeTimer &timer = m_eeTimers[index];
+diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
+index c074ce0..e65bfcd 100644
+--- a/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -639,6 +639,8 @@ void PS2Runtime::resetIop()
+     m_iopSubsystem->reset();
+     m_iopEeCycles = 0; // GOW-Port: the IOP's own accrual restarts; ask it again on the next checkpoint
+     m_iopEeCyclesDue = 0;
++    if (m_eeScheduler)
++        m_eeScheduler->invalidateFastPath();
+ }
+ 
+ ps2x::iop::DebugSnapshot PS2Runtime::iopDebugSnapshot() const
+diff --git a/ps2xTest/src/ps2_runtime_interrupt_tests.cpp b/ps2xTest/src/ps2_runtime_interrupt_tests.cpp
+index d8a00ca..d29e543 100644
+--- a/ps2xTest/src/ps2_runtime_interrupt_tests.cpp
++++ b/ps2xTest/src/ps2_runtime_interrupt_tests.cpp
+@@ -138,6 +138,21 @@ namespace
+             }
+         }
+     }
++    // GOW-Port: invitado que pone en marcha el temporizador 1 (BUSCLK), gasta 1000 puntos de control y lee su cuenta.
++    constexpr uint32_t kTimerReadPc = 0x00160900u;
++    uint32_t g_timerReadCount = 0u;
++
++    void schedulerTimerRead(uint8_t *, R5900Context *ctx, PS2Runtime *runtime)
++    {
++        PS2Memory &memory = runtime->memory();
++        memory.writeIORegister(0x10000800u, 0u);         // T1_COUNT
++        memory.writeIORegister(0x10000810u, 1u << 7u);   // T1_MODE: BUSCLK, CUE
++        for (int i = 0; i < 1000; ++i)
++            (void)runtime->eeCheckpointDue();            // 16 EE cycles each: 8 BUSCLK ticks
++        g_timerReadCount = memory.readIORegister(0x10000800u);
++        ctx->pc = 0u;
++        runtime->requestStop();
++    }
+     constexpr uint32_t kTimer2WaitPc = 0x00160500u;
+     constexpr uint32_t kTimer2ResumePc = 0x00160510u;
+     constexpr uint32_t kTimer2HandlerPc = 0x00160520u;
+@@ -659,6 +674,22 @@ void register_ps2_runtime_interrupt_tests()
+                      "the first VBlank should be due after one field of 16-cycle checkpoints");
+         });
+ 
++        tc.Run("an EE timer read sees the cycles of the checkpoint fast path", [](TestCase &t)
++        {
++            // GOW-Port: ps2recomp-ee-via-rapida. Los puntos de control solo suman ciclos hasta el siguiente suceso; los
++            // temporizadores los reciben al leerse un registro suyo. Sin eso, T1_COUNT se quedaba en 0.
++            TestEnv env;
++            t.IsTrue(env.runtime.memory().initialize(), "runtime memory initialize should succeed");
++            env.runtime.registerFunction(kTimerReadPc, schedulerTimerRead);
++            g_timerReadCount = 0u;
++            R5900Context mainContext{};
++            mainContext.pc = kTimerReadPc;
++            env.runtime.eeScheduler().reset(env.rdram.data(), mainContext);
++            env.runtime.eeScheduler().run();
++            t.IsTrue(g_timerReadCount >= 8000u && g_timerReadCount < 8016u,
++                     "1000 checkpoints of 16 EE cycles should count 8000 BUSCLK ticks");
++        });
++
+         tc.Run("a slow guest still reaches the first VBlank on host time", [](TestCase &t)
+         {
+             // GOW-Port: ps2recomp-ee-ponerse-al-dia. Si el EE gasta menos ciclos que el tiempo real (16 por punto de
