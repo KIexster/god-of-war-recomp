@@ -1,0 +1,192 @@
+diff --git a/ps2xRuntime/src/lib/gs/gpu/gs_hw_backend.cpp b/ps2xRuntime/src/lib/gs/gpu/gs_hw_backend.cpp
+index 486aa56..5606736 100644
+--- a/ps2xRuntime/src/lib/gs/gpu/gs_hw_backend.cpp
++++ b/ps2xRuntime/src/lib/gs/gpu/gs_hw_backend.cpp
+@@ -110,7 +110,7 @@ uniform sampler2D uPalette;
+ uniform ivec4 uTexFmt;   // pageShiftX, pageShiftY, pixelsPerPageShift, unpackedShift
+ uniform ivec4 uTexFmt2;  // bitOffset, texelBits, tableOffset, kind (0 CT32, 1 CT24, 2 CT16, 3 indexed)
+ uniform ivec4 uRtFmt;    // pageShiftX, pageShiftY, pixelsPerPageShift, bits per pixel
+-uniform ivec4 uRtFmt2;   // inverseTableOffset, fbp (pages), fbw (64 px), 0
++uniform ivec4 uRtFmt2;   // inverseTableOffset, fbp (pages), fbw (64 px), Z bits when the owner is a depth buffer (else 0)
+ uniform ivec4 uTex0;     // tbp, tbw, width, height
+ uniform vec2 uRtPx;      // render target size in PS2 pixels
+ 
+@@ -138,13 +138,23 @@ vec4 reinterpretTexel(ivec2 p)
+     uint fbw = uint(uRtFmt2.z);
+     uint px = (rpage % fbw) * (1u << rpsx) + (e & ((1u << rpsx) - 1u));
+     uint py = (rpage / fbw) * (1u << rpsy) + (e >> rpsx);
+-    vec4 c = texture(uRtColor, (vec2(float(px), float(py)) + 0.5) / uRtPx) * 255.0;
+-    c = floor(c + 0.5);
+     uint word;
+-    if (B == 32u)
+-        word = uint(c.r) | (uint(c.g) << 8) | (uint(c.b) << 16) | (uint(c.a) << 24);
++    if (uRtFmt2.w != 0)
++    {
++        // GOW-Port: the owner is a depth buffer (uRtColor holds its depth texture): its word is the Z value
++        float zf = clamp(texture(uRtColor, (vec2(float(px), float(py)) + 0.5) / uRtPx).r, 0.0, 1.0);
++        float zmax = uRtFmt2.w == 16 ? 65535.0 : uRtFmt2.w == 24 ? 16777215.0 : 4294967295.0;
++        word = uint(zf * zmax + 0.5);
++    }
+     else
+-        word = (c.a >= 128.0 ? 0x8000u : 0u) | ((uint(c.b) >> 3) << 10) | ((uint(c.g) >> 3) << 5) | (uint(c.r) >> 3);
++    {
++        vec4 c = texture(uRtColor, (vec2(float(px), float(py)) + 0.5) / uRtPx) * 255.0;
++        c = floor(c + 0.5);
++        if (B == 32u)
++            word = uint(c.r) | (uint(c.g) << 8) | (uint(c.b) << 16) | (uint(c.a) << 24);
++        else
++            word = (c.a >= 128.0 ? 0x8000u : 0u) | ((uint(c.b) >> 3) << 10) | ((uint(c.g) >> 3) << 5) | (uint(c.r) >> 3);
++    }
+     uint bits = uint(uTexFmt2.y);
+     uint value = (bits >= 32u) ? (word >> within) : ((word >> within) & ((1u << bits) - 1u));
+     int kind = uTexFmt2.w;
+@@ -439,6 +449,7 @@ void main()
+         uint32_t fbp = 0, fbw = 1; // PS2 page base and width in 64 px units
+         uint8_t psm = 0;
+         uint32_t zbp = ~0u;
++        uint8_t zpsm = 0x30; // GOW-Port: format of the depth buffer at zbp
+         uint32_t pxW = 0, pxH = 0; // size in PS2 pixels
+         uint32_t glW = 0, glH = 0;
+         bool depthCleared = false;
+@@ -717,7 +728,7 @@ struct GSHwBackend::Impl
+             tableOffset[f.table] = static_cast<uint32_t>(data.size());
+             data.insert(data.end(), f.table, f.table + size);
+         }
+-        for (const uint32_t psm : {0x00u, 0x01u, 0x02u, 0x0Au})
++        for (const uint32_t psm : {0x00u, 0x01u, 0x02u, 0x0Au, 0x30u, 0x31u, 0x32u, 0x3Au})
+         {
+             const GSSwizzle::Format &f = GSSwizzle::GetFormat(psm);
+             const uint32_t pageSize = 1u << (f.pageShiftX + f.pageShiftY);
+@@ -795,7 +806,7 @@ struct GSHwBackend::Impl
+         std::fprintf(stderr, "[gs-hw] render target fbp=%u fbw=%u -> %ux%u\n", fbp, t.fbw, t.glW, t.glH);
+     }
+ 
+-    void attachDepth(RenderTarget &t, uint32_t zbp)
++    void attachDepth(RenderTarget &t, uint32_t zbp, uint8_t zpsm)
+     {
+         const Api &g = gl();
+         if (!t.depth)
+@@ -811,6 +822,7 @@ struct GSHwBackend::Impl
+             g.Clear(kDepthBufferBit);
+         }
+         t.zbp = zbp;
++        t.zpsm = zpsm;
+     }
+ 
+     // ---- textures -------------------------------------------------------------------------------------------------
+@@ -1088,6 +1100,45 @@ struct GSHwBackend::Impl
+     // target's last colour draw: the memory then holds Z, not the colour picture. Example: the movie player draws its
+     // pictures into fbp 104, which is the gameplay Z buffer; after the movie the depth writes replace them, and the
+     // game's passes that read the Z memory as PSMCT24 (fog/DOF strips into fbp 320) must not see the old movie frame.
++    // GOW-Port: the target whose depth buffer holds the texture's first block, when that depth was written after any
++    // colour draw there (overwrittenByDepth): the texture reads the Z words through the Z format's layout. The game's
++    // fog/DOF strips read the gameplay Z buffer (fbp 104) as PSMCT24; they were decoded on the CPU from GS memory that
++    // never held the GPU's depth (a 1024x1024 decode and upload every frame, with stale contents).
++    RenderTarget *findDepthReinterpretSource(uint32_t tbp, const RenderTarget &drawing)
++    {
++        if ((tbp % 32u) != 0u)
++            return nullptr;
++        RenderTarget *best = nullptr;
++        for (RenderTarget &t : targets)
++        {
++            if (!t.depth || t.lastDepthSeq == 0u || t.zbp != tbp / 32u || &t == &drawing)
++                continue;
++            if (RenderTarget *colour = findTarget(t.zbp))
++                if (colour->lastDrawSeq > t.lastDepthSeq)
++                    continue; // a colour picture was drawn there after the depth
++            if (uploadAfter(tbp, t.lastDepthSeq))
++                continue;
++            if (!best || t.lastDepthSeq > best->lastDepthSeq)
++                best = &t;
++        }
++        return best;
++    }
++
++    bool uploadAfter(uint32_t tbp, uint64_t seq) const
++    {
++        for (const UploadRecord &u : uploadLog)
++            if (u.seq > seq && u.lo <= tbp && tbp < u.hi)
++                return true;
++        return false;
++    }
++
++    // GOW-Port: GOW_GS_HW_ZCOLOR=0 decodes Z-as-colour reads on the CPU again (for comparisons)
++    static bool depthAsColorOff()
++    {
++        static const bool off = [] { const char *v = std::getenv("GOW_GS_HW_ZCOLOR"); return v && v[0] == '0'; }();
++        return off;
++    }
++
+     bool overwrittenByDepth(const RenderTarget &t) const
+     {
+         for (const RenderTarget &o : targets)
+@@ -1104,12 +1155,13 @@ struct GSHwBackend::Impl
+         return false;
+     }
+ 
+-    void setupReinterpret(const GSDrawState &s, RenderTarget &rt)
++    void setupReinterpret(const GSDrawState &s, RenderTarget &rt, bool depthOwner = false)
+     {
+         const Api &g = gl();
+         const GSContext &c = s.context;
+         const GSSwizzle::Format &tf = GSSwizzle::GetFormat(c.tex0.psm);
+-        const GSSwizzle::Format &rf = GSSwizzle::GetFormat(rt.psm);
++        const uint8_t ownerPsm = depthOwner ? rt.zpsm : rt.psm;
++        const GSSwizzle::Format &rf = GSSwizzle::GetFormat(ownerPsm);
+         const auto offsetOf = [&](const uint16_t *table) { const auto it = tableOffset.find(table); return it == tableOffset.end() ? 0u : it->second; };
+         int kind = 3, texelBits = 8;
+         switch (tf.kind)
+@@ -1130,7 +1182,7 @@ struct GSHwBackend::Impl
+             g.TexSubImage2D(kTexture2D, 0, 0, 0, 256, 1, kRgba, kUnsignedByte, palette);
+         }
+         g.ActiveTexture(kTexture0 + 1);
+-        g.BindTexture(kTexture2D, rt.color);
++        g.BindTexture(kTexture2D, depthOwner ? rt.depth : rt.color);
+         g.TexParameteri(kTexture2D, kTextureMinFilter, kNearest);
+         g.TexParameteri(kTexture2D, kTextureMagFilter, kNearest);
+         g.ActiveTexture(kTexture0 + 2);
+@@ -1141,9 +1193,11 @@ struct GSHwBackend::Impl
+         g.Uniform1i(locPalette, 3);
+         g.Uniform4i(locTexFmt, tf.pageShiftX, tf.pageShiftY, tf.pixelsPerPageShift, tf.unpackedShift);
+         g.Uniform4i(locTexFmt2, tf.bitOffset, texelBits, static_cast<GLint>(offsetOf(tf.table)), kind);
+-        const auto inv = inverseOffset.find(rt.psm);
++        const auto inv = inverseOffset.find(ownerPsm);
++        const GLint zbits = !depthOwner ? 0 : (ownerPsm == 0x32u || ownerPsm == 0x3Au) ? 16 : ownerPsm == 0x31u ? 24 : 32;
+         g.Uniform4i(locRtFmt, rf.pageShiftX, rf.pageShiftY, rf.pixelsPerPageShift, 1 << rf.unpackedShift);
+-        g.Uniform4i(locRtFmt2, inv == inverseOffset.end() ? 0 : static_cast<GLint>(inv->second), static_cast<GLint>(rt.fbp), static_cast<GLint>(rt.fbw), 0);
++        g.Uniform4i(locRtFmt2, inv == inverseOffset.end() ? 0 : static_cast<GLint>(inv->second),
++                    static_cast<GLint>(depthOwner ? rt.zbp : rt.fbp), static_cast<GLint>(rt.fbw), zbits);
+         g.Uniform4i(locTex0, static_cast<GLint>(c.tex0.tbp0), c.tex0.tbw, s.textureWidth, s.textureHeight);
+         g.Uniform2f(locRtPx, static_cast<float>(rt.pxW), static_cast<float>(rt.pxH));
+     }
+@@ -1822,7 +1876,7 @@ struct GSHwBackend::Impl
+                          c.scissor.x0, c.scissor.x1, c.scissor.y0, c.scissor.y1);
+         }
+         RenderTarget &rt = target(c.frame.fbp, c.frame.fbw);
+-        attachDepth(rt, c.zbuf.zbp);
++        attachDepth(rt, c.zbuf.zbp, static_cast<uint8_t>(c.zbuf.psm | 0x30u));
+         rt.psm = c.frame.psm;
+         ++rt.version;
+         rt.lastDrawSeq = ++writeSeq;
+@@ -1998,6 +2052,12 @@ struct GSHwBackend::Impl
+             RenderTarget *rsrc = nullptr;
+             if (!src && !zsrc)
+                 rsrc = findReinterpretSource(c.tex0.tbp0, c.tex0.psm);
++            bool depthOwner = false;
++            if (!src && !zsrc && !rsrc && !depthAsColorOff())
++            {
++                rsrc = findDepthReinterpretSource(c.tex0.tbp0, rt);
++                depthOwner = rsrc != nullptr;
++            }
+             if (rsrc == &rt)
+                 g.TextureBarrier();
+             const bool indexed = !(src || rsrc || zsrc) && isIndexed(c.tex0.psm) && vram != nullptr;
+@@ -2018,7 +2078,7 @@ struct GSHwBackend::Impl
+             g.Uniform1i(locRtTex24, !(src || rsrc) ? 0 : c.tex0.psm == GS_PSM_CT24 ? 1 : family16(c.tex0.psm) ? 2 : 0);
+             g.Uniform1i(locReinterp, rsrc ? 1 : 0);
+             if (rsrc)
+-                setupReinterpret(s, *rsrc);
++                setupReinterpret(s, *rsrc, depthOwner);
+             g.Uniform1f(locTa0, static_cast<float>(s.texa.ta0));
+             g.Uniform1f(locTa1, static_cast<float>(s.texa.ta1));
+             g.Uniform1i(locAem, s.texa.aem ? 1 : 0);

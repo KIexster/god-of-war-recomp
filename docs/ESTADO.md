@@ -7589,3 +7589,27 @@ Corrección sobre el cierre del juego en las pruebas de vídeos (entrada "el Sto
 juego"): la pantalla de muerte y la pausa tienen la opción "Quit Game", y el guion de botones del arnés pulsa X a
 horas fijas. Es muy probable que el cierre lo pidiera el propio menú del juego (escribe la bandera por un puntero, por
 eso no hay escritor directo en el ELF). No es un fallo del port.
+
+### Niebla por distancia: el buffer Z leído como color en la GPU (2026-10-18)
+
+Perfil del hilo del backend GS a 120 Hz: `GSMem::ReadColorRun` 10,6 % y `decodeDirect` 8,9 % (casi todo en la línea
+de cada téxel). Con `GOW_GS_HW_STATS` y un contador temporal: ~300 decodificaciones de 5 s de una textura PSMCT24 de
+1024×1024 en `tbp 0xD00`: unos 63 millones de téxeles por segundo, un millón por cuadro, más su subida a la GPU.
+`0xD00` es la página 104, el buffer Z del juego (Z24, `zbp 104` en todos los objetivos). Son las tiras de 32 píxeles
+de la niebla/DOF que copian la profundidad como PSMCT24 a `fbp 320`. `overwrittenByDepth` descartaba con razón el
+objetivo de color de esa página (un vídeo viejo), pero entonces se decodificaba en la CPU una memoria del GS que nunca
+tuvo la profundidad de la GPU, y cualquier subida en la media VRAM que cubre la textura la volvía a invalidar.
+
+`ps2recomp-gs-z-como-color.patch`: si una textura cae en el buffer Z de un objetivo y ese Z es lo último escrito
+allí, se lee con la reinterpretación en la GPU (`reinterpretTexel`). El dueño es la textura de profundidad, su
+formato Z (tablas inversas de 0x30/0x31/0x32/0x3A) y la palabra es el valor de Z (`zpsm` del objetivo).
+`GOW_GS_HW_ZCOLOR=0` vuelve a la decodificación en la CPU, para comparar.
+
+Resultado: 0 téxeles decodificados en la CPU (antes ~310 millones cada 5 s). Las capturas del GS a los 3 y 8 s de
+partida muestran la niebla por distancia (fondo y montañas lavados) que faltaba y que sí se ve en la captura de
+PCSX2 del combate del barco (`logs/vif_pcsx2_inicio2/Screenshot.png`). Menús, intro en el motor y barco correctos. A
+120 Hz (experimento), el bucle del juego en combate pasa de 67,4 a 72,3 cuadros por segundo de media. Sin prueba en
+`ps2xTest`: el backend OpenGL no se ejecuta en la CI (sin GPU); suite 455/455.
+
+Uso de GPU (contador "GPU Engine", motor 3D, del proceso): 80 % a 2x y 62 % a 1x a 60 Hz en el barco; ~88 % a 120 Hz
+con o sin este cambio. Sigue alto para lo que se dibuja; pendiente de investigar.
