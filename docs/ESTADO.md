@@ -7589,3 +7589,30 @@ Corrección sobre el cierre del juego en las pruebas de vídeos (entrada "el Sto
 juego"): la pantalla de muerte y la pausa tienen la opción "Quit Game", y el guion de botones del arnés pulsa X a
 horas fijas. Es muy probable que el cierre lo pidiera el propio menú del juego (escribe la bandera por un puntero, por
 eso no hay escritor directo en el ELF). No es un fallo del port.
+
+## Linux: contexto OpenGL del GS con EGL (2026-10-18)
+
+En Linux el GS por GPU no arrancaba (`[gs-hw] GL unavailable: GPU GS backend is only implemented for Windows`): el
+contexto solo existía con WGL, no hay otro renderer y la ventana mostraba el marcador magenta de la presentación por
+RAM con el juego corriendo detrás. `ps2recomp-gs-egl-linux.patch` crea en Linux el contexto con EGL (`libEGL.so.1`
+cargada en tiempo de ejecución, pantalla sin superficie de Mesa y, si no, la pantalla por defecto; núcleo 4.6, con 4.5
+y 4.3 de respaldo) y los contextos de los trabajadores compartidos con él. La lista de funciones GL pasa a una función
+común a WGL y EGL; en Windows el comportamiento no cambia. En Linux no se comparte el contexto con la ventana: la
+presentación va por RAM (lectura de vuelta y subida), la ruta que ya existía.
+
+Verificado en Linux Mint (Ubuntu 24.04), Ryzen con Radeon integrada (radeonsi, Mesa 25.2.8), disco NTSC-U
+(`SCUS_973.99`, una sola capa) leído con `GOW_ISO`: `[gs-gl] EGL: AMD Radeon Graphics ... 4.6 (Core Profile)`, menú de
+dificultad y partida con imagen correcta. Sin prueba en `ps2xTest/`: crear el contexto necesita una GPU y la CI no
+tiene. La compilación del juego en Linux se hizo a mano siguiendo `compilar.ps1` (no hay script para Linux). Dos
+diferencias con Windows: los IRX de `IOP_MOD/` tienen que existir también en minúsculas (el juego pide
+`IOP_MOD/sio2man.irx` y el sistema de archivos distingue mayúsculas), y el enlace con LTO de GCC tarda ~20 min en una
+sola partición del código generado.
+
+Velocidad medida con `GOW_FPS=1` en el menú: ~6 cuadros/s del juego con el intérprete de VU1 y del IOP; 40-50 con la
+VU1 nativa (1.156 micromemorias) y el IOP nativo. Tras una sesión jugada a mano la captura subió a 6.448
+micromemorias; esa compilación todavía no se ha medido.
+
+`ps2recomp-vu1-captura-nativa.patch`: `GOW_VU1_CAPTURA` solo guardaba micromemorias cuando la VU1 corría por el motor
+exacto, es decir, con `GOW_VU1_NATIVE_OFF=1` y el juego a ~6 cuadros/s. Ahora también guarda con la VU1 nativa activa,
+así que se puede capturar jugando a velocidad normal lo que aún falta. Es un diagnóstico activado por la variable; sin
+ella no cambia nada.

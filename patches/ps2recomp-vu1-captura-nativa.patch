@@ -1,0 +1,15 @@
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+index e859702..cc162e1 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+@@ -2198,6 +2198,10 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
+     }
+     if (m_unit == Unit::VU1 && m_native && m_native->enabled && vuData && codeSize == PS2_VU1_CODE_SIZE)
+     {
++        // GOW-Port: GOW_VU1_CAPTURA también con la VU1 nativa activa (compiledProgramFor guarda la micromemoria).
++        static const bool captureWithNative = std::getenv("GOW_VU1_CAPTURA") != nullptr;
++        if (captureWithNative)
++            (void)compiledProgramFor(vuCode, codeSize, memory);
+         if (!runNativeLoop(context))
+             runExact(context);
+     }

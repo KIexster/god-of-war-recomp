@@ -75,6 +75,10 @@ $eeViaRapidaPatch = Join-Path $RepoRoot 'patches\ps2recomp-ee-via-rapida.patch'
 # GOW-Port: la etapa GS cede el lock del GS entre paquetes cuando la presentación lo espera (la ventana llegaba a
 # mostrar 2-8 imágenes por segundo con el juego a 60-120).
 $gsPrioridadPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-prioridad-presentacion.patch'
+# GOW-Port: contexto OpenGL del GS en Linux con EGL (antes solo WGL: en Linux la ventana quedaba magenta).
+$gsEglLinuxPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-egl-linux.patch'
+# GOW-Port: GOW_VU1_CAPTURA también con la VU1 nativa activa (antes solo guardaba con GOW_VU1_NATIVE_OFF=1, a ~6 FPS).
+$vu1CapturaNativaPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-captura-nativa.patch'
 # GOW-Port: VF0 y VI0 de VU0 son constantes (PR #79), no incluido en el runtime de Waffle565.
 $vu0Vf0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vf0.patch'
 $vu0Vi0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vi0.patch'
@@ -148,6 +152,8 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $iopDelayFueraPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $mpegFinProgramaPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $eeViaRapidaPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsPrioridadPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsEglLinuxPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1CapturaNativaPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
