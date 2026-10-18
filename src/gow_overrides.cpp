@@ -287,7 +287,7 @@ namespace
     {
         // GOW-Port: always 16:9 (4:3 is not supported any more) — the data part of PCSX2's SCUS-97399_D6385328.pnach
         // "Widescreen 16:9": the game's own widescreen flag and three 16:9 aspect floats, re-applied every frame like
-        // PCSX2 does. (The pnach's "enhanced" code rewrite of 0x169250-0x16944C is not applied: it needs a recompile.)
+        // PCSX2 does. Its "enhanced" variant is GOW_PANORAMICO=ampliado (below).
         constexpr bool widescreen = true;
         if (widescreen)
         {
@@ -296,6 +296,12 @@ namespace
             put32(0x002FD930u, 0x3FE38E39u);
             put32(0x002FD968u, 0x3FE38E39u);
             put32(0x0032F1B0u, 0x3FE38E39u);
+            // GOW-Port: factor of the camera's horizontal aperture (instruction patches at 0x1692B8 in
+            // config/recomp.template.toml, which multiply it by factor x aspect). GOW_PANORAMICO=ampliado: 0.75, the
+            // "enhanced native widescreen" of nemesis2000 and CRASHARKI (wider view, no vertical crop; it draws more
+            // and costs frame time). Otherwise 9/16, which leaves the game's own widescreen as it was.
+            static const bool wide = [] { const char *v = std::getenv("GOW_PANORAMICO"); return v && std::strcmp(v, "ampliado") == 0; }();
+            put32(0x000FFFF0u, wide ? 0x3F400000u : 0x3F100000u);
         }
         auto *buffer = padBuffer(rdram, GPR_U32(ctx, 5), 18);
         const auto *socket = padSocket(ctx);

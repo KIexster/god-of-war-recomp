@@ -7519,3 +7519,17 @@ arreglo, ese cierre se quedaba colgado en el IOP; ahora termina y el hilo princi
 escritor estático de 0x29C4D8 en el ELF. Se dio en 1 de 9 ejecuciones (8 sin fallo, 6 de ellas con el vigilante
 `PS2X_EE_WATCH=29C4D8:4` sin registrar ninguna escritura). Puede depender de la sustitución del vídeo del arnés
 (`GOW_MOVIE_OVERRIDE`). Pendiente: atrapar la escritura con el vigilante en una ejecución que falle.
+
+### Panorámico ampliado opcional (2026-10-18)
+
+El usuario propuso el pnach de PCSX2 `SCUS-97399_CBE116C1.pnach` ("Widescreen 16:9", nemesis2000 y CRASHARKI). El
+port ya aplicaba su parte de datos (bandera 0x29CC90 y flotantes de aspecto); la parte "enhanced" reescribe la función
+de proyección 0x169238 y en un port recompilado no se puede parchear en ejecución. Comparando instrucción a
+instrucción, su único cambio de fondo es multiplicar la apertura horizontal (campo 0x37C) por 0.75 × aspecto
+(0x32F1B0). Se hace con `[patches] instructions` de `config/recomp.template.toml` (0x169298-0x1692F4, sin desplazar el
+resto: una comparación entera con `slt`/`movn` sustituye a la de coma flotante y el 1.0 sale de aspecto/aspecto). El
+factor se lee de 0xFFFF0 (un vigilante `PS2X_EE_WATCH=FFF00:100` no vio ninguna escritura del juego en una partida) y
+lo fija el override cada cuadro: 0.75 con `GOW_PANORAMICO=ampliado`, 9/16 si no (factor total 1, igual que antes).
+Verificado con capturas del GS a los 3 s de partida: sin la variable, el encuadre es el de siempre; con ella, la vista
+se ensancha sin deformar. Coste en combate en el barco: mediana de 59,9 a 54,9 cuadros por segundo del juego.
+Requiere `scripts\2_compilar.cmd` (regenera el C++ de 0x169238).
