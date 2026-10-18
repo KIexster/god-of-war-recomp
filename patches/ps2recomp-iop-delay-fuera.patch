@@ -1,0 +1,91 @@
+diff --git a/ps2xIOP/src/emulator/core/iop_kernel.cpp b/ps2xIOP/src/emulator/core/iop_kernel.cpp
+index e48d1f4..aa886a3 100644
+--- a/ps2xIOP/src/emulator/core/iop_kernel.cpp
++++ b/ps2xIOP/src/emulator/core/iop_kernel.cpp
+@@ -257,13 +257,23 @@ namespace ps2x::iop::detail
+             return true;
+         }
+         case 33: // DelayThread
++        {
++            const uint64_t delayCycles = (static_cast<uint64_t>(cpu.gpr[4]) * kIopClockHz + 999'999ull) / 1'000'000ull;
+             if (m_currentThread != nullptr)
+-            {
+-                const uint64_t delayCycles = (static_cast<uint64_t>(cpu.gpr[4]) * kIopClockHz + 999'999ull) / 1'000'000ull;
+                 delayCurrentUntil(currentCycle + std::max<uint64_t>(delayCycles, 1u), cpu);
++            else if (m_outsideThreadWait)
++            {
++                // GOW-Port: outside a thread (an RPC server or callback run without a current thread) the delay used
++                // to return at once with the IOP clock stopped: 989snd's "stop sound system" RPC polls a flag that its
++                // timer handler sets, with DelayThread(33 ms) in between, and spun until the call ran out of budget
++                // (seen when a new game's intro movie was replaced). The rest of the IOP now runs for the delay.
++                const uint64_t target = currentCycle + std::max<uint64_t>(delayCycles, 1u);
++                m_cycleSeen = currentCycle;
++                m_outsideThreadWait([this, target] { return m_cycleSeen >= target; });
+             }
+             setV0(0);
+             return true;
++        }
+         case 34: // GetSystemTime
+             m_memory.write32(cpu.gpr[4], static_cast<uint32_t>(currentCycle));
+             m_memory.write32(cpu.gpr[4] + 4u, static_cast<uint32_t>(currentCycle >> 32u));
+@@ -727,6 +737,7 @@ namespace ps2x::iop::detail
+ 
+     IopThread *IopKernel::beginNextReady(uint64_t currentCycle)
+     {
++        m_cycleSeen = currentCycle;
+         if (m_idleVersion == m_version && currentCycle < m_idleUntil)
+             return nullptr; // GOW-Port: nada cambió y ningún hilo en Delay despierta todavía
+ 
+diff --git a/ps2xIOP/src/emulator/core/iop_kernel.h b/ps2xIOP/src/emulator/core/iop_kernel.h
+index b20f870..20a758d 100644
+--- a/ps2xIOP/src/emulator/core/iop_kernel.h
++++ b/ps2xIOP/src/emulator/core/iop_kernel.h
+@@ -114,6 +114,7 @@ namespace ps2x::iop::detail
+         uint32_t m_nextEventFlagId = 1;
+         IopThread *m_currentThread = nullptr;
+         OutsideThreadWait m_outsideThreadWait;
++        uint64_t m_cycleSeen = 0; // GOW-Port: IOP cycle of the last beginNextReady (DelayThread outside a thread)
+         // GOW-Port: el EE avanza el IOP ~1,5 millones de veces por segundo de a pocos ciclos, casi siempre
+         // sin hilos listos. m_version cambia con cada operación que puede cambiar los hilos; si no cambió
+         // desde el último beginNextReady sin hilos listos, el resultado es el mismo hasta m_idleUntil (el
+diff --git a/ps2xTest/src/ps2_iop_tests.cpp b/ps2xTest/src/ps2_iop_tests.cpp
+index f555972..c2292d9 100644
+--- a/ps2xTest/src/ps2_iop_tests.cpp
++++ b/ps2xTest/src/ps2_iop_tests.cpp
+@@ -229,6 +229,36 @@ void register_ps2_iop_tests()
+             t.Equals(static_cast<int32_t>(poll.gpr[2]), -418, "WEF_CLEAR should have cleared the flag");
+         });
+ 
++        // GOW-Port: el RPC "parar el sistema de sonido" de 989snd espera, con DelayThread entre sondeos, a que su
++        // manejador de alarma cambie un contador; sin hilo actual el retraso devolvía al momento con el IOP parado.
++        tc.Run("DelayThread outside a thread lets the IOP run for the delay", [](TestCase &t)
++        {
++            using namespace ps2x::iop::detail;
++            IopMemory memory;
++            IopKernel kernel(memory);
++            kernel.reset();
++            constexpr uint64_t kStart = 1000u;
++            uint64_t clock = kStart;
++            uint32_t steps = 0u;
++            kernel.setOutsideThreadWait([&](const std::function<bool()> &ready)
++            {
++                while (!ready() && steps < 100000u)
++                {
++                    clock += 256u; // el emulador avanza el IOP mientras dura la espera
++                    ++steps;
++                    (void)kernel.beginNextReady(clock);
++                }
++                return ready();
++            });
++            IopCpuState cpu{};
++            cpu.gpr[4] = 1000u; // 1 ms
++            t.IsTrue(kernel.dispatchThreadImport(33u, cpu, kStart), "DelayThread should be handled");
++            t.Equals(cpu.gpr[2], 0u, "DelayThread should succeed");
++            t.IsTrue(steps > 0u && steps < 100000u, "the IOP should run while the delay lasts");
++            t.IsTrue(clock - kStart >= 36864u, "the delay should last at least 1 ms of IOP cycles");
++            t.IsTrue(clock - kStart < 36864u + 256u, "the delay should end once its time has passed");
++        });
++
+         // GOW-Port: dbcman contesta al EE con sceSifSetDmaIntr y espera su callback para enviar lo siguiente.
+         tc.Run("sceSifSetDmaIntr copies to the EE and queues its completion callback", [](TestCase &t)
+         {

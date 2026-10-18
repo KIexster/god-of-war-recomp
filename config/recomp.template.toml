@@ -689,7 +689,41 @@ skip = []
 # Patches to apply during recompilation
 [patches]
 # Individual instruction patches
-instructions = []  # GOW-Port: el analizador marcaba como "self-modifying" 72 escrituras normales a variables globales
+# GOW-Port: el analizador marcaba como "self-modifying" 72 escrituras normales a variables globales; aquí solo van
+# parches de instrucciones deliberados.
+# GOW-Port: panorámico ampliado. La función de proyección de la cámara (0x169238) multiplica su apertura horizontal
+# (campo 0x37C) por factor × aspecto (0x32F1B0). El factor se lee de 0xFFFF0 (libre, bajo el ELF) y lo fija
+# src/gow_overrides.cpp: 0.75 con GOW_PANORAMICO=ampliado (16:9 da 4/3: la vista se ensancha en vez de recortarse
+# arriba y abajo) y 9/16 por defecto (factor total 1: igual que el juego original).
+# Misma idea que el "enhanced native widescreen" de nemesis2000 y CRASHARKI (pnach de PCSX2), en una versión más
+# corta que solo reescribe 0x169298-0x1692F4: v1/at sustituyen la comparación en coma flotante y 1.0 sale de
+# aspecto/aspecto, sin desplazar el resto de la función.
+instructions = [
+  { address = "0x00169298", value = "0x8E03037C" },
+  { address = "0x0016929C", value = "0x3C013F11" },
+  { address = "0x001692A0", value = "0x342135FC" },
+  { address = "0x001692A4", value = "0x0003102A" },
+  { address = "0x001692A8", value = "0x0062080B" },
+  { address = "0x001692AC", value = "0x44812800" },
+  { address = "0x001692B0", value = "0x3C020033" },
+  { address = "0x001692B4", value = "0xC441F1B0" },
+  { address = "0x001692B8", value = "0x3C010010" },
+  { address = "0x001692BC", value = "0xC420FFF0" },
+  { address = "0x001692C0", value = "0x46000842" },
+  { address = "0x001692C4", value = "0x46012942" },
+  { address = "0x001692C8", value = "0xE605037C" },
+  { address = "0x001692CC", value = "0xC6010368" },
+  { address = "0x001692D0", value = "0x26050100" },
+  { address = "0x001692D4", value = "0xC6000370" },
+  { address = "0x001692D8", value = "0xC6020378" },
+  { address = "0x001692DC", value = "0xC604036C" },
+  { address = "0x001692E0", value = "0xC6030374" },
+  { address = "0x001692E4", value = "0x46022882" },
+  { address = "0x001692E8", value = "0x46012101" },
+  { address = "0x001692EC", value = "0x460018C1" },
+  { address = "0x001692F0", value = "0xC441F1B0" },
+  { address = "0x001692F4", value = "0x46010803" },
+]
 
 
 # Performance critical functions (may need manual optimization)

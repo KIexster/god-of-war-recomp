@@ -7466,3 +7466,153 @@ cargado. Correcto (reproducción: 0 diferencias; ~97 % de los bloques dentro de 
 ganancia medible: reproducción 377-381 frente a 382-397 ms; en el juego, tiempo de VU1 por ciclo 3,4-3,5 frente a
 3,6-3,7 ns en una ronda y 3,6 frente a 3,5 en otra. El coste del despacho son esperas de memoria al leer el estado de
 cada bloque, que la contabilidad necesita igual. Descartado por la complejidad que añade.
+### sceCdStop en el IOP nativo (2026-10-17)
+
+Al probar los vídeos empezando una partida nueva y sustituyendo la intro (Semo01) por otro vídeo
+(`GOW_MOVIE_OVERRIDE`), el IOP registraba `unhandled import cdvdman:15` y una llamada que agotaba su presupuesto de
+400 M instrucciones: `sceCdStop` no estaba implementada y el hilo que la esperaba quedaba en bucle; el vídeo no
+empezaba. `ps2recomp-cd-stop.patch`: sin lector no hay nada que parar, termina al momento (y llama a la función de
+aviso con SCECdFuncStop, como `sceCdSeek`). Con el cambio, A01MP02 se reproduce entero en ese caso (998 imágenes).
+Prueba: "IOP sceCdStop completes at once". En las partidas del usuario no había aparecido.
+
+Otros vídeos revisados: SEMO08 va a 29,32 imágenes/s (4,7 s de desfase en 210 s; el reproductor espera un ciclo de
+imagen extra en ~40 % de los tramos de 30 imágenes; ni el disco, que responde al momento, ni la decodificación,
+~1 ms por imagen, son la causa; pendiente). BONUS20: su pista de audio en el disco son ~15 s de PCM muy bajo (RMS
+~540) para 208 s de imagen; el port lo deja en silencio. Las cinco cinemáticas del barco (A01MP01-05), con el sonido
+por el dispositivo real: desfase <= 0,2 s y sin huecos.
+
+### DelayThread fuera de un hilo en el IOP nativo (2026-10-17)
+
+Con la misma prueba (partida nueva e intro sustituida) y el sonido silenciado, la llamada RPC "Stopping sound system"
+de 989snd agotaba su presupuesto de instrucciones: el bucle en 0x2D49C espera a que su manejador de alarma (0x2D664)
+ponga a 2 el contador en 0x44360, con `DelayThread(33 ms)` entre sondeos. El servidor RPC corre sin hilo actual y
+`DelayThread` volvía al momento sin que avanzara el reloj del IOP, así que la alarma nunca llegaba.
+`ps2recomp-iop-delay-fuera.patch`: fuera de un hilo, `DelayThread` usa la misma espera que `WaitSema` y
+`WaitEventFlag` (el emulador deja correr al resto del IOP) hasta que pasa el retraso. Prueba: "DelayThread outside a
+thread lets the IOP run for the delay". En combate en el barco no se produce ninguna de estas esperas; la intro
+sustituida ya no agota el presupuesto.
+
+### Fin de P04MP05: la demultiplexación se detiene en 0x1B9 (2026-10-18)
+
+Con la intro sustituida por P04MP05 (el juego carga la versión panorámica, `P04MP05.PSW`), el vídeo se reproducía
+hasta el final y el juego se quedaba atascado: 0 cuadros de juego hasta el final de la prueba. El hilo del EE daba
+vueltas en 0x18AC20 → 0x188848. El reproductor lee el PSS en bloques de 0x4000 a un anillo de 16 (0x188848); el último
+bloque lleva solo 4 bytes válidos (el código de fin de programa 0x1B9) y el resto son datos viejos del anillo. El
+callback `sceMpegCbNodata` del juego (0x18AAA8) llama a 0x18AC20 en modo bloqueante hasta tener 0x2000 bytes de
+vídeo pendientes, y solo envía el resto y vuelve cuando la demultiplexación devuelve 0. El `sceMpegDemuxPssRing`
+original (0x273CF0) se detiene en 0x1B9 y devuelve los bytes anteriores, y después 0. El HLE daba por consumido el
+bloque entero, así que el juego volvía a leer, recibía 0 bytes y repetía para siempre. En otros vídeos el final
+caía con más de 0x2000 bytes pendientes y no se notaba. P04MP05.PSW tiene 741 imágenes; antes se servían 739.
+
+`ps2recomp-mpeg-fin-programa.patch`: ni 0x1B9 ni lo que le sigue cuentan como consumidos, y una entrada que empieza
+por él devuelve 0. Prueba: "sceMpegDemuxPssRing stops at the program end code". Verificado con la intro sustituida:
+P04MP05 sirve las 741 imágenes, termina (`ended=1`) y la partida empieza a los 60,2 s. A01MP02 sigue terminando
+igual (998 imágenes, partida a los 66,9 s).
+
+### Corrección: el "Stopping sound system" de 989snd era el cierre del juego (2026-10-18)
+
+La entrada "DelayThread fuera de un hilo" atribuía la llamada RPC "Stopping sound system" a la prueba de la intro
+sustituida. La traza de una ejecución en la que aparece (A01MP02 en lugar de Semo01, con el arreglo ya aplicado)
+muestra otra cosa: el bucle principal 0x17AA18 termina porque la bandera 0x29C4D8 deja de ser 0, `main` llama al
+cierre 0x17A9B0 (que para el sonido con la orden 0x1 de 989snd) y vuelve a crt0, que llama a `Exit()`. Antes del
+arreglo, ese cierre se quedaba colgado en el IOP; ahora termina y el hilo principal queda dormido. No hay ningún
+escritor estático de 0x29C4D8 en el ELF. Se dio en 1 de 9 ejecuciones (8 sin fallo, 6 de ellas con el vigilante
+`PS2X_EE_WATCH=29C4D8:4` sin registrar ninguna escritura). Puede depender de la sustitución del vídeo del arnés
+(`GOW_MOVIE_OVERRIDE`). Pendiente: atrapar la escritura con el vigilante en una ejecución que falle.
+
+### Panorámico ampliado opcional (2026-10-18)
+
+El usuario propuso el pnach de PCSX2 `SCUS-97399_CBE116C1.pnach` ("Widescreen 16:9", nemesis2000 y CRASHARKI). El
+port ya aplicaba su parte de datos (bandera 0x29CC90 y flotantes de aspecto); la parte "enhanced" reescribe la función
+de proyección 0x169238 y en un port recompilado no se puede parchear en ejecución. Comparando instrucción a
+instrucción, su único cambio de fondo es multiplicar la apertura horizontal (campo 0x37C) por 0.75 × aspecto
+(0x32F1B0). Se hace con `[patches] instructions` de `config/recomp.template.toml` (0x169298-0x1692F4, sin desplazar el
+resto: una comparación entera con `slt`/`movn` sustituye a la de coma flotante y el 1.0 sale de aspecto/aspecto). El
+factor se lee de 0xFFFF0 (un vigilante `PS2X_EE_WATCH=FFF00:100` no vio ninguna escritura del juego en una partida) y
+lo fija el override cada cuadro: 0.75 con `GOW_PANORAMICO=ampliado`, 9/16 si no (factor total 1, igual que antes).
+Verificado con capturas del GS a los 3 s de partida: sin la variable, el encuadre es el de siempre; con ella, la vista
+se ensancha sin deformar. Coste en combate en el barco: mediana de 59,9 a 54,9 cuadros por segundo del juego.
+Requiere `scripts\2_compilar.cmd` (regenera el C++ de 0x169238).
+
+### Hilo del EE: vía rápida de los puntos de control (2026-10-18)
+
+Perfil del combate en el barco (muestreador, 35 s, binario de `main`): el hilo del EE estaba ocupado ~85–90 % del
+cuadro y más de un tercio era contabilidad por punto de control: `EeScheduler::accountCycles` 18,9 %,
+`checkpointDue` 10,4 %, `PS2Memory::advanceEeTimers` 4,9 %, `PS2Runtime::eeCheckpointDue` 2,9 %. El código generado
+llama a `eeCheckpointDue` cada 16 ciclos del EE y cada llamada entregaba los ciclos a los temporizadores y al IOP y
+comprobaba plazo, porción de tiempo y puesta al día con el reloj real. El hilo del trabajador (VIF1/VU1) y los del
+GS esperaban ~50 % del tiempo.
+
+`ps2recomp-ee-via-rapida.patch`: `checkpointDue` (en línea) solo suma los ciclos mientras no se alcance
+`m_fastLimitCycle` (el mínimo de: próximo suceso de un temporizador, próximo lote del IOP, fin de la porción de
+tiempo y próxima puesta al día con el reloj real, ahora cada 2048 × 16 ciclos en vez de cada 2048 llamadas) ni el
+plazo siguiente (`m_nextDeadlineCycle`, que pueden adelantar otros hilos) y no haya nada pendiente. En ese ciclo
+(`checkpointDueSlow`) los temporizadores y el IOP reciben los ciclos de golpe: mismos sucesos en los mismos ciclos.
+Un acceso a un registro de temporizador (gancho `PS2Memory::setEeCycleSync`, solo en el hilo del EE) y la espera
+ociosa (`waitForEvent`) entregan antes los ciclos pendientes. Prueba: "an EE timer read sees the cycles of the
+checkpoint fast path" (falla si se quita el gancho).
+
+Resultado: en el mismo perfil el hilo del EE queda ocupado ~46 % (`eeCheckpointDue` 4,6 %); el resto es espera del
+ritmo de 60 Hz. A 60 Hz el periodo de cuadro no cambia (A/B alterno de 3 rondas, `ab_traza.sh`: mediana
+16,68/16,71/16,70 frente a 16,70/16,69/16,68 ms; % ≤17 ms 72/65/71 frente a 71/67/68), porque el EE no era el límite;
+es margen para más cuadros por segundo. Suite 454/454.
+
+Paso de tiempo del juego (0x17D860, guarda 0x29C64C): `delta = max(VBlanks desde el cuadro anterior, cuadros medidos
+con un temporizador y limitados a [1, 4]) / 60`. Nunca baja de 1/60 s: para más de 60 cuadros por segundo hará falta
+un VBlank del invitado más frecuente y otro cálculo del paso.
+
+### Presentación: la etapa GS cede el lock (2026-10-18)
+
+Con el juego por encima de 60 cuadros por segundo (experimento de 120 Hz, ver la entrada siguiente) la ventana
+llegaba a mostrar 2-8 imágenes por segundo en tramos de varios segundos. Las pilas del hilo principal durante la
+caída: `GSHostPresentation::prepare` → `GS::latchHostPresentationFrame`, esperando `m_stateMutex`. La etapa GS lo
+toma y lo suelta una vez por paquete, miles de veces por cuadro; el mutex no es justo y el hilo que lo suelta vuelve
+a cogerlo antes que el que espera. `ps2recomp-gs-prioridad-presentacion.patch`: la presentación registra una espera
+prioritaria (`ps2_gs_stage::priorityWaitBegin/End`) mientras toma el lock, y la etapa, entre paquetes y sin ningún
+lock, cede mientras la haya. Con 120 Hz, las imágenes mostradas pasan a 59,8-60,6 por segundo en todo el combate.
+Prueba: "GS stage yields between packets while a priority waiter is registered". Suite 455/455.
+
+Pendiente: con `PS2X_GS_HW_SCALE=4` (y a 60 Hz) la ventana sigue cayendo a 0,5-1,7 imágenes por segundo; es otra
+causa (sin investigar).
+
+### Experimento: lógica del juego a 120 Hz (2026-10-18, sin subir)
+
+Árbol local, `GOW_HZ=120`: el VBlank del EE (no el del IOP) cada 8,34 ms, y un override de 0x17D778 que sustituye el
+paso de tiempo por el tiempo real transcurrido, limitado a [1/120, 4/60] s (con la bandera 0x29C660 del juego, "solo
+VBlanks", su valor a la mitad). La primera versión, que solo dividía el resultado entre 2, iba a cámara lenta
+(velocidad 0,57): el término del temporizador ya está en sesentavos y limitado a un mínimo de 1. Con la versión
+corregida, la velocidad del juego (`GOW_DELTA_DIAG`) es 1,00. El bucle del juego da ~120 cuadros por segundo en escenas
+ligeras y 63-72 en el combate del barco: ahí limita la tubería VIF1/VU1/GS. La presentación del host sigue limitada a
+60 Hz. Sin revisar todavía: vídeos (cuentan VBlanks), cinemáticas, física y sonido a 120.
+
+Corrección sobre el cierre del juego en las pruebas de vídeos (entrada "el Stopping sound system era el cierre del
+juego"): la pantalla de muerte y la pausa tienen la opción "Quit Game", y el guion de botones del arnés pulsa X a
+horas fijas. Es muy probable que el cierre lo pidiera el propio menú del juego (escribe la bandera por un puntero, por
+eso no hay escritor directo en el ELF). No es un fallo del port.
+
+## Linux: contexto OpenGL del GS con EGL (2026-10-18)
+
+En Linux el GS por GPU no arrancaba (`[gs-hw] GL unavailable: GPU GS backend is only implemented for Windows`): el
+contexto solo existía con WGL, no hay otro renderer y la ventana mostraba el marcador magenta de la presentación por
+RAM con el juego corriendo detrás. `ps2recomp-gs-egl-linux.patch` crea en Linux el contexto con EGL (`libEGL.so.1`
+cargada en tiempo de ejecución, pantalla sin superficie de Mesa y, si no, la pantalla por defecto; núcleo 4.6, con 4.5
+y 4.3 de respaldo) y los contextos de los trabajadores compartidos con él. La lista de funciones GL pasa a una función
+común a WGL y EGL; en Windows el comportamiento no cambia. En Linux no se comparte el contexto con la ventana: la
+presentación va por RAM (lectura de vuelta y subida), la ruta que ya existía.
+
+Verificado en Linux Mint (Ubuntu 24.04), Ryzen con Radeon integrada (radeonsi, Mesa 25.2.8), disco NTSC-U
+(`SCUS_973.99`, una sola capa) leído con `GOW_ISO`: `[gs-gl] EGL: AMD Radeon Graphics ... 4.6 (Core Profile)`, menú de
+dificultad y partida con imagen correcta. Sin prueba en `ps2xTest/`: crear el contexto necesita una GPU y la CI no
+tiene. La compilación del juego en Linux se hizo a mano siguiendo `compilar.ps1` (no hay script para Linux). Dos
+diferencias con Windows: los IRX de `IOP_MOD/` tienen que existir también en minúsculas (el juego pide
+`IOP_MOD/sio2man.irx` y el sistema de archivos distingue mayúsculas), y el enlace con LTO de GCC tarda ~20 min en una
+sola partición del código generado.
+
+Velocidad medida con `GOW_FPS=1` en el menú: ~6 cuadros/s del juego con el intérprete de VU1 y del IOP; 40-50 con la
+VU1 nativa (1.156 micromemorias) y el IOP nativo. Tras una sesión jugada a mano la captura subió a 6.448
+micromemorias; esa compilación todavía no se ha medido.
+
+`ps2recomp-vu1-captura-nativa.patch`: `GOW_VU1_CAPTURA` solo guardaba micromemorias cuando la VU1 corría por el motor
+exacto, es decir, con `GOW_VU1_NATIVE_OFF=1` y el juego a ~6 cuadros/s. Ahora también guarda con la VU1 nativa activa,
+así que se puede capturar jugando a velocidad normal lo que aún falta. Es un diagnóstico activado por la variable; sin
+ella no cambia nada.
