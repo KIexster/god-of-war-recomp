@@ -10,7 +10,7 @@ index 486aa56..5606736 100644
 +uniform ivec4 uRtFmt2;   // inverseTableOffset, fbp (pages), fbw (64 px), Z bits when the owner is a depth buffer (else 0)
  uniform ivec4 uTex0;     // tbp, tbw, width, height
  uniform vec2 uRtPx;      // render target size in PS2 pixels
- 
+
 @@ -138,13 +138,23 @@ vec4 reinterpretTexel(ivec2 p)
      uint fbw = uint(uRtFmt2.z);
      uint px = (rpage % fbw) * (1u << rpsx) + (e & ((1u << rpsx) - 1u));
@@ -57,23 +57,6 @@ index 486aa56..5606736 100644
          {
              const GSSwizzle::Format &f = GSSwizzle::GetFormat(psm);
              const uint32_t pageSize = 1u << (f.pageShiftX + f.pageShiftY);
-@@ -795,7 +806,7 @@ struct GSHwBackend::Impl
-         std::fprintf(stderr, "[gs-hw] render target fbp=%u fbw=%u -> %ux%u\n", fbp, t.fbw, t.glW, t.glH);
-     }
- 
--    void attachDepth(RenderTarget &t, uint32_t zbp)
-+    void attachDepth(RenderTarget &t, uint32_t zbp, uint8_t zpsm)
-     {
-         const Api &g = gl();
-         if (!t.depth)
-@@ -811,6 +822,7 @@ struct GSHwBackend::Impl
-             g.Clear(kDepthBufferBit);
-         }
-         t.zbp = zbp;
-+        t.zpsm = zpsm;
-     }
- 
-     // ---- textures -------------------------------------------------------------------------------------------------
 @@ -1088,6 +1100,45 @@ struct GSHwBackend::Impl
      // target's last colour draw: the memory then holds Z, not the colour picture. Example: the movie player draws its
      // pictures into fbp 104, which is the gameplay Z buffer; after the movie the depth writes replace them, and the
@@ -123,7 +106,7 @@ index 486aa56..5606736 100644
 @@ -1104,12 +1155,13 @@ struct GSHwBackend::Impl
          return false;
      }
- 
+
 -    void setupReinterpret(const GSDrawState &s, RenderTarget &rt)
 +    void setupReinterpret(const GSDrawState &s, RenderTarget &rt, bool depthOwner = false)
      {
@@ -159,15 +142,17 @@ index 486aa56..5606736 100644
          g.Uniform4i(locTex0, static_cast<GLint>(c.tex0.tbp0), c.tex0.tbw, s.textureWidth, s.textureHeight);
          g.Uniform2f(locRtPx, static_cast<float>(rt.pxW), static_cast<float>(rt.pxH));
      }
-@@ -1822,7 +1876,7 @@ struct GSHwBackend::Impl
-                          c.scissor.x0, c.scissor.x1, c.scissor.y0, c.scissor.y1);
+@@ -1935,7 +1989,10 @@ struct GSHwBackend::Impl
          }
-         RenderTarget &rt = target(c.frame.fbp, c.frame.fbw);
--        attachDepth(rt, c.zbuf.zbp);
-+        attachDepth(rt, c.zbuf.zbp, static_cast<uint8_t>(c.zbuf.psm | 0x30u));
-         rt.psm = c.frame.psm;
-         ++rt.version;
-         rt.lastDrawSeq = ++writeSeq;
+         const bool zwrite = !c.zbuf.zmask && !zAlias;
+         if (zwrite && ((c.test >> 16) & 1u) != 0u)
++        {
+             rt.lastDepthSeq = rt.lastDrawSeq;
++            rt.zpsm = static_cast<uint8_t>(c.zbuf.psm | 0x30u);
++        }
+         const bool zAliasWrite = zAlias && !c.zbuf.zmask;
+
+         // colour mask
 @@ -1998,6 +2052,12 @@ struct GSHwBackend::Impl
              RenderTarget *rsrc = nullptr;
              if (!src && !zsrc)
