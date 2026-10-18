@@ -1,0 +1,143 @@
+diff --git a/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp b/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
+index 5556200..cbef652 100644
+--- a/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
++++ b/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
+@@ -611,6 +611,9 @@ namespace ps2_stubs
+             uint64_t ptsPresentationBaseTickQ32 = 0u;
+             // GOW-Port: bytes aceptados por sceMpegDemuxPssRing, para saber si sceMpegCbNodata aporto datos.
+             uint64_t demuxedBytes = 0u;
++            // GOW-Port: bytes desde el codigo de fin de programa (0x1B9) hasta el final de lo recibido; no se
++            // dan por consumidos (ver appendPssBytes).
++            size_t bytesFromProgramEnd = 0u;
+         };
+ 
+         struct MpegStreamCallbackEvent
+@@ -1334,6 +1337,7 @@ namespace ps2_stubs
+ 
+                 if (streamId == kMpegProgramEnd)
+                 {
++                    playback.bytesFromProgramEnd = buffer.size();
+                     playback.streamEnded = true;
+                     playback.cdStreamGeneration = g_mpeg_stub_state.cdStreamGeneration;
+                     flushDecoderIfEnded(playback);
+@@ -1555,16 +1559,22 @@ namespace ps2_stubs
+             }
+         }
+ 
+-        void appendPssBytes(uint32_t mpegAddr,
+-                            MpegPlaybackState &playback,
+-                            const uint8_t *data,
+-                            size_t size,
+-                            uint32_t guestAddr,
+-                            std::vector<MpegStreamCallbackEvent> &callbackEvents)
++        // GOW-Port: devuelve los bytes consumidos. Como sceMpegDemuxPss de libmpeg, la demultiplexacion se detiene
++        // en el codigo de fin de programa (0x1B9): ni el ni lo que le sigue cuentan como consumidos, y una entrada
++        // que empieza por el devuelve 0. God of War lee el PSS en bloques de 0x4000 y el ultimo (4 bytes, el
++        // 0x1B9, y el resto del bloque con datos viejos del anillo) se daba por consumido entero: su callback
++        // sceMpegCbNodata (0x18AAA8) solo vuelve cuando la demultiplexacion devuelve 0 o hay 0x2000 bytes de video
++        // pendientes, asi que al final de algunos videos (P04MP05.PSW) pedia datos para siempre.
++        size_t appendPssBytes(uint32_t mpegAddr,
++                              MpegPlaybackState &playback,
++                              const uint8_t *data,
++                              size_t size,
++                              uint32_t guestAddr,
++                              std::vector<MpegStreamCallbackEvent> &callbackEvents)
+         {
+             if (!data || size == 0)
+             {
+-                return;
++                return 0u;
+             }
+ 
+             if (playback.sawInput && playback.cdStreamGeneration != g_mpeg_stub_state.cdStreamGeneration)
+@@ -1577,7 +1587,9 @@ namespace ps2_stubs
+                 if (playback.cdStreamGeneration == g_mpeg_stub_state.cdStreamGeneration)
+                 {
+                     playback.sawInput = true;
+-                    return;
++                    const bool startsWithProgramEnd = size >= 4u && data[0] == 0x00u && data[1] == 0x00u &&
++                                                      data[2] == 0x01u && data[3] == kMpegProgramEnd;
++                    return startsWithProgramEnd ? 0u : size;
+                 }
+ 
+                 playback = makeFreshPlaybackState();
+@@ -1595,7 +1607,9 @@ namespace ps2_stubs
+             {
+                 playback.pssGuestAddrs.push_back(guestAddr + static_cast<uint32_t>(i));
+             }
++            playback.bytesFromProgramEnd = 0u;
+             processPssBuffer(mpegAddr, playback, callbackEvents);
++            return size - std::min(size, playback.bytesFromProgramEnd);
+         }
+ 
+         size_t appendGuestBytes(uint32_t mpegAddr,
+@@ -1622,14 +1636,18 @@ namespace ps2_stubs
+                     break;
+                 }
+ 
+-                appendPssBytes(
++                const size_t accepted = appendPssBytes(
+                     mpegAddr,
+                     playback,
+                     src,
+                     chunk,
+                     curAddr,
+                     callbackEvents);
+-                copied += chunk;
++                copied += accepted;
++                if (accepted < chunk)
++                {
++                    break;
++                }
+             }
+             return copied;
+         }
+diff --git a/ps2xTest/src/ps2_runtime_expansion_tests.cpp b/ps2xTest/src/ps2_runtime_expansion_tests.cpp
+index 68feb1d..ece3af6 100644
+--- a/ps2xTest/src/ps2_runtime_expansion_tests.cpp
++++ b/ps2xTest/src/ps2_runtime_expansion_tests.cpp
+@@ -711,6 +711,44 @@ void register_ps2_runtime_expansion_tests()
+             runtime.requestStop();
+         });
+ 
++        // GOW-Port: como libmpeg, la demultiplexacion se detiene en el fin de programa (0x1B9). God of War lee el PSS
++        // en bloques de 0x4000 y su callback sceMpegCbNodata solo vuelve cuando la demultiplexacion devuelve 0; si el
++        // ultimo bloque (0x1B9 y datos viejos) se daba por consumido, pedia datos para siempre.
++        tc.Run("sceMpegDemuxPssRing stops at the program end code", [](TestCase &t)
++        {
++            PS2Runtime runtime;
++            std::vector<uint8_t> rdram(PS2_RAM_SIZE, 0u);
++            ps2_stubs::resetMpegStubState();
++            constexpr uint32_t kMpegAddr = 0x00123000u;
++            constexpr uint32_t kDataAddr = 0x00128000u;
++            const std::vector<uint8_t> payload = {0x00u, 0x00u, 0x01u, 0xB3u, 0x14u, 0x00u, 0xF0u, 0x13u};
++            const uint16_t packetLen = static_cast<uint16_t>(payload.size() + 3u);
++            std::vector<uint8_t> data = {0x00u, 0x00u, 0x01u, 0xE0u, static_cast<uint8_t>(packetLen >> 8u),
++                                         static_cast<uint8_t>(packetLen & 0xFFu), 0x80u, 0x00u, 0x00u};
++            data.insert(data.end(), payload.begin(), payload.end());
++            const size_t programEnd = data.size();
++            data.insert(data.end(), {0x00u, 0x00u, 0x01u, 0xB9u});
++            data.insert(data.end(), {0x00u, 0x00u, 0x01u, 0xE0u, 0x00u, 0x04u, 0x80u, 0x00u, 0x00u, 0x55u}); // datos viejos
++            std::memcpy(rdram.data() + kDataAddr, data.data(), data.size());
++
++            auto demux = [&](uint32_t addr, uint32_t size)
++            {
++                R5900Context ctx{};
++                setRegU32(ctx, 4, kMpegAddr);
++                setRegU32(ctx, 5, addr);
++                setRegU32(ctx, 6, size);
++                setRegU32(ctx, 7, 0u);
++                setRegU32(ctx, 8, 0xFFFFFFFFu);
++                ps2_stubs::sceMpegDemuxPssRing(rdram.data(), &ctx, &runtime);
++                return getRegS32(ctx, 2);
++            };
++            t.Equals(demux(kDataAddr, static_cast<uint32_t>(data.size())), static_cast<int32_t>(programEnd),
++                     "the bytes before the program end code should be consumed, and no more");
++            t.Equals(demux(kDataAddr + static_cast<uint32_t>(programEnd), static_cast<uint32_t>(data.size() - programEnd)), 0,
++                     "input that starts with the program end code should not be consumed");
++            runtime.requestStop();
++        });
++
+         tc.Run("sceMpegGetPicture blocks as a typed scheduler wait and resumes on EOF", [](TestCase &t)
+         {
+             PS2Runtime runtime;

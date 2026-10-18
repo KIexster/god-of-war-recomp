@@ -7491,3 +7491,20 @@ ponga a 2 el contador en 0x44360, con `DelayThread(33 ms)` entre sondeos. El ser
 `WaitEventFlag` (el emulador deja correr al resto del IOP) hasta que pasa el retraso. Prueba: "DelayThread outside a
 thread lets the IOP run for the delay". En combate en el barco no se produce ninguna de estas esperas; la intro
 sustituida ya no agota el presupuesto.
+
+### Fin de P04MP05: la demultiplexación se detiene en 0x1B9 (2026-10-18)
+
+Con la intro sustituida por P04MP05 (el juego carga la versión panorámica, `P04MP05.PSW`), el vídeo se reproducía
+hasta el final y el juego se quedaba atascado: 0 cuadros de juego hasta el final de la prueba. El hilo del EE daba
+vueltas en 0x18AC20 → 0x188848. El reproductor lee el PSS en bloques de 0x4000 a un anillo de 16 (0x188848); el último
+bloque lleva solo 4 bytes válidos (el código de fin de programa 0x1B9) y el resto son datos viejos del anillo. El
+callback `sceMpegCbNodata` del juego (0x18AAA8) llama a 0x18AC20 en modo bloqueante hasta tener 0x2000 bytes de
+vídeo pendientes, y solo envía el resto y vuelve cuando la demultiplexación devuelve 0. El `sceMpegDemuxPssRing`
+original (0x273CF0) se detiene en 0x1B9 y devuelve los bytes anteriores, y después 0. El HLE daba por consumido el
+bloque entero, así que el juego volvía a leer, recibía 0 bytes y repetía para siempre. En otros vídeos el final
+caía con más de 0x2000 bytes pendientes y no se notaba. P04MP05.PSW tiene 741 imágenes; antes se servían 739.
+
+`ps2recomp-mpeg-fin-programa.patch`: ni 0x1B9 ni lo que le sigue cuentan como consumidos, y una entrada que empieza
+por él devuelve 0. Prueba: "sceMpegDemuxPssRing stops at the program end code". Verificado con la intro sustituida:
+P04MP05 sirve las 741 imágenes, termina (`ended=1`) y la partida empieza a los 60,2 s. A01MP02 sigue terminando
+igual (998 imágenes, partida a los 66,9 s).

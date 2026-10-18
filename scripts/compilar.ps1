@@ -66,6 +66,9 @@ $cdStopPatch = Join-Path $RepoRoot 'patches\ps2recomp-cd-stop.patch'
 # GOW-Port: DelayThread fuera de un hilo deja correr el IOP durante el retraso (antes devolvía al momento y 989snd
 # se colgaba al parar el sistema de sonido).
 $iopDelayFueraPatch = Join-Path $RepoRoot 'patches\ps2recomp-iop-delay-fuera.patch'
+# GOW-Port: la demultiplexación del PSS se detiene en el fin de programa (0x1B9), como libmpeg (sin esto el juego
+# se quedaba al final de P04MP05.PSW pidiendo datos para siempre).
+$mpegFinProgramaPatch = Join-Path $RepoRoot 'patches\ps2recomp-mpeg-fin-programa.patch'
 # GOW-Port: VF0 y VI0 de VU0 son constantes (PR #79), no incluido en el runtime de Waffle565.
 $vu0Vf0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vf0.patch'
 $vu0Vi0Patch = Join-Path $RepoRoot 'patches\ps2recomp-vu0-vi0.patch'
@@ -136,6 +139,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $pruebaSinMandoPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $pantallaLatchPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $cdStopPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $iopDelayFueraPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $mpegFinProgramaPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
