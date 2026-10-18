@@ -1,0 +1,65 @@
+diff --git a/ps2xIOP/src/emulator/imports/iop_cdvd.cpp b/ps2xIOP/src/emulator/imports/iop_cdvd.cpp
+index b55641f..abf8026 100644
+--- a/ps2xIOP/src/emulator/imports/iop_cdvd.cpp
++++ b/ps2xIOP/src/emulator/imports/iop_cdvd.cpp
+@@ -37,6 +37,7 @@ namespace ps2x::iop::detail
+         constexpr uint32_t kCdvdInitExit = 5u;
+         constexpr uint32_t kCdvdCallbackRead = 1u;
+         constexpr uint32_t kCdvdCallbackSeek = 4u;
++        constexpr uint32_t kCdvdCallbackStop = 6u; // GOW-Port: SCECdFuncStop
+         constexpr uint32_t kCdvdInterruptReadyBits = 0x29u;
+         constexpr uint32_t kEventFlagMulti = 2u;
+         constexpr uint32_t kCdvdStreamTimeout = 5000u;
+@@ -283,6 +284,21 @@ namespace ps2x::iop::detail
+                 cpu.gpr[2] = 0u;
+                 return true;
+ 
++            case 15: // GOW-Port: sceCdStop. Without a drive there is nothing to stop: it completes at once (the
++                     // callback, if any, runs like sceCdSeek's). Unhandled, the IOP thread waiting for it spun forever.
++                lastError = kCdvdErrorNone;
++                signalCommandComplete();
++                if (callback.address != 0u)
++                {
++                    completionCallback = CompletionCallback{
++                        callback.address,
++                        callback.gp,
++                        kCdvdCallbackStop,
++                    };
++                }
++                cpu.gpr[2] = 1u;
++                return true;
++
+             case 12: // sceCdGetDiskType
+                 cpu.gpr[2] = kCdvdTypePs2Dvd;
+                 return true;
+diff --git a/ps2xTest/src/ps2_iop_tests.cpp b/ps2xTest/src/ps2_iop_tests.cpp
+index aabf2bb..f555972 100644
+--- a/ps2xTest/src/ps2_iop_tests.cpp
++++ b/ps2xTest/src/ps2_iop_tests.cpp
+@@ -318,6 +318,26 @@ void register_ps2_iop_tests()
+             t.IsTrue(value(6) >= 1u && value(6) <= 12u, "month should be valid");
+         });
+ 
++        // GOW-Port: sceCdStop (cdvdman:15) no estaba implementada: el hilo del IOP que la esperaba se quedaba en bucle
++        // (visto al sustituir la intro de una partida nueva por otro vídeo).
++        tc.Run("IOP sceCdStop completes at once", [](TestCase &t)
++        {
++            using namespace ps2x::iop::detail;
++            iop_test::Host host;
++            IopMemory memory;
++            IopKernel kernel(memory);
++            kernel.reset();
++            IopCdvd cdvd(host, memory, kernel);
++            cdvd.reset();
++            IopCpuState cpu{};
++            t.IsTrue(cdvd.dispatchImport(15u, cpu), "cdvdman:15 should be handled");
++            t.Equals(cpu.gpr[2], 1u, "sceCdStop should succeed");
++            IopCpuState sync{};
++            sync.gpr[4] = 1u; // sceCdSync(1): poll
++            t.IsTrue(cdvd.dispatchImport(11u, sync), "cdvdman:11 should be handled");
++            t.Equals(sync.gpr[2], 0u, "the drive should be idle after sceCdStop");
++        });
++
+         tc.Run("unknown SID remains unhandled without a loaded IRX", [](TestCase &t)
+         {
+             iop_test::Host host;
