@@ -370,6 +370,10 @@ $env:GOW_VU1_MICROCODIGO = 'D:\vu1_micro'
 .\scripts\2_compilar.cmd
 ```
 
+Con `ps2recomp-vu1-captura-nativa.patch` (2026-10-18), la captura también funciona con la VU1 nativa activa: con un
+ejecutable ya compilado con micromemorias, jugar con `GOW_VU1_CAPTURA` añade a la carpeta solo las que faltan, a la
+velocidad normal del juego. Antes solo guardaba con el motor exacto (`GOW_VU1_NATIVE_OFF=1`).
+
 Medido en el juego (`probar_rendimiento.ps1 -Renderer opengl`, cuadros por segundo del juego, entre los
 10 y los 35 s):
 
