@@ -7508,3 +7508,14 @@ caía con más de 0x2000 bytes pendientes y no se notaba. P04MP05.PSW tiene 741 
 por él devuelve 0. Prueba: "sceMpegDemuxPssRing stops at the program end code". Verificado con la intro sustituida:
 P04MP05 sirve las 741 imágenes, termina (`ended=1`) y la partida empieza a los 60,2 s. A01MP02 sigue terminando
 igual (998 imágenes, partida a los 66,9 s).
+
+### Corrección: el "Stopping sound system" de 989snd era el cierre del juego (2026-10-18)
+
+La entrada "DelayThread fuera de un hilo" atribuía la llamada RPC "Stopping sound system" a la prueba de la intro
+sustituida. La traza de una ejecución en la que aparece (A01MP02 en lugar de Semo01, con el arreglo ya aplicado)
+muestra otra cosa: el bucle principal 0x17AA18 termina porque la bandera 0x29C4D8 deja de ser 0, `main` llama al
+cierre 0x17A9B0 (que para el sonido con la orden 0x1 de 989snd) y vuelve a crt0, que llama a `Exit()`. Antes del
+arreglo, ese cierre se quedaba colgado en el IOP; ahora termina y el hilo principal queda dormido. No hay ningún
+escritor estático de 0x29C4D8 en el ELF. Se dio en 1 de 9 ejecuciones (8 sin fallo, 6 de ellas con el vigilante
+`PS2X_EE_WATCH=29C4D8:4` sin registrar ninguna escritura). Puede depender de la sustitución del vídeo del arnés
+(`GOW_MOVIE_OVERRIDE`). Pendiente: atrapar la escritura con el vigilante en una ejecución que falle.
