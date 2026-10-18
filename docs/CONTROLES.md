@@ -32,6 +32,11 @@ pantalla y la barra de tareas encima de la franja inferior de la imagen. **F11**
 `GOW_PANTALLA_COMPLETA=0` empieza en ventana, igual que pedir un tamaño con `GOW_WINDOW=<ancho>x<alto>`;
 `GOW_PANTALLA_COMPLETA=1` fuerza la pantalla completa aunque se pida un tamaño. No se usa Alt+Enter porque Enter es Start.
 
+**Panorámico.** El juego va siempre en 16:9 con su panorámico propio, que recorta la imagen arriba y abajo.
+`GOW_PANORAMICO=ampliado` activa el panorámico ampliado: la cámara recupera la altura de 4:3 y ensancha la vista a los
+lados, como el "enhanced native widescreen" de nemesis2000 y CRASHARKI para PCSX2. Se ve más escena, así que dibuja
+más: en el combate del barco la mediana bajó de 59,9 a 54,9 cuadros por segundo del juego (2026-10-18).
+
 El **depurador del runtime** ("Runtime Debugger") ya no se abre al empezar: **F1** lo muestra u oculta.
 
 ## Medidor de FPS
