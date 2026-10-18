@@ -51,12 +51,13 @@ index 0dc9480..1180a14 100644
      std::memset(m_ctx, 0, sizeof(m_ctx));
      m_gifInput = {}; // GOW-Port: reset tambien descarta etiquetas/registros incompletos.
      m_prim = {};
-@@ -730,18 +734,37 @@ void GS::refreshDisplaySnapshot()
+@@ -730,18 +734,38 @@ void GS::refreshDisplaySnapshot()
      snapshotVRAM();
  }
  
 +void GS::latchDisplayField()
 +{
++    std::lock_guard<std::recursive_mutex> stateLock(m_stateMutex);
 +    if (!m_privRegs)
 +        return;
 +    const uint64_t field[7] = {m_privRegs->pmode, m_privRegs->smode2, m_privRegs->dispfb1, m_privRegs->display1,
