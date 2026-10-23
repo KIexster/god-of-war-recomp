@@ -7715,3 +7715,20 @@ despacho de `runNative`, `XGKICK`/entrega a la etapa) y 2 esperando trabajo. El 
 (`sl.known`): fallos de predicción y de caché del despacho. Más cola en el backend (`PS2X_GS_QUEUE_CHUNKS=64`)
 no cambia la duración del trabajo (13,1 frente a 13,0 ms); lotes de etapa de 2 KB o de 64 KB son peores que los 16 KB
 actuales.
+
+### VU1 en paralelo por microprogramas: no es viable (2026-10-23)
+
+Datos de partida (combate, `GOW_VU1_STATS=1`, 60 Hz): ~1 650 microprogramas por cuadro, de ~1 730 ciclos de media,
+~2,85 M ciclos de VU1 por cuadro a 3,4 ns por ciclo (~10 ms). Reparto del hilo trabajador a 120 Hz (muestreador,
+tiempo ocupado): bloques nativos 44 %, despacho 21 %, temporización exacta 15 %, desempaquetado VIF1 11 %,
+XGKICK/GIF 4 %.
+
+Para repartir los microprogramas entre hilos, cada `MSCAL` tendría que depender solo de constantes y de su búfer
+de entrada. Diagnóstico local (VU1 interpretada, `GOW_VU1_NATIVE_OFF=1 GOW_VU1_SIN_COMPILAR=1`; registros leídos
+antes de escribirse según `decodeUpperUsage`/`decodeLowerUsage`; memoria leída que escribió otro microprograma y que
+el VIF no ha sobrescrito), 840 000 microprogramas: el 99,9 % lee registros que escribió el inmediatamente anterior
+(`vf5`, `vf4`, `vf29`, `vf15`, `vf16`, en las tres entradas 0x0000/0x0018/0x0030), y el ~78 % lee memoria del
+anterior (quadwords 656, 315, 269, 587). El valor de registro recibido del anterior es distinto del que había antes
+en el 87 % de los casos (en memoria, el 21 %), así que tampoco sirve especular con que no cambia. Los microprogramas
+forman una cadena de datos: la VU1 debe ejecutarse en orden. Para más de ~75 cuadros por segundo en combate queda
+acelerar la propia ejecución (bloques, despacho, temporización).
