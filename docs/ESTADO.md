@@ -7691,3 +7691,27 @@ cercano, operan y lo restauran; sin `-frounding-math`, GCC y Clang suponen el re
 operación fuera de ese tramo (el juego en Linux redondearía hacia cero). `ps2recomp-fpu-barrera.patch`:
 `PS2_FP_PIN` (un `asm volatile` vacío con el valor en un registro SSE) fija operandos y resultado entre los dos
 `_mm_setcsr`; en MSVC no hace nada. La prueba usa lo mismo para su división de control.
+
+### Resolución interna 3x y 4x tras descargar la GPU; cuadros en vuelo (2026-10-23)
+
+Compilación completa de `main` con VU1 e IOP nativos (`bin\wbase`), barco a 60 Hz, contador de GPU del proceso:
+con `PS2X_GS_HW_SCALE=3` (≈1440p) el juego da 60,0 cuadros por segundo y la ventana 58,7 imágenes por segundo (GPU
+88 %). El 2026-10-18, antes de la niebla en la GPU (#136) y de agrupar los volúmenes (#138), daba ~33. Con
+`PS2X_GS_HW_SCALE=4` el juego daba 59,7 pero la ventana solo 2,4 imágenes por segundo. Las pilas del hilo principal:
+`EndDrawing` → `SwapBuffers`, esperando dentro del controlador. El backend seguía enviando cuadros a una GPU más
+lenta que el juego, la cola del controlador crecía y la ventana esperaba detrás.
+
+`ps2recomp-gs-cuadros-en-vuelo.patch`: al presentar, el backend espera (100 ms como mucho) a que la GPU termine el
+cuadro presentado dos cuadros antes (`PS2X_GS_FRAMES_IN_FLIGHT`, 2 por defecto, 0 = sin límite). Con 4x: juego 49,9
+y ventana 48,5 imágenes por segundo (GPU 95 %). Con 2x: 59,9 y 59,2, igual que antes. Con `GOW_HZ=120`: 69,9
+cuadros por segundo con el límite y 70,4 sin él (dentro del ruido). Sin prueba en `ps2xTest` (backend OpenGL);
+suite 457/457.
+
+Perfil a 120 Hz (combate, `GOW_HZ=120`, ~70 cuadros por segundo), para la siguiente fase: el cuello de botella es el
+hilo trabajador de la VU1. En 16 pilas tomadas durante el juego, 14 lo muestran trabajando (bloques nativos,
+despacho de `runNative`, `XGKICK`/entrega a la etapa) y 2 esperando trabajo. El trabajo del cuadro dura ~13 ms
+(`ab_env.sh`, 3 rondas). La etapa GS procesa ~8 ms por cuadro y el backend del GS está ocupado ~24 %. En
+`runNative`, el 28 % de sus muestras está en la llamada indirecta al bloque y el 22,5 % en la lectura de la ranura
+(`sl.known`): fallos de predicción y de caché del despacho. Más cola en el backend (`PS2X_GS_QUEUE_CHUNKS=64`)
+no cambia la duración del trabajo (13,1 frente a 13,0 ms); lotes de etapa de 2 KB o de 64 KB son peores que los 16 KB
+actuales.
