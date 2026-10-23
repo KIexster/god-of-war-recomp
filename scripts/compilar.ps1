@@ -81,6 +81,8 @@ $gsZComoColorPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-z-como-color.patc
 # GOW-Port: agrupa triángulos consecutivos sin píxeles comunes en las pasadas de volúmenes de sombra, reduciendo
 # llamadas y barreras de textura sin alterar el orden de los solapamientos.
 $gsVolumenesAgrupadosPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-volumenes-agrupados.patch'
+# GOW-Port: barreras para que GCC/Clang no saquen DIV.S/SQRT.S del cambio de MXCSR a redondeo al más cercano.
+$fpuBarreraPatch = Join-Path $RepoRoot 'patches\ps2recomp-fpu-barrera.patch'
 # GOW-Port: GOW_HZ=120: el VBlank del EE el doble de frecuente (la lógica del juego hasta 120 cuadros/s); el reloj de
 # los vídeos sigue en campos NTSC y la presentación del host sube a 120.
 $ee120hzPatch = Join-Path $RepoRoot 'patches\ps2recomp-ee-120hz.patch'
@@ -165,6 +167,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $gsEglLinuxPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1CapturaNativaPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsZComoColorPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsVolumenesAgrupadosPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $fpuBarreraPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $ee120hzPatch)
 Pop-Location
 

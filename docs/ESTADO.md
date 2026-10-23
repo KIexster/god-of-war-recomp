@@ -7682,3 +7682,12 @@ no comprobaba las reanudaciones (`ctx->pc` distinto de la entrada). Si 0x188CA0 
 SP se restauraba con la función a medias, la reanudación volvía a sustituir el nombre y el marco del bucle principal
 quedaba desplazado 32 bytes. Ahora el nombre va en un búfer propio (`guestMalloc`), no se toca el SP y las
 reanudaciones llaman al original. 4 de 4 pruebas correctas a 120 Hz. Solo afectaba a `GOW_MOVIE_OVERRIDE`.
+### CI en ubuntu-26.04: DIV.S/SQRT.S fuera del cambio de redondeo (2026-10-23)
+
+La imagen `ubuntu-latest` de GitHub pasó a ubuntu-26.04 y la prueba "EE FPU div/sqrt round to nearest under a
+round-toward-zero MXCSR" empezó a fallar también en `main` (relanzada la ejecución de #138: falla igual). En local
+(WSL, GCC anterior) y en Windows pasa. `ps2FpuDivideNearest`/`ps2FpuSqrtNearest` ponen el MXCSR en redondeo al más
+cercano, operan y lo restauran; sin `-frounding-math`, GCC y Clang suponen el redondeo por defecto y pueden mover la
+operación fuera de ese tramo (el juego en Linux redondearía hacia cero). `ps2recomp-fpu-barrera.patch`:
+`PS2_FP_PIN` (un `asm volatile` vacío con el valor en un registro SSE) fija operandos y resultado entre los dos
+`_mm_setcsr`; en MSVC no hace nada. La prueba usa lo mismo para su división de control.
