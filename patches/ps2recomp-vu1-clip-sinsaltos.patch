@@ -1,0 +1,114 @@
+diff --git a/ps2xRuntime/include/runtime/ps2_vu1_native.h b/ps2xRuntime/include/runtime/ps2_vu1_native.h
+index 6b2e308..2f5b30f 100644
+--- a/ps2xRuntime/include/runtime/ps2_vu1_native.h
++++ b/ps2xRuntime/include/runtime/ps2_vu1_native.h
+@@ -416,20 +416,21 @@ namespace vu1n
+         const int o = _mm_movemask_ps(_mm_castsi128_ps(_mm_or_si128(_mm_cmpeq_epi32(_mm_and_si128(b, expMask), expMask), big))) & M;
+         return static_cast<uint32_t>(kRev4[z] | (kRev4[sg] << 4) | (kRev4[o] << 12));
+     }
++    // GOW-Port: CLIP without branches: the six judgements (x/y/z against +|w| and -|w|) come from two SSE compares; the
++    // operands are normalized (no NaN), and -|w| as a sign flip gives the same results as the scalar version, also for
++    // +-0. The scalar version branched on every judgement, which the CPU mispredicts on clipping data.
++    VU1N_INLINE uint32_t clipBits(__m128 v, __m128 t, uint32_t prev)
++    {
++        static constexpr uint8_t kSpread[8] = {0x00u, 0x01u, 0x04u, 0x05u, 0x10u, 0x11u, 0x14u, 0x15u};
++        const __m128 w = _mm_and_ps(bc<3>(t), _mm_castsi128_ps(_mm_set1_epi32(0x7FFFFFFF)));
++        const __m128 negW = _mm_xor_ps(w, _mm_castsi128_ps(_mm_set1_epi32(static_cast<int>(0x80000000u))));
++        const int above = _mm_movemask_ps(_mm_cmpgt_ps(v, w)) & 7;
++        const int below = _mm_movemask_ps(_mm_cmplt_ps(v, negW)) & 7;
++        return ((prev << 6) | kSpread[above] | (static_cast<uint32_t>(kSpread[below]) << 1)) & 0xFFFFFFu;
++    }
+     VU1N_INLINE uint32_t clipVal(const VU1State &s, int fs, int ft, uint32_t prev)
+     {
+-        alignas(16) float v[4], t[4];
+-        _mm_store_ps(v, ldn(s, fs));
+-        _mm_store_ps(t, ldn(s, ft));
+-        const float w = std::fabs(t[3]);
+-        uint32_t f = 0;
+-        if (v[0] > w) f |= 0x01u;
+-        if (v[0] < -w) f |= 0x02u;
+-        if (v[1] > w) f |= 0x04u;
+-        if (v[1] < -w) f |= 0x08u;
+-        if (v[2] > w) f |= 0x10u;
+-        if (v[2] < -w) f |= 0x20u;
+-        return ((prev << 6) | f) & 0xFFFFFFu;
++        return clipBits(ldn(s, fs), ldn(s, ft), prev);
+     }
+     VU1N_INLINE float qOperand(const VU1State &s) { return s.q; }
+ 
+@@ -601,21 +602,7 @@ namespace vu1n
+         return _mm_blendv_ps(_mm_castsi128_ps(i), _mm_castsi128_ps(_mm_set1_epi32(0x7FFFFFFF)), big);
+     }
+     inline __m128 absv(__m128 normalized) { return _mm_and_ps(normalized, _mm_castsi128_ps(_mm_set1_epi32(0x7FFFFFFF))); }
+-    inline uint32_t clipValv(__m128 vn, __m128 tn, uint32_t prev)
+-    {
+-        alignas(16) float v[4], t[4];
+-        _mm_store_ps(v, vn);
+-        _mm_store_ps(t, tn);
+-        const float w = std::fabs(t[3]);
+-        uint32_t f = 0;
+-        if (v[0] > w) f |= 0x01u;
+-        if (v[0] < -w) f |= 0x02u;
+-        if (v[1] > w) f |= 0x04u;
+-        if (v[1] < -w) f |= 0x08u;
+-        if (v[2] > w) f |= 0x10u;
+-        if (v[2] < -w) f |= 0x20u;
+-        return ((prev << 6) | f) & 0xFFFFFFu;
+-    }
++    inline uint32_t clipValv(__m128 vn, __m128 tn, uint32_t prev) { return clipBits(vn, tn, prev); }
+     inline float divv(float fsRaw, float ftRaw)
+     {
+         const float num = qnorm(fsRaw), den = qnorm(ftRaw);
+diff --git a/ps2xTest/src/ps2_vu_tests.cpp b/ps2xTest/src/ps2_vu_tests.cpp
+index 19e15e1..5e61d98 100644
+--- a/ps2xTest/src/ps2_vu_tests.cpp
++++ b/ps2xTest/src/ps2_vu_tests.cpp
+@@ -1,3 +1,6 @@
++#include "runtime/ps2_vu1_native.h"
++#include <limits>
++#include <cmath>
+ #include "MiniTest.h"
+ #include "ps2_runtime.h"
+ #include "ps2_runtime_macros.h"
+@@ -1109,6 +1112,41 @@ void register_ps2_vu_tests()
+             t.Equals(csrAfter & 0x6000u, 0x6000u, "the rounding mode is restored");
+         });
+ 
++        tc.Run("VU1 native CLIP without branches matches the scalar judgements", [](TestCase &t)
++        {
++            // GOW-Port: ps2recomp-vu1-clip-sinsaltos. clipBits (dos comparaciones SSE) debe dar los mismos seis juicios
++            // que la versión escalar, también con +-0, infinitos, NaN y valores iguales a |w|.
++            const float big = std::numeric_limits<float>::max(), inf = std::numeric_limits<float>::infinity();
++            const float nan = std::numeric_limits<float>::quiet_NaN();
++            const float values[] = {0.0f, -0.0f, 1.0f, -1.0f, 2.5f, -2.5f, big, -big, inf, -inf, nan};
++            const auto scalar = [](const float v[4], const float tt[4], uint32_t prev)
++            {
++                const float w = std::fabs(tt[3]);
++                uint32_t f = 0;
++                if (v[0] > w) f |= 0x01u;
++                if (v[0] < -w) f |= 0x02u;
++                if (v[1] > w) f |= 0x04u;
++                if (v[1] < -w) f |= 0x08u;
++                if (v[2] > w) f |= 0x10u;
++                if (v[2] < -w) f |= 0x20u;
++                return ((prev << 6) | f) & 0xFFFFFFu;
++            };
++            uint32_t mismatches = 0, checked = 0;
++            for (const float x : values)
++                for (const float y : values)
++                    for (const float w : values)
++                    {
++                        const float v[4] = {x, y, -x, 7.0f};
++                        const float tt[4] = {0.0f, 0.0f, 0.0f, w};
++                        const uint32_t prev = 0x2A5A5u + checked;
++                        const uint32_t fast = vu1n::clipBits(_mm_loadu_ps(v), _mm_loadu_ps(tt), prev);
++                        mismatches += fast != scalar(v, tt, prev);
++                        ++checked;
++                    }
++            t.Equals(mismatches, 0u, "every CLIP judgement should match the scalar version");
++            t.IsTrue(checked > 1000u, "the value grid should be covered");
++        });
++
+         tc.Run("LQ/SQ ignore the low four address bits", [](TestCase &t)
+         {
+             VuEnv env;

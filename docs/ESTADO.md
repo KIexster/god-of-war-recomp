@@ -7732,3 +7732,19 @@ anterior (quadwords 656, 315, 269, 587). El valor de registro recibido del anter
 en el 87 % de los casos (en memoria, el 21 %), así que tampoco sirve especular con que no cambia. Los microprogramas
 forman una cadena de datos: la VU1 debe ejecutarse en orden. Para más de ~75 cuadros por segundo en combate queda
 acelerar la propia ejecución (bloques, despacho, temporización).
+
+### VU1 nativa: CLIP sin saltos (2026-10-23)
+
+Perfil por líneas de los bloques más calientes en combate: en `b0d00_53ba0530`, `clipVal` era el 15 % de las
+muestras. Bajaba los dos vectores a memoria y hacía seis comparaciones escalares con salto; con datos de recorte el
+procesador falla muchas predicciones. `ps2recomp-vu1-clip-sinsaltos.patch`: `vu1n::clipBits` da los seis juicios con
+dos comparaciones SSE (`v > |w|`, `v < -|w|`), `movemask` y una tabla que intercala los bits. Con NaN las comparaciones
+SSE ordenadas dan falso como las escalares, y `-|w|` como cambio de signo da lo mismo con ±0. Prueba: "VU1 native CLIP
+without branches matches the scalar judgements" (1 331 combinaciones de ±0, ±1, ±2,5, ±FLT_MAX, ±inf y NaN).
+
+Medido: reproducción de la VU1 (`replay_vu1.sh`, 76 000 ejecuciones, 3 rondas alternas) 398,4/392,6/404,4 ms antes,
+403,4/386,3/389,6 ms después, y 0 diferencias bit a bit con lo grabado. En el juego (combate, `GOW_VU1_STATS`,
+mediana de ns por ciclo de VU1; métrica que no depende de cuánto se dibuja): 3,476/3,450 antes y 3,448/3,432/3,415
+después, ~1 %. La reproducción repite los mismos datos y el predictor de saltos se los aprende, así que subestima
+justo lo que corrige este cambio. La duración del trabajo por cuadro (`ab_traza.sh`) varía ±1 ms entre ejecuciones
+según la escena: no sirve para cambios de este tamaño.
