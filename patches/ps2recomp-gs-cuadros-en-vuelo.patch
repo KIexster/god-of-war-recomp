@@ -1,0 +1,48 @@
+diff --git a/ps2xRuntime/src/lib/gs/gpu/gs_hw_backend.cpp b/ps2xRuntime/src/lib/gs/gpu/gs_hw_backend.cpp
+index b901816..6e40619 100644
+--- a/ps2xRuntime/src/lib/gs/gpu/gs_hw_backend.cpp
++++ b/ps2xRuntime/src/lib/gs/gpu/gs_hw_backend.cpp
+@@ -508,6 +508,35 @@ struct GSHwBackend::Impl
+     bool haveShuffle = false;
+     int shuffleWhy = 0; // debug: which tryShuffle check rejected the last sprite
+     std::vector<uint32_t> triGroups; // GOW-Port: shadow-volume triangle groups (gs_tri_groups.h)
++    // GOW-Port: at most PS2X_GS_FRAMES_IN_FLIGHT (default 2, 0 = no limit) presented frames of this backend's GPU work
++    // may be queued. Without a limit, a GPU slower than the game (PS2X_GS_HW_SCALE=4 at 60 frames per second) kept
++    // receiving frames: the driver's queue grew, the host window's SwapBuffers waited behind it and the window showed
++    // 0.5-2 pictures per second while the game ran at 50-60. Each present waits (at most 100 ms) for the GPU to finish
++    // the frame presented that many frames earlier; the game then runs at the speed the GPU can draw.
++    std::vector<GLsync> frameFences;
++    size_t frameFenceNext = 0;
++
++    void limitFramesInFlight()
++    {
++        static const size_t limit = []
++        {
++            const char *v = std::getenv("PS2X_GS_FRAMES_IN_FLIGHT");
++            return v ? static_cast<size_t>(std::clamp(std::atoi(v), 0, 8)) : size_t{2};
++        }();
++        const Api &g = gl();
++        if (limit == 0u || !g.FenceSync || !g.ClientWaitSync || !g.DeleteSync)
++            return;
++        if (frameFences.size() != limit)
++            frameFences.assign(limit, nullptr);
++        GLsync &oldest = frameFences[frameFenceNext];
++        if (oldest)
++        {
++            g.ClientWaitSync(oldest, kSyncFlushCommandsBit, 100000000ull);
++            g.DeleteSync(oldest);
++        }
++        oldest = g.FenceSync(kSyncGpuCommandsComplete, 0u);
++        frameFenceNext = (frameFenceNext + 1u) % limit;
++    }
+     RenderTarget *shuffleDst = nullptr, *shuffleSrc = nullptr;
+     bool shuffleSrcZ = false;
+     std::unordered_map<uint32_t, std::vector<uint16_t>> ownerInverse; // psm -> in-page word index -> y * 64 + x
+@@ -2522,6 +2551,7 @@ PresentationFrame GSHwBackend::Present(const GSPresentationRequest &request)
+     if (!d.ensure())
+         return frame;
+     d.flushPending();
++    d.limitFramesInFlight();
+     ++d.presentCount;
+     d.dumpAfterSkip = false;
+     d.frameBatch = 0;
