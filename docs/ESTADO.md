@@ -7651,3 +7651,13 @@ grupos de 64 para mantener acotado su coste. `GOW_GS_HW_VOLGROUP=0` restaura la 
 
 La suite independiente cubre triángulos adyacentes, separados, solapados y el orden entre grupos. El efecto sobre FPS
 queda pendiente de una medición alternada dentro del juego; no se atribuye todavía una mejora de rendimiento.
+
+### CI en ubuntu-26.04: DIV.S/SQRT.S fuera del cambio de redondeo (2026-10-23)
+
+La imagen `ubuntu-latest` de GitHub pasó a ubuntu-26.04 y la prueba "EE FPU div/sqrt round to nearest under a
+round-toward-zero MXCSR" empezó a fallar también en `main` (relanzada la ejecución de #138: falla igual). En local
+(WSL, GCC anterior) y en Windows pasa. `ps2FpuDivideNearest`/`ps2FpuSqrtNearest` ponen el MXCSR en redondeo al más
+cercano, operan y lo restauran; sin `-frounding-math`, GCC y Clang suponen el redondeo por defecto y pueden mover la
+operación fuera de ese tramo (el juego en Linux redondearía hacia cero). `ps2recomp-fpu-barrera.patch`:
+`PS2_FP_PIN` (un `asm volatile` vacío con el valor en un registro SSE) fija operandos y resultado entre los dos
+`_mm_setcsr`; en MSVC no hace nada. La prueba usa lo mismo para su división de control.

@@ -1,0 +1,58 @@
+diff --git a/ps2xRuntime/include/ps2_runtime_macros.h b/ps2xRuntime/include/ps2_runtime_macros.h
+index ee0e14e..55b5827 100644
+--- a/ps2xRuntime/include/ps2_runtime_macros.h
++++ b/ps2xRuntime/include/ps2_runtime_macros.h
+@@ -236,11 +236,24 @@ constexpr uint32_t PS2_FCR31_D = 0x00010000u;
+ constexpr uint32_t PS2_FCR31_SI = 0x00000040u;
+ constexpr uint32_t PS2_FCR31_SD = 0x00000020u;
+ 
++// GOW-Port: keeps an SSE value in a register at this point: the operation that produces or uses it cannot move across
++// a neighbouring _mm_setcsr. GCC and Clang assume the default rounding mode (no -frounding-math) and may move a
++// division out of the MXCSR change around it (GCC on ubuntu-26.04 did: DIV.S rounded toward zero). MSVC does not
++// move floating-point operations across _mm_setcsr.
++#if defined(__GNUC__) || defined(__clang__)
++#define PS2_FP_PIN(value) __asm__ volatile("" : "+x"(value))
++#else
++#define PS2_FP_PIN(value) ((void)0)
++#endif
++
+ inline float ps2FpuDivideNearest(float dividend, float divisor)
+ {
+     const uint32_t csr = _mm_getcsr();
+     _mm_setcsr(csr & ~0x6000u);
+-    const float result = _mm_cvtss_f32(_mm_div_ss(_mm_set_ss(dividend), _mm_set_ss(divisor)));
++    PS2_FP_PIN(dividend);
++    PS2_FP_PIN(divisor);
++    float result = _mm_cvtss_f32(_mm_div_ss(_mm_set_ss(dividend), _mm_set_ss(divisor)));
++    PS2_FP_PIN(result);
+     _mm_setcsr(csr);
+     return result;
+ }
+@@ -249,7 +262,9 @@ inline float ps2FpuSqrtNearest(float value)
+ {
+     const uint32_t csr = _mm_getcsr();
+     _mm_setcsr(csr & ~0x6000u);
+-    const float result = _mm_cvtss_f32(_mm_sqrt_ss(_mm_set_ss(value)));
++    PS2_FP_PIN(value);
++    float result = _mm_cvtss_f32(_mm_sqrt_ss(_mm_set_ss(value)));
++    PS2_FP_PIN(result);
+     _mm_setcsr(csr);
+     return result;
+ }
+diff --git a/ps2xTest/src/ps2_vu_tests.cpp b/ps2xTest/src/ps2_vu_tests.cpp
+index 832594a..19e15e1 100644
+--- a/ps2xTest/src/ps2_vu_tests.cpp
++++ b/ps2xTest/src/ps2_vu_tests.cpp
+@@ -1097,8 +1097,10 @@ void register_ps2_vu_tests()
+             uint32_t fcr31 = 0u;
+             const float third = ps2FpuDivide(fcr31, 1.0f, 3.0f);
+             const float root5 = ps2FpuSqrt(fcr31, 5.0f);
+-            volatile float three = 3.0f;
+-            const float chopped = _mm_cvtss_f32(_mm_div_ss(_mm_set_ss(1.0f), _mm_set_ss(three)));
++            float three = 3.0f;
++            PS2_FP_PIN(three); // GOW-Port: the division stays under the round-toward-zero MXCSR (GCC may move it)
++            float chopped = _mm_cvtss_f32(_mm_div_ss(_mm_set_ss(1.0f), _mm_set_ss(three)));
++            PS2_FP_PIN(chopped);
+             const uint32_t csrAfter = _mm_getcsr();
+             _mm_setcsr(savedCsr);
+             t.Equals(bits(third), 0x3EAAAAABu, "DIV.S rounds to nearest");
