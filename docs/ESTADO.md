@@ -7748,3 +7748,23 @@ mediana de ns por ciclo de VU1; métrica que no depende de cuánto se dibuja): 3
 después, ~1 %. La reproducción repite los mismos datos y el predictor de saltos se los aprende, así que subestima
 justo lo que corrige este cambio. La duración del trabajo por cuadro (`ab_traza.sh`) varía ±1 ms entre ejecuciones
 según la escena: no sirve para cambios de este tamaño.
+
+### VU1: dos experimentos descartados (ACC local, VIF1 en paralelo) (2026-10-23)
+
+Reparto de los bloques nativos más calientes en combate (perfil por líneas de 40 bloques, agrupado por función
+auxiliar): `madd` con sus cargas (`ldAcc`, `ldn`, `bc`) ~41 %, `divOp` 8 %, `ftoi` 8 %, `itof` 6 %, entrada y salida
+de las funciones ~12 % (en Windows x64 hay que guardar `xmm6`-`xmm15`; los bloques ya se compilan con `/GS-`,
+`/arch:AVX2` y `/fp:fast`).
+
+- ACC en una variable local del bloque (generador `tools/vu1/vu1n_gen.py`: carga al entrar, guarda antes de
+  `callUpper`/`callLower`/`xgkick` y de cada salida, recarga tras `callUpper`): bit a bit idéntico (0 diferencias en
+  la reproducción), pero sin ganancia. Reproducción 392,0/388,9/383,3 frente a 388,4/395,1/391,4 ms; juego 3,46 frente
+  a 3,40 ns por ciclo. El procesador ya ocultaba la latencia del paso por memoria. No se sube.
+- VIF1 en paralelo con la VU1 (`PS2X_VU1_HILO`, local): el trabajo propio del VIF son ~1,6 ms por cuadro a 60 Hz
+  (`processVIF1Data` ~3,97 s de cada 5 s, de los que ~3,5 s son la VU1); el 97 % de los bytes desempaquetados llevan
+  `FLG` (doble búfer). Con los programas de la VU1 en un hilo propio, traspaso por espera activa, y el VIF esperando
+  antes de `MSCAL`/`MSCNT`, `FLUSH*`, `MPG`, `DIRECT*`, `MSKPATH3` y de los `UNPACK` que tocan el búfer del programa
+  en marcha, el juego funciona y se ve igual, pero va más lento: trabajo por cuadro a 120 Hz 13,59 y 13,70 ms con el
+  hilo frente a 12,96 y 13,07 ms sin él (dos rondas, orden invertido). Lo más probable: cada `MSCAL` cambia de núcleo
+  y los datos desempaquetados (~2,6 MB por cuadro) y el estado de la VU1 viajan entre las cachés de los dos núcleos.
+  No se sube.
