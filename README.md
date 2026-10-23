@@ -189,6 +189,8 @@ The game starts in borderless fullscreen; **F11** switches to a window and back 
 windowed). **F1** opens the runtime debugger.
 `GOW_PANORAMICO=ampliado` uses the enhanced widescreen (a wider view instead of cropping top and bottom, an idea by
 nemesis2000 and CRASHARKI); it draws more and costs performance.
+`GOW_HZ=120` (experimental) lets the game logic run above 60 frames per second (up to 120, depending on the scene and
+the computer) and presents up to 120 pictures per second; see [`docs/CONTROLES.md`](docs/CONTROLES.md#120-hz).
 
 **5. Native IOP (optional, as in Waffle565's port).** Compiles the game's 8 IRX modules ahead of time and
 shortens loading (gameplay starts at ~21 s instead of ~34 s). One run dumps the modules and the next build

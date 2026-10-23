@@ -11,6 +11,7 @@
 #include "runtime/gs/gs_display.h" // GOW-Port: native display state + GS FINISH handshake (step 5).
 #include <ps2_recompiled_functions.h>
 void sub_00110E40_0x110e40(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime); // GOW-Port: pose blend entry, for GOW_BLEND_DIAG
+void sub_0017D778_0x17d778(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime); // GOW-Port: frame time step, for GOW_HZ=120
 void sub_00116EF0_0x116ef0(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime); // GOW-Port: anim controller time update, for GOW_CTRL_DIAG
 void sub_0013DC78_0x13dc78(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime); // GOW-Port: game heap alloc, for GOW_HEAP_ZERO
 // GOW-Port: object guard (heap_guard): operator new/delete and the UI timeline containers
@@ -1144,7 +1145,7 @@ namespace
     void gowMovieOverrideLoad(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
         const std::vector<std::string> &list = movieOverrideList();
-        if (g_movieOverrideNext >= list.size())
+        if (ctx->pc != 0x00188CA0u || g_movieOverrideNext >= list.size())
         {
             // GOW_MPEG_DIAG: the movies the game loads itself (tools/movies.py --new-game tells them apart by this line)
             if (const uint8_t *name = padBuffer(rdram, GPR_U32(ctx, 4), 1))
@@ -1153,18 +1154,25 @@ namespace
             return;
         }
         const std::string &override = list[g_movieOverrideNext++];
-        const uint32_t sp = GPR_U32(ctx, 29);
-        const uint32_t name = sp - 32u;
+        // The name lives in a guest buffer of its own: 0x188CA0 can stop at a checkpoint and resume later (the
+        // resumption reaches this override with ctx->pc past the entry and runs the original as is), so neither the
+        // stack pointer nor anything else may change around the call. (The name used to go below sp, with sp lowered for
+        // the call and restored after it: when the call stopped half way, sp was restored under the running function,
+        // the main loop's frame shifted by 32 bytes and the game left its main loop, more often at 120 Hz.)
+        static uint32_t name = 0u;
+        if (name == 0u)
+            name = runtime->guestMalloc(32u, 16u);
         uint8_t *buffer = padBuffer(rdram, name, 32);
         const uint8_t *old = padBuffer(rdram, GPR_U32(ctx, 4), 1);
         std::fprintf(stderr, "[gow-fmv] override %zu/%zu %s -> %s\n", g_movieOverrideNext, list.size(),
                      old ? reinterpret_cast<const char *>(old) : "?", override.c_str());
-        std::memset(buffer, 0, 32);
-        std::memcpy(buffer, override.data(), override.size());
-        SET_GPR_U32(ctx, 4, name);
-        SET_GPR_U32(ctx, 29, name);
+        if (buffer)
+        {
+            std::memset(buffer, 0, 32);
+            std::memcpy(buffer, override.data(), override.size());
+            SET_GPR_U32(ctx, 4, name);
+        }
         sub_00188CA0_0x188ca0(rdram, ctx, runtime);
-        SET_GPR_U32(ctx, 29, sp);
     }
 
     // GOW-Port: GOW_BONUS_MOVIE=<NN> (debug) plays bonus movie NN (BONUS03, 06, 10, 12, 14, 16, 17, 18, 24, 25) from
@@ -1232,6 +1240,36 @@ namespace
         if (size - position < 0x10000u || (allReads && size > 0x100000u))
             std::fprintf(stderr, "[gow-fmv-read] stream=%x asked=%x size=%x position=%x -> %x flags=%x\n", stream, asked, size,
                          position, GPR_U32(ctx, 2), readGuest32(rdram, stream + 4u));
+    }
+
+    // GOW-Port: GOW_HZ=120 (EeScheduler::configuredVBlankDivisor): the game's frame time step (0x17D778 stores it at
+    // 0x29C64C, and scaled at 0x29C658) is max(VBlanks since the last frame, frames measured with a timer and clamped to
+    // [1, 4]) / 60, never under 1/60 s: at 120 Hz the game would run twice as fast. The step becomes the guest time
+    // since the last frame, clamped to [1/120, 4/60] s. When the game asks for a VBlank-only step (0x29C660 set: after a
+    // load), its own value counts VBlanks of 1/120 s and is halved.
+    void gowFrameStep120(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+    {
+        if (ctx->pc != 0x0017D778u)
+        {
+            sub_0017D778_0x17d778(rdram, ctx, runtime);
+            return;
+        }
+        const uint32_t vblankOnly = readGuest32(rdram, 0x0029C660u);
+        sub_0017D778_0x17d778(rdram, ctx, runtime);
+        static uint64_t lastCycle = 0u;
+        const uint64_t now = runtime->eeScheduler().eeCycle();
+        const float elapsed = lastCycle == 0u ? 1.0f / 120.0f
+                                              : static_cast<float>(static_cast<double>(now - lastCycle) /
+                                                                   static_cast<double>(EeScheduler::kEeClockHz));
+        lastCycle = now;
+        float step = 0.0f, scaled = 0.0f;
+        std::memcpy(&step, rdram + 0x0029C64Cu, sizeof(step));
+        std::memcpy(&scaled, rdram + 0x0029C658u, sizeof(scaled));
+        const float newStep = vblankOnly != 0u ? step * 0.5f : std::clamp(elapsed, 1.0f / 120.0f, 4.0f / 60.0f);
+        if (step > 0.0f)
+            scaled *= newStep / step;
+        std::memcpy(rdram + 0x0029C64Cu, &newStep, sizeof(newStep));
+        std::memcpy(rdram + 0x0029C658u, &scaled, sizeof(scaled));
     }
 
     // GOW_SND_CALLLOG=1 (debug): the game's sound-group pause/continue (0x175148(pause, mask)) with its caller
@@ -2132,6 +2170,8 @@ namespace
             if (std::getenv("GOW_MPEG_DIAG"))
                 runtime.replaceFunction(0x0017AFE0u, gowDiagStreamRead);
         }
+        if (EeScheduler::configuredVBlankDivisor() == 2u)
+            runtime.replaceFunction(0x0017D778u, gowFrameStep120);
         if (std::getenv("GOW_RENDER_DIAG"))
             for (const uint32_t address : {0x001262C8u, 0x00126310u, 0x0012633Cu, 0x00126368u,
                                            0x00126428u, 0x00126478u, 0x00126528u})

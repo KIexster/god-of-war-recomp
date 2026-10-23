@@ -7652,6 +7652,36 @@ grupos de 64 para mantener acotado su coste. `GOW_GS_HW_VOLGROUP=0` restaura la 
 La suite independiente cubre triángulos adyacentes, separados, solapados y el orden entre grupos. El efecto sobre FPS
 queda pendiente de una medición alternada dentro del juego; no se atribuye todavía una mejora de rendimiento.
 
+### Medida de la agrupación de volúmenes de sombra (2026-10-23)
+
+Pendiente de la entrada anterior. Compilación completa de `main` (`bin\wmain`), barco a 60 Hz, contador "GPU Engine"
+(motor 3D) del proceso durante 8 s, dos rondas alternas: `GOW_GS_HW_VOLGROUP=1` 52,2 % y 51,2 %; `=0` 78,6 % y
+77,2 %. El juego, a 59,9-60,0 cuadros por segundo en los cuatro casos. Antes de agrupar: ~180 000 barreras de textura
+y llamadas de dibujo por segundo, el 99 % de los volúmenes (contador temporal).
+
+### Lógica del juego a 120 Hz: `GOW_HZ=120` (2026-10-23)
+
+`ps2recomp-ee-120hz.patch` (último de la pila): `EeScheduler::configuredVBlankDivisor()` lee `GOW_HZ` (2 con 120, si
+no 1). El VBlank del EE y los puntos de ritmo usan el campo NTSC dividido por él; `eeCycle()` da el reloj del EE.
+El HLE de MPEG cuenta el tiempo de los vídeos en campos NTSC (`mpegFieldTickQ32`) y convierte sus esperas a VBlanks
+del EE. La presentación del host usa `SetTargetFPS(60 × divisor)`. En `src/gow_overrides.cpp`, `gowFrameStep120`
+sustituye el paso de tiempo de 0x17D778 por el tiempo del invitado transcurrido (ver "Experimento: lógica del juego a
+120 Hz"). Prueba: "GOW_HZ=120 halves the EE VBlank period". Suite 457/457.
+
+Medido con `bin\w120` (compilación completa de `main` más este cambio), combate del barco: velocidad del juego
+(`GOW_DELTA_DIAG`) 0,995-1,003, juego 65-73 cuadros por segundo, presentación 119,6 por segundo con 78-112 imágenes
+distintas, GPU 65 %. A01MP02 en lugar de la intro: entre las imágenes 270 y 870 pasan 20,02 s de vídeo y 20,02 s
+reales, 998 imágenes, y la partida empieza a los 66,7 s (66,98 s a 60 Hz).
+
+### Corrección: el cierre del juego en las pruebas de vídeos era un fallo del arnés (2026-10-23)
+
+Con `GOW_HZ=120` el cierre (bucle principal terminado, `Exit()`) ocurría en 2 de 3 pruebas con
+`GOW_MOVIE_OVERRIDE`, así que la hipótesis del menú "Quit Game" no se sostiene. La causa era `gowMovieOverrideLoad`:
+ponía el nombre del vídeo bajo el puntero de pila, bajaba el SP para la llamada a 0x188CA0 y lo restauraba después, y
+no comprobaba las reanudaciones (`ctx->pc` distinto de la entrada). Si 0x188CA0 se detenía en un punto de control, el
+SP se restauraba con la función a medias, la reanudación volvía a sustituir el nombre y el marco del bucle principal
+quedaba desplazado 32 bytes. Ahora el nombre va en un búfer propio (`guestMalloc`), no se toca el SP y las
+reanudaciones llaman al original. 4 de 4 pruebas correctas a 120 Hz. Solo afectaba a `GOW_MOVIE_OVERRIDE`.
 ### CI en ubuntu-26.04: DIV.S/SQRT.S fuera del cambio de redondeo (2026-10-23)
 
 La imagen `ubuntu-latest` de GitHub pasó a ubuntu-26.04 y la prueba "EE FPU div/sqrt round to nearest under a
