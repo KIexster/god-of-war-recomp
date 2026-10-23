@@ -37,6 +37,16 @@ pantalla y la barra de tareas encima de la franja inferior de la imagen. **F11**
 lados, como el "enhanced native widescreen" de nemesis2000 y CRASHARKI para PCSX2. Se ve más escena, así que dibuja
 más: en el combate del barco la mediana bajó de 59,9 a 54,9 cuadros por segundo del juego (2026-10-18).
 
+## 120 Hz
+
+`GOW_HZ=120` (experimental) genera el VBlank del EE cada 8,34 ms en lugar de cada 16,68 ms: el bucle del juego, que
+espera un VBlank por cuadro, puede dar hasta 120 vueltas por segundo. El paso de tiempo del juego (0x17D778) pasa a
+ser el tiempo del invitado transcurrido, limitado a [1/120, 4/60] s, así que la velocidad no cambia. El IOP, el sonido
+y el reloj de los vídeos siguen en campos NTSC, y la presentación del host sube a 120 imágenes por segundo (sin
+sincronía vertical: en un monitor de 60 Hz se ven cortes de imagen). En el combate del barco el juego da 65-73
+cuadros por segundo en un Ryzen con RX 5700 XT; en escenas ligeras, 120. Sin revisar a fondo: física, cinemáticas en
+el motor y todos los niveles.
+
 El **depurador del runtime** ("Runtime Debugger") ya no se abre al empezar: **F1** lo muestra u oculta.
 
 ## Medidor de FPS

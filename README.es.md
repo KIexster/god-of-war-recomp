@@ -190,6 +190,8 @@ El juego empieza en pantalla completa sin bordes; **F11** cambia a ventana y vue
 en ventana). **F1** abre el depurador del runtime.
 `GOW_PANORAMICO=ampliado` usa el panorámico ampliado (vista más ancha en lugar de recortada arriba y abajo, idea de
 nemesis2000 y CRASHARKI); dibuja más y cuesta rendimiento.
+`GOW_HZ=120` (experimental) hace que la lógica del juego pueda ir a más de 60 cuadros por segundo (hasta 120, según la
+escena y el equipo) y presenta hasta 120 imágenes por segundo; ver [`docs/CONTROLES.md`](docs/CONTROLES.md#120-hz).
 
 **5. IOP nativo (opcional, como en el port de Waffle565).** Compila por adelantado los 8 módulos IRX del juego
 y acorta la carga (la partida empieza a ~21 s en lugar de ~34 s). Una ejecución vuelca los módulos y la

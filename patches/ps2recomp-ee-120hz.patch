@@ -1,0 +1,205 @@
+diff --git a/ps2xRuntime/include/runtime/ee_scheduler.h b/ps2xRuntime/include/runtime/ee_scheduler.h
+index b4d6029..01973c5 100644
+--- a/ps2xRuntime/include/runtime/ee_scheduler.h
++++ b/ps2xRuntime/include/runtime/ee_scheduler.h
+@@ -295,6 +295,14 @@ public:
+         return checkpointDueSlow();
+     }
+     void accountCycles(uint32_t cycles) noexcept;
++    // GOW-Port: EE cycles run so far (guest time).
++    [[nodiscard]] uint64_t eeCycle() const noexcept { return m_eeCycle; }
++    // GOW-Port: GOW_HZ=120 doubles the EE VBlank rate (the game's frame loop runs twice as often; its time step is
++    // adjusted in src/gow_overrides.cpp). 1 = the NTSC field (59.94 Hz), 2 = twice that. setVBlankDivisor applies at the
++    // next reset (tests). The IOP and the movie clock keep the NTSC field.
++    [[nodiscard]] static uint32_t configuredVBlankDivisor() noexcept;
++    [[nodiscard]] uint32_t vblankDivisor() const noexcept { return m_vblankDivisor; }
++    void setVBlankDivisor(uint32_t divisor) noexcept { m_vblankDivisor = divisor == 2u ? 2u : 1u; }
+     // GOW-Port: hands the EE cycles counted since the last call to the EE timers and the IOP (EE executor only).
+     void syncAccountedCycles() noexcept;
+     // GOW-Port: the next checkpoint takes the slow path (something the fast-path limit depends on has changed).
+@@ -463,6 +471,7 @@ private:
+     uint64_t m_sliceEndCycle = kDefaultTimeSliceCycles;
+     uint64_t m_nextHostCatchUpCycle = 0; // GOW-Port: EE cycle of the next comparison of the EE clock with the host clock
+     uint64_t m_accountedCycle = 0;       // GOW-Port: EE cycles already handed to the EE timers and the IOP
++    uint32_t m_vblankDivisor = configuredVBlankDivisor(); // GOW-Port: see configuredVBlankDivisor
+     uint64_t m_fastLimitCycle = 0;       // GOW-Port: checkpointDue's fast path runs below this EE cycle
+     std::thread::id m_executorThread{};
+     std::atomic<bool> m_running{false};
+diff --git a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+index ed0d41e..37cc3e3 100644
+--- a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
++++ b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+@@ -36,7 +36,7 @@ namespace
+     constexpr uint32_t WEF_CLEAR_ALL = 0x20u;
+     // GOW-Port: campo NTSC real, 60/1,001 Hz (59,94; 16 683,35 µs). Con 16 667 µs (59,9988 Hz) los vídeos se presentaban
+     // a 30,00 imágenes/s en lugar de 29,97 y el audio se quedaba atrás un 0,1 % (0,44 s en BONUS06, 0,8 s en BONUS03).
+-    constexpr auto kVBlankPeriod = std::chrono::nanoseconds(16683350);
++    constexpr auto kNtscFieldPeriod = std::chrono::nanoseconds(16683350);
+     constexpr auto kVBlankDuration = std::chrono::microseconds(500);
+     constexpr uint64_t kAlarmTickMicroseconds = 64u;
+     constexpr uint32_t kDebugPublishDispatchInterval = 4096u;
+@@ -55,7 +55,7 @@ namespace
+         return std::chrono::seconds(wholeSeconds) + std::chrono::nanoseconds(remainingNanoseconds);
+     }
+ 
+-    constexpr uint64_t kVBlankPeriodCycles = EeScheduler::kEeClockHz * 1001ull / 60000ull; // GOW-Port: campo NTSC (59,94 Hz)
++    constexpr uint64_t kNtscFieldCycles = EeScheduler::kEeClockHz * 1001ull / 60000ull; // GOW-Port: campo NTSC (59,94 Hz)
+     constexpr uint64_t kVBlankDurationCycles = microsecondsToEeCycles(500u);
+     constexpr uint64_t kAlarmTickCycles = microsecondsToEeCycles(kAlarmTickMicroseconds);
+     // GOW-Port: every this many checkpoints (~0.1 ms of host time in play) the EE clock catches up with the host clock
+@@ -83,6 +83,16 @@ namespace
+     }
+ }
+ 
++uint32_t EeScheduler::configuredVBlankDivisor() noexcept
++{
++    static const uint32_t divisor = []
++    {
++        const char *value = std::getenv("GOW_HZ");
++        return (value && std::atoi(value) == 120) ? 2u : 1u;
++    }();
++    return divisor;
++}
++
+ EeScheduler::EeScheduler(PS2Runtime &runtime)
+     : m_runtime(runtime)
+ {
+@@ -171,8 +181,8 @@ void EeScheduler::reset(uint8_t *rdram, const R5900Context &mainContext)
+     main.status = EeThreadStatus::Ready;
+     m_threads.emplace(main.id, std::move(main));
+     m_readyQueues[0].push_back(kMainThreadId);
+-    scheduleEvent(m_eeCycle + kVBlankPeriodCycles,
+-                  std::chrono::steady_clock::now() + kVBlankPeriod,
++    scheduleEvent(m_eeCycle + kNtscFieldCycles / m_vblankDivisor,
++                  std::chrono::steady_clock::now() + kNtscFieldPeriod / m_vblankDivisor,
+                   EeEvent{EeEventType::VBlankStart, 0, 0});
+     publishSnapshot();
+ }
+@@ -395,7 +405,7 @@ bool EeScheduler::checkpointDueSlow() noexcept
+     if (m_eeCycle >= m_nextHostCatchUpCycle)
+     {
+         m_nextHostCatchUpCycle = m_eeCycle + static_cast<uint64_t>(kHostCatchUpEvery) * kGeneratedCheckpointCycles;
+-        catchUpToHost(kVBlankPeriodCycles, kVBlankPeriod); // up to one field of lag is left alone (frame timing)
++        catchUpToHost(kNtscFieldCycles / m_vblankDivisor, kNtscFieldPeriod / m_vblankDivisor); // up to one field of lag is left alone (frame timing)
+     }
+ 
+     bool due = false;
+@@ -2018,8 +2028,10 @@ void EeScheduler::processDueDeadlines()
+                 scheduleEvent(scheduled.deadlineCycle + kVBlankDurationCycles,
+                               scheduled.hostDeadline + kVBlankDuration,
+                               EeEvent{EeEventType::VBlankEnd, 0, m_vsyncTick + 1u});
+-                scheduleEvent(scheduled.deadlineCycle + kVBlankPeriodCycles,
+-                              scheduled.hostDeadline + kVBlankPeriod,
++                const uint64_t periodCycles = kNtscFieldCycles / m_vblankDivisor;
++                const auto period = kNtscFieldPeriod / m_vblankDivisor;
++                scheduleEvent(scheduled.deadlineCycle + periodCycles,
++                              scheduled.hostDeadline + period,
+                               EeEvent{EeEventType::VBlankStart, 0, 0});
+                 // GOW-Port: pacing points on the VBlank grid (cycle and host deadline in lockstep, no-op event). The
+                 // guest clock may not run ahead of the wall clock by more than 1/64 field inside a frame: recompiled
+@@ -2027,8 +2039,8 @@ void EeScheduler::processDueDeadlines()
+                 // faster than real time, the FINISH and the game's frame-clock read land late in guest time and its
+                 // frame step (>= 1 field) ran 3 % fast at 60 fps (docs/performance.md, game speed).
+                 for (uint64_t k = 1; k < kPaceSteps; ++k)
+-                    scheduleEvent(scheduled.deadlineCycle + kVBlankPeriodCycles * k / kPaceSteps,
+-                                  scheduled.hostDeadline + kVBlankPeriod * k / kPaceSteps,
++                    scheduleEvent(scheduled.deadlineCycle + periodCycles * k / kPaceSteps,
++                                  scheduled.hostDeadline + period * k / kPaceSteps,
+                                   EeEvent{EeEventType::ExternalWake, 0xFFFFFFFFu, ~0ull});
+             }
+             processEvent(scheduled.event);
+diff --git a/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp b/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
+index cbef652..ba95f4c 100644
+--- a/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
++++ b/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
+@@ -2618,6 +2618,19 @@ namespace ps2_stubs
+         scheduler.invokeCurrent(std::move(invocation));
+     }
+ 
++    // GOW-Port: the movie clock counts NTSC fields (Q32), also when the EE VBlank runs faster (GOW_HZ=120).
++    static uint64_t mpegFieldTickQ32(PS2Runtime *runtime)
++    {
++        EeScheduler &scheduler = runtime->eeScheduler();
++        return (scheduler.currentVSyncTick() << 32u) / scheduler.vblankDivisor();
++    }
++
++    // GOW-Port: the EE VBlank tick at which NTSC field `field` starts.
++    static uint64_t mpegVSyncTickForField(PS2Runtime *runtime, uint64_t field)
++    {
++        return field * runtime->eeScheduler().vblankDivisor();
++    }
++
+     void sceMpegGetPicture(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+     {
+         MpegTimer timer{g_mpegGetMs};
+@@ -2674,8 +2687,8 @@ namespace ps2_stubs
+ 
+             if (!playback.decodedFrames.empty())
+             {
+-                const uint64_t currentTick = runtime->eeScheduler().currentVSyncTick();
+-                const uint64_t currentTickQ32 = currentTick << 32u;
++                const uint64_t currentTickQ32 = mpegFieldTickQ32(runtime);
++                const uint64_t currentTick = currentTickQ32 >> 32u;
+                 const MpegDecodedFrame &nextFrame = playback.decodedFrames.front();
+                 const uint64_t frameIntervalQ32 = decodedFrameIntervalQ32(playback, nextFrame);
+                 uint64_t presentationTargetQ32 = presentationTickForFrame(playback, nextFrame, currentTickQ32);
+@@ -2704,7 +2717,7 @@ namespace ps2_stubs
+                                      static_cast<long long>(playback.firstPresentedPts90k), playback.decodedFrames.size());
+                     lock.unlock();
+                     runtime->eeScheduler().waitVSync(
+-                        eligibleTick - 1u,
++                        mpegVSyncTickForField(runtime, eligibleTick) - 1u,
+                         -1,
+                         [rdram, runtime](R5900Context &resumeContext)
+                         {
+@@ -2904,7 +2917,7 @@ namespace ps2_stubs
+                            (playback.streamEnded || (playback.decoderFailed && playback.sawInput));
+         const uint64_t presentationEnd = playback.presentationEndTickQ32;
+         const uint64_t currentTickQ32 = runtime != nullptr
+-                                            ? (runtime->eeScheduler().currentVSyncTick() << 32u)
++                                            ? mpegFieldTickQ32(runtime)
+                                             : std::numeric_limits<uint64_t>::max();
+         const bool presentationComplete =
+             presentationEnd == std::numeric_limits<uint64_t>::max() ||
+diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
+index e65bfcd..14f9803 100644
+--- a/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -898,7 +898,7 @@ bool PS2Runtime::initialize(const char *title)
+         m_audioBackend.setAudioReady(IsAudioDeviceReady());
+         startSpu2Audio(m_iopSubsystem.get()); // GOW-Port
+ #endif
+-        SetTargetFPS(60);
++        SetTargetFPS(60 * static_cast<int>(EeScheduler::configuredVBlankDivisor())); // GOW-Port: GOW_HZ=120
+         if (m_debugUiInitCallback)
+         {
+             m_debugUiInitCallback(*this, m_debugUiUserData);
+diff --git a/ps2xTest/src/ps2_runtime_interrupt_tests.cpp b/ps2xTest/src/ps2_runtime_interrupt_tests.cpp
+index d29e543..16b18a2 100644
+--- a/ps2xTest/src/ps2_runtime_interrupt_tests.cpp
++++ b/ps2xTest/src/ps2_runtime_interrupt_tests.cpp
+@@ -690,6 +690,24 @@ void register_ps2_runtime_interrupt_tests()
+                      "1000 checkpoints of 16 EE cycles should count 8000 BUSCLK ticks");
+         });
+ 
++        tc.Run("GOW_HZ=120 halves the EE VBlank period", [](TestCase &t)
++        {
++            // GOW-Port: ps2recomp-ee-120hz. Con el divisor 2 el primer VBlank del EE llega tras medio campo NTSC.
++            TestEnv env;
++            t.IsTrue(env.runtime.memory().initialize(), "runtime memory initialize should succeed");
++            env.runtime.registerFunction(kCheckpointCostPc, schedulerCheckpointCost);
++            g_checkpointCalls = 0u;
++            R5900Context mainContext{};
++            mainContext.pc = kCheckpointCostPc;
++            env.runtime.eeScheduler().setVBlankDivisor(2u);
++            env.runtime.eeScheduler().reset(env.rdram.data(), mainContext);
++            env.runtime.eeScheduler().run();
++            const uint64_t half = EeScheduler::kEeClockHz * 1001ull / 60000ull / 2u;
++            const uint64_t charged = g_checkpointCalls * 16u + EeScheduler::kGuestDispatchCycles;
++            t.IsTrue(charged >= half && charged < half + 32u, "the first VBlank should be due after half an NTSC field");
++            t.Equals(env.runtime.eeScheduler().vblankDivisor(), 2u, "the divisor should be kept");
++        });
++
+         tc.Run("a slow guest still reaches the first VBlank on host time", [](TestCase &t)
+         {
+             // GOW-Port: ps2recomp-ee-ponerse-al-dia. Si el EE gasta menos ciclos que el tiempo real (16 por punto de
