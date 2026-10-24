@@ -7768,3 +7768,24 @@ de las funciones ~12 % (en Windows x64 hay que guardar `xmm6`-`xmm15`; los bloqu
   hilo frente a 12,96 y 13,07 ms sin él (dos rondas, orden invertido). Lo más probable: cada `MSCAL` cambia de núcleo
   y los datos desempaquetados (~2,6 MB por cuadro) y el estado de la VU1 viajan entre las cachés de los dos núcleos.
   No se sube.
+
+### Bodega del barco, prioridad de hilos y UNPACK con SSE4.1 (2026-10-24)
+
+- Bodega del barco (la zona donde una partida del usuario del 17-10 bajaba a 40-46 FPS): es `ATHN01B`, a la que se
+  llega con `GOW_WARP=ATHN01B` (las zonas `ATHN01*` son el barco; recorrido de 35 s por zona con capturas). Con
+  `main` (`bin\wfin`) y 190 s en la zona: a 60 Hz, media 59,9 por segundo según `[gow-fps]` (percentil 10: 59,8;
+  mínimo de un segundo: 56,0); con `GOW_HZ=120`, 73,4 (mínimo 63,6). La caída de aquella partida ya no se reproduce.
+- `GOW_HZ=120`: ráfaga de 8 capturas del GS cada 20 ms en combate: ningún cuadro a medio dibujar.
+- Prioridad `AboveNormal` para el trabajador de la VU1 (`gsWorkerLoop`) y la etapa GS, como el hilo del backend:
+  A/B a 120 Hz, 3 rondas alternas (`GOW_PRIO_OFF` como interruptor, mismo binario), trabajo por cuadro de 13,76,
+  12,97 y 12,80 ms sin el cambio frente a 12,73, 14,04 y 10,33 ms con él. Sin diferencia clara; no se sube.
+- UNPACK de 8 y 16 bits sin máscara con SSE4.1 (`pmovzx`/`pmovsx` de todas las componentes a la vez, en lugar de
+  la versión escalar componente a componente): misma salida (prueba "VIF1 UNPACK fast paths match the generic path",
+  suite completa en WSL 458/458), pero más lento. Perfil por muestreo (`muestrear4`, 95 s en `ATHN01B` a 120 Hz, dos
+  ejecuciones de cada versión): `processVIF1Data` con sus lambdas es el 9,0 y el 9,1 % de las muestras del hilo de
+  la VU1 sin el cambio, y el 13,0 y el 12,9 % con él (MSVC no integra la función por formato y la versión escalar ya
+  salía bien compilada). El trabajo por cuadro (`ab_traza.sh`, 4 rondas) no lo distingue: varía ±1 ms entre
+  ejecuciones. No se sube. Aunque la versión vectorial fuera el doble de rápida, el UNPACK de 8 y 16 bits es menos
+  del 4 % de ese hilo (~0,25 ms por cuadro).
+- Las pruebas locales con el juego se lanzan con `GOW_AUDIO=0` (sin sonido; la grabación con `GOW_AUDIO_PCM` sigue
+  funcionando).
