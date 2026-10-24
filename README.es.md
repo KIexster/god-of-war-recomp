@@ -6,12 +6,13 @@
 
 **Port nativo para PC de *God of War* (PS2, NTSC-U `SCUS-97399`) mediante recompilación estática de MIPS R5900 a C++.**
 
-![Plataforma](https://img.shields.io/badge/plataforma-Windows%20x64-0078D6?logo=windows&logoColor=white)
+![Plataforma](https://img.shields.io/badge/plataforma-Windows%20x64%20%7C%20Linux%20x64-0078D6)
 ![Lenguaje](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white)
 ![Build](https://img.shields.io/badge/build-CMake%20%2B%20Ninja-064F8C?logo=cmake&logoColor=white)
 ![Basado en](https://img.shields.io/badge/basado%20en-PS2Recomp-8A2BE2)
 ![Estado](https://img.shields.io/badge/estado-experimental-orange)
 [![Pruebas](https://github.com/KIexster/god-of-war-recomp/actions/workflows/pruebas.yml/badge.svg)](https://github.com/KIexster/god-of-war-recomp/actions/workflows/pruebas.yml)
+[![Listado en PlayPorted](https://playported.com/badge.svg)](https://playported.com/ports/337-god-of-war/)
 
 </div>
 
