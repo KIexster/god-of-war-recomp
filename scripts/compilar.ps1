@@ -91,6 +91,8 @@ $ee120hzPatch = Join-Path $RepoRoot 'patches\ps2recomp-ee-120hz.patch'
 $gsCuadrosEnVueloPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-cuadros-en-vuelo.patch'
 # GOW-Port: CLIP de la VU1 nativa sin saltos (dos comparaciones SSE en lugar de seis ramas).
 $vu1ClipSinSaltosPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-clip-sinsaltos.patch'
+# GOW-Port: madd/msub de la VU1 nativa devuelven el desbordamiento ya en +-FLT_MAX (los bloques no repiten clampv).
+$vu1MaddSaturadoPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-madd-saturado.patch'
 # GOW-Port: contexto OpenGL del GS en Linux con EGL (antes solo WGL: en Linux la ventana quedaba magenta).
 $gsEglLinuxPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-egl-linux.patch'
 # GOW-Port: GOW_VU1_CAPTURA también con la VU1 nativa activa (antes solo guardaba con GOW_VU1_NATIVE_OFF=1, a ~6 FPS).
@@ -176,6 +178,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $fpuBarreraPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $ee120hzPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsCuadrosEnVueloPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1ClipSinSaltosPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1MaddSaturadoPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
