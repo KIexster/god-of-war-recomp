@@ -7789,3 +7789,23 @@ de las funciones ~12 % (en Windows x64 hay que guardar `xmm6`-`xmm15`; los bloqu
   del 4 % de ese hilo (~0,25 ms por cuadro).
 - Las pruebas locales con el juego se lanzan con `GOW_AUDIO=0` (sin sonido; la grabación con `GOW_AUDIO_PCM` sigue
   funcionando).
+
+### VU1 nativa: sin clampv tras las FMAC (2026-10-24)
+
+Cada resultado de `add`/`sub`/`mul`/`madd`/`msub` de los bloques nativos pasaba por `vu1n::clampv` (un `max` y un
+`min`: unos 8 ciclos más en la cadena de dependencias, que en la VU1 suele ir por ACC). No cambiaba nada: los
+operandos ya son finitos (`ldn` normaliza Inf/NaN a +-FLT_MAX, y los registros del conjunto `clean` son resultados
+de FMAC del propio bloque) y los bloques corren con redondeo hacia cero, así que una suma, resta o producto de
+finitos no da Inf ni NaN (el desbordamiento se queda en FLT_MAX). La única excepción era la vía lenta de `madd`
+(`maddWide`, en doble precisión), que devolvía +-inf a propósito.
+
+- `tools/vu1/vu1n_gen.py`: solo emite `clampv` en `add`/`sub`/`mul` con I o Q como operando (se leen sin normalizar).
+- `patches/ps2recomp-vu1-madd-saturado.patch`: `maddWide` devuelve su resultado ya pasado por `clampv`. `macVal`
+  cuenta 0x7F7FFFFF como desbordamiento, así que los flags MAC son los mismos que con el infinito. Prueba: "VU1
+  native madd returns overflows clamped with the same MAC flags".
+- Contadores en combate a 120 Hz (`GOW_VU1N_DIAG`, temporales): 22,5 M bloques nativos por segundo, 8,5 pares de
+  media; el 15 % son bucles sobre sí mismos, el 9,7 % pasan por `blockTiming` y el 48 % dejan cola de flags.
+  ~33 ns por bloque, de los que el despacho en `runNative` es ~7.
+- Medido: reproducción de la VU1 (`replay_vu1.sh`, 76 000 ejecuciones, 3 rondas alternas) 396,6/395,7/392,6 ms
+  antes y 386,3/384,6/383,7 ms después (-2,6 %), 0 diferencias bit a bit en los 4 000 registros. En el juego
+  (combate, `GOW_VU1_STATS`, mediana de ns por ciclo de VU1): 3,466 y 3,427 antes, 3,374 y 3,380 después (-2 %).

@@ -1,0 +1,46 @@
+diff --git a/ps2xRuntime/include/runtime/ps2_vu1_native.h b/ps2xRuntime/include/runtime/ps2_vu1_native.h
+index 2f5b30f..30b0c0a 100644
+--- a/ps2xRuntime/include/runtime/ps2_vu1_native.h
++++ b/ps2xRuntime/include/runtime/ps2_vu1_native.h
+@@ -377,7 +377,9 @@ namespace vu1n
+                                  : static_cast<double>(fa[i]) + static_cast<double>(fb[i]) * static_cast<double>(fc[i]);
+             out[i] = x > static_cast<double>(FLT_MAX) ? HUGE_VALF : x < -static_cast<double>(FLT_MAX) ? -HUGE_VALF : static_cast<float>(x);
+         }
+-        return _mm_load_ps(out);
++        // GOW-Port: returned already clamped (the blocks used to clamp every madd result afterwards; vu1n_gen.py no
++        // longer does). macVal counts 0x7F7FFFFF as overflow, so the flags of a clamped overflow are the same.
++        return clampv(_mm_load_ps(out));
+     }
+     template <bool Sub>
+     VU1N_INLINE __m128 madd(__m128 acc, __m128 a, __m128 b)
+diff --git a/ps2xTest/src/ps2_vu_tests.cpp b/ps2xTest/src/ps2_vu_tests.cpp
+index 5e61d98..bf09ed3 100644
+--- a/ps2xTest/src/ps2_vu_tests.cpp
++++ b/ps2xTest/src/ps2_vu_tests.cpp
+@@ -1147,6 +1147,26 @@ void register_ps2_vu_tests()
+             t.IsTrue(checked > 1000u, "the value grid should be covered");
+         });
+ 
++        tc.Run("VU1 native madd returns overflows clamped with the same MAC flags", [](TestCase &t)
++        {
++            // GOW-Port: ps2recomp-vu1-madd-saturado. Los bloques nativos ya no pasan el resultado de madd/msub por
++            // clampv: el desbordamiento sale de maddWide ya en +-FLT_MAX, con los mismos flags MAC que el infinito.
++            const float big = std::numeric_limits<float>::max(), inf = std::numeric_limits<float>::infinity();
++            const __m128 acc = _mm_setr_ps(big, -big, 1.0f, -big);
++            const __m128 a = _mm_setr_ps(big, big, 2.0f, big);
++            const __m128 b = _mm_setr_ps(2.0f, -2.0f, 3.0f, 1.0f);
++            alignas(16) float out[4];
++            _mm_store_ps(out, vu1n::madd<false>(acc, a, b));
++            t.IsTrue(out[0] == big && out[1] == -big, "an overflowing madd should come back as +-FLT_MAX");
++            t.IsTrue(out[2] == 7.0f && out[3] == 0.0f, "the other lanes keep the exact sum");
++            const uint32_t flags = vu1n::macVal<15>(_mm_load_ps(out));
++            const uint32_t flagsInf = vu1n::macVal<15>(_mm_setr_ps(inf, -inf, 7.0f, 0.0f));
++            t.Equals(flags, flagsInf, "the MAC flags of the clamped result should match the unclamped ones");
++            _mm_store_ps(out, vu1n::madd<true>(_mm_setr_ps(-big, 0.0f, 0.0f, 0.0f), _mm_setr_ps(big, 0.0f, 0.0f, 0.0f),
++                                               _mm_setr_ps(4.0f, 0.0f, 0.0f, 0.0f)));
++            t.IsTrue(out[0] == -big, "an overflowing msub should come back as -FLT_MAX");
++        });
++
+         tc.Run("LQ/SQ ignore the low four address bits", [](TestCase &t)
+         {
+             VuEnv env;

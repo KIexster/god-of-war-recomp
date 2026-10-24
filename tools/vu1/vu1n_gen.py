@@ -203,7 +203,10 @@ def emit_upper(u, pc, idx, mac_var, clip_var, prev_clip, clean=frozenset()):
     if kind in ('add', 'sub', 'mul', 'madd', 'msub') and mac_var:
         out.append(f"const uint32_t {mac_var} = vu1n::macVal<{m}>(r{idx});")
         out.append(f"const __m128 q{idx} = r{idx};  // unclamped: flags computed later if it outlives the block")
-    if kind not in ('max', 'min', 'mini'):
+    # GOW-Port: the operands are finite (ldn, or registers known clean) and the blocks run with round toward zero, so
+    # add/sub/mul cannot give Inf/NaN (an overflow stays at FLT_MAX) and madd/msub saturate in maddWide: the clamp is
+    # only needed when I or Q, read raw, is an operand of add/sub/mul.
+    if kind in ('add', 'sub', 'mul') and src in ('i', 'q'):
         out.append(f"r{idx} = vu1n::clampv(r{idx});")
     if toacc or fd:
         out.append(f"vu1n::stf<{m}>({target}, r{idx});")
