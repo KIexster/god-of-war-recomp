@@ -7809,3 +7809,29 @@ finitos no da Inf ni NaN (el desbordamiento se queda en FLT_MAX). La única exce
 - Medido: reproducción de la VU1 (`replay_vu1.sh`, 76 000 ejecuciones, 3 rondas alternas) 396,6/395,7/392,6 ms
   antes y 386,3/384,6/383,7 ms después (-2,6 %), 0 diferencias bit a bit en los 4 000 registros. En el juego
   (combate, `GOW_VU1_STATS`, mediana de ns por ciclo de VU1): 3,466 y 3,427 antes, 3,374 y 3,380 después (-2 %).
+
+### VU1 nativa: despacho, tres intentos descartados (2026-10-25)
+
+Perfil por dirección de `runNative` en combate a 120 Hz (`muestrear4` con `MUESTREO_DIRS`, `bin\wsat`): el 13 % de
+sus muestras cae en la lectura de `sl.known` de la ranura del bloque siguiente y otro ~17 % en las escrituras del
+historial justo después de la llamada al bloque. Es la cadena resultado -> `pc` -> ranura -> función -> llamada
+indirecta, que el procesador no puede adelantar. Reparto del hilo de la VU1 (perfil de `ATHN01B`): bloques ~40 %
+(contando la cola que no sale en el top 70), despacho y temporización exacta ~27 %, VIF 9 %, espera ~22 %.
+
+- Caché de operandos normalizados en el generador (cada `ldn` de un registro se reutiliza hasta que se escribe;
+  MSVC reutilizaba la carga pero repetía la normalización: 8 `vpblendvb` para 3 registros en `b0d00_53ba0530`):
+  reproducción 382,7/378,5/386,5 ms antes y 378,9/379,3/386,7 ms después. Sin ganancia: el procesador ya ocultaba
+  esas instrucciones.
+- Precarga de la ranura del sucesor (dentro de la propia ranura, escrita solo si cambia; ya se había probado el
+  17-10 con una tabla aparte): en el juego 3,413 y 3,382 ns por ciclo de VU1 sin ella, 3,422 y 3,364 con ella. Neutra.
+- Bucles de un bloque repetidos dentro del propio bloque (187 bloques cuyo salto vuelve a su inicio, 15 % de las
+  ejecuciones; `VU1NativeAccess::loopAgain` hacía la contabilidad de una vuelta de `runNative`): 0 diferencias bit a
+  bit, pero reproducción 386,9/382,8/379,8 ms antes y 385,3/386,7/392,7 ms después. Son bucles cortos, la
+  contabilidad sigue y la llamada indirecta al mismo destino ya se predecía bien.
+- 16 puntos de llamada indirecta según el bloque anterior (para que el predictor aprenda los sucesores de cada uno
+  por separado), mismo binario con `GOW_VU1N_SITES_OFF`: 399,9/402,5/396,4 ms sin ellos y 424,8/419,2/421,2 ms con
+  ellos (+6 %). El predictor ya acertaba; la capa de llamada extra solo añade coste.
+
+Con esta arquitectura (un bloque por función y temporización exacta en el despachador) el despacho está en su suelo.
+Lo que queda es reducir la propia maquinaria de temporización (que los bloques que no leen flags de entrada no
+necesiten historial) o rehacer el backend con análisis estático de flags por programa, como el microVU de PCSX2.
