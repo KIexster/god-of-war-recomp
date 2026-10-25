@@ -38,7 +38,7 @@ Generado por `tools/estado/generar.py` a partir de `docs/estado/datos.toml` y `c
 | EE | Controlador DMA | 2 | ✅ Funciona | Servicio DMA nativo: las cadenas van directas a VIF1/VU1 y al GS, sin modelo del controlador; búferes reutilizables |
 | EE | Temporizadores | 1 | ✅ Funciona | Reloj nativo del EE: el recompilador convierte las lecturas de los temporizadores en llamadas al reloj |
 | GS / VU | GS: primitivas y framebuffer | 3 | 🔧 Parcial | Renderizador OpenGL nativo por render targets (Waffle565), resolución interna 2x; menú, barco, combate y HUD correctos aquí, 4 zonas en Waffle565; falta un recorrido completo |
-| GS / VU | VIF1 y VU1 | 3 | 🔧 Parcial | VU1 nativa compilada por adelantado y UNPACK rápido; combate en el barco con cuadro mediano de 16,7 ms (59,94 Hz) y ~2/3 de los cuadros a 60; quedan picos cuando la VU1 pasa de ~15 ms |
+| GS / VU | VIF1 y VU1 | 3 | 🔧 Parcial | VU1 nativa compilada por adelantado y UNPACK rápido; combate en el barco a 60 Hz sin cuadros perdidos (trabajo mediano 8,9 ms, máx. 15,8); con GOW_HZ=120, ~75 en combate (límite: la VU1) |
 | GS / VU | GS: texturas, CLUT y fuentes | 2 | 🔧 Parcial | Almacén nativo de texturas y CLUT en lugar de un modelo de VRAM; HUD y fuentes del menú correctos en las capturas |
 | GS / VU | GIF (PATH1-3) | 2 | ✅ Funciona |  |
 | GS / VU | IPU: vídeo FMV | 2 | 🔧 Parcial | Sin IPU: el decodificador MPEG nativo toma los datos del PSS; Waffle565 verificó todos los vídeos con sonido |

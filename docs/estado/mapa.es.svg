@@ -968,7 +968,7 @@
 <rect class="parcial" x="813.7" y="113.5" width="68.8" height="106.5"><title>GS: primitivas y framebuffer — Renderizador OpenGL nativo por render targets (Waffle565), resolución interna 2x; menú, barco, combate y HUD correctos aquí, 4 zonas en Waffle565; falta un recorrido completo</title></rect>
 <rect x="813.7" y="113.5" width="68.8" height="106.5" fill="url(#rayas)" pointer-events="none"/>
 <text class="badge-v-oscuro" x="848.1" y="170.6" font-size="11" text-anchor="middle" pointer-events="none">GS</text>
-<rect class="parcial" x="767.2" y="221" width="115.3" height="63.5"><title>VIF1 y VU1 — VU1 nativa compilada por adelantado y UNPACK rápido; combate en el barco con cuadro mediano de 16,7 ms (59,94 Hz) y ~2/3 de los cuadros a 60; quedan picos cuando la VU1 pasa de ~15 ms</title></rect>
+<rect class="parcial" x="767.2" y="221" width="115.3" height="63.5"><title>VIF1 y VU1 — VU1 nativa compilada por adelantado y UNPACK rápido; combate en el barco a 60 Hz sin cuadros perdidos (trabajo mediano 8,9 ms, máx. 15,8); con GOW_HZ=120, ~75 en combate (límite: la VU1)</title></rect>
 <rect x="767.2" y="221" width="115.3" height="63.5" fill="url(#rayas)" pointer-events="none"/>
 <text class="badge-v-oscuro" x="824.8" y="256.6" font-size="11" text-anchor="middle" pointer-events="none">VIF1/VU1</text>
 <rect class="parcial" x="767.2" y="285.5" width="57.2" height="85"><title>GS: texturas, CLUT y fuentes — Almacén nativo de texturas y CLUT en lugar de un modelo de VRAM; HUD y fuentes del menú correctos en las capturas</title></rect>

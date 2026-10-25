@@ -7842,3 +7842,18 @@ indirecta, que el procesador no puede adelantar. Reparto del hilo de la VU1 (per
 Con esta arquitectura (un bloque por función y temporización exacta en el despachador) el despacho está en su suelo.
 Lo que queda es reducir la propia maquinaria de temporización (que los bloques que no leen flags de entrada no
 necesiten historial) o rehacer el backend con análisis estático de flags por programa, como el microVU de PCSX2.
+
+### Estado del combate a 60 y 120 Hz (2026-10-25)
+
+- 60 Hz, combate del barco (`ab_traza.sh`, `bin\wsat` = `main` con #147): 2396 cuadros; periodo entre flips de 13 a
+  19 ms (mediana 16,67) y ninguno por encima de 25 ms, es decir, ningún cuadro perdido. Trabajo VU1+VIF+GS mediano
+  8,9 ms (p90 12,0, máx. 15,8). El 31 % de periodos entre 17 y 19 ms es variación alrededor del VBlank, no cuadros
+  perdidos. Nota de VIF1/VU1 en `docs/estado/datos.toml` actualizada.
+- 120 Hz (`GOW_HZ=120`), recorrido por zonas con `GOW_WARP`: ATHN04B 112,4 de media, SEWR02 118,3, DEST00 117,0
+  (cuadros del juego por segundo); combate del barco ~75. Con el monitor a 120 Hz se muestran ~6 imágenes por segundo
+  menos que cuadros: contadores temporales en `PublishSharedTexture`/`Acquire` (113 publicaciones por segundo, ningún
+  fallo de publicación ni salto al adquirir) indican que dos cuadros caen a veces en un mismo VBlank del invitado y la
+  pantalla capta el último, como haría el hardware.
+- Hilo del EE en combate a 120 Hz: ~23 % durmiendo en `EeScheduler::processDueDeadlines` (esperas de la VU1 y del
+  VBlank), la lógica del juego en paralelo con la VU1 (8,5 ms por cuadro) y ~1,7 ms por cuadro en serie entre el fin
+  del trabajo y el siguiente lanzamiento.

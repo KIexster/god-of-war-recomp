@@ -183,7 +183,7 @@ nombre = "GS / VU"
   nombre = { es = "VIF1 y VU1", en = "VIF1 and VU1", pt = "VIF1 e VU1" }
   estado = "parcial"
   peso = 3
-  nota = { es = "VU1 nativa compilada por adelantado y UNPACK rápido; combate en el barco con cuadro mediano de 16,7 ms (59,94 Hz) y ~2/3 de los cuadros a 60; quedan picos cuando la VU1 pasa de ~15 ms", en = "Ahead-of-time native VU1 and fast UNPACK; ship combat with a 16.7 ms median frame (59.94 Hz) and ~2/3 of the frames at 60; spikes remain when VU1 work exceeds ~15 ms", pt = "VU1 nativa compilada antecipadamente e UNPACK rápido; combate no barco com quadro mediano de 16,7 ms (59,94 Hz) e ~2/3 dos quadros a 60; restam picos quando a VU1 passa de ~15 ms" }
+  nota = { es = "VU1 nativa compilada por adelantado y UNPACK rápido; combate en el barco a 60 Hz sin cuadros perdidos (trabajo mediano 8,9 ms, máx. 15,8); con GOW_HZ=120, ~75 en combate (límite: la VU1)", en = "Ahead-of-time native VU1 and fast UNPACK; ship combat at 60 Hz without dropped frames (8.9 ms median work, 15.8 max); with GOW_HZ=120, ~75 in combat (limit: the VU1)", pt = "VU1 nativa compilada antecipadamente e UNPACK rápido; combate no barco a 60 Hz sem quadros perdidos (trabalho mediano 8,9 ms, máx. 15,8); com GOW_HZ=120, ~75 em combate (limite: a VU1)" }
 
   [[hardware.grupo.componente]]
   corto = "Tex/CLUT"
