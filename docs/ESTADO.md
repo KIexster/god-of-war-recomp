@@ -7832,6 +7832,13 @@ indirecta, que el procesador no puede adelantar. Reparto del hilo de la VU1 (per
   por separado), mismo binario con `GOW_VU1N_SITES_OFF`: 399,9/402,5/396,4 ms sin ellos y 424,8/419,2/421,2 ms con
   ellos (+6 %). El predictor ya acertaba; la capa de llamada extra solo añade coste.
 
+- UNPACK del VIF1, segundo intento con SSE4.1 (perfil por líneas de `processVIF1Data` en combate: 8 bits V4 19,7 %,
+  16 bits V2 con signo 12,8 %, 16 bits V4 7,9 %, 8 bits V3 7,4 % de sus muestras). Esta vez solo cambia el cuerpo de
+  esas lambdas dentro del mismo `unpackAll`, leyendo exactamente los bytes del vector y con la extensión con o sin
+  signo fuera del bucle. Perfil del hilo de la VU1 en `ATHN01B` a 120 Hz (dos ejecuciones alternas de cada uno):
+  `processVIF1Data` 9,14 y 9,19 % sin el cambio, 9,02 y 9,11 % con él. Sin diferencia: ese tiempo es de memoria
+  (los ~2,6 MB por cuadro de datos de origen), no de instrucciones.
+
 Con esta arquitectura (un bloque por función y temporización exacta en el despachador) el despacho está en su suelo.
 Lo que queda es reducir la propia maquinaria de temporización (que los bloques que no leen flags de entrada no
 necesiten historial) o rehacer el backend con análisis estático de flags por programa, como el microVU de PCSX2.
