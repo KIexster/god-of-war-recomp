@@ -1,0 +1,551 @@
+diff --git a/ps2xRuntime/include/runtime/gs/gs_frontend.h b/ps2xRuntime/include/runtime/gs/gs_frontend.h
+index a5d3d7e..abd04ef 100644
+--- a/ps2xRuntime/include/runtime/gs/gs_frontend.h
++++ b/ps2xRuntime/include/runtime/gs/gs_frontend.h
+@@ -112,6 +112,9 @@ public:
+     void processGIFPacket(const uint8_t *data, uint32_t sizeBytes, GifPathId path = GifPathId::Path1);
+     bool processNativePackedGIFPacket(const uint8_t *data, uint32_t sizeBytes, GifPathId path = GifPathId::Path1);
+     bool hasPendingGIFPacket(GifPathId path) const; // GOW-Port: los atajos DMA no pueden saltarse un flujo pendiente.
++    // GOW-Port: marcadores del FINISH anticipado (ruta GIF 0, ver PS2Memory::gsEarlyFinish): tipo 1, los 7 registros de
++    // pantalla; tipo 2, cuántas escrituras a FINISH por PATH2 del trabajo actual ya recibió el juego.
++    void stageMarker(const uint8_t *data, uint32_t sizeBytes);
+     void uploadImageNative(uint64_t bitbltbuf,
+                            uint64_t trxpos,
+                            uint64_t trxreg,
+@@ -197,6 +200,8 @@ private:
+     uint64_t m_field[7]{};           // pmode, smode2, dispfb1, display1, dispfb2, display2, bgcolor
+     bool m_fieldValid = false;
+     mutable std::recursive_mutex m_stateMutex;
++    GifPathId m_currentPath = GifPathId::Path1; // GOW-Port: ruta del paquete GIF en curso (FINISH anticipado)
++    uint32_t m_finishGiven = 0;                 // GOW-Port: FINISH por PATH2 de este trabajo ya dados al juego
+     mutable std::mutex m_backendLifetimeMutex;
+     mutable std::mutex m_presentationMutex;
+ 
+diff --git a/ps2xRuntime/include/runtime/ps2_memory.h b/ps2xRuntime/include/runtime/ps2_memory.h
+index e69d622..f046b4e 100644
+--- a/ps2xRuntime/include/runtime/ps2_memory.h
++++ b/ps2xRuntime/include/runtime/ps2_memory.h
+@@ -357,6 +357,19 @@ public:
+     static bool isGsStatusRegister(uint32_t address) noexcept;
+     void gsDisplayStore(uint32_t address, uint64_t value);
+     uint64_t gsStatusLoad();
++    // GOW-Port: FINISH anticipado (GOW_GS_FINISH_ANTICIPADO=0 lo desactiva; solo con el trabajador y la etapa GS). God
++    // of War termina la cadena VIF1 de cada cuadro con una escritura A+D a FINISH por PATH2 y espera esa interrupción
++    // antes de preparar el cuadro siguiente: el EE se quedaba parado mientras el trabajador dibujaba. Se cuentan esas
++    // escrituras al encolar el paquete y FINISH se da entonces (o cuando el trabajador lo empieza, si ya hay otro en cola:
++    // el EE va como mucho un trabajo por delante); el GS se salta esas mismas escrituras. CSR se lee y se reconoce sin
++    // esperar al trabajador, y los registros de pantalla pasan por la cola del trabajador para aplicarse en orden de
++    // dibujo, con una copia de los últimos escritos para las lecturas del juego.
++    bool gsEarlyFinish() const;
++    void gsQueueDisplay(const uint64_t (&regs)[7]);
++    bool gsDisplayShadow(uint64_t (&regs)[7]) const;
++    // Escrituras A+D a FINISH por PATH2 (cargas útiles de DIRECT/DIRECTHL) en un paquete VIF1. `cycle` (STCYCL) y
++    // `directLeft` (bytes de una carga cortada por el final del paquete anterior) pasan de un paquete al siguiente.
++    static uint32_t countPath2Finish(const uint8_t *data, uint32_t sizeBytes, uint32_t &cycle, uint32_t &directLeft);
+     [[nodiscard]] uint64_t cyclesUntilNextEeTimerInterrupt() const noexcept;
+     void resetEeTimers() noexcept;
+ 
+@@ -485,11 +498,14 @@ public:
+     {
+         bool vif1 = false; // false: GIF PATH3
+         std::vector<uint8_t> data;
++        bool display = false; // GOW-Port: FINISH anticipado: `data` son los 7 registros de pantalla, en orden de dibujo
+     };
+     struct GsWorkerJob
+     {
+         std::vector<GsWorkerItem> items;
+         uint32_t fbrst = 0;
++        uint32_t earlyFinish = 0;  // GOW-Port: escrituras a FINISH por PATH2 del trabajo ya dadas al juego (o al empezarlo)
++        bool raiseAtStart = false; // GOW-Port: había otro trabajo en cola al encolarlo: FINISH cuando el trabajador lo empiece
+     };
+     bool needsGsWorkerSync(uint32_t address) const;
+     void syncGsWorkerFor(uint32_t address);
+@@ -511,6 +527,13 @@ public:
+     uint32_t m_gsWorkerJobFbrst = 0;
+     std::function<uint32_t()> m_fbrstProvider;
+     std::function<void()> m_gsWorkerWake;
++    bool m_gsEarlyFinish = false;         // GOW-Port: FINISH anticipado pedido (ver gsEarlyFinish)
++    uint32_t m_finishScanCycle = 0x0101u; // STCYCL según el recuento de FINISH
++    uint32_t m_finishScanDirectLeft = 0u; // carga útil de un DIRECT que el recuento aún tiene que saltar
++    mutable std::mutex m_displayShadowMutex;
++    uint64_t m_displayShadow[7]{};
++    bool m_displayShadowValid = false;
++    void raiseEarlyFinish();
+ 
+     std::mutex m_completedDmacMutex;
+     std::vector<uint32_t> m_completedDmacCauses;
+diff --git a/ps2xRuntime/src/lib/gs/gs_display.cpp b/ps2xRuntime/src/lib/gs/gs_display.cpp
+index 39f9ea4..77e6011 100644
+--- a/ps2xRuntime/src/lib/gs/gs_display.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_display.cpp
+@@ -14,6 +14,14 @@ namespace ps2_gs_display
+ 
+     void setDisplay(PS2Memory &memory, const GSDisplayState &state)
+     {
++        if (memory.gsEarlyFinish())
++        {
++            // GOW-Port: FINISH anticipado: la etapa GS los aplica cuando esté dibujado todo lo encolado antes.
++            const uint64_t regs[7] = {state.pmode, state.smode2, state.dispfb1, state.display1, state.dispfb2,
++                                      state.display2, state.bgcolor};
++            memory.gsQueueDisplay(regs);
++            return;
++        }
+         memory.syncGsWorkerFor(kDisplaySite);
+         GSRegisters &gs = memory.gs();
+         gs.pmode = state.pmode;
+@@ -27,8 +35,21 @@ namespace ps2_gs_display
+ 
+     GSDisplayState display(const PS2Memory &memory)
+     {
+-        const GSRegisters &gs = memory.gs();
+         GSDisplayState state;
++        uint64_t queued[7];
++        if (memory.gsEarlyFinish() && memory.gsDisplayShadow(queued))
++        {
++            // GOW-Port: lo último que escribió el juego, aunque el dibujo aún no haya llegado ahí.
++            state.pmode = queued[0];
++            state.smode2 = queued[1];
++            state.dispfb1 = queued[2];
++            state.display1 = queued[3];
++            state.dispfb2 = queued[4];
++            state.display2 = queued[5];
++            state.bgcolor = queued[6];
++            return state;
++        }
++        const GSRegisters &gs = memory.gs();
+         state.pmode = gs.pmode;
+         state.smode2 = gs.smode2;
+         state.dispfb1 = gs.dispfb1;
+diff --git a/ps2xRuntime/src/lib/gs/gs_frontend.cpp b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+index ec80bf0..89ab657 100644
+--- a/ps2xRuntime/src/lib/gs/gs_frontend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+@@ -941,10 +941,41 @@ bool GS::hasPendingGIFPacket(GifPathId path) const
+     return index == 0u || index >= m_gifInput.size() || m_gifInput[index].pending();
+ }
+ 
++void GS::stageMarker(const uint8_t *data, uint32_t sizeBytes)
++{
++    uint32_t kind = 0u;
++    if (!data || sizeBytes < 8u)
++        return;
++    std::memcpy(&kind, data, sizeof(kind));
++    if (kind == 2u)
++    {
++        std::memcpy(&m_finishGiven, data + 8u, sizeof(m_finishGiven));
++        return;
++    }
++    if (kind == 1u && m_privRegs && sizeBytes >= 8u + 7u * sizeof(uint64_t))
++    {
++        uint64_t regs[7];
++        std::memcpy(regs, data + 8u, sizeof(regs));
++        m_privRegs->pmode = regs[0];
++        m_privRegs->smode2 = regs[1];
++        m_privRegs->dispfb1 = regs[2];
++        m_privRegs->display1 = regs[3];
++        m_privRegs->dispfb2 = regs[4];
++        m_privRegs->display2 = regs[5];
++        m_privRegs->bgcolor = regs[6];
++    }
++}
++
+ void GS::processGIFPacket(const uint8_t *data, uint32_t sizeBytes, GifPathId path)
+ {
+     ps2_perf::Scope perf(ps2_perf::Bucket::Gs); // GOW-Port: incluye rasterizado y transferencias GIF.
+     std::lock_guard<std::recursive_mutex> lock(m_stateMutex);
++    if (path == static_cast<GifPathId>(0))
++    {
++        stageMarker(data, sizeBytes); // GOW-Port: un marcador del FINISH anticipado, no datos GIF
++        return;
++    }
++    m_currentPath = path;
+     const size_t pathIndex = static_cast<size_t>(path);
+     if (!data || !sizeBytes || !m_backend || pathIndex == 0u || pathIndex >= m_gifInput.size())
+         return;
+@@ -1062,6 +1093,7 @@ bool GS::processNativePackedGIFPacket(const uint8_t *data, uint32_t sizeBytes, G
+     std::lock_guard<std::recursive_mutex> lock(m_stateMutex);
+     if (!data || sizeBytes < 16u || !m_backend || hasPendingGIFPacket(path))
+         return false;
++    m_currentPath = path; // GOW-Port: FINISH anticipado
+ 
+     if (!validatePackedGifPacket(data, sizeBytes))
+         return false;
+@@ -1823,6 +1855,14 @@ void GS::writeRegisterUnlocked(uint8_t regAddr, uint64_t value)
+     }
+     case GS_REG_FINISH:
+     {
++        // GOW-Port: FINISH anticipado: el juego recibió este al encolarse el paquete; el backend se sincroniza igual.
++        if (m_finishGiven != 0u && m_currentPath == GifPathId::Path2)
++        {
++            --m_finishGiven;
++            if (m_backend)
++                m_backend->Sync(GSSyncReason::Finish);
++            break;
++        }
+         if (m_backend)
+         {
+             static const bool finishAsync = [] { const char *v = std::getenv("GOW_GS_FINISH_ASINCRONO"); return v && v[0] == '1'; }();
+diff --git a/ps2xRuntime/src/lib/ps2_memory.cpp b/ps2xRuntime/src/lib/ps2_memory.cpp
+index cb2f58d..36dd6b7 100644
+--- a/ps2xRuntime/src/lib/ps2_memory.cpp
++++ b/ps2xRuntime/src/lib/ps2_memory.cpp
+@@ -238,6 +238,10 @@ PS2Memory::PS2Memory()
+         m_gsWorker = std::thread([this] { gsWorkerLoop(); });
+         m_gsWorkerId = m_gsWorker.get_id();
+         std::fprintf(stderr, "[gs-worker] VIF1/GIF processing on a worker thread (PS2X_GS_WORKER=1)\n");
++        const char *early = std::getenv("GOW_GS_FINISH_ANTICIPADO");
++        m_gsEarlyFinish = !(early && early[0] == '0'); // GOW-Port: ver gsEarlyFinish
++        std::fprintf(stderr, "[gs-worker] FINISH anticipado %s (GOW_GS_FINISH_ANTICIPADO)\n",
++                     m_gsEarlyFinish ? "activo" : "desactivado");
+     }
+ }
+ 
+@@ -1952,13 +1956,25 @@ void PS2Memory::deliverDma(DmaPath path, std::vector<uint8_t> &&bytes)
+     {
+         GsWorkerJob job;
+         job.fbrst = m_fbrstProvider ? m_fbrstProvider() : 0u;
++        if (path == DmaPath::Vif1 && gsEarlyFinish())
++            job.earlyFinish = countPath2Finish(bytes.data(), size, m_finishScanCycle, m_finishScanDirectLeft);
+         job.items.push_back(GsWorkerItem{path == DmaPath::Vif1, std::move(bytes)});
+         gsWorkerTrace("kick", size);
++        bool raiseNow = false;
+         {
+             std::lock_guard<std::mutex> lock(m_gsWorkerMutex);
++            // GOW-Port: FINISH anticipado: se da ya si no espera ningún otro trabajo (aparte del que corre), así el EE va
++            // como mucho un trabajo por delante del dibujo; si no, lo da el trabajador al empezar este.
++            if (job.earlyFinish != 0u)
++            {
++                raiseNow = m_gsWorkerJobs.empty();
++                job.raiseAtStart = !raiseNow;
++            }
+             m_gsWorkerJobs.push_back(std::move(job));
+         }
+         m_gsWorkerCv.notify_one();
++        if (raiseNow)
++            raiseEarlyFinish();
+         return;
+     }
+     if (path == DmaPath::Vif1)
+@@ -2022,6 +2038,141 @@ bool PS2Memory::vu1CodeWritesSince(uint64_t from, uint64_t to, Vu1CodeWrite *out
+     return true;
+ }
+ 
++// GOW-Port: FINISH anticipado (ver ps2_memory.h). La etapa GS recibe estos marcadores como paquetes de la ruta GIF 0,
++// entre los paquetes GIF, así que actúan en orden de dibujo (GS::stageMarker en gs_frontend.cpp).
++namespace
++{
++    constexpr uint32_t kStageMarkerDisplay = 1u;     // carga: los 7 registros de pantalla
++    constexpr uint32_t kStageMarkerFinishGiven = 2u; // carga: escrituras a FINISH del trabajo que el juego ya recibió
++    constexpr uint64_t kCsrFinish = 0x2u;
++
++    void pushStageMarker(uint32_t kind, const void *payload, uint32_t bytes)
++    {
++        uint8_t packet[8u + 7u * sizeof(uint64_t)] = {};
++        std::memcpy(packet, &kind, sizeof(kind));
++        std::memcpy(packet + 8u, payload, std::min<size_t>(bytes, sizeof(packet) - 8u));
++        ps2_gs_stage::push(static_cast<GifPathId>(0), packet, sizeof(packet));
++    }
++
++    // Bytes de origen de un UNPACK, con las reglas de processVIF1Data (con CL < WL se leen menos vectores).
++    uint32_t unpackSourceBytes(uint32_t opcode, uint32_t num, uint32_t cycle)
++    {
++        const uint32_t vn = (opcode >> 2) & 3u, vl = opcode & 3u;
++        const uint32_t componentBits = vl == 0u ? 32u : vl == 1u ? 16u : vl == 2u ? 8u : 16u;
++        const uint32_t vectorBits = (vl == 3u && vn == 3u) ? 16u : (vn + 1u) * componentBits;
++        const uint32_t writes = num == 0u ? 256u : num;
++        const uint32_t cl = std::max(cycle & 0xFFu, 1u), wl = std::max((cycle >> 8) & 0xFFu, 1u);
++        const uint32_t vectors = cl < wl ? (writes / wl) * cl + std::min(writes % wl, cl) : writes;
++        return (vectors * ((vectorBits + 7u) / 8u) + 3u) & ~3u;
++    }
++
++    // Escrituras A+D a FINISH (registro 0x61) en datos GIF. Solo las etiquetas PACKED llevan A+D; REGLIST e IMAGE se
++    // saltan por su tamaño.
++    uint32_t finishWritesInGif(const uint8_t *gif, uint32_t bytes)
++    {
++        uint32_t found = 0u;
++        for (uint32_t at = 0u; at + 16u <= bytes;)
++        {
++            uint64_t tag = 0u, descriptors = 0u;
++            std::memcpy(&tag, gif + at, 8u);
++            std::memcpy(&descriptors, gif + at + 8u, 8u);
++            at += 16u;
++            const uint32_t loops = static_cast<uint32_t>(tag & 0x7FFFu);
++            const uint32_t format = static_cast<uint32_t>(tag >> 58) & 3u;
++            const uint32_t registers = (tag >> 60) == 0u ? 16u : static_cast<uint32_t>(tag >> 60);
++            if (format == 0u)
++            {
++                for (uint32_t i = 0u; i < loops * registers && at + 16u <= bytes; ++i, at += 16u)
++                    found += ((descriptors >> (4u * (i % registers))) & 0xFu) == 0xEu && gif[at + 8u] == 0x61u;
++            }
++            else
++            {
++                const uint64_t skip = format == 1u ? ((uint64_t(loops) * registers + 1u) / 2u) * 16u : uint64_t(loops) * 16u;
++                at = skip > bytes - at ? bytes : at + static_cast<uint32_t>(skip);
++            }
++        }
++        return found;
++    }
++}
++
++uint32_t PS2Memory::countPath2Finish(const uint8_t *data, uint32_t sizeBytes, uint32_t &cycle, uint32_t &directLeft)
++{
++    // Una carga cortada por el final del paquete anterior sigue aquí: su resto se salta. Un FINISH ahí no se cuenta y el
++    // GS lo da como siempre: un fallo del recuento solo retrasa al juego, nunca cambia el orden de nada.
++    uint32_t pos = std::min(directLeft, sizeBytes);
++    directLeft -= pos;
++    uint32_t found = 0u;
++    while (pos + 4u <= sizeBytes)
++    {
++        uint32_t code = 0u;
++        std::memcpy(&code, data + pos, 4u);
++        pos += 4u;
++        const uint32_t opcode = (code >> 24) & 0x7Fu, imm = code & 0xFFFFu, num = (code >> 16) & 0xFFu;
++        uint32_t payload = 0u;
++        if (opcode == 0x01u)                         // STCYCL
++            cycle = imm;
++        else if (opcode == 0x20u)                    // STMASK
++            payload = 4u;
++        else if (opcode == 0x30u || opcode == 0x31u) // STROW, STCOL
++            payload = 16u;
++        else if (opcode == 0x4Au)                    // MPG
++            payload = (num == 0u ? 256u : num) * 8u;
++        else if (opcode == 0x50u || opcode == 0x51u) // DIRECT, DIRECTHL
++            payload = (imm == 0u ? 65536u : imm) * 16u;
++        else if ((opcode & 0x60u) == 0x60u)          // UNPACK
++            payload = unpackSourceBytes(opcode, num, cycle);
++        if (payload > sizeBytes - pos)
++        {
++            directLeft = payload - (sizeBytes - pos); // GOW-Port: la carga sigue en el paquete siguiente
++            break;
++        }
++        if (opcode == 0x50u || opcode == 0x51u)
++            found += finishWritesInGif(data + pos, payload);
++        pos += payload;
++    }
++    return found;
++}
++
++bool PS2Memory::gsEarlyFinish() const
++{
++    return m_gsEarlyFinish && m_gsWorkerEnabled && ps2_gs_stage::running();
++}
++
++void PS2Memory::raiseEarlyFinish()
++{
++    gs_regs.csr.fetch_or(kCsrFinish, std::memory_order_acq_rel);
++    gsWorkerTrace("early-finish", 0u);
++    if (m_gsWorkerWake)
++        m_gsWorkerWake();
++}
++
++void PS2Memory::gsQueueDisplay(const uint64_t (&regs)[7])
++{
++    {
++        std::lock_guard<std::mutex> lock(m_displayShadowMutex);
++        std::memcpy(m_displayShadow, regs, sizeof(m_displayShadow));
++        m_displayShadowValid = true;
++    }
++    GsWorkerJob job;
++    GsWorkerItem item;
++    item.display = true;
++    item.data.assign(reinterpret_cast<const uint8_t *>(regs), reinterpret_cast<const uint8_t *>(regs) + sizeof(regs));
++    job.items.push_back(std::move(item));
++    {
++        std::lock_guard<std::mutex> lock(m_gsWorkerMutex);
++        m_gsWorkerJobs.push_back(std::move(job));
++    }
++    m_gsWorkerCv.notify_one();
++}
++
++bool PS2Memory::gsDisplayShadow(uint64_t (&regs)[7]) const
++{
++    std::lock_guard<std::mutex> lock(m_displayShadowMutex);
++    if (m_displayShadowValid)
++        std::memcpy(regs, m_displayShadow, sizeof(regs));
++    return m_displayShadowValid;
++}
++
+ void PS2Memory::runGsWorkerJob(GsWorkerJob &job)
+ {
+     size_t traceBytes = 0;
+@@ -2030,9 +2181,22 @@ void PS2Memory::runGsWorkerJob(GsWorkerJob &job)
+     gsWorkerTrace("job-start", traceBytes);
+     struct TraceDone { size_t bytes; ~TraceDone() { gsWorkerTrace("job-done", bytes); } } traceDone{traceBytes};
+     m_gsWorkerJobFbrst = job.fbrst;
++    if (job.earlyFinish != 0u)
++    {
++        // GOW-Port: FINISH anticipado: el GS se salta las escrituras a FINISH de este trabajo (el juego ya las recibió);
++        // un trabajo que esperaba detrás de otro recibe su FINISH ahora que empieza.
++        pushStageMarker(kStageMarkerFinishGiven, &job.earlyFinish, sizeof(job.earlyFinish));
++        if (job.raiseAtStart)
++            raiseEarlyFinish();
++    }
+     for (GsWorkerItem &item : job.items)
+     {
+         const uint32_t size = static_cast<uint32_t>(item.data.size());
++        if (item.display)
++        {
++            pushStageMarker(kStageMarkerDisplay, item.data.data(), size); // GOW-Port: tras todo lo encolado antes
++            continue;
++        }
+         if (item.vif1)
+         {
+             processVIF1Data(item.data.data(), size);
+@@ -2046,6 +2210,12 @@ void PS2Memory::runGsWorkerJob(GsWorkerJob &job)
+     }
+     if (m_gifArbiter)
+         m_gifArbiter->drain();
++    if (job.earlyFinish != 0u)
++    {
++        // GOW-Port: un FINISH contado que el GS no encontró en este trabajo no debe tragarse el de uno posterior.
++        const uint32_t none = 0u;
++        pushStageMarker(kStageMarkerFinishGiven, &none, sizeof(none));
++    }
+     ps2_gs_stage::flush(); // GOW-Port: batched GIF packets reach the stage before the worker reports idle
+     for (GsWorkerItem &item : job.items)
+         giveDmaBuffer(std::move(item.data));
+@@ -2093,6 +2263,21 @@ void PS2Memory::syncGsWorkerFor(uint32_t address)
+ {
+     if (ps2_gs_stage::onStageThread())
+         return; // GOW-Port: the stage runs queued worker output; it must not wait for itself
++    if (gsEarlyFinish() && !onGsWorkerThread())
++    {
++        // GOW-Port: FINISH anticipado: el intercambio de FINISH en CSR es ya del EE; esperar aquí al dibujo lo desharía.
++        if (isGsStatusRegister(address))
++            return;
++        // Un registro de pantalla accedido directamente (no por gsDisplayStore): primero llegan las escrituras en cola y
++        // después los registros vuelven a tener los valores actuales.
++        if (isGsDisplayRegister(address))
++        {
++            waitGsWorkerIdle(nullptr, address);
++            std::lock_guard<std::mutex> lock(m_displayShadowMutex);
++            m_displayShadowValid = false;
++            return;
++        }
++    }
+     if (m_gsWorkerEnabled && needsGsWorkerSync(address) && !onGsWorkerThread())
+         waitGsWorkerIdle(nullptr, address);
+ }
+diff --git a/ps2xTest/src/ps2_gs_tests.cpp b/ps2xTest/src/ps2_gs_tests.cpp
+index c2c1e6e..40d4920 100644
+--- a/ps2xTest/src/ps2_gs_tests.cpp
++++ b/ps2xTest/src/ps2_gs_tests.cpp
+@@ -734,6 +734,52 @@ void register_ps2_gs_tests()
+             t.Equals(regs.display2, display2, "A+D should write GS DISPLAY2");
+         });
+ 
++        tc.Run("early FINISH stage markers swallow only the given PATH2 FINISH writes", [](TestCase &t)
++        {
++            // GOW-Port: ps2recomp-gs-finish-anticipado. Los marcadores de la ruta GIF 0 dicen cuántos FINISH por PATH2 ya
++            // recibió el juego (el GS no los vuelve a dar), el marcador de fin de trabajo pone esa cuenta a cero y el de
++            // pantalla aplica los registros en orden de dibujo.
++            std::vector<uint8_t> vram(PS2_GS_VRAM_SIZE, 0u);
++            GSRegisters regs{};
++            GS gs;
++            gs.init(vram.data(), static_cast<uint32_t>(vram.size()), &regs);
++
++            std::vector<uint8_t> finish;
++            appendU64(finish, makeGifTag(1u, GIF_FMT_PACKED, 1u, true));
++            appendU64(finish, 0x0Eull); // REGS[0] = A+D
++            appendU64(finish, 0u);
++            appendU64(finish, 0x61ull); // FINISH
++            const auto marker = [&](uint32_t kind, const void *payload, size_t bytes)
++            {
++                std::vector<uint8_t> m(8u + 7u * sizeof(uint64_t), 0u);
++                std::memcpy(m.data(), &kind, sizeof(kind));
++                std::memcpy(m.data() + 8u, payload, bytes);
++                gs.processGIFPacket(m.data(), static_cast<uint32_t>(m.size()), static_cast<GifPathId>(0));
++            };
++            const auto finishRaised = [&](GifPathId path)
++            {
++                regs.csr.store(0u);
++                gs.processGIFPacket(finish.data(), static_cast<uint32_t>(finish.size()), path);
++                return (regs.csr.load() & 0x2u) != 0u;
++            };
++
++            const uint32_t one = 1u, none = 0u;
++            marker(2u, &one, sizeof(one));
++            t.IsTrue(finishRaised(GifPathId::Path1), "a PATH1 FINISH is never swallowed");
++            t.IsFalse(finishRaised(GifPathId::Path2), "the given PATH2 FINISH should not be raised again");
++            t.IsTrue(finishRaised(GifPathId::Path2), "a PATH2 FINISH beyond the given count should be raised");
++            marker(2u, &one, sizeof(one));
++            marker(2u, &none, sizeof(none));
++            t.IsTrue(finishRaised(GifPathId::Path2), "the end-of-job marker should clear an unused count");
++
++            const uint64_t display[7] = {0x11u, 0x22u, 0x33u, 0x44u, 0x55u, 0x66u, 0x77u};
++            marker(1u, display, sizeof(display));
++            t.Equals(regs.pmode, 0x11ull, "the display marker should write PMODE");
++            t.Equals(regs.dispfb1, 0x33ull, "the display marker should write DISPFB1");
++            t.Equals(regs.display2, 0x66ull, "the display marker should write DISPLAY2");
++            t.Equals(regs.bgcolor, 0x77ull, "the display marker should write BGCOLOR");
++        });
++
+         tc.Run("reserved PSM 0x3F uses null VRAM handlers", [](TestCase &t)
+         {
+             std::vector<uint8_t> vram(PS2_GS_VRAM_SIZE, 0xA5u);
+diff --git a/ps2xTest/src/ps2_memory_tests.cpp b/ps2xTest/src/ps2_memory_tests.cpp
+index 5a31274..d99dca6 100644
+--- a/ps2xTest/src/ps2_memory_tests.cpp
++++ b/ps2xTest/src/ps2_memory_tests.cpp
+@@ -387,6 +387,61 @@ void register_ps2_memory_tests()
+             t.Equals(static_cast<uint32_t>(rdram[3u]), 0x88u, "write byte 7 should wrap to address 3");
+         });
+ 
++        tc.Run("early FINISH counts the PATH2 FINISH writes of a VIF1 chain", [](TestCase &t)
++        {
++            // GOW-Port: ps2recomp-gs-finish-anticipado. Solo cuentan las escrituras A+D a FINISH dentro de un DIRECT; los
++            // datos de UNPACK (con CL < WL se leen menos vectores), MPG e IMAGE se saltan aunque contengan esos bytes, y
++            // una carga cortada por el final del paquete sigue en el siguiente.
++            const uint64_t packedAd = 1ull | (1ull << 15) | (1ull << 60); // NLOOP 1, EOP, PACKED, NREG 1
++            const uint64_t image = 2ull | (1ull << 15) | (2ull << 58);    // NLOOP 2, EOP, IMAGE
++            const auto appendFinishDirect = [&](std::vector<uint8_t> &p)
++            {
++                appendU32(p, makeVifCmd(0x50u, 0u, 2u)); // DIRECT, 2 QW
++                appendU64(p, packedAd);
++                appendU64(p, 0xEull);                    // REGS[0] = A+D
++                appendU64(p, 0u);
++                appendU64(p, 0x61u);                     // FINISH
++            };
++            // Un QW con el aspecto de un DIRECT con FINISH, para meterlo en datos que hay que saltar.
++            const auto appendDecoy = [&](std::vector<uint8_t> &p)
++            {
++                appendU32(p, makeVifCmd(0x50u, 0u, 1u));
++                appendU32(p, 0u);
++                appendU32(p, 0x61u);
++                appendU32(p, 0u);
++            };
++
++            std::vector<uint8_t> chain;
++            appendU32(chain, makeVifCmd(0x01u, 0u, 0x0201u)); // STCYCL CL=1 WL=2
++            appendU32(chain, makeVifCmd(0x6Cu, 4u, 0u));      // UNPACK V4-32, 4 escrituras = 2 vectores de origen
++            appendDecoy(chain);
++            appendDecoy(chain);
++            appendU32(chain, makeVifCmd(0x4Au, 2u, 0u));      // MPG, 2 instrucciones (16 bytes)
++            appendDecoy(chain);
++            appendU32(chain, makeVifCmd(0x50u, 0u, 3u));      // DIRECT con IMAGE: los datos no son registros
++            appendU64(chain, image);
++            appendU64(chain, 0u);
++            appendDecoy(chain);
++            appendDecoy(chain);
++            appendFinishDirect(chain);
++            appendU32(chain, 0u);                             // NOP
++            uint32_t cycle = 0x0101u, left = 0u;
++            t.Equals(PS2Memory::countPath2Finish(chain.data(), static_cast<uint32_t>(chain.size()), cycle, left), 1u,
++                     "only the A+D FINISH inside a DIRECT should count");
++            t.Equals(cycle, 0x0201u, "STCYCL should carry over to the next packet");
++            t.Equals(left, 0u, "nothing should be left over");
++
++            // La misma cadena partida en dos paquetes dentro de su primer UNPACK: el resto se salta en el segundo.
++            cycle = 0x0101u;
++            left = 0u;
++            const uint32_t cut = 4u + 4u + 8u;
++            const uint32_t first = PS2Memory::countPath2Finish(chain.data(), cut, cycle, left);
++            t.Equals(left, 32u - 8u, "the cut UNPACK payload should be carried over");
++            const uint32_t second = PS2Memory::countPath2Finish(chain.data() + cut, static_cast<uint32_t>(chain.size()) - cut,
++                                                                cycle, left);
++            t.Equals(first + second, 1u, "the split chain should count the same FINISH write once");
++        });
++
+         tc.Run("VIF1 UNPACK fast paths match the generic path", [](TestCase &t)
+         {
+             // GOW-Port: las rutas rápidas del UNPACK (sin máscara/STMOD 0 y la de SSE con máscara o STMOD 1-3) deben dar
