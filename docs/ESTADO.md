@@ -7857,3 +7857,32 @@ necesiten historial) o rehacer el backend con análisis estático de flags por p
 - Hilo del EE en combate a 120 Hz: ~23 % durmiendo en `EeScheduler::processDueDeadlines` (esperas de la VU1 y del
   VBlank), la lógica del juego en paralelo con la VU1 (8,5 ms por cuadro) y ~1,7 ms por cuadro en serie entre el fin
   del trabajo y el siguiente lanzamiento.
+
+### FINISH anticipado: el EE prepara el cuadro siguiente mientras se dibuja el actual (2026-11-05)
+
+Idea tomada de `danielalves96/gow-pc-port` (su "early FINISH", 0.3.2), reimplementada sobre nuestro runtime con su
+permiso. God of War termina la cadena VIF1 de cada cuadro con una escritura A+D a FINISH por PATH2 (un DIRECT) y espera
+esa interrupción antes de preparar el cuadro siguiente; con el trabajador del GS, el EE se quedaba parado mientras la
+VU1 dibujaba y la lectura de CSR esperaba además a que el trabajador terminara.
+
+`patches/ps2recomp-gs-finish-anticipado.patch` (activo con el trabajador y la etapa GS; `GOW_GS_FINISH_ANTICIPADO=0`
+lo desactiva):
+- `PS2Memory::countPath2Finish` recorre el paquete VIF1 al encolarlo (salta UNPACK con las reglas de STCYCL, MPG,
+  STMASK/STROW/STCOL e IMAGE) y cuenta las escrituras A+D a FINISH de los DIRECT. Si no espera otro trabajo, CSR.FINISH
+  se levanta en ese momento; si lo hay, cuando el trabajador empieza ese trabajo (el EE va como mucho uno por delante).
+  Una carga cortada por el final del paquete sigue en el siguiente y no se cuenta: ese FINISH lo da el GS como siempre.
+- El trabajador pasa a la etapa GS marcadores por la ruta GIF 0, entre los paquetes GIF: cuántos FINISH por PATH2 de
+  ese trabajo ya recibió el juego (`GS::stageMarker`; el GS no los vuelve a dar), 0 al final del trabajo, y los
+  registros de pantalla (PMODE, SMODE2, DISPFB/DISPLAY 1 y 2, BGCOLOR), que el juego escribe ahora a través de la cola
+  para que se apliquen en orden de dibujo, con una copia para sus lecturas.
+- CSR se lee y se reconoce sin esperar al trabajador.
+- Pruebas: "early FINISH counts the PATH2 FINISH writes of a VIF1 chain" y "early FINISH stage markers swallow only the
+  given PATH2 FINISH writes".
+
+Medido (mismo ejecutable, `bin\wef`, combate del barco, `ab_env.sh`, 3 rondas alternas a 120 Hz): cuadros en 130 s
+3430 -> 4173, 3066 -> 3403 y 2843 -> 3101 (+22, +11 y +9 %; la escena varía entre rondas); periodo mediano 10,02 ->
+9,06, 14,44 -> 12,31 y 15,44 -> 13,47 ms. A 60 Hz, 2 rondas: 2396/2397 cuadros con y sin el cambio (ya iba a 60).
+Capturas del menú, la elección de dificultad, el vídeo inicial y la entrada a la partida iguales con y sin el cambio.
+Cargas de zona con `GOW_WARP` y el cambio activo: 11 correctas (ATHN04B, SEWR02, DEST00, HDES01F, OLYMP02, ATHN02A,
+ATHN05A, SEWR01, DEST02, HDES01A, ATHN07). El salto de HDES01F a ARENA09 deja el juego parado (0 cuadros, la ventana
+sigue) también sin el cambio: es anterior y queda pendiente.

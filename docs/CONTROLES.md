@@ -958,3 +958,8 @@ repetible y hardware con diferencias entre pasadas de ruta constante; no
 certifica paridad. Ambas imágenes revisadas muestran la pose elevada de la
 introducción del barco. Véase ESTADO.md para identidad, cantidades y límites;
 las matrices finitas y esa semejanza no resuelven el espasmo ni miden FPS.
+
+### FINISH anticipado
+
+- `GOW_GS_FINISH_ANTICIPADO=0`: desactiva el FINISH anticipado (activo por defecto con `PS2X_GS_WORKER=1`): el EE
+  vuelve a esperar a que el trabajador dibuje el cuadro antes de preparar el siguiente. Ver `docs/ESTADO.md`.
