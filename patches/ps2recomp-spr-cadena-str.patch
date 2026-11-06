@@ -1,0 +1,44 @@
+diff --git a/ps2xRuntime/src/lib/ps2_memory.cpp b/ps2xRuntime/src/lib/ps2_memory.cpp
+index 36dd6b7..dce58f5 100644
+--- a/ps2xRuntime/src/lib/ps2_memory.cpp
++++ b/ps2xRuntime/src/lib/ps2_memory.cpp
+@@ -1760,7 +1760,10 @@ bool PS2Memory::processScratchpadChain(uint32_t channelBase, uint32_t chcr)
+         chcr = (chcr & ~(0x3u << 4u)) | ((asp & 0x3u) << 4u);
+     }
+ 
+-    m_ioRegisters[channelBase + 0x00u] = (chcr & 0x0000FFFFu) | (lastTagUpper << 16u);
++    // GOW-Port: 0xFEFF: se conserva la configuración (modo, dirección, ASP, TTE/TIE) pero no STR (bit 8). eeDmaStore lo
++    // borra en lo que guarda porque la transferencia ya ha terminado, pero aquí llega el CHCR original y lo volvía a
++    // poner. Arreglo de danielalves96/gow-pc-port.
++    m_ioRegisters[channelBase + 0x00u] = (chcr & 0x0000FEFFu) | (lastTagUpper << 16u);
+     m_ioRegisters[channelBase + 0x10u] = madr & 0x7FFFFFF0u;
+     m_ioRegisters[channelBase + 0x20u] = 0u;
+     m_ioRegisters[channelBase + 0x80u] = sadr & 0x3FF0u;
+diff --git a/ps2xTest/src/ps2_memory_tests.cpp b/ps2xTest/src/ps2_memory_tests.cpp
+index d99dca6..f535e71 100644
+--- a/ps2xTest/src/ps2_memory_tests.cpp
++++ b/ps2xTest/src/ps2_memory_tests.cpp
+@@ -1324,6 +1324,23 @@ void register_ps2_memory_tests()
+ 
+ 
+         // GOW-Port: God of War copia la paleta de huesos con fromSPR en cadena de destino (CHCR 0x104).
++        tc.Run("fromSPR destination chain leaves CHCR with STR cleared", [](TestCase &t)
++        {
++            // GOW-Port: ps2recomp-spr-cadena-str. La transferencia termina al escribir CHCR; al acabar la cadena, CHCR debe
++            // leerse con STR (bit 8) a 0 y la configuración (modo cadena) intacta, o un bucle que sondea el bit no sale.
++            PS2Memory mem;
++            t.IsTrue(mem.initialize(), "PS2Memory initialize should succeed");
++            constexpr uint32_t kSprFrom = 0x1000D000u;
++            const uint64_t endTag = 7ull << 28; // END, QWC 0
++            std::memcpy(mem.getScratchpad(), &endTag, sizeof(endTag));
++            mem.writeIORegister(kSprFrom + 0x80u, 0u);        // SADR
++            mem.writeIORegister(kSprFrom + 0x10u, 0x00100000u); // MADR
++            mem.writeIORegister(kSprFrom + 0x00u, 0x104u);      // CHCR: cadena + STR
++            const uint32_t chcr = mem.readIORegister(kSprFrom + 0x00u);
++            t.Equals(chcr & 0x100u, 0u, "STR should read back cleared once the chain is done");
++            t.Equals(chcr & 0xFFu, 0x04u, "the chain mode should be kept");
++        });
++
+ 
+ 
+ 
