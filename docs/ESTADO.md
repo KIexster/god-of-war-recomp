@@ -8144,3 +8144,19 @@ En cuadros por segundo no hay una diferencia clara en esta máquina: `ab_env.sh`
 40 s sin/con el cambio: 3590/3829, 4464/4138 y 4163/4009 (la escena varía entre rondas). Aquí el dibujo de las sombras no
 limita (manda el trabajo VIF1/VU1); el cambio quita miles de barreras de textura por segundo, que deberían notarse en GPU
 más lentas. No se ha medido en una.
+
+### Ideas de gow-pc-port comprobadas y no adaptadas (2026-11-06)
+
+- **Bordes de sprites ajustados al píxel y partículas sin recortar a escala > 1** (`GOW_GS_SPRITE_SNAP`,
+  `GOW_GS_PARTICLE_UNCLAMP` en su port). Se probó aquí, con el mismo binario y las dos variantes. Capturas del menú
+  prácticamente iguales; render target 208 a resolución completa (`GOW_GS_HW_RTDUMPAT=45`, escala 2): ninguna columna ni
+  fila más oscura que sus vecinas en ninguna de las dos, solo los bordes de la imagen. No se encontraron las costuras que
+  corrige, así que no se adapta: cambia el dibujo de todos los sprites sin un fallo que lo justifique aquí.
+- **Margen de -4 dB y limitador en la salida de la SPU2.** La SPU2 real satura a 16 bits; bajar el volumen o comprimir es
+  una elección de sonido, no de precisión.
+- **Intervalo mínimo de 15 ms entre imágenes en Present.** Limitaría la ventana a ~66 imágenes por segundo y rompería
+  `GOW_HZ=120`; nuestro Present ya muestra los cuadros en orden, de uno en uno.
+- **Comparar `GSDrawState` campo a campo en lugar de con `memcmp`.** El relleno entre campos podría romper los lotes con
+  clang, pero aquí no ocurre: el mismo combate da ~51 000 lotes cada 5 s con MSVC (`bin\wef`) y con clang + PGO
+  (`GOW_GS_HW_STATS`). Queda como riesgo conocido.
+- **Desplazamiento aritmético en la envolvente de la SPU2:** ya está (`ps2recomp-spu2-envolvente`).
