@@ -1,0 +1,163 @@
+diff --git a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+index 37cc3e3..00e0e67 100644
+--- a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
++++ b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+@@ -1867,6 +1867,12 @@ namespace
+     // GOW-Port: estado del flanco de la interrupcion del GS (solo se usa en el hilo ejecutor). Se guarda
+     // aqui y no en EeScheduler para no cambiar el tamano de la clase.
+     uint32_t g_gsIrqLatched = 0u;
++    // GOW-Port: cuándo se encoló la última interrupción del GS y si una espera a que INTC 0 la pueda aceptar.
++    std::chrono::steady_clock::time_point g_gsIrqDispatchedAt{};
++    bool g_gsIrqWaitingForIntc = false;
++    unsigned g_gsIrqReports = 0u;
++    // Un FINISH que el manejador no ha reconocido tanto tiempo después de encolar su interrupción se encola otra vez.
++    constexpr std::chrono::milliseconds kGsFinishRetry{100};
+ }
+ 
+ void EeScheduler::pollGsInterrupt()
+@@ -1880,9 +1886,39 @@ void EeScheduler::pollGsInterrupt()
+     const uint32_t masked = static_cast<uint32_t>(gs.imr >> 8) & 0x3u;
+     const uint32_t active = csr & ~masked;
+     const uint32_t rising = active & ~g_gsIrqLatched;
++    const auto now = std::chrono::steady_clock::now();
+     g_gsIrqLatched = active;
+     if (rising != 0u)
+     {
++        // GOW-Port: el flanco se daba por atendido aunque no se pudiera entregar. Con la causa 0 de INTC desactivada (el
++        // juego la activa y desactiva) o sin manejador activo en ese momento, dispatchIrq no encolaba nada, el bit seguía a 1
++        // y no llegaba ningún flanco nuevo: el juego esperaba su bandera de "GS terminado" para siempre. La INTC real deja
++        // la petición pendiente hasta poder entregarla: aquí el flanco solo se marca cuando hay a quién entregarlo. Arreglo
++        // de danielalves96/gow-pc-port.
++        bool deliverable = (m_enabledIntcMask & 1u) != 0u;
++        if (deliverable)
++            deliverable = std::any_of(m_intcHandlers.begin(), m_intcHandlers.end(), [this](const auto &entry)
++                                      { const EeIrqHandler &h = entry.second;
++                                        return h.enabled && h.cause == 0u && h.handler != 0u && m_runtime.hasFunction(h.handler); });
++        if (!deliverable)
++        {
++            g_gsIrqLatched = active & ~rising;
++            if (!g_gsIrqWaitingForIntc && g_gsIrqReports < 20u)
++            {
++                ++g_gsIrqReports;
++                std::fprintf(stderr, "[gow-gs-irq] interrupción del GS (csr=%x) con INTC 0 sin poder aceptarla (máscara=%x, "
++                                     "manejadores=%zu): queda pendiente\n", csr, m_enabledIntcMask, m_intcHandlers.size());
++            }
++            g_gsIrqWaitingForIntc = true;
++            return;
++        }
++        if (g_gsIrqWaitingForIntc && g_gsIrqReports < 20u)
++        {
++            ++g_gsIrqReports;
++            std::fprintf(stderr, "[gow-gs-irq] la interrupción del GS pendiente se entrega ahora (csr=%x)\n", csr);
++        }
++        g_gsIrqWaitingForIntc = false;
++        g_gsIrqDispatchedAt = now;
+         // GOW-Port: diagnóstico (PS2X_GS_WORKER_TRACE): el EE despacha la interrupción del GS.
+         static const double tf = [] { const char *v = std::getenv("PS2X_GS_WORKER_TRACE"); return v ? std::atof(v) : -1.0; }();
+         static const auto t0 = std::chrono::steady_clock::now();
+@@ -1894,6 +1930,21 @@ void EeScheduler::pollGsInterrupt()
+                              std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now().time_since_epoch()).count());
+         }
+         dispatchIrq(false, 0u);
++        return;
++    }
++    // GOW-Port: un FINISH aún activo mucho después de encolar su interrupción indica que el manejador no llegó a correr o
++    // no lo reconoció. El manejador del juego solo actúa con un FINISH pendiente y lo reconoce, así que encolarlo otra vez
++    // (como mucho cada kGsFinishRetry) desbloquea al juego en lugar de dejarlo esperando la bandera.
++    if ((active & 0x2u) != 0u && now - g_gsIrqDispatchedAt >= kGsFinishRetry)
++    {
++        if (g_gsIrqReports < 20u)
++        {
++            ++g_gsIrqReports;
++            std::fprintf(stderr, "[gow-gs-irq] CSR.FINISH sigue activo %lld ms después de su interrupción (csr=%x): se encola otra vez\n",
++                         static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(now - g_gsIrqDispatchedAt).count()), csr);
++        }
++        g_gsIrqDispatchedAt = now;
++        dispatchIrq(false, 0u);
+     }
+ }
+ 
+diff --git a/ps2xTest/src/ps2_runtime_interrupt_tests.cpp b/ps2xTest/src/ps2_runtime_interrupt_tests.cpp
+index 16b18a2..6a6e4c6 100644
+--- a/ps2xTest/src/ps2_runtime_interrupt_tests.cpp
++++ b/ps2xTest/src/ps2_runtime_interrupt_tests.cpp
+@@ -56,6 +56,11 @@ namespace
+     constexpr uint32_t kIrqResumePc = 0x00160210u;
+     constexpr uint32_t kIntcHandlerPc = 0x00160220u;
+     constexpr uint32_t kIrqStackWaitPc = 0x00160230u;
++    // GOW-Port: interrupción del GS levantada sin manejador de la causa 0 (ps2recomp-gs-irq-pendiente).
++    constexpr uint32_t kGsIrqRaisePc = 0x00160260u;
++    constexpr uint32_t kGsIrqRegisterPc = 0x00160270u;
++    constexpr uint32_t kGsIrqDonePc = 0x00160280u;
++    constexpr uint32_t kGsIrqHandlerPc = 0x00160290u;
+     constexpr uint32_t kIrqStackResumePc = 0x00160240u;
+     constexpr uint32_t kIrqStackHandlerPc = 0x00160250u;
+     constexpr uint32_t kIrqRegistrationSp = 0x001E0000u;
+@@ -265,6 +270,40 @@ namespace
+         runtime->requestStop();
+     }
+ 
++    std::atomic<int> g_gsIrqHandled{0};
++
++    // CSR.FINISH sin enmascarar y todavía sin manejador de la causa 0: la interrupción debe quedar pendiente.
++    void gsIrqRaise(uint8_t *, R5900Context *ctx, PS2Runtime *runtime)
++    {
++        runtime->memory().gs().imr = 0u;
++        runtime->memory().gs().csr.fetch_or(0x2u, std::memory_order_acq_rel);
++        EeScheduler &scheduler = runtime->eeScheduler();
++        ctx->pc = kGsIrqRegisterPc;
++        scheduler.waitVSync(scheduler.currentVSyncTick());
++    }
++
++    void gsIrqRegister(uint8_t *, R5900Context *ctx, PS2Runtime *runtime)
++    {
++        EeScheduler &scheduler = runtime->eeScheduler();
++        scheduler.addIrqHandler(false, 0u, kGsIrqHandlerPc, true, 0u, 0u, 0u);
++        ctx->pc = kGsIrqDonePc;
++        scheduler.waitVSync(scheduler.currentVSyncTick());
++    }
++
++    void gsIrqDone(uint8_t *, R5900Context *ctx, PS2Runtime *runtime)
++    {
++        ctx->pc = 0u;
++        runtime->requestStop();
++    }
++
++    // El manejador del juego: reconoce FINISH escribiendo CSR.
++    void gsIrqHandler(uint8_t *, R5900Context *ctx, PS2Runtime *runtime)
++    {
++        g_gsIrqHandled.fetch_add(1, std::memory_order_relaxed);
++        runtime->memory().gs().csr.fetch_and(~0x2ull, std::memory_order_acq_rel);
++        ctx->pc = 0u;
++    }
++
+     void schedulerIntcHandler(uint8_t *, R5900Context *ctx, PS2Runtime *)
+     {
+         g_dispatchTrace.push_back(2);
+@@ -748,6 +787,26 @@ void register_ps2_runtime_interrupt_tests()
+                      "the IRQ frame should receive its registered argument");
+         });
+ 
++        tc.Run("a GS interrupt raised before its handler exists is delivered once the handler is added", [](TestCase &t)
++        {
++            // GOW-Port: ps2recomp-gs-irq-pendiente. El flanco de CSR.FINISH no puede darse por atendido sin un manejador al
++            // que entregarlo: con el bit todavía a 1 no llega otro flanco y el juego esperaba su bandera para siempre.
++            TestEnv env;
++            env.runtime.registerFunction(kGsIrqRaisePc, gsIrqRaise);
++            env.runtime.registerFunction(kGsIrqRegisterPc, gsIrqRegister);
++            env.runtime.registerFunction(kGsIrqDonePc, gsIrqDone);
++            env.runtime.registerFunction(kGsIrqHandlerPc, gsIrqHandler);
++            g_gsIrqHandled.store(0, std::memory_order_relaxed);
++            R5900Context mainContext{};
++            mainContext.pc = kGsIrqRaisePc;
++            env.runtime.eeScheduler().reset(env.rdram.data(), mainContext);
++            env.runtime.eeScheduler().run();
++            t.IsTrue(g_gsIrqHandled.load(std::memory_order_relaxed) >= 1,
++                     "the pending GS interrupt should reach the handler registered after it was raised");
++            t.Equals(static_cast<uint32_t>(env.runtime.memory().gs().csr.load() & 0x2u), 0u,
++                     "the handler should have acknowledged FINISH");
++        });
++
+         tc.Run("IRQ callbacks use an isolated invocation stack", [](TestCase &t)
+         {
+             TestEnv env;

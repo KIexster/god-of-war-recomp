@@ -7951,3 +7951,16 @@ recorrido de 6 zonas con `GOW_WARP`), perfiles fusionados con `llvm-profdata` y 
   `<GOW_WORK>\pgo` al cerrar la ventana; `3_ejecutar.cmd` lo mata a los 60 s y no sirve, `3_ejecutar_manual.cmd` sí);
   `GOW_PGO=usar` fusiona los perfiles y compila con ellos. El perfil describe funciones del código generado a partir
   del juego: no se sube al repositorio, cada uno lo genera en su equipo.
+
+### Interrupción del GS pendiente mientras INTC 0 no la acepta (2026-11-06)
+
+Arreglo de `danielalves96/gow-pc-port` (commit 25271102), reimplementado: `EeScheduler::pollGsInterrupt` daba por
+atendido el flanco de CSR.FINISH/SIGNAL aunque `dispatchIrq` no pudiera encolar nada (causa 0 de INTC desactivada, que
+el juego activa y desactiva, o sin manejador activo). Con el bit todavía a 1 no llegaba otro flanco y el juego esperaba
+su bandera de "GS terminado" para siempre. Con el FINISH anticipado hay más flancos, así que conviene cerrarlo.
+
+`patches/ps2recomp-gs-irq-pendiente.patch`: el flanco solo se marca cuando hay un manejador al que entregarlo (si no,
+queda pendiente y se avisa con `[gow-gs-irq]`), y un FINISH que sigue activo 100 ms después de encolar su interrupción
+se vuelve a encolar (el manejador del juego solo actúa con FINISH pendiente y lo reconoce). Prueba: "a GS interrupt
+raised before its handler exists is delivered once the handler is added". En combate a 120 Hz no aparece ningún aviso
+(es preventivo) y no hay cuadros de más de 50 ms.
