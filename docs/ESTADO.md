@@ -7930,3 +7930,24 @@ hasta 0x01F31000): pasadas unas 45 pisaban esas reservas sin avisar. Nuestro run
 se registran (`[stack] pila de interrupción N en …`). Prueba: "interrupt stacks stay above the runtime's RPC and TLS
 pools". En la práctica no nos afectaba: un recorrido de 7 cargas de zona (`GOW_WARP`) reserva solo 2 pilas, de unas
 44 que caben.
+
+### Optimización guiada por perfil (PGO) con clang (2026-11-06)
+
+Con clang-cl (`GOW_LLVM`) se probó PGO, como hace `danielalves96/gow-pc-port` con su "speed profile". Compilación
+instrumentada (`-fprofile-instr-generate`), dos sesiones de entrenamiento (combate del barco a 120 Hz, 150 s, y un
+recorrido de 6 zonas con `GOW_WARP`), perfiles fusionados con `llvm-profdata` y compilación con
+`-fprofile-instr-use`. El runtime sale con `std::_Exit`, que se salta el `atexit` que vuelca el perfil:
+`patches/ps2recomp-pgo.patch` llama a `__llvm_profile_write_file()` antes, solo en la compilación instrumentada
+(`GOW_PGO_GEN`).
+
+- Exactitud: reproducción de la VU1 0/4000 diferencias y `GOW_VU1N_VERIFY` 0/20000.
+- Reproducción de la VU1 (2 rondas): clang 360,3/365,2 ms, clang+PGO 326,3/324,2 ms (-10 %; MSVC ~380).
+- Juego, combate, ns por ciclo de VU1 (2 rondas alternas de tres): MSVC 3,298/3,322, clang 3,267/3,303,
+  clang+PGO 2,984/2,914 (-10 a -12 %).
+- Combate a 120 Hz (`ab_traza.sh`, 3 rondas, MSVC frente a clang+PGO): cuadros en 130 s 2975 -> 3993, 3320 -> 3635
+  y 3523 -> 4232 (+34, +9 y +20 %); periodo mediano 11,97 -> 10,13, 12,58 -> 10,97 y 11,90 -> 9,29 ms; trabajo
+  VU1+GS mediano 11,94 -> 10,79, 12,99 -> 10,91 y 12,78 -> 10,15 ms.
+- `scripts/compilar.ps1` con `GOW_LLVM`: `GOW_PGO=generar` compila instrumentado (y `ejecutar.ps1` guarda el perfil en
+  `<GOW_WORK>\pgo` al cerrar la ventana; `3_ejecutar.cmd` lo mata a los 60 s y no sirve, `3_ejecutar_manual.cmd` sí);
+  `GOW_PGO=usar` fusiona los perfiles y compila con ellos. El perfil describe funciones del código generado a partir
+  del juego: no se sube al repositorio, cada uno lo genera en su equipo.

@@ -179,6 +179,10 @@ LLVM para Windows (`clang+llvm-*-x86_64-pc-windows-msvc`) e aponte `GOW_LLVM` pa
 compilar: `set GOW_LLVM=C:\llvm\bin`. A compilação fica em `out\build-clang`; o Visual Studio continua necessário
 pelos cabeçalhos e bibliotecas.
 
+Com clang também dá para otimizar com um perfil da sua própria partida (PGO; a VU1 fica 10–12 % mais rápida em
+combate): compile com `set GOW_PGO=generar`, jogue um pouco com `scripts\3_ejecutar_manual.cmd` (ao você fechar a janela o perfil
+fica em `<GOW_WORK>\pgo`) e compile de novo com `set GOW_PGO=usar`. O perfil não sai do seu computador.
+
 As compilações Release desativam por padrão as trilhas de funções e RPC do IOP. Para investigar,
 use `scripts\2_compilar.cmd -Trazas`. Para medir as chamadas a `vid::Flip` do jogo separadamente
 da atualização da janela, execute `powershell -File scripts\probar_rendimiento.ps1`;

@@ -23,6 +23,31 @@ if ($env:GOW_LLVM) {
     $llvm = $env:GOW_LLVM -replace '\\', '/'
     $clangArgs = @("-DCMAKE_C_COMPILER=$llvm/clang-cl.exe", "-DCMAKE_CXX_COMPILER=$llvm/clang-cl.exe",
                    "-DCMAKE_LINKER=$llvm/lld-link.exe", "-DCMAKE_AR=$llvm/llvm-lib.exe")
+    # GOW-Port: optimizacion guiada por perfil (PGO), solo con clang. GOW_PGO=generar compila un ejecutable instrumentado
+    # que, al cerrar el juego, deja su perfil en <GOW_WORK>\pgo (ejecutar.ps1); GOW_PGO=usar fusiona esos perfiles
+    # y compila con ellos (la VU1 un 10-12 % mas rapida en combate). Sin GOW_PGO, compilacion normal.
+    $pgoFlags = ''
+    $pgoLink = ''
+    $pgoDir = Join-Path $work 'pgo'
+    if ($env:GOW_PGO -eq 'generar') {
+        $resource = (& $clangCl /clang:-print-resource-dir 2>$null | Select-Object -First 1)
+        $pgoFlags = ' /clang:-fprofile-instr-generate /DGOW_PGO_GEN'
+        $pgoLink = '/LIBPATH:' + ((Join-Path $resource 'lib\windows') -replace '\\', '/')
+    } elseif ($env:GOW_PGO -eq 'usar') {
+        $raw = @(Get-ChildItem -LiteralPath $pgoDir -Filter '*.profraw' -File -ErrorAction SilentlyContinue)
+        if ($raw.Count -eq 0) { throw "GOW_PGO=usar: no hay perfiles (*.profraw) en $pgoDir. Juega antes con GOW_PGO=generar." }
+        $profdata = Join-Path $pgoDir 'gow.profdata'
+        & (Join-Path $env:GOW_LLVM 'llvm-profdata.exe') merge -o $profdata ($raw | ForEach-Object { $_.FullName })
+        if ($LASTEXITCODE -ne 0) { throw "Fallo ($LASTEXITCODE): llvm-profdata merge" }
+        $pgoFlags = ' /clang:-fprofile-instr-use=' + ($profdata -replace '\\', '/') +
+                    ' /clang:-Wno-profile-instr-unprofiled /clang:-Wno-profile-instr-out-of-date'
+    } elseif ($env:GOW_PGO) {
+        throw "GOW_PGO debe ser 'generar' o 'usar' (es '$env:GOW_PGO')"
+    }
+    # Opciones por defecto de CMake para clang-cl mas las de PGO (se fijan siempre, para quitar las de una compilacion
+    # anterior con otro GOW_PGO).
+    $clangArgs += @("-DCMAKE_C_FLAGS=/DWIN32 /D_WINDOWS$pgoFlags", "-DCMAKE_CXX_FLAGS=/DWIN32 /D_WINDOWS /EHsc /GR$pgoFlags",
+                    "-DCMAKE_EXE_LINKER_FLAGS=$pgoLink")
 }
 
 $template  = Join-Path $RepoRoot 'config\recomp.template.toml'
@@ -113,6 +138,8 @@ $gsFinishAnticipadoPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-finish-anti
 $clangPatch = Join-Path $RepoRoot 'patches\ps2recomp-clang.patch'
 # GOW-Port: las pilas de interrupciones no bajan hasta las reservas RPC/TLS del runtime (0x01F00000-0x01F31000).
 $pilasSobreReservasPatch = Join-Path $RepoRoot 'patches\ps2recomp-pilas-sobre-reservas.patch'
+# GOW-Port: la compilación instrumentada para PGO (GOW_PGO=generar) vuelca su perfil al cerrar el juego.
+$pgoPatch = Join-Path $RepoRoot 'patches\ps2recomp-pgo.patch'
 # GOW-Port: contexto OpenGL del GS en Linux con EGL (antes solo WGL: en Linux la ventana quedaba magenta).
 $gsEglLinuxPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-egl-linux.patch'
 # GOW-Port: GOW_VU1_CAPTURA también con la VU1 nativa activa (antes solo guardaba con GOW_VU1_NATIVE_OFF=1, a ~6 FPS).
@@ -202,6 +229,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1MaddSaturadoPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsFinishAnticipadoPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $clangPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $pilasSobreReservasPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $pgoPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
