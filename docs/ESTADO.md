@@ -8033,3 +8033,18 @@ Steam) dejaba el juego sin control.
 
 Probado con el guion de combate (menús y partida normales, 60 FPS). Sin prueba en `ps2xTest`: depende de raylib y del
 teclado real.
+
+### Audio rechazado de un vídeo anterior (2026-11-06)
+
+Idea de `danielalves96/gow-pc-port` (del port de Waffle565), reimplementada. God of War abre todos los vídeos con el
+mismo sceMpeg (`0x304DC8`). Los paquetes de audio que el callback del juego rechaza (búfer del IOP lleno) esperan en
+`g_pendingAudio` y se reintentan en la siguiente demultiplexación. Un vídeo que terminaba con paquetes aún rechazados se
+los entregaba al principio del vídeo siguiente, lo que desplazaba su PCM respecto al entrelazado L/R de 512 bytes.
+
+- `patches/ps2recomp-mpeg-audio-pendiente.patch`: `appendPssBytes` descarta el audio pendiente con el primer dato de
+  cada flujo nuevo (tras `sceMpegCreate`, un fin de flujo o `notifyMpegCdStreamStart`); con `GOW_MPEG_DIAG` se registra
+  `[MPEG:pending]`.
+- Prueba `a new movie stream drops the refused audio packets of the previous one` en `ps2xTest` (falla sin el arreglo).
+
+Probado con el juego (vídeo de la intro y partida, `GOW_SKIP_FMV=0`): sin cambios visibles. En esa ejecución solo se
+reprodujo un vídeo, así que el descarte en sí lo comprueba la prueba unitaria.
