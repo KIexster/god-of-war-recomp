@@ -309,13 +309,24 @@ namespace
         uint8_t state[32]{};
         if (!buffer || !socket || socket->port != 0 || !runtime ||
             !runtime->padBackend().readState(0, 0, state, sizeof(state))) { padReturn(ctx, 0xffffffffu); return; }
-        // GOW-Port: keyboard sticks only without any gamepad (PSPadBackend uses the first available slot).
-        if (!IsGamepadAvailable(0) && !IsGamepadAvailable(1) && !IsGamepadAvailable(2) && !IsGamepadAvailable(3))
+        // GOW-Port: keyboard sticks (WASD left, IJKL right). Without any gamepad they set both sticks; with one, a pressed key
+        // replaces only the axis it moves, so a working pad is not overridden and a listed pad that sends nothing (a dongle,
+        // a virtual Steam pad) does not leave the game without movement. Idea from danielalves96/gow-pc-port.
         {
-            state[6] = IsKeyDown(KEY_A) ? 0 : IsKeyDown(KEY_D) ? 255 : 128;
-            state[7] = IsKeyDown(KEY_W) ? 0 : IsKeyDown(KEY_S) ? 255 : 128;
-            state[4] = IsKeyDown(KEY_J) ? 0 : IsKeyDown(KEY_L) ? 255 : 128;
-            state[5] = IsKeyDown(KEY_I) ? 0 : IsKeyDown(KEY_K) ? 255 : 128;
+            const bool anyGamepad = IsGamepadAvailable(0) || IsGamepadAvailable(1) || IsGamepadAvailable(2) || IsGamepadAvailable(3);
+            const auto axis = [&](int index, int lowKey, int highKey)
+            {
+                if (IsKeyDown(lowKey))
+                    state[index] = 0;
+                else if (IsKeyDown(highKey))
+                    state[index] = 255;
+                else if (!anyGamepad)
+                    state[index] = 128;
+            };
+            axis(6, KEY_A, KEY_D);
+            axis(7, KEY_W, KEY_S);
+            axis(4, KEY_J, KEY_L);
+            axis(5, KEY_I, KEY_K);
         }
         // Opt-in smoke test: advance title/new-game prompts without host UI input.
         // Capture the GS's own presented pixels; normal play never injects input.

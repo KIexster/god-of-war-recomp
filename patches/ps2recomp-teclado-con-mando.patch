@@ -1,0 +1,15 @@
+diff --git a/ps2xRuntime/src/lib/ps2_pad.cpp b/ps2xRuntime/src/lib/ps2_pad.cpp
+index 96deb57..09adc3a 100644
+--- a/ps2xRuntime/src/lib/ps2_pad.cpp
++++ b/ps2xRuntime/src/lib/ps2_pad.cpp
+@@ -124,7 +124,9 @@ bool PSPadBackend::readState(int /*port*/, int /*slot*/, uint8_t *data, size_t s
+         data[4] = static_cast<uint8_t>(128 + rx * 127);
+         data[5] = static_cast<uint8_t>(128 + ry * 127);
+     }
+-    else
++    // GOW-Port: el teclado se lee siempre, también con un mando: un dispositivo que aparece como mando pero nunca envía
++    // nada (un receptor sin mando, un mando virtual de Steam) dejaba al juego sin ningún control. Los botones son activos
++    // a nivel bajo, así que teclado y mando simplemente se suman. Idea de danielalves96/gow-pc-port.
+     {
+         if (IsKeyDown(KEY_UP) || IsKeyDown(KEY_W))
+             clearBit(PAD_UP);
