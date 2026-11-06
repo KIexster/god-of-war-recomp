@@ -1,0 +1,90 @@
+diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
+index 14f9803..708b50a 100644
+--- a/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -192,6 +192,12 @@ namespace
+     constexpr uint32_t kGuestHeapDefaultAlignment = 16u;
+     constexpr uint32_t kGuestHeapSafetyPad = 0x1000u;
+     constexpr uint32_t kGuestHeapHardLimit = 0x01F00000u;
++    // GOW-Port: final de las reservas propias del runtime encima del heap (paquetes y servidores RPC, TLS y modo de
++    // arranque, 0x01F00000-0x01F31000: Kernel/Syscalls/Helpers/State.h). Las pilas de interrupciones y callbacks bajan
++    // desde lo alto de la RAM (16 KB cada una, sin liberarse) y solo se paraban en 0x01F00000: a partir de unas 45
++    // pisaban esas reservas sin avisar. Ahora se paran encima, y quedarse sin sitio es un error explícito. Idea de
++    // danielalves96/gow-pc-port.
++    constexpr uint32_t kRuntimePoolsEnd = 0x01F31000u;
+ 
+     constexpr uint32_t COP0_CAUSE_EXCCODE_MASK = 0x0000007Cu;
+     constexpr uint32_t COP0_CAUSE_BD = 0x80000000u;
+@@ -515,7 +521,7 @@ PS2Runtime::PS2Runtime()
+     m_guestHeapLimit = std::min(kGuestHeapHardLimit, PS2_RAM_SIZE);
+     m_guestHeapSuggestedBase = kGuestHeapDefaultBase;
+     m_guestHeapConfigured = false;
+-    m_asyncCallbackStackFloor = std::min(kGuestHeapHardLimit, PS2_RAM_SIZE);
++    m_asyncCallbackStackFloor = std::min(kRuntimePoolsEnd, PS2_RAM_SIZE);
+     m_asyncCallbackStackTop = PS2_RAM_SIZE;
+ }
+ 
+@@ -1146,7 +1152,7 @@ bool PS2Runtime::loadELF(const std::string &elfPath)
+     {
+         std::lock_guard<std::mutex> lock(m_asyncCallbackStackMutex);
+         const uint32_t hardLimit = std::min(kGuestHeapHardLimit, PS2_RAM_SIZE);
+-        m_asyncCallbackStackFloor = std::min(std::max(hardLimit, suggestedHeapBase), PS2_RAM_SIZE);
++        m_asyncCallbackStackFloor = std::min(std::max({hardLimit, suggestedHeapBase, kRuntimePoolsEnd}), PS2_RAM_SIZE);
+         m_asyncCallbackStackTop = PS2_RAM_SIZE;
+     }
+ 
+@@ -2367,10 +2373,22 @@ uint32_t PS2Runtime::reserveAsyncCallbackStack(uint32_t size, uint32_t alignment
+     base &= ~(normalizedAlignment - 1u);
+     if (base < m_asyncCallbackStackFloor || base >= top)
+     {
++        // GOW-Port: una vez en el registro, junto al error que sigue ("EE invocation stack space exhausted").
++        static bool reported = false;
++        if (!reported)
++        {
++            reported = true;
++            std::fprintf(stderr, "[stack] no queda sitio para otra pila de interrupción (cima 0x%x, suelo 0x%x)\n",
++                         m_asyncCallbackStackTop, m_asyncCallbackStackFloor);
++        }
+         return 0u;
+     }
+ 
+     m_asyncCallbackStackTop = base;
++    // GOW-Port: cuántas pilas usa de verdad el juego (las primeras 64; caben unas 50 por encima de las reservas).
++    static unsigned reservations = 0u;
++    if (++reservations <= 64u)
++        std::fprintf(stderr, "[stack] pila de interrupción %u en 0x%x-0x%x\n", reservations, base, top);
+     return top - 0x10u;
+ }
+ 
+diff --git a/ps2xTest/src/ps2_runtime_kernel_tests.cpp b/ps2xTest/src/ps2_runtime_kernel_tests.cpp
+index 4bfe0d0..268893d 100644
+--- a/ps2xTest/src/ps2_runtime_kernel_tests.cpp
++++ b/ps2xTest/src/ps2_runtime_kernel_tests.cpp
+@@ -5,6 +5,7 @@
+ #include "ps2_stubs.h"
+ #include "runtime/ee_scheduler.h"
+ 
++#include <algorithm>
+ #include <array>
+ #include <atomic>
+ #include <cstdint>
+@@ -922,6 +923,19 @@ void register_ps2_runtime_kernel_tests()
+             t.Equals(reused, heapBase, "guestFree should make the head block reusable");
+         });
+ 
++        tc.Run("interrupt stacks stay above the runtime's RPC and TLS pools", [](TestCase &t)
++        {
++            // GOW-Port: ps2recomp-pilas-sobre-reservas. Las pilas de interrupciones y callbacks se reservan desde lo alto
++            // de la RAM y nunca deben llegar a los paquetes RPC (0x01F00000) ni al resto de reservas (hasta 0x01F31000).
++            TestEnv env;
++            uint32_t lowest = PS2_RAM_SIZE, stacks = 0u;
++            for (uint32_t top; stacks < 4096u && (top = env.runtime.reserveAsyncCallbackStack(0x4000u, 16u)) != 0u; ++stacks)
++                lowest = std::min(lowest, top + 0x10u - 0x4000u);
++            t.IsTrue(stacks > 8u, "there should be room for several interrupt stacks");
++            t.IsTrue(stacks < 4096u, "the stacks should run out instead of growing without limit");
++            t.IsTrue(lowest >= 0x01F31000u, "no interrupt stack may overlap the runtime's RPC, TLS and boot pools");
++        });
++
+         tc.Run("private guest heap keeps runtime allocations out of the game's SetupHeap range", [](TestCase &t)
+         {
+             // GOW-Port: God of War gestiona su propio heap; el del runtime va a un rango fijo aparte.

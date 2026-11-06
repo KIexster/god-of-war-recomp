@@ -111,6 +111,8 @@ $vu1MaddSaturadoPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-madd-saturado
 $gsFinishAnticipadoPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-finish-anticipado.patch'
 # GOW-Port: compila también con clang-cl (GOW_LLVM): opciones de ReleaseMode y FMA desactivada en la VU como con MSVC.
 $clangPatch = Join-Path $RepoRoot 'patches\ps2recomp-clang.patch'
+# GOW-Port: las pilas de interrupciones no bajan hasta las reservas RPC/TLS del runtime (0x01F00000-0x01F31000).
+$pilasSobreReservasPatch = Join-Path $RepoRoot 'patches\ps2recomp-pilas-sobre-reservas.patch'
 # GOW-Port: contexto OpenGL del GS en Linux con EGL (antes solo WGL: en Linux la ventana quedaba magenta).
 $gsEglLinuxPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-egl-linux.patch'
 # GOW-Port: GOW_VU1_CAPTURA también con la VU1 nativa activa (antes solo guardaba con GOW_VU1_NATIVE_OFF=1, a ~6 FPS).
@@ -199,6 +201,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1ClipSinSaltosPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1MaddSaturadoPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsFinishAnticipadoPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $clangPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $pilasSobreReservasPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
