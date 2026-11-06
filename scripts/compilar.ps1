@@ -140,6 +140,8 @@ $clangPatch = Join-Path $RepoRoot 'patches\ps2recomp-clang.patch'
 $pilasSobreReservasPatch = Join-Path $RepoRoot 'patches\ps2recomp-pilas-sobre-reservas.patch'
 # GOW-Port: la compilación instrumentada para PGO (GOW_PGO=generar) vuelca su perfil al cerrar el juego.
 $pgoPatch = Join-Path $RepoRoot 'patches\ps2recomp-pgo.patch'
+# GOW-Port: la interrupción del GS queda pendiente si INTC 0 no la puede aceptar, y se reintenta un FINISH sin reconocer.
+$gsIrqPendientePatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-irq-pendiente.patch'
 # GOW-Port: contexto OpenGL del GS en Linux con EGL (antes solo WGL: en Linux la ventana quedaba magenta).
 $gsEglLinuxPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-egl-linux.patch'
 # GOW-Port: GOW_VU1_CAPTURA también con la VU1 nativa activa (antes solo guardaba con GOW_VU1_NATIVE_OFF=1, a ~6 FPS).
@@ -230,6 +232,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $gsFinishAnticipadoPatch
 Run $git @('apply', '--ignore-whitespace', '--verbose', $clangPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $pilasSobreReservasPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $pgoPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsIrqPendientePatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
