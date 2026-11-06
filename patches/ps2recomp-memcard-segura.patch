@@ -1,0 +1,272 @@
+diff --git a/ps2xIOP/src/emulator/core/memory_card.cpp b/ps2xIOP/src/emulator/core/memory_card.cpp
+index 9a36f31..cebd504 100644
+--- a/ps2xIOP/src/emulator/core/memory_card.cpp
++++ b/ps2xIOP/src/emulator/core/memory_card.cpp
+@@ -1,23 +1,30 @@
+ #include "memory_card.h"
+ 
+ #include <algorithm>
++#include <filesystem>
+ #include <fstream>
+ #include <iostream>
++#include <system_error>
+ 
+ namespace ps2x::iop::detail
+ {
+     void MemoryCard::insert(std::string path)
+     {
++        closeFile();
+         m_path = std::move(path);
+         m_present = true;
+         m_loaded = false;
+         m_fileExists = false;
++        m_fileComplete = false;
++        m_backedUp = false;
++        m_writeErrorLogged = false;
+         m_image.clear();
+         m_address = 0;
+     }
+ 
+     void MemoryCard::eject()
+     {
++        closeFile();
+         m_present = false;
+         m_loaded = false;
+         m_image.clear();
+@@ -36,6 +43,64 @@ namespace ps2x::iop::detail
+             return;
+         m_fileExists = true;
+         file.read(reinterpret_cast<char *>(m_image.data()), static_cast<std::streamsize>(m_image.size()));
++        // GOW-Port: un archivo más corto (copia interrumpida, creación a medias) se completa entero en la primera escritura
++        m_fileComplete = file.gcount() == static_cast<std::streamsize>(m_image.size());
++        if (!m_fileComplete)
++            std::cerr << "[SIO2] la memory card " << m_path << " tiene " << file.gcount() << " bytes de " << m_image.size()
++                      << ": se reescribirá entera en la primera escritura" << std::endl;
++    }
++
++    void MemoryCard::closeFile()
++    {
++        if (m_file.is_open())
++            m_file.close();
++        m_file.clear();
++    }
++
++    void MemoryCard::backupOnce()
++    {
++        // GOW-Port: antes de la primera modificación de cada sesión, copia de la tarjeta tal como estaba en <ruta>.bak
++        // (una partida guardada que sale mal, o un fallo del runtime, no se lleva la anterior).
++        if (m_backedUp || !m_fileExists)
++            return;
++        m_backedUp = true;
++        std::error_code error;
++        const std::filesystem::path backup = std::filesystem::path(m_path).concat(".bak");
++        std::filesystem::copy_file(m_path, backup, std::filesystem::copy_options::overwrite_existing, error);
++        if (error)
++            std::cerr << "[SIO2] no se pudo copiar la memory card a " << backup.string() << ": " << error.message() << std::endl;
++    }
++
++    bool MemoryCard::writeWholeImage()
++    {
++        closeFile();
++        const std::filesystem::path target(m_path);
++        const std::filesystem::path temporary = std::filesystem::path(m_path).concat(".tmp");
++        {
++            std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
++            if (file)
++                file.write(reinterpret_cast<const char *>(m_image.data()), static_cast<std::streamsize>(m_image.size()));
++            if (file)
++                file.flush();
++            if (!file)
++            {
++                std::cerr << "[SIO2] no se puede crear la memory card " << m_path << std::endl;
++                file.close();
++                std::error_code ignored;
++                std::filesystem::remove(temporary, ignored);
++                return false;
++            }
++        }
++        std::error_code error;
++        std::filesystem::rename(temporary, target, error); // reemplaza el destino si existe
++        if (error)
++        {
++            std::cerr << "[SIO2] no se puede crear la memory card " << m_path << ": " << error.message() << std::endl;
++            std::error_code ignored;
++            std::filesystem::remove(temporary, ignored);
++            return false;
++        }
++        return true;
+     }
+ 
+     const std::vector<uint8_t> &MemoryCard::image()
+@@ -48,25 +113,37 @@ namespace ps2x::iop::detail
+     {
+         if (m_path.empty() || size == 0u)
+             return;
+-        if (!m_fileExists)
++        backupOnce();
++        if (!m_fileExists || !m_fileComplete)
+         {
+-            // Primera escritura: se crea el archivo con la imagen entera
+-            std::ofstream file(m_path, std::ios::binary | std::ios::trunc);
+-            if (!file)
+-            {
+-                std::cerr << "[SIO2] no se puede crear la memory card " << m_path << std::endl;
++            // Primera escritura sin archivo completo: se crea con la imagen entera
++            if (!writeWholeImage())
+                 return;
+-            }
+-            file.write(reinterpret_cast<const char *>(m_image.data()), static_cast<std::streamsize>(m_image.size()));
+-            m_fileExists = static_cast<bool>(file);
+-            std::cerr << "[SIO2] memory card creada en " << m_path << std::endl;
++            if (!m_fileExists)
++                std::cerr << "[SIO2] memory card creada en " << m_path << std::endl;
++            m_fileExists = true;
++            m_fileComplete = true;
+             return;
+         }
+-        std::fstream file(m_path, std::ios::binary | std::ios::in | std::ios::out);
+-        if (!file)
+-            return;
+-        file.seekp(offset);
+-        file.write(reinterpret_cast<const char *>(m_image.data() + offset), static_cast<std::streamsize>(size));
++        // GOW-Port: el archivo queda abierto (antes se abría y cerraba en cada página) y se vacía tras cada escritura
++        if (!m_file.is_open())
++        {
++            m_file.clear();
++            m_file.open(m_path, std::ios::binary | std::ios::in | std::ios::out);
++        }
++        if (m_file.is_open())
++        {
++            m_file.seekp(offset);
++            m_file.write(reinterpret_cast<const char *>(m_image.data() + offset), static_cast<std::streamsize>(size));
++            m_file.flush();
++        }
++        if (!m_file.is_open() || !m_file)
++        {
++            if (!m_writeErrorLogged)
++                std::cerr << "[SIO2] error al escribir la memory card " << m_path << std::endl;
++            m_writeErrorLogged = true;
++            closeFile(); // se reintenta abrirla en la siguiente escritura
++        }
+     }
+ 
+     void MemoryCard::read(uint8_t *destination, size_t size)
+diff --git a/ps2xIOP/src/emulator/core/memory_card.h b/ps2xIOP/src/emulator/core/memory_card.h
+index 86d7a84..98a121f 100644
+--- a/ps2xIOP/src/emulator/core/memory_card.h
++++ b/ps2xIOP/src/emulator/core/memory_card.h
+@@ -6,6 +6,7 @@
+ #include <array>
+ #include <cstddef>
+ #include <cstdint>
++#include <fstream>
+ #include <functional>
+ #include <string>
+ #include <vector>
+@@ -40,11 +41,20 @@ namespace ps2x::iop::detail
+     private:
+         void load();
+         void persist(uint32_t offset, size_t size);
++        // GOW-Port: ps2recomp-memcard-segura. Imagen entera a un temporal y rename: un cierre a medias no deja una
++        // tarjeta truncada.
++        bool writeWholeImage();
++        void backupOnce();
++        void closeFile();
+ 
+         std::string m_path;
+         bool m_present = false;
+         bool m_loaded = false;
+         bool m_fileExists = false;
++        bool m_fileComplete = false; // el archivo tiene ImageSize bytes: se puede escribir por desplazamiento
++        bool m_backedUp = false;     // ya se hizo la copia <ruta>.bak de esta sesión
++        bool m_writeErrorLogged = false;
++        std::fstream m_file;         // abierto desde la primera escritura hasta eject/insert
+         std::vector<uint8_t> m_image;
+         uint32_t m_address = 0;
+     };
+diff --git a/ps2xTest/src/ps2_iop_tests.cpp b/ps2xTest/src/ps2_iop_tests.cpp
+index 2c321e4..5cdf75f 100644
+--- a/ps2xTest/src/ps2_iop_tests.cpp
++++ b/ps2xTest/src/ps2_iop_tests.cpp
+@@ -7,8 +7,11 @@
+ #include "../../ps2xIOP/src/emulator/core/iop_memory.h"
+ #include "../../ps2xIOP/src/emulator/services/iop_rpc.h"
+ #include "../../ps2xIOP/src/emulator/core/sound_engine.h"
++#include "../../ps2xIOP/src/emulator/core/memory_card.h"
+ 
+ #include <cstdint>
++#include <filesystem>
++#include <fstream>
+ #include <vector>
+ 
+ void register_ps2_iop_tests()
+@@ -431,6 +434,69 @@ void register_ps2_iop_tests()
+             t.Equals(sync.gpr[2], 0u, "the drive should be idle after sceCdStop");
+         });
+ 
++        // GOW-Port: ps2recomp-memcard-segura. Copia <ruta>.bak antes de la primera modificación de la sesión.
++        tc.Run("the first memory card write of a session keeps a backup of the card as it was", [](TestCase &t)
++        {
++            using ps2x::iop::detail::MemoryCard;
++            const std::filesystem::path file = std::filesystem::temp_directory_path() / "ps2x_backup_card.ps2";
++            const std::filesystem::path backup = std::filesystem::path(file).concat(".bak");
++            std::filesystem::remove(backup);
++            {
++                std::vector<char> image(MemoryCard::ImageSize, static_cast<char>(0xFF));
++                image[0] = 0x11;
++                std::ofstream(file, std::ios::binary | std::ios::trunc).write(image.data(), static_cast<std::streamsize>(image.size()));
++            }
++            {
++                MemoryCard card;
++                card.insert(file.string());
++                const uint8_t value = 0x01u;
++                card.setAddress(0u);
++                card.write(&value, 1u);
++                card.setAddress(1u);
++                card.write(&value, 1u); // segunda escritura: la copia no se rehace
++            }
++            t.IsTrue(std::filesystem::exists(backup), "the first write should leave <card>.bak");
++            char first = 0;
++            std::ifstream(backup, std::ios::binary).read(&first, 1);
++            t.Equals(static_cast<uint8_t>(first), static_cast<uint8_t>(0x11u), "the backup should hold the card before the session");
++            std::ifstream(file, std::ios::binary).read(&first, 1);
++            t.Equals(static_cast<uint8_t>(first), static_cast<uint8_t>(0x01u), "the card itself should have the new data");
++            std::filesystem::remove(file);
++            std::filesystem::remove(backup);
++        });
++
++        // GOW-Port: ps2recomp-memcard-segura. Un archivo truncado (creación interrumpida) se completa a 8 MB.
++        tc.Run("a truncated memory card file is rewritten whole on the first write", [](TestCase &t)
++        {
++            using ps2x::iop::detail::MemoryCard;
++            const std::filesystem::path file = std::filesystem::temp_directory_path() / "ps2x_short_card.ps2";
++            {
++                std::vector<char> head(1000u, static_cast<char>(0x22));
++                std::ofstream(file, std::ios::binary | std::ios::trunc).write(head.data(), static_cast<std::streamsize>(head.size()));
++            }
++            {
++                MemoryCard card;
++                card.insert(file.string());
++                const uint8_t value = 0x00u;
++                card.setAddress(0x100u);
++                card.write(&value, 1u);
++            }
++            t.Equals(static_cast<uint64_t>(std::filesystem::file_size(file)), static_cast<uint64_t>(MemoryCard::ImageSize),
++                     "the card file should be a full 8 MB image again");
++            MemoryCard reloaded;
++            reloaded.insert(file.string());
++            uint8_t value = 0xEEu;
++            reloaded.setAddress(0u);
++            reloaded.read(&value, 1u);
++            t.Equals(value, static_cast<uint8_t>(0x22u), "the bytes that were in the file should be kept");
++            reloaded.setAddress(0x100u);
++            reloaded.read(&value, 1u);
++            t.Equals(value, static_cast<uint8_t>(0x00u), "the new write should be in the file");
++            t.IsFalse(std::filesystem::exists(std::filesystem::path(file).concat(".tmp")), "no temporary file should be left");
++            std::filesystem::remove(file);
++            std::filesystem::remove(std::filesystem::path(file).concat(".bak"));
++        });
++
+         tc.Run("unknown SID remains unhandled without a loaded IRX", [](TestCase &t)
+         {
+             iop_test::Host host;
