@@ -1,0 +1,140 @@
+diff --git a/ps2xRuntime/include/runtime/gs/gs_colour_runs.h b/ps2xRuntime/include/runtime/gs/gs_colour_runs.h
+new file mode 100644
+index 0000000..436162c
+--- /dev/null
++++ b/ps2xRuntime/include/runtime/gs/gs_colour_runs.h
+@@ -0,0 +1,37 @@
++#pragma once
++// GOW-Port: ps2recomp-gs-sombras-tramos. Tramos consecutivos de triángulos con el mismo color (GS por hardware, volúmenes
++// de sombra). Las dos pasadas de recuento de las sombras (G += 255 y G += 1) tienen el mismo estado del GS y solo cambian
++// el color plano de sus vértices, así que comparten lote; el atajo de mezcla fija necesita un solo color por llamada.
++// Partir el lote en tramos, en orden, conserva el orden de las operaciones sobre cada píxel.
++#include <cstddef>
++#include <cstdint>
++#include <vector>
++
++namespace gs_colour_runs
++{
++    // `verts`: vertexCount vértices de `stride` floats con el color (r, g, b) a partir del float `colourOffset`.
++    // Deja en `ends` el vértice final (exclusivo) de cada tramo; los tramos empiezan siempre en un triángulo. Con un solo
++    // color, un único tramo que lo abarca todo.
++    inline void build(const float *verts, size_t stride, size_t colourOffset, size_t vertexCount, std::vector<uint32_t> &ends)
++    {
++        ends.clear();
++        if (vertexCount == 0u)
++            return;
++        const auto colour = [&](size_t i) { return verts + i * stride + colourOffset; };
++        const auto same = [&](size_t a, size_t b)
++        {
++            const float *ca = colour(a), *cb = colour(b);
++            return ca[0] == cb[0] && ca[1] == cb[1] && ca[2] == cb[2];
++        };
++        size_t runStart = 0;
++        for (size_t i = 3; i + 3u <= vertexCount; i += 3u)
++        {
++            if (!same(i, runStart))
++            {
++                ends.push_back(static_cast<uint32_t>(i));
++                runStart = i;
++            }
++        }
++        ends.push_back(static_cast<uint32_t>(vertexCount));
++    }
++}
+diff --git a/ps2xRuntime/src/lib/gs/gpu/gs_hw_backend.cpp b/ps2xRuntime/src/lib/gs/gpu/gs_hw_backend.cpp
+index 6e40619..cd8e546 100644
+--- a/ps2xRuntime/src/lib/gs/gpu/gs_hw_backend.cpp
++++ b/ps2xRuntime/src/lib/gs/gpu/gs_hw_backend.cpp
+@@ -1,5 +1,7 @@
+ // GOW-Port: render-target GS renderer, see include/runtime/gs/gs_hw_backend.h.
+ #include "runtime/gs/gs_tri_groups.h"
++#include "runtime/gs/gs_colour_runs.h" // GOW-Port: ps2recomp-gs-sombras-tramos
++#include <cstddef>
+ #include "runtime/gs/gs_hw_backend.h"
+ #include "gs_texture_store.h"
+ #include "runtime/gs/gs_swizzle.h"
+@@ -508,6 +510,8 @@ struct GSHwBackend::Impl
+     bool haveShuffle = false;
+     int shuffleWhy = 0; // debug: which tryShuffle check rejected the last sprite
+     std::vector<uint32_t> triGroups; // GOW-Port: shadow-volume triangle groups (gs_tri_groups.h)
++    std::vector<HwVertex> colourRun; // GOW-Port: ps2recomp-gs-sombras-tramos, un tramo de un solo color de un lote de sombras
++    std::vector<uint32_t> colourRunEnds;
+     // GOW-Port: at most PS2X_GS_FRAMES_IN_FLIGHT (default 2, 0 = no limit) presented frames of this backend's GPU work
+     // may be queued. Without a limit, a GPU slower than the game (PS2X_GS_HW_SCALE=4 at 60 frames per second) kept
+     // receiving frames: the driver's queue grew, the host window's SwapBuffers waited behind it and the window showed
+@@ -1865,7 +1869,36 @@ struct GSHwBackend::Impl
+         return x0 <= c.scissor.x0 + 1.0f && y0 <= c.scissor.y0 + 1.0f && x1 >= c.scissor.x1 && y1 >= c.scissor.y1;
+     }
+ 
++    // GOW-Port: ps2recomp-gs-sombras-tramos. Las dos pasadas de recuento de los volúmenes de sombra (G += 255 y luego
++    // G += 1, COLCLAMP=0, ALPHA Cs*FIX + Cd = 0x68, sin textura) tienen el mismo estado del GS y solo cambian el color
++    // plano de sus vértices, así que acaban en un mismo lote. El atajo de drawOne (mezcla fija, una llamada) necesita un
++    // solo color, y un lote mezclado iba por el shader triángulo a triángulo con barreras: en el combate del barco, 4393
++    // de 4495 lotes de sombras (GOW_GS_HW_VOLTRACE). Se dibujan como tramos consecutivos de un color, en el orden del
++    // juego. Idea de danielalves96/gow-pc-port. GOW_GS_HW_SOMBRAS_TRAMOS=0 lo desactiva.
+     void draw(const GSDrawState &s, const std::vector<HwVertex> &verts)
++    {
++        static const bool splitRuns = [] { const char *v = std::getenv("GOW_GS_HW_SOMBRAS_TRAMOS"); return !(v && v[0] == '0'); }();
++        if (splitRuns && verts.size() > 3u && !s.prim.tme && s.prim.abe && (s.colclamp & 1u) == 0u &&
++            (s.context.alpha & 0xFFu) == 0x68u)
++        {
++            gs_colour_runs::build(&verts[0].x, sizeof(HwVertex) / sizeof(float), offsetof(HwVertex, r) / sizeof(float),
++                                  verts.size(), colourRunEnds);
++            if (colourRunEnds.size() > 1u)
++            {
++                uint32_t first = 0;
++                for (uint32_t end : colourRunEnds)
++                {
++                    colourRun.assign(verts.begin() + first, verts.begin() + end);
++                    drawOne(s, colourRun);
++                    first = end;
++                }
++                return;
++            }
++        }
++        drawOne(s, verts);
++    }
++
++    void drawOne(const GSDrawState &s, const std::vector<HwVertex> &verts)
+     {
+         const Api &g = gl();
+         ++frameBatch;
+diff --git a/ps2xTest/src/ps2_gs_tests.cpp b/ps2xTest/src/ps2_gs_tests.cpp
+index 40d4920..6b24033 100644
+--- a/ps2xTest/src/ps2_gs_tests.cpp
++++ b/ps2xTest/src/ps2_gs_tests.cpp
+@@ -1,4 +1,5 @@
+ #include "runtime/gs/gs_tri_groups.h"
++#include "runtime/gs/gs_colour_runs.h"
+ #include "MiniTest.h"
+ #include "runtime/ps2_memory.h"
+ #include "ps2_runtime.h"
+@@ -1281,6 +1282,28 @@ void register_ps2_gs_tests()
+             t.Equals(processed.load(), 3u, "the stage should process them once the waiter is gone");
+         });
+ 
++        // GOW-Port: ps2recomp-gs-sombras-tramos. Un lote de sombras con las dos pasadas (G += 255 y G += 1) se parte en
++        // tramos de un color, en orden, para que cada uno use la mezcla fija de una llamada.
++        tc.Run("shadow-volume batches split into runs of one flat colour in draw order", [](TestCase &t)
++        {
++            // vértices de 3 floats: x, y, g (el color empieza en el float 2; r y b se toman de los siguientes, aquí iguales)
++            const auto runs = [](const std::vector<float> &greens)
++            {
++                std::vector<float> v;
++                for (float g : greens)
++                    v.insert(v.end(), {0.0f, 0.0f, g, g, g});
++                std::vector<uint32_t> ends;
++                gs_colour_runs::build(v.data(), 5u, 2u, greens.size(), ends);
++                return ends;
++            };
++            t.IsTrue(runs({255, 255, 255, 255, 255, 255}) == std::vector<uint32_t>{6u}, "one colour should stay one run");
++            t.IsTrue(runs({255, 255, 255, 255, 255, 255, 1, 1, 1}) == std::vector<uint32_t>({6u, 9u}),
++                     "the G += 255 pass and the G += 1 pass should be separate runs");
++            t.IsTrue(runs({1, 1, 1, 255, 255, 255, 1, 1, 1}) == std::vector<uint32_t>({3u, 6u, 9u}),
++                     "runs should keep the draw order, not merge equal colours that are apart");
++            t.IsTrue(runs({}).empty(), "no vertices, no runs");
++        });
++
+         tc.Run("shadow-volume triangles share a draw only when their pixels are disjoint", [](TestCase &t)
+         {
+             // GOW-Port: ps2recomp-gs-volumenes-agrupados. Los volúmenes de sombra se dibujaban un triángulo por llamada con

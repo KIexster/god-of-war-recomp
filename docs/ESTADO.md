@@ -8084,3 +8084,24 @@ recargada después, y `tarjeta.ps2.bak` idéntica a la tarjeta de partida.
 Encontrado de paso: `ps2xTest/src/ps2_sio2_tests.cpp` y `ps2_spu2_tests.cpp` no están en `ps2xTest/CMakeLists.txt` y no
 compilan (incluyen `sio2.h` y `spu2.h`, que ya no existen en el runtime): son restos de una versión anterior y no se
 ejecutan en la CI.
+
+### Lotes de sombras partidos en tramos de un color (2026-11-06)
+
+Idea de `danielalves96/gow-pc-port`, reimplementada. Las dos pasadas de recuento de los volúmenes de sombra (G += 255 y
+luego G += 1; COLCLAMP=0, ALPHA Cs*FIX + Cd) tienen el mismo estado del GS y solo cambian el color plano de sus vértices,
+así que comparten lote. El atajo del backend (mezcla fija en una llamada) exige un solo color, y un lote mezclado se
+dibujaba con el shader triángulo a triángulo (o en grupos disjuntos, `gs_tri_groups.h`) con barreras de textura entre
+medias.
+
+- `patches/ps2recomp-gs-sombras-tramos.patch`: `draw` parte esos lotes en tramos consecutivos de un color, en el orden del
+  juego (`include/runtime/gs/gs_colour_runs.h`), y cada tramo usa el atajo. `GOW_GS_HW_SOMBRAS_TRAMOS=0` lo desactiva.
+- Prueba `shadow-volume batches split into runs of one flat colour in draw order` en `ps2xTest`.
+
+Medido en el combate del barco con `GOW_GS_HW_VOLTRACE=20000` (110 s): antes, 4294 de 4495 dibujos de sombras iban por el
+shader (4393 lotes mezclaban los dos colores); con el cambio, los 9577 van por el atajo y ninguno por el shader. Las
+sombras se ven igual en las capturas.
+
+En cuadros por segundo no hay una diferencia clara en esta máquina: `ab_env.sh`, 3 rondas alternas a 120 Hz, cuadros en
+40 s sin/con el cambio: 3590/3829, 4464/4138 y 4163/4009 (la escena varía entre rondas). Aquí el dibujo de las sombras no
+limita (manda el trabajo VIF1/VU1); el cambio quita miles de barreras de textura por segundo, que deberían notarse en GPU
+más lentas. No se ha medido en una.
