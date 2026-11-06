@@ -142,6 +142,8 @@ $pilasSobreReservasPatch = Join-Path $RepoRoot 'patches\ps2recomp-pilas-sobre-re
 $pgoPatch = Join-Path $RepoRoot 'patches\ps2recomp-pgo.patch'
 # GOW-Port: la interrupción del GS queda pendiente si INTC 0 no la puede aceptar, y se reintenta un FINISH sin reconocer.
 $gsIrqPendientePatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-irq-pendiente.patch'
+# GOW-Port: la vibración del mando se aplica en un hilo propio, no en el del juego.
+$vibracionAsincronaPatch = Join-Path $RepoRoot 'patches\ps2recomp-vibracion-asincrona.patch'
 # GOW-Port: contexto OpenGL del GS en Linux con EGL (antes solo WGL: en Linux la ventana quedaba magenta).
 $gsEglLinuxPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-egl-linux.patch'
 # GOW-Port: GOW_VU1_CAPTURA también con la VU1 nativa activa (antes solo guardaba con GOW_VU1_NATIVE_OFF=1, a ~6 FPS).
@@ -233,6 +235,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $clangPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $pilasSobreReservasPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $pgoPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsIrqPendientePatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $vibracionAsincronaPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner

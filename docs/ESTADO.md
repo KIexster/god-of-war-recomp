@@ -7964,3 +7964,16 @@ queda pendiente y se avisa con `[gow-gs-irq]`), y un FINISH que sigue activo 100
 se vuelve a encolar (el manejador del juego solo actúa con FINISH pendiente y lo reconoce). Prueba: "a GS interrupt
 raised before its handler exists is delivered once the handler is added". En combate a 120 Hz no aparece ningún aviso
 (es preventivo) y no hay cuadros de más de 50 ms.
+
+### Vibración del mando en su propio hilo (2026-11-06)
+
+`danielalves96/gow-pc-port` (commit a900023e) midió un parón de ~100 ms en cada golpe: el juego pide vibración en cada
+golpe dado o recibido (scePad2 SetActParam) y en Windows se aplicaba en el hilo del juego. Aquí el escaneo HID ya iba en
+otro hilo (`ps2recomp-pad-rumble-scan`), pero `XInputGetState` en las cuatro ranuras y, con un mando Sony, la escritura
+HID (que por Bluetooth puede bloquear varios ms) seguían en el hilo del juego.
+
+`patches/ps2recomp-vibracion-asincrona.patch`: el hilo del juego deja el último estado de los motores y un hilo propio lo
+aplica (solo cuenta el último; los intermedios no llegan a los motores). En este equipo, sin mando XInput, las cuatro
+ranuras cuestan ~0,05 ms, así que aquí no había parón; el cambio importa con mandos Sony o equipos más lentos. Sin
+prueba en `ps2xTest`: el archivo solo se compila en Windows y la suite corre en Linux; compilado y probado en combate
+(sin cuadros de más de 50 ms).

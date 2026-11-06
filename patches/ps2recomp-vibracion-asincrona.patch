@@ -1,0 +1,72 @@
+diff --git a/ps2xRuntime/src/lib/ps2_pad_rumble_win.cpp b/ps2xRuntime/src/lib/ps2_pad_rumble_win.cpp
+index 0666f09..f0092e6 100644
+--- a/ps2xRuntime/src/lib/ps2_pad_rumble_win.cpp
++++ b/ps2xRuntime/src/lib/ps2_pad_rumble_win.cpp
+@@ -15,6 +15,7 @@
+ #include <vector>
+ #include <mutex>
+ #include <thread>
++#include <condition_variable>
+ 
+ namespace
+ {
+@@ -289,10 +290,56 @@ bool sonyRumble(uint8_t large, uint8_t small)
+ }
+ } // namespace
+ 
++// GOW-Port: el juego pide vibración en cada golpe dado o recibido. Aplicarla (XInputGetState en las cuatro ranuras y,
++// con un mando Sony, una escritura HID que puede bloquear varios ms por Bluetooth) se hacía en el hilo del juego; ahora
++// el hilo del juego deja el último estado de los motores y un hilo propio lo aplica. Idea de danielalves96/gow-pc-port.
++namespace
++{
++struct RumbleWorker
++{
++    std::mutex mutex;
++    std::condition_variable wake;
++    uint8_t large = 0;
++    bool small = false;
++    bool pending = false;
++};
++
++RumbleWorker &rumbleWorker()
++{
++    static RumbleWorker *worker = [] {
++        auto *w = new RumbleWorker; // sin destructor: el hilo puede seguir después de main
++        std::thread([w] {
++            for (;;)
++            {
++                uint8_t large;
++                bool small;
++                {
++                    std::unique_lock<std::mutex> lock(w->mutex);
++                    w->wake.wait(lock, [w] { return w->pending; });
++                    large = w->large;
++                    small = w->small;
++                    w->pending = false;
++                }
++                xinputRumble(static_cast<uint16_t>(large * 257u), small ? 0xFFFFu : 0u);
++                sonyRumble(large, small ? 0xFFu : 0u);
++            }
++        }).detach();
++        return w;
++    }();
++    return *worker;
++}
++} // namespace
++
+ bool ps2PadWindowsRumble(uint8_t large, bool small)
+ {
+-    const bool xinput = xinputRumble(static_cast<uint16_t>(large * 257u), small ? 0xFFFFu : 0u);
+-    const bool sony = sonyRumble(large, small ? 0xFFu : 0u);
+-    return xinput || sony;
++    RumbleWorker &worker = rumbleWorker();
++    {
++        std::lock_guard<std::mutex> lock(worker.mutex);
++        worker.large = large;
++        worker.small = small;
++        worker.pending = true; // solo cuenta el último estado: los intermedios no llegan a los motores
++    }
++    worker.wake.notify_one();
++    return true;
+ }
+ #endif
