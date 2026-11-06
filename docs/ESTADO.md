@@ -8033,3 +8033,19 @@ Steam) dejaba el juego sin control.
 
 Probado con el guion de combate (menús y partida normales, 60 FPS). Sin prueba en `ps2xTest`: depende de raylib y del
 teclado real.
+
+### Guardar y cargar partida, verificado (2026-11-06)
+
+Con `tools/pruebas/guardado.py` de la PR #107 (adaptado de Waffle565; en local se le añadió la constante `DATA = 512`,
+que faltaba), `bin\wpgo3` (main con FINISH anticipado, clang + PGO y los arreglos de hoy) y una copia de
+`E:\gowclaude\mc\guardada.ps2` (partida en Docks of Athens junto a un altar):
+
+- Sesión de guardado: menú, Load, la partida carga junto al altar; R2, "Would you like to save the game?" Yes, la
+  ranura, "Overwrite..." Yes y "Save Complete.". 153 páginas de 528 bytes de la tarjeta cambiaron y sigue válida.
+- Sesión de recarga: la partida aparece con la fecha escrita por el port ("Nov 6, 2026 08:29:15", antes "??? 95,
+  2000" en la tarjeta original) y el tiempo de juego actualizado (0:25:05 en lugar de 0:22:26), y carga en el altar.
+- El lector del directorio raíz de la herramienta muestra nombres ilegibles (otro fallo suyo); la validez de la
+  tarjeta y las capturas confirman el resultado.
+
+La memory card y `libmc2` pasan a "ok" en `docs/estado/datos.toml`. No se probó una tarjeta en blanco (el juego tendría
+que formatearla); `jugar.cmd` sigue creando la suya copiando una tarjeta sin formatear.
