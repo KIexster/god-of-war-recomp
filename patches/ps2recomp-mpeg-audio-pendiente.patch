@@ -1,0 +1,163 @@
+diff --git a/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp b/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
+index ba95f4c..65baaf9 100644
+--- a/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
++++ b/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
+@@ -907,6 +907,30 @@ namespace ps2_stubs
+             return g_mpeg_stub_state.playbackByMpeg[mpegAddr];
+         }
+ 
++        struct PendingAudioPacket
++        {
++            MpegStreamCallbackEvent event;
++            std::vector<uint8_t> bytes;
++        };
++        std::map<uint32_t, std::deque<PendingAudioPacket>> g_pendingAudio; // per sceMpeg; demuxing thread only
++
++        // GOW-Port: los paquetes de audio que el callback rechazó pertenecen al flujo que se estaba demultiplexando: como el
++        // resto del búfer de lectura del juego en la PS2, se descartan cuando el sceMpeg empieza un flujo nuevo. God of War
++        // abre todos los vídeos con el mismo sceMpeg (0x304DC8) y un vídeo termina con su fin de secuencia, a menudo con
++        // los últimos paquetes de audio aún rechazados: entregados primero al vídeo siguiente, desplazaban su PCM respecto
++        // al entrelazado L/R de 512 bytes. Arreglo de danielalves96/gow-pc-port (del port de Waffle565).
++        void dropPendingAudio(uint32_t mpegAddr)
++        {
++            static const bool diag = std::getenv("GOW_MPEG_DIAG") != nullptr;
++            const auto it = g_pendingAudio.find(mpegAddr);
++            if (it == g_pendingAudio.end())
++                return;
++            if (diag && !it->second.empty())
++                std::fprintf(stderr, "[MPEG:pending] flujo nuevo en mpeg=0x%x: se descartan %zu paquetes de audio rechazados del anterior\n",
++                             mpegAddr, it->second.size());
++            g_pendingAudio.erase(it);
++        }
++
+         MpegPlaybackState makeFreshPlaybackState()
+         {
+             MpegPlaybackState playback{};
+@@ -1597,7 +1621,10 @@ namespace ps2_stubs
+ 
+             if (!playback.sawInput)
+             {
++                // GOW-Port: primer dato de un flujo nuevo (tras sceMpegCreate, un reinicio por fin de flujo o un
++                // notifyMpegCdStreamStart): el audio rechazado que quede es del flujo anterior.
+                 playback.cdStreamGeneration = g_mpeg_stub_state.cdStreamGeneration;
++                dropPendingAudio(mpegAddr);
+             }
+             playback.sawInput = true;
+ 
+@@ -1813,12 +1840,7 @@ namespace ps2_stubs
+         // is no longer complete in guest memory when the callback runs. The callback returns 0 when the game's audio ring is full (God of War 0x18A8F8); libmpeg then stops demuxing at
+         // that packet and the game hands the rest in again after it drained the ring. This stub demuxes whole chunks
+         // at once, so refused packets wait here, in order, and go first on the next demux call.
+-        struct PendingAudioPacket
+-        {
+-            MpegStreamCallbackEvent event;
+-            std::vector<uint8_t> bytes;
+-        };
+-        std::map<uint32_t, std::deque<PendingAudioPacket>> g_pendingAudio; // per sceMpeg; demuxing thread only
++        // (PendingAudioPacket y g_pendingAudio están declarados junto a makeFreshPlaybackState: un flujo nuevo los vacía)
+ 
+         uint32_t g_audioQueued = 0u, g_audioTaken = 0u, g_audioRefused = 0u; // GOW_MPEG_DIAG counters
+ 
+@@ -2014,6 +2036,22 @@ namespace ps2_stubs
+         playback.decodedFrames.push_back(std::move(frame));
+     }
+ 
++    void queueMpegPendingAudioForTesting(uint32_t mpegAddr, uint32_t callbackFunc)
++    {
++        PendingAudioPacket packet{};
++        packet.event.mpegAddr = mpegAddr;
++        packet.event.streamType = kMpegStrPCM;
++        packet.event.callbacks.push_back(MpegRegisteredCallback{kMpegStrPCM, 0u, callbackFunc, 0u, 1u, true});
++        packet.bytes.assign(16u, 0x5Au);
++        g_pendingAudio[mpegAddr].push_back(std::move(packet));
++    }
++
++    size_t mpegPendingAudioForTesting(uint32_t mpegAddr)
++    {
++        const auto it = g_pendingAudio.find(mpegAddr);
++        return it == g_pendingAudio.end() ? 0u : it->second.size();
++    }
++
+     void notifyMpegCdStreamStart(PS2Runtime *runtime)
+     {
+         (void)runtime;
+@@ -2250,7 +2288,10 @@ namespace ps2_stubs
+                                           existing.picturesServed == 0u &&
+                                           existing.cdStreamGeneration == g_mpeg_stub_state.cdStreamGeneration;
+             if (!keepPendingInput)
++            {
+                 existing = makeFreshPlaybackState();
++                dropPendingAudio(param_1);
++            }
+             // libmpeg's sceMpegCreate initialises the sceMpeg, callback table included. God of War registers its
+             // stream callbacks for the first demux before Create and again after it; keeping both delivered every
+             // audio packet twice into its ring (repeated, byte-shifted PCM: the movie sound was noise).
+diff --git a/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.h b/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.h
+index 00bae50..f3c2a31 100644
+--- a/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.h
++++ b/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.h
+@@ -7,6 +7,9 @@ namespace ps2_stubs
+     void resetMpegStubState();
+     void enqueueMpegDecodedFrameForTesting(uint32_t mpegAddr);
+     bool mpegWaitingForSequenceHeaderForTesting(uint32_t mpegAddr); // GOW-Port
++    // GOW-Port: paquetes de audio rechazados que esperan en un sceMpeg (pruebas de ps2recomp-mpeg-audio-pendiente).
++    void queueMpegPendingAudioForTesting(uint32_t mpegAddr, uint32_t callbackFunc);
++    size_t mpegPendingAudioForTesting(uint32_t mpegAddr);
+     void notifyMpegCdStreamStart(PS2Runtime *runtime = nullptr);
+     void notifyMpegCdStreamDataProduced(uint32_t byteCount, bool endOfStream);
+     void notifyMpegCdStreamEof(PS2Runtime *runtime = nullptr);
+diff --git a/ps2xTest/src/ps2_runtime_expansion_tests.cpp b/ps2xTest/src/ps2_runtime_expansion_tests.cpp
+index ece3af6..7a84ae8 100644
+--- a/ps2xTest/src/ps2_runtime_expansion_tests.cpp
++++ b/ps2xTest/src/ps2_runtime_expansion_tests.cpp
+@@ -749,6 +749,50 @@ void register_ps2_runtime_expansion_tests()
+             runtime.requestStop();
+         });
+ 
++        // GOW-Port: ps2recomp-mpeg-audio-pendiente. God of War abre todos los vídeos con el mismo sceMpeg: el audio que el
++        // callback rechazó al final de uno no debe entregarse al principio del siguiente (desplazaba su PCM).
++        tc.Run("a new movie stream drops the refused audio packets of the previous one", [](TestCase &t)
++        {
++            PS2Runtime runtime;
++            std::vector<uint8_t> rdram(PS2_RAM_SIZE, 0u);
++            ps2_stubs::resetMpegStubState();
++            constexpr uint32_t kMpegAddr = 0x00123000u;
++            constexpr uint32_t kDataAddr = 0x00128000u;
++            constexpr uint32_t kRefuseAudioPc = 0x00125300u; // callback de audio con el anillo lleno: devuelve 0
++            runtime.registerFunction(kRefuseAudioPc, [](uint8_t *, R5900Context *ctx, PS2Runtime *)
++                                     {
++                                         setRegU32(*ctx, 2, 0u);
++                                         ctx->pc = 0u;
++                                     });
++            const std::vector<uint8_t> payload = {0x00u, 0x00u, 0x01u, 0xB3u, 0x14u, 0x00u, 0xF0u, 0x13u};
++            const uint16_t packetLen = static_cast<uint16_t>(payload.size() + 3u);
++            std::vector<uint8_t> data = {0x00u, 0x00u, 0x01u, 0xE0u, static_cast<uint8_t>(packetLen >> 8u),
++                                         static_cast<uint8_t>(packetLen & 0xFFu), 0x80u, 0x00u, 0x00u};
++            data.insert(data.end(), payload.begin(), payload.end());
++            std::memcpy(rdram.data() + kDataAddr, data.data(), data.size());
++            auto demux = [&]()
++            {
++                R5900Context ctx{};
++                setRegU32(ctx, 29, 0x001F0000u);
++                setRegU32(ctx, 4, kMpegAddr);
++                setRegU32(ctx, 5, kDataAddr);
++                setRegU32(ctx, 6, static_cast<uint32_t>(data.size()));
++                setRegU32(ctx, 7, 0u);
++                setRegU32(ctx, 8, 0xFFFFFFFFu);
++                ps2_stubs::sceMpegDemuxPssRing(rdram.data(), &ctx, &runtime);
++            };
++            ps2_stubs::notifyMpegCdStreamStart(&runtime);
++            demux(); // primer vídeo
++            ps2_stubs::queueMpegPendingAudioForTesting(kMpegAddr, kRefuseAudioPc);
++            t.Equals(ps2_stubs::mpegPendingAudioForTesting(kMpegAddr), static_cast<size_t>(1u),
++                     "the refused packet should wait while its stream lasts");
++            ps2_stubs::notifyMpegCdStreamStart(&runtime);
++            demux(); // segundo vídeo en el mismo sceMpeg
++            t.Equals(ps2_stubs::mpegPendingAudioForTesting(kMpegAddr), static_cast<size_t>(0u),
++                     "the next movie should not receive the previous movie's refused audio");
++            runtime.requestStop();
++        });
++
+         tc.Run("sceMpegGetPicture blocks as a typed scheduler wait and resumes on EOF", [](TestCase &t)
+         {
+             PS2Runtime runtime;
