@@ -7917,3 +7917,16 @@ se probó `clang-cl` 23.1.4 (LLVM portátil, ABI de MSVC: mismas bibliotecas y e
   de memoria: `cmake --build` sin límite lanzaba un compilador por núcleo (18 en este equipo de 16 GB).
   `compilar.ps1` limita ahora los compiladores a uno por cada 2,5 GB de RAM (como mucho uno por núcleo; 6 aquí);
   `GOW_JOBS` fija otro número.
+
+### Pilas de interrupción por encima de las reservas del runtime (2026-11-06)
+
+`danielalves96/gow-pc-port` (0.3.0) encontró que las pilas de interrupciones y callbacks del EE (16 KB por pareja
+hilo/anidamiento, `EeScheduler::invocationStackTop`, nunca se liberan) bajan desde lo alto de la RAM y solo se paraban
+en 0x01F00000, donde empiezan las reservas propias del runtime (paquetes y servidores RPC, TLS y modo de arranque,
+hasta 0x01F31000): pasadas unas 45 pisaban esas reservas sin avisar. Nuestro runtime tenía el mismo suelo.
+
+`patches/ps2recomp-pilas-sobre-reservas.patch`: el suelo pasa a 0x01F31000; quedarse sin sitio deja una línea
+`[stack] no queda sitio…` antes del error "EE invocation stack space exhausted", y las 64 primeras pilas reservadas
+se registran (`[stack] pila de interrupción N en …`). Prueba: "interrupt stacks stay above the runtime's RPC and TLS
+pools". En la práctica no nos afectaba: un recorrido de 7 cargas de zona (`GOW_WARP`) reserva solo 2 pilas, de unas
+44 que caben.
