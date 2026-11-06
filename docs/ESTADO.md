@@ -8160,3 +8160,18 @@ más lentas. No se ha medido en una.
   clang, pero aquí no ocurre: el mismo combate da ~51 000 lotes cada 5 s con MSVC (`bin\wef`) y con clang + PGO
   (`GOW_GS_HW_STATS`). Queda como riesgo conocido.
 - **Desplazamiento aritmético en la envolvente de la SPU2:** ya está (`ps2recomp-spu2-envolvente`).
+
+### Pantallas ultrapanorámicas: GOW_ASPECTO (2026-11-06)
+
+Petición de la issue #139 (32:9, 5120x1440). `GOW_ASPECTO` (`21:9`, `32:9`, un número o `auto`) fija la relación de
+aspecto en los dos sitios que la tenían en 16:9 fijo:
+
+- `patches/ps2recomp-aspecto.patch`: `include/runtime/gs/gs_aspecto.h` interpreta la variable (valores no válidos o fuera
+  de 1 a 4: 16:9) y `gs_host_present.cpp` presenta la imagen con ese aspecto. Prueba `GOW_ASPECTO picks the picture
+  aspect and falls back to 16:9`.
+- `src/gow_overrides.cpp`: los tres flotantes de aspecto del juego reciben el mismo valor y, si no es 16:9, el factor de
+  apertura de la cámara pasa a 0,75 (el ensanchado del panorámico ampliado).
+
+Probado con el guion del barco (capturas del GS estiradas al aspecto de la ventana): a 32:9 las figuras conservan sus
+proporciones y se ve mucho más a los lados; el marcador sale estirado al doble de ancho (lo dibuja el juego para 16:9).
+Sin la variable, todo igual que antes. No se probó en una pantalla 32:9 real.

@@ -1,0 +1,107 @@
+diff --git a/ps2xRuntime/include/runtime/gs/gs_aspecto.h b/ps2xRuntime/include/runtime/gs/gs_aspecto.h
+new file mode 100644
+index 0000000..77bc4d1
+--- /dev/null
++++ b/ps2xRuntime/include/runtime/gs/gs_aspecto.h
+@@ -0,0 +1,43 @@
++#pragma once
++// GOW-Port: ps2recomp-aspecto. Relación de aspecto de la imagen (GOW_ASPECTO), compartida por la ventana
++// (gs_host_present.cpp) y por el juego (src/gow_overrides.cpp, flotantes de aspecto y apertura de la cámara).
++//   sin definir o vacía: 16:9 (como siempre)
++//   "auto": la de la ventana (pantalla completa 5120x1440 -> 32:9)
++//   "<ancho>:<alto>" (21:9, 32:9) o un número (2.37)
++// Un valor no válido o fuera de 1..4 vale 16:9.
++#include <cstdlib>
++#include <cstring>
++
++namespace gs_aspecto
++{
++    constexpr float kPorDefecto = 16.0f / 9.0f;
++
++    inline float interpretar(const char *texto, float anchoVentana, float altoVentana)
++    {
++        if (texto == nullptr || texto[0] == '\0')
++            return kPorDefecto;
++        float valor = 0.0f;
++        if (std::strcmp(texto, "auto") == 0)
++            valor = altoVentana > 0.0f ? anchoVentana / altoVentana : 0.0f;
++        else
++        {
++            char *fin = nullptr;
++            const double a = std::strtod(texto, &fin);
++            if (fin != texto && *fin == ':')
++            {
++                const char *resto = fin + 1;
++                const double b = std::strtod(resto, &fin);
++                valor = fin != resto && *fin == '\0' && b > 0.0 ? static_cast<float>(a / b) : 0.0f;
++            }
++            else if (fin != texto && *fin == '\0')
++                valor = static_cast<float>(a);
++        }
++        return valor >= 1.0f && valor <= 4.0f ? valor : kPorDefecto;
++    }
++
++    // El aspecto pedido en GOW_ASPECTO para una ventana de ese tamaño.
++    inline float actual(float anchoVentana, float altoVentana)
++    {
++        return interpretar(std::getenv("GOW_ASPECTO"), anchoVentana, altoVentana);
++    }
++}
+diff --git a/ps2xRuntime/src/lib/gs/gs_host_present.cpp b/ps2xRuntime/src/lib/gs/gs_host_present.cpp
+index 5f90be1..725e3be 100644
+--- a/ps2xRuntime/src/lib/gs/gs_host_present.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_host_present.cpp
+@@ -1,6 +1,7 @@
+ // GOW-Port: contexto host, selección de frames y dibujo raylib usados por el port.
+ #include <atomic>
+ #include "runtime/gs/gs_host_present.h"
++#include "runtime/gs/gs_aspecto.h" // GOW-Port: ps2recomp-aspecto
+ #include "rlgl.h"
+ #include "runtime/gs/gs_frontend.h"
+ #include "runtime/ps2_perf.h"
+@@ -311,8 +312,9 @@ GSHostPresentation::View GSHostPresentation::renderFrame(GS &gs, uint64_t vsyncT
+     const float screenWidth = static_cast<float>(GetScreenWidth());
+     const float screenHeight = static_cast<float>(GetScreenHeight());
+     // GOW-Port: a PS2 frame (e.g. 512x448) is shown at the TV's aspect, not with square pixels:
+-    // always 16:9 (the game renders widescreen, see gow_overrides.cpp; 4:3 is not supported any more).
+-    constexpr float displayAspect = 16.0f / 9.0f;
++    // 16:9 by default (the game renders widescreen, see gow_overrides.cpp; 4:3 is not supported any more).
++    // GOW-Port: ps2recomp-aspecto. GOW_ASPECTO=21:9, 32:9, <número> o auto (la de la ventana); el juego usa la misma.
++    const float displayAspect = gs_aspecto::actual(screenWidth, screenHeight);
+     const float destinationWidth = std::min(screenWidth, screenHeight * displayAspect);
+     const float destinationHeight = destinationWidth / displayAspect;
+     const Rectangle source{0.0f, 0.0f, sourceWidth, sourceHeight};
+diff --git a/ps2xTest/src/ps2_gs_tests.cpp b/ps2xTest/src/ps2_gs_tests.cpp
+index 6b24033..d541929 100644
+--- a/ps2xTest/src/ps2_gs_tests.cpp
++++ b/ps2xTest/src/ps2_gs_tests.cpp
+@@ -1,5 +1,6 @@
+ #include "runtime/gs/gs_tri_groups.h"
+ #include "runtime/gs/gs_colour_runs.h"
++#include "runtime/gs/gs_aspecto.h"
+ #include "MiniTest.h"
+ #include "runtime/ps2_memory.h"
+ #include "ps2_runtime.h"
+@@ -1284,6 +1285,22 @@ void register_ps2_gs_tests()
+ 
+         // GOW-Port: ps2recomp-gs-sombras-tramos. Un lote de sombras con las dos pasadas (G += 255 y G += 1) se parte en
+         // tramos de un color, en orden, para que cada uno use la mezcla fija de una llamada.
++        // GOW-Port: ps2recomp-aspecto. GOW_ASPECTO: 16:9 por defecto, la de la ventana con "auto", <a>:<b> o un número.
++        tc.Run("GOW_ASPECTO picks the picture aspect and falls back to 16:9", [](TestCase &t)
++        {
++            const auto near = [](float a, float b) { return a > b - 1e-4f && a < b + 1e-4f; };
++            t.IsTrue(near(gs_aspecto::interpretar(nullptr, 1920, 1080), 16.0f / 9.0f), "unset should be 16:9");
++            t.IsTrue(near(gs_aspecto::interpretar("", 1920, 1080), 16.0f / 9.0f), "empty should be 16:9");
++            t.IsTrue(near(gs_aspecto::interpretar("32:9", 1920, 1080), 32.0f / 9.0f), "32:9 should be 3.556");
++            t.IsTrue(near(gs_aspecto::interpretar("21:9", 1920, 1080), 21.0f / 9.0f), "21:9 should be 2.333");
++            t.IsTrue(near(gs_aspecto::interpretar("2.37", 1920, 1080), 2.37f), "a plain number should be taken as is");
++            t.IsTrue(near(gs_aspecto::interpretar("auto", 5120, 1440), 32.0f / 9.0f), "auto should follow a 5120x1440 window");
++            t.IsTrue(near(gs_aspecto::interpretar("auto", 0, 0), 16.0f / 9.0f), "auto without a window should be 16:9");
++            t.IsTrue(near(gs_aspecto::interpretar("32:0", 1920, 1080), 16.0f / 9.0f), "a zero height should be 16:9");
++            t.IsTrue(near(gs_aspecto::interpretar("abc", 1920, 1080), 16.0f / 9.0f), "garbage should be 16:9");
++            t.IsTrue(near(gs_aspecto::interpretar("9:1", 1920, 1080), 16.0f / 9.0f), "beyond 4:1 should be 16:9");
++        });
++
+         tc.Run("shadow-volume batches split into runs of one flat colour in draw order", [](TestCase &t)
+         {
+             // vértices de 3 floats: x, y, g (el color empieza en el float 2; r y b se toman de los siguientes, aquí iguales)

@@ -37,6 +37,13 @@ pantalla y la barra de tareas encima de la franja inferior de la imagen. **F11**
 lados, como el "enhanced native widescreen" de nemesis2000 y CRASHARKI para PCSX2. Se ve más escena, así que dibuja
 más: en el combate del barco la mediana bajó de 59,9 a 54,9 cuadros por segundo del juego (2026-10-18).
 
+**Pantallas ultrapanorámicas.** `GOW_ASPECTO` fija la relación de aspecto de la imagen: `21:9`, `32:9`, un número
+(`2.37`) o `auto` (la de la ventana: en pantalla completa a 5120x1440, 32:9). Sin la variable, 16:9 como siempre. La
+ventana presenta la imagen con ese aspecto y el juego recibe el mismo en sus flotantes de aspecto; con un aspecto
+distinto de 16:9 la cámara usa siempre el ensanchado del panorámico ampliado (apertura 0,75 x aspecto), porque el
+recorte del 16:9 original dejaría la imagen a la mitad de alto a 32:9. El marcador (HUD) y los menús, que el juego
+dibuja para 16:9, salen estirados a lo ancho. Valores no válidos o fuera de 1 a 4 se quedan en 16:9 (issue #139).
+
 ## 120 Hz
 
 `GOW_HZ=120` (experimental) genera el VBlank del EE cada 8,34 ms en lugar de cada 16,68 ms: el bucle del juego, que
