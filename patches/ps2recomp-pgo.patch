@@ -1,0 +1,22 @@
+diff --git a/ps2xRuntime/src/main.cpp b/ps2xRuntime/src/main.cpp
+index a927c1b..f639ff8 100644
+--- a/ps2xRuntime/src/main.cpp
++++ b/ps2xRuntime/src/main.cpp
+@@ -1,3 +1,7 @@
++// GOW-Port: compilación instrumentada para PGO (compilar.ps1 con GOW_LLVM y GOW_PGO=generar).
++#ifdef GOW_PGO_GEN
++extern "C" int __llvm_profile_write_file(void);
++#endif
+ #include "ps2_runtime.h"
+ 
+ void ps2InstallEeDiff(PS2Runtime &runtime); // src/lib/ee_ref/ee_diff.cpp
+@@ -240,6 +244,9 @@ int main(int argc, char *argv[])
+ #endif
+         std::cout.flush();
+         std::cerr.flush();
++#ifdef GOW_PGO_GEN
++        __llvm_profile_write_file(); // GOW-Port: std::_Exit se salta el atexit que vuelca el perfil de PGO
++#endif
+         std::_Exit(0);
+     }
+     catch (const std::exception &e)

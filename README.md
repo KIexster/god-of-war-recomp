@@ -179,6 +179,10 @@ an LLVM for Windows (`clang+llvm-*-x86_64-pc-windows-msvc`) and point `GOW_LLVM`
 building: `set GOW_LLVM=C:\llvm\bin`. It builds in `out\build-clang`; Visual Studio is still needed for its headers
 and libraries.
 
+With clang the build can also be optimized with a profile of your own play (PGO; the VU1 runs 10–12 % faster in
+combat): build with `set GOW_PGO=generar`, play for a while with `scripts\3_ejecutar_manual.cmd` (when you close the window the
+profile is left in `<GOW_WORK>\pgo`) and build again with `set GOW_PGO=usar`. The profile never leaves your machine.
+
 Release builds disable function and IOP RPC traces by default. For diagnostics, use
 `scripts\2_compilar.cmd -Trazas`. To measure game `vid::Flip` calls separately from window refreshes,
 run `powershell -File scripts\probar_rendimiento.ps1`; see [the profiling notes](docs/ESTADO.md#medicion-de-rendimiento-2026-10-05).

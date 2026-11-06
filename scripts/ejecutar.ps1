@@ -6,6 +6,11 @@ $ErrorActionPreference = 'Stop'
 
 $work = Get-GowWorkDir
 $bld  = Join-Path $work ('PS2Recomp\' + (Get-GowBuildSubdir))
+# GOW-Port: con un ejecutable instrumentado (GOW_PGO=generar) el perfil queda en <GOW_WORK>\pgo al cerrar el juego.
+if ($env:GOW_PGO -eq 'generar') {
+    New-Item -ItemType Directory -Force -Path (Join-Path $work 'pgo') | Out-Null
+    $env:LLVM_PROFILE_FILE = Join-Path $work 'pgo\gow-%p.profraw'
+}
 $exe  = $null
 if (Test-Path -LiteralPath $bld) {
     $exe = Get-ChildItem -LiteralPath $bld -Recurse -Filter 'ps2EntryRunner.exe' |
