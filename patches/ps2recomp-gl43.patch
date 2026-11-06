@@ -1,0 +1,114 @@
+diff --git a/ps2xRuntime/src/lib/gs/gpu/gs_gl.cpp b/ps2xRuntime/src/lib/gs/gpu/gs_gl.cpp
+index 6d2a723..1c0b694 100644
+--- a/ps2xRuntime/src/lib/gs/gpu/gs_gl.cpp
++++ b/ps2xRuntime/src/lib/gs/gpu/gs_gl.cpp
+@@ -5,6 +5,7 @@
+ 
+ #include <array>
+ #include <atomic>
++#include <algorithm>
+ #include <cstdlib>
+ #include <cstdio>
+ #include <mutex>
+@@ -45,6 +46,7 @@ namespace
+     std::array<SharedSlot, 8> s_sharedSlots;
+     GSGL::Api s_hostApi;
+     HGLRC s_hostContext = nullptr;
++    int s_contextMinor = 6; // GOW-Port: versión 4.x del contexto del GS (los de los trabajadores piden la misma)
+     HDC s_hostDc = nullptr;
+     PIXELFORMATDESCRIPTOR s_hostFormat{};
+     int s_hostFormatIndex = 0;
+@@ -241,7 +243,9 @@ namespace
+     load(a.BindBufferRange, "glBindBufferRange", missing);
+     load(a.ClearBufferData, "glClearBufferData", missing);
+     load(a.CopyBufferSubData, "glCopyBufferSubData", missing);
+-    load(a.BufferStorage, "glBufferStorage", missing);
++    // GOW-Port: opcional (4.4): solo respalda el hash de la imagen presentada, que se omite sin ella.
++    std::string optionalMissing;
++    load(a.BufferStorage, "glBufferStorage", optionalMissing);
+     load(a.MapBufferRange, "glMapBufferRange", missing);
+     load(a.UnmapBuffer, "glUnmapBuffer", missing);
+     load(a.GenQueries, "glGenQueries", missing);
+@@ -324,7 +328,10 @@ namespace
+         load(a.ReadPixels, "glReadPixels", hwMissing);
+         load(a.BlitFramebuffer, "glBlitFramebuffer", hwMissing);
+         load(a.PixelStorei, "glPixelStorei", hwMissing);
+-        load(a.TextureBarrier, "glTextureBarrier", hwMissing);
++        // GOW-Port: glTextureBarrier es de 4.5; con un contexto 4.3/4.4, la extensión NV equivalente.
++        std::string barrierMissing;
++        if (!load(a.TextureBarrier, "glTextureBarrier", barrierMissing))
++            load(a.TextureBarrier, "glTextureBarrierNV", hwMissing);
+         std::string copyMissing;
+         load(a.CopyImageSubData, "glCopyImageSubData", copyMissing);
+         a.hwRaster = graphicsMissing.empty() && hwMissing.empty();
+@@ -473,7 +480,7 @@ namespace GSGL
+             gl.DeleteSync(slot.consumed);
+         slot.produced = slot.consumed = nullptr;
+         slot.frame.hashValid = false;
+-        if (hashProgram)
++        if (hashProgram && gl.BufferStorage) // GOW-Port: sin glBufferStorage (contexto 4.3) no hay hash
+         {
+             if (!slot.hashBuffer)
+             {
+@@ -677,15 +684,30 @@ namespace GSGL
+         HGLRC context = nullptr;
+         if (createAttribs)
+         {
+-            const int attributes[] = {kContextMajorVersion, 4, kContextMinorVersion, 6, kContextProfileMask, kContextCoreProfileBit,
+-                                      kContextFlags, 0, 0};
+-            context = createAttribs(dc, s_hostContext, attributes);
+-            m_shared = context && s_hostContext;
+-            if (!context && s_hostContext)
++            // GOW-Port: escalera 4.6, 4.5, 4.4, 4.3 (núcleo): los shaders son #version 430 y solo glBufferStorage (4.4) y
++            // glTextureBarrier (4.5) piden más, con alternativa. Un controlador que se queda en 4.3-4.5 antes no arrancaba el
++            // renderizador. En cada versión, primero compartido con la ventana y después sin compartir, como antes.
++            // PS2X_GS_GL_MAX_MINOR=<3..6> empieza más abajo (para probar el camino 4.3 con una gráfica moderna).
++            int maxMinor = 6;
++            if (const char *v = std::getenv("PS2X_GS_GL_MAX_MINOR"))
++                maxMinor = std::clamp(std::atoi(v), 3, 6);
++            bool sharingFailed = false;
++            for (int minor = maxMinor; minor >= 3 && !context; --minor)
+             {
+-                std::fprintf(stderr, "[gs-present] WGL sharing failed (%lu); using RAM presentation\n", GetLastError());
+-                context = createAttribs(dc, nullptr, attributes);
++                const int attributes[] = {kContextMajorVersion, 4, kContextMinorVersion, minor, kContextProfileMask,
++                                          kContextCoreProfileBit, kContextFlags, 0, 0};
++                context = createAttribs(dc, s_hostContext, attributes);
++                m_shared = context && s_hostContext;
++                if (!context && s_hostContext)
++                {
++                    sharingFailed = true;
++                    context = createAttribs(dc, nullptr, attributes);
++                }
++                if (context)
++                    s_contextMinor = minor;
+             }
++            if (sharingFailed && !m_shared)
++                std::fprintf(stderr, "[gs-present] WGL sharing failed (%lu); using RAM presentation\n", GetLastError());
+         }
+         wglMakeCurrent(nullptr, nullptr);
+         wglDeleteContext(legacy);
+@@ -695,9 +717,10 @@ namespace GSGL
+                 wglDeleteContext(context);
+             ReleaseDC(window, dc);
+             DestroyWindow(window);
+-            error = "OpenGL 4.6 core context unavailable";
++            error = "OpenGL 4.3 core context unavailable";
+             return false;
+         }
++        std::fprintf(stderr, "[gs-gl] contexto OpenGL 4.%d núcleo\n", s_contextMinor);
+         m_window = window;
+         m_dc = dc;
+         m_context = context;
+@@ -723,8 +746,9 @@ namespace GSGL
+         const auto createAttribs = reinterpret_cast<CreateContextAttribs>(wglGetProcAddress("wglCreateContextAttribsARB"));
+         if (!createAttribs || !m_context || !m_dc)
+             return nullptr;
+-        const int attributes[] = {kContextMajorVersion, 4, kContextMinorVersion, 6, kContextProfileMask, kContextCoreProfileBit,
+-                                  kContextFlags, 0, 0};
++        // GOW-Port: la misma versión que el contexto del GS (compartir lo exige)
++        const int attributes[] = {kContextMajorVersion, 4, kContextMinorVersion, s_contextMinor, kContextProfileMask,
++                                  kContextCoreProfileBit, kContextFlags, 0, 0};
+         return createAttribs(static_cast<HDC>(m_dc), static_cast<HGLRC>(m_context), attributes);
+     }
+ 

@@ -8005,3 +8005,16 @@ conservan modo, dirección, ASP y TTE/TIE, y STR queda a 0.
 
 `patches/ps2recomp-spr-cadena-str.patch`. Prueba: "fromSPR destination chain leaves CHCR with STR cleared" (falla sin
 el cambio: comprobado en WSL).
+
+### OpenGL: contexto 4.3 si el controlador no llega a 4.6 (2026-11-06)
+
+Idea de `danielalves96/gow-pc-port` (commit db11fe65), reimplementada: el contexto del GS pedía exactamente OpenGL 4.6
+núcleo, así que con un controlador que se queda en 4.3-4.5 el renderizador no arrancaba. Los shaders son `#version
+430`; solo `glBufferStorage` (4.4, el hash de la imagen presentada, que se omite sin ella) y `glTextureBarrier` (4.5,
+con `glTextureBarrierNV` como alternativa) piden más.
+
+`patches/ps2recomp-gl43.patch`: el contexto WGL se crea con la escalera 4.6, 4.5, 4.4, 4.3 (en cada versión, primero
+compartido con la ventana y después sin compartir, como antes); los contextos de los trabajadores piden la misma
+versión; el registro dice `[gs-gl] contexto OpenGL 4.x núcleo`. `PS2X_GS_GL_MAX_MINOR=<3..6>` empieza más abajo.
+Probado en esta RX 5700 XT forzando 4.3: el juego se ve igual que con 4.6 (capturas del combate) y va a 60. Sin prueba
+en `ps2xTest` (hace falta una GPU).
