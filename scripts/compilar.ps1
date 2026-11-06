@@ -156,6 +156,8 @@ $tecladoConMandoPatch = Join-Path $RepoRoot 'patches\ps2recomp-teclado-con-mando
 $mpegAudioPendientePatch = Join-Path $RepoRoot 'patches\ps2recomp-mpeg-audio-pendiente.patch'
 # GOW-Port: memory card: creación atómica y copia de respaldo.
 $memcardSeguraPatch = Join-Path $RepoRoot 'patches\ps2recomp-memcard-segura.patch'
+# GOW-Port: reloj del PTS de los vídeos tras un parón
+$mpegPtsParonPatch = Join-Path $RepoRoot 'patches\ps2recomp-mpeg-pts-paron.patch'
 # GOW-Port: lotes de sombras partidos en tramos de un color
 $gsSombrasTramosPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-sombras-tramos.patch'
 # GOW-Port: contexto OpenGL del GS en Linux con EGL (antes solo WGL: en Linux la ventana quedaba magenta).
@@ -256,6 +258,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $gl43Patch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $tecladoConMandoPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $mpegAudioPendientePatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $memcardSeguraPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $mpegPtsParonPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsSombrasTramosPatch)
 Pop-Location
 

@@ -8085,6 +8085,45 @@ Encontrado de paso: `ps2xTest/src/ps2_sio2_tests.cpp` y `ps2_spu2_tests.cpp` no 
 compilan (incluyen `sio2.h` y `spu2.h`, que ya no existen en el runtime): son restos de una versión anterior y no se
 ejecutan en la CI.
 
+### Reloj del PTS de los vídeos tras un parón (2026-11-06)
+
+Idea de `danielalves96/gow-pc-port`, reimplementada. `sceMpegGetPicture` muestra en el momento una imagen que llega tarde,
+pero antes también movía el reloj del PTS en cuanto el retraso llegaba a un fotograma. La primera imagen de cada GOP
+llega 2-4 campos tarde (sus datos entran justo a tiempo) y esos retrasos se sumaban: en su medida, el vídeo SEMO08
+terminaba 4,7 s por detrás de su sonido (125 GOP).
+
+- `patches/ps2recomp-mpeg-pts-paron.patch`: la decisión pasa a `settleLatePresentation`. Un retraso de menos de 30
+  campos (medio segundo) muestra la imagen sin mover el reloj, así que las siguientes recuperan el horario; solo un parón
+  largo (una carga) recoloca el reloj.
+- Prueba `a few late fields keep the movie PTS clock and a long stall moves it` en `ps2xTest`: falla con el umbral
+  anterior.
+
+Con el juego (vídeo inicial, `GOW_MPEG_DIAG`, `[MPEG:sync]`, 2 rondas alternas con y sin el cambio): resultados iguales.
+El juego pide la primera imagen y no vuelve a llamar a `GetPicture` hasta 12,9 s después; es un parón del juego, que
+recoloca el reloj en los dos casos. Después, los dos van sin deriva: 1200 imágenes en 40,04 s de PTS, a 1001 ms cada 30
+imágenes. Este vídeo no tiene los retrasos de GOP que corrige el cambio; SEMO08 es una cinemática dentro de un nivel y no
+se probó.
+
+### Filtro de DISPFB de gow-pc-port: no hace falta aquí (2026-11-06)
+
+`gow-pc-port` mantiene los registros de pantalla estables durante un Present cuando el juego apunta DISPFB al otro búfer
+durante un solo Present (un destello del plano anterior al principio de los planos de la intro). Aquí no ocurre: con
+`GOW_GS_HW_DISPLOG=1` en el vídeo inicial (75 s, 1205 cambios de registros) DISPFB alterna cada 2 Present (1195 veces) y
+no hay ninguna excursión de un solo Present tras un periodo estable. No se adapta.
+
+### HDES01F → ARENA09 ya no se cuelga (2026-11-06)
+
+Corrige la nota del FINISH anticipado ("el salto de HDES01F a ARENA09 deja el juego parado"). Con el binario actual (clang +
+PGO, todo lo fusionado hasta #163) y `GOW_WARP`:
+
+- `ARENA09` directamente: llega en 1,0 s (desafío de los dioses, se juega).
+- `HDES01F;ARENA09` desde el barco: llega en 1,1 s; el desafío se ve y el juego sigue leyendo el mando hasta el final.
+- La secuencia original `PAND03A;HDES01F;ARENA09;OLYMP02;ATHN01A;SEWR02`: las seis llegan. El salto a ARENA09 desde
+  HDES01F tarda 23 s y termina en la sala del desafío de Hades (PAND03A); la petición siguiente sale de `zone=Pand03A`.
+  Probablemente el juego saca a Kratos de HDES01F hacia su zona de origen; no es un cuelgue.
+
+No se buscó qué cambio lo arregló; el candidato más probable es la IRQ del GS pendiente (`ps2recomp-gs-irq-pendiente`).
+
 ### Lotes de sombras partidos en tramos de un color (2026-11-06)
 
 Idea de `danielalves96/gow-pc-port`, reimplementada. Las dos pasadas de recuento de los volúmenes de sombra (G += 255 y

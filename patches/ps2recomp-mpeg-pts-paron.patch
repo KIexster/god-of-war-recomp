@@ -1,0 +1,110 @@
+diff --git a/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp b/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
+index 65baaf9..8585d43 100644
+--- a/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
++++ b/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
+@@ -878,6 +878,28 @@ namespace ps2_stubs
+                        : 0u;
+         }
+ 
++        // GOW-Port: ps2recomp-mpeg-pts-paron. Una imagen que llega tarde se muestra enseguida, pero solo un parón largo
++        // (30 campos, medio segundo: una carga, no la variación del decodificador) mueve el reloj del PTS. Antes cualquier
++        // retraso de un fotograma lo movía y los retrasos se sumaban: la primera imagen de cada GOP llega 2-4 campos tarde
++        // y el vídeo se quedaba atrás respecto a su sonido (SEMO08: 4,7 s al final). Idea de danielalves96/gow-pc-port.
++        constexpr uint64_t kPresentationResyncQ32 = 30ull << 32u;
++
++        uint64_t settleLatePresentation(MpegPlaybackState &playback,
++                                        const MpegDecodedFrame &frame,
++                                        uint64_t currentTickQ32,
++                                        uint64_t presentationTargetQ32)
++        {
++            if (currentTickQ32 <= presentationTargetQ32)
++                return presentationTargetQ32;
++            if (currentTickQ32 - presentationTargetQ32 >= kPresentationResyncQ32)
++            {
++                if (frame.pts90k >= 0 && playback.firstPresentedPts90k >= 0)
++                    playback.ptsPresentationBaseTickQ32 += currentTickQ32 - presentationTargetQ32;
++                playback.nextPictureTickQ32 = currentTickQ32;
++            }
++            return currentTickQ32;
++        }
++
+         uint32_t align16(uint32_t value)
+         {
+             return (value + 15u) & ~15u;
+@@ -2052,6 +2074,21 @@ namespace ps2_stubs
+         return it == g_pendingAudio.end() ? 0u : it->second.size();
+     }
+ 
++    int64_t mpegLatePresentationShiftForTesting(uint64_t lateFields)
++    {
++        MpegPlaybackState playback = makeFreshPlaybackState();
++        playback.firstPresentedPts90k = 0;
++        playback.ptsPresentationBaseTickQ32 = 100ull << 32u;
++        MpegDecodedFrame frame;
++        frame.pts90k = 3003; // dos campos después de la primera imagen
++        const uint64_t target = presentationTickForFrame(playback, frame, 0u);
++        const uint64_t before = playback.ptsPresentationBaseTickQ32;
++        const uint64_t shown = settleLatePresentation(playback, frame, target + (lateFields << 32u), target);
++        if (shown != target + (lateFields << 32u))
++            return -1; // una imagen tarde se muestra siempre enseguida
++        return static_cast<int64_t>((playback.ptsPresentationBaseTickQ32 - before) >> 32u);
++    }
++
+     void notifyMpegCdStreamStart(PS2Runtime *runtime)
+     {
+         (void)runtime;
+@@ -2734,16 +2771,7 @@ namespace ps2_stubs
+                 const uint64_t frameIntervalQ32 = decodedFrameIntervalQ32(playback, nextFrame);
+                 uint64_t presentationTargetQ32 = presentationTickForFrame(playback, nextFrame, currentTickQ32);
+ 
+-                if (currentTickQ32 > presentationTargetQ32 && currentTickQ32 - presentationTargetQ32 >= frameIntervalQ32)
+-                {
+-                    const uint64_t correction = currentTickQ32 - presentationTargetQ32;
+-                    presentationTargetQ32 = currentTickQ32;
+-                    if (nextFrame.pts90k >= 0 && playback.firstPresentedPts90k >= 0)
+-                    {
+-                        playback.ptsPresentationBaseTickQ32 += correction;
+-                    }
+-                    playback.nextPictureTickQ32 = currentTickQ32;
+-                }
++                presentationTargetQ32 = settleLatePresentation(playback, nextFrame, currentTickQ32, presentationTargetQ32);
+ 
+                 if (currentTickQ32 < presentationTargetQ32)
+                 {
+diff --git a/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.h b/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.h
+index f3c2a31..6509a9e 100644
+--- a/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.h
++++ b/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.h
+@@ -10,6 +10,8 @@ namespace ps2_stubs
+     // GOW-Port: paquetes de audio rechazados que esperan en un sceMpeg (pruebas de ps2recomp-mpeg-audio-pendiente).
+     void queueMpegPendingAudioForTesting(uint32_t mpegAddr, uint32_t callbackFunc);
+     size_t mpegPendingAudioForTesting(uint32_t mpegAddr);
++    // GOW-Port: campos que se mueve el reloj del PTS con una imagen que llega `lateFields` campos tarde (ps2recomp-mpeg-pts-paron)
++    int64_t mpegLatePresentationShiftForTesting(uint64_t lateFields);
+     void notifyMpegCdStreamStart(PS2Runtime *runtime = nullptr);
+     void notifyMpegCdStreamDataProduced(uint32_t byteCount, bool endOfStream);
+     void notifyMpegCdStreamEof(PS2Runtime *runtime = nullptr);
+diff --git a/ps2xTest/src/ps2_runtime_expansion_tests.cpp b/ps2xTest/src/ps2_runtime_expansion_tests.cpp
+index 7a84ae8..968e9bd 100644
+--- a/ps2xTest/src/ps2_runtime_expansion_tests.cpp
++++ b/ps2xTest/src/ps2_runtime_expansion_tests.cpp
+@@ -751,6 +751,19 @@ void register_ps2_runtime_expansion_tests()
+ 
+         // GOW-Port: ps2recomp-mpeg-audio-pendiente. God of War abre todos los vídeos con el mismo sceMpeg: el audio que el
+         // callback rechazó al final de uno no debe entregarse al principio del siguiente (desplazaba su PCM).
++        // GOW-Port: ps2recomp-mpeg-pts-paron. Unos campos de retraso (la primera imagen de un GOP) no mueven el reloj del PTS:
++        // las imágenes siguientes recuperan el horario. Solo un parón largo (una carga) lo recoloca.
++        tc.Run("a few late fields keep the movie PTS clock and a long stall moves it", [](TestCase &t)
++        {
++            t.Equals(ps2_stubs::mpegLatePresentationShiftForTesting(0u), static_cast<int64_t>(0), "an on-time picture keeps the clock");
++            t.Equals(ps2_stubs::mpegLatePresentationShiftForTesting(3u), static_cast<int64_t>(0),
++                     "a picture 3 fields late should be shown at once without moving the clock");
++            t.Equals(ps2_stubs::mpegLatePresentationShiftForTesting(29u), static_cast<int64_t>(0),
++                     "jitter below half a second should not accumulate");
++            t.Equals(ps2_stubs::mpegLatePresentationShiftForTesting(40u), static_cast<int64_t>(40),
++                     "a long stall should move the clock by the stall");
++        });
++
+         tc.Run("a new movie stream drops the refused audio packets of the previous one", [](TestCase &t)
+         {
+             PS2Runtime runtime;
