@@ -158,6 +158,8 @@ $mpegAudioPendientePatch = Join-Path $RepoRoot 'patches\ps2recomp-mpeg-audio-pen
 $memcardSeguraPatch = Join-Path $RepoRoot 'patches\ps2recomp-memcard-segura.patch'
 # GOW-Port: reloj del PTS de los vídeos tras un parón
 $mpegPtsParonPatch = Join-Path $RepoRoot 'patches\ps2recomp-mpeg-pts-paron.patch'
+# GOW-Port: lotes de sombras partidos en tramos de un color
+$gsSombrasTramosPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-sombras-tramos.patch'
 # GOW-Port: contexto OpenGL del GS en Linux con EGL (antes solo WGL: en Linux la ventana quedaba magenta).
 $gsEglLinuxPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-egl-linux.patch'
 # GOW-Port: GOW_VU1_CAPTURA también con la VU1 nativa activa (antes solo guardaba con GOW_VU1_NATIVE_OFF=1, a ~6 FPS).
@@ -257,6 +259,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $tecladoConMandoPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $mpegAudioPendientePatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $memcardSeguraPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $mpegPtsParonPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $gsSombrasTramosPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner

@@ -8123,3 +8123,40 @@ PGO, todo lo fusionado hasta #163) y `GOW_WARP`:
   Probablemente el juego saca a Kratos de HDES01F hacia su zona de origen; no es un cuelgue.
 
 No se buscó qué cambio lo arregló; el candidato más probable es la IRQ del GS pendiente (`ps2recomp-gs-irq-pendiente`).
+
+### Lotes de sombras partidos en tramos de un color (2026-11-06)
+
+Idea de `danielalves96/gow-pc-port`, reimplementada. Las dos pasadas de recuento de los volúmenes de sombra (G += 255 y
+luego G += 1; COLCLAMP=0, ALPHA Cs*FIX + Cd) tienen el mismo estado del GS y solo cambian el color plano de sus vértices,
+así que comparten lote. El atajo del backend (mezcla fija en una llamada) exige un solo color, y un lote mezclado se
+dibujaba con el shader triángulo a triángulo (o en grupos disjuntos, `gs_tri_groups.h`) con barreras de textura entre
+medias.
+
+- `patches/ps2recomp-gs-sombras-tramos.patch`: `draw` parte esos lotes en tramos consecutivos de un color, en el orden del
+  juego (`include/runtime/gs/gs_colour_runs.h`), y cada tramo usa el atajo. `GOW_GS_HW_SOMBRAS_TRAMOS=0` lo desactiva.
+- Prueba `shadow-volume batches split into runs of one flat colour in draw order` en `ps2xTest`.
+
+Medido en el combate del barco con `GOW_GS_HW_VOLTRACE=20000` (110 s): antes, 4294 de 4495 dibujos de sombras iban por el
+shader (4393 lotes mezclaban los dos colores); con el cambio, los 9577 van por el atajo y ninguno por el shader. Las
+sombras se ven igual en las capturas.
+
+En cuadros por segundo no hay una diferencia clara en esta máquina: `ab_env.sh`, 3 rondas alternas a 120 Hz, cuadros en
+40 s sin/con el cambio: 3590/3829, 4464/4138 y 4163/4009 (la escena varía entre rondas). Aquí el dibujo de las sombras no
+limita (manda el trabajo VIF1/VU1); el cambio quita miles de barreras de textura por segundo, que deberían notarse en GPU
+más lentas. No se ha medido en una.
+
+### Ideas de gow-pc-port comprobadas y no adaptadas (2026-11-06)
+
+- **Bordes de sprites ajustados al píxel y partículas sin recortar a escala > 1** (`GOW_GS_SPRITE_SNAP`,
+  `GOW_GS_PARTICLE_UNCLAMP` en su port). Se probó aquí, con el mismo binario y las dos variantes. Capturas del menú
+  prácticamente iguales; render target 208 a resolución completa (`GOW_GS_HW_RTDUMPAT=45`, escala 2): ninguna columna ni
+  fila más oscura que sus vecinas en ninguna de las dos, solo los bordes de la imagen. No se encontraron las costuras que
+  corrige, así que no se adapta: cambia el dibujo de todos los sprites sin un fallo que lo justifique aquí.
+- **Margen de -4 dB y limitador en la salida de la SPU2.** La SPU2 real satura a 16 bits; bajar el volumen o comprimir es
+  una elección de sonido, no de precisión.
+- **Intervalo mínimo de 15 ms entre imágenes en Present.** Limitaría la ventana a ~66 imágenes por segundo y rompería
+  `GOW_HZ=120`; nuestro Present ya muestra los cuadros en orden, de uno en uno.
+- **Comparar `GSDrawState` campo a campo en lugar de con `memcmp`.** El relleno entre campos podría romper los lotes con
+  clang, pero aquí no ocurre: el mismo combate da ~51 000 lotes cada 5 s con MSVC (`bin\wef`) y con clang + PGO
+  (`GOW_GS_HW_STATS`). Queda como riesgo conocido.
+- **Desplazamiento aritmético en la envolvente de la SPU2:** ya está (`ps2recomp-spu2-envolvente`).
