@@ -1,0 +1,120 @@
+diff --git a/ps2xIOP/src/emulator/core/sound_engine.cpp b/ps2xIOP/src/emulator/core/sound_engine.cpp
+index 25fe445..6e366b4 100644
+--- a/ps2xIOP/src/emulator/core/sound_engine.cpp
++++ b/ps2xIOP/src/emulator/core/sound_engine.cpp
+@@ -1,6 +1,7 @@
+ #include "sound_engine.h"
+ 
+ #include <algorithm>
++#include <cstdint>
+ #include <cmath>
+ #include <cstdio>
+ #include <cstdlib>
+@@ -481,8 +482,12 @@ namespace ps2x::iop::detail
+         step <<= std::max(0, 11 - shiftValue);
+         if (exponential && increase && v.envelope > 0x6000)
+             cycles *= 4u;
++        // GOW-Port: desplazamiento aritmético, como el hardware: siempre mueve un paso negativo al menos 1. La división
++        // truncaba a 0 los pasos pequeños y una liberación o caída exponencial se paraba por encima de 0 (cerca de 0x0FFF
++        // con desplazamiento 11 o más): la voz liberada nunca se apagaba ni quedaba libre. Arreglo de
++        // danielalves96/gow-pc-port.
+         if (exponential && !increase)
+-            step = step * v.envelope / 0x8000;
++            step = (step * v.envelope) >> 15;
+ 
+         if (++v.envelopeCounter >= cycles)
+         {
+@@ -573,8 +578,12 @@ namespace ps2x::iop::detail
+                                       {volumeOf(m_cores[1].mvolL), volumeOf(m_cores[1].mvolR)}};
+         for (uint32_t side = 0; side < 2u; ++side)
+         {
+-            const int32_t core0 = (coreOut[0][side] * master[0][side]) >> 14;
+-            m_output.push_back(clamp16(((core0 + coreOut[1][side]) * master[1][side]) >> 14));
++            // GOW-Port: productos en 64 bits: 24 voces a toda escala suman ~690000 y, por el volumen maestro (hasta
++            // 0x3FFF), desbordaban int32 (comportamiento indefinido; en MSVC cambia el signo y la saturación final
++            // acababa en el extremo contrario).
++            const int64_t core0 = (static_cast<int64_t>(coreOut[0][side]) * master[0][side]) >> 14;
++            m_output.push_back(clamp16(static_cast<int32_t>(
++                std::clamp<int64_t>(((core0 + coreOut[1][side]) * master[1][side]) >> 14, INT32_MIN, INT32_MAX))));
+         }
+         // GOW_SND_VOICEDUMP=1: while a core input stream (a movie) plays, once per second for its first 10 seconds, every
+         // voice that is still sounding (active, pitch and envelope non-zero) with its volumes and sample addresses
+diff --git a/ps2xTest/src/ps2_iop_tests.cpp b/ps2xTest/src/ps2_iop_tests.cpp
+index c2292d9..2c321e4 100644
+--- a/ps2xTest/src/ps2_iop_tests.cpp
++++ b/ps2xTest/src/ps2_iop_tests.cpp
+@@ -6,11 +6,74 @@
+ #include "../../ps2xIOP/src/emulator/imports/iop_cdvd.h"
+ #include "../../ps2xIOP/src/emulator/core/iop_memory.h"
+ #include "../../ps2xIOP/src/emulator/services/iop_rpc.h"
++#include "../../ps2xIOP/src/emulator/core/sound_engine.h"
++
++#include <cstdint>
++#include <vector>
+ 
+ void register_ps2_iop_tests()
+ {
+     MiniTest::Case("PS2IopSubsystem", [](TestCase &tc)
+     {
++        // GOW-Port: ps2recomp-spu2-envolvente. Entradas de libsd: (id << 8) | (voz << 1) | núcleo.
++        const auto voiceEntry = [](uint32_t id, uint32_t core, uint32_t voice) { return (id << 8) | (voice << 1) | core; };
++        tc.Run("SPU2 exponential release falls to silence and frees the voice", [&](TestCase &t)
++        {
++            using ps2x::iop::detail::SoundEngine;
++            SoundEngine engine;
++            int16_t discard[2];
++            engine.drainOutput(discard, 0);
++            // voz 0 del núcleo 0 sobre RAM de muestras en silencio: solo cuenta la envolvente
++            engine.setParam(voiceEntry(0x02, 0, 0), 0x1000);  // PITCH
++            engine.setParam(voiceEntry(0x03, 0, 0), 0x0000);  // ADSR1: ataque más rápido
++            engine.setParam(voiceEntry(0x04, 0, 0), 0x20 | 11); // ADSR2: liberación exponencial, desplazamiento 11
++            engine.setAddr(voiceEntry(0x20, 0, 0), 0u);       // SSA
++            uint64_t cycle = 0;
++            const auto run = [&](uint64_t samples) { cycle += samples * SoundEngine::CyclesPerSample; engine.advanceTo(cycle); };
++            engine.setSwitch(voiceEntry(0x15, 0, 0), 1u); // KON
++            run(2000);
++            t.Equals(engine.getParam(voiceEntry(0x05, 0, 0)), static_cast<uint16_t>(0x7FFFu), "the attack should reach full level");
++            engine.setSwitch(voiceEntry(0x16, 0, 0), 1u); // KOFF
++            run(96000); // 2 s
++            t.Equals(engine.getParam(voiceEntry(0x05, 0, 0)), static_cast<uint16_t>(0u),
++                     "an exponential release must reach an envelope of 0 instead of freezing above it");
++        });
++
++        tc.Run("SPU2 loud mix keeps its sign through the master volume", [&](TestCase &t)
++        {
++            using ps2x::iop::detail::SoundEngine;
++            SoundEngine engine;
++            int16_t discard[2];
++            engine.drainOutput(discard, 0);
++            // bloque ADPCM de valores positivos máximos (desplazamiento 0, nibbles 7: 0x7000), con bandera de bucle
++            uint8_t block[16] = {0x00, 0x07}; // inicio y fin de bucle con repetición
++            for (int i = 2; i < 16; ++i)
++                block[i] = 0x77;
++            engine.writeSampleRam(0x1000u, block, sizeof(block));
++            for (uint32_t voice = 0; voice < SoundEngine::VoicesPerCore; ++voice)
++            {
++                engine.setParam(voiceEntry(0x00, 1, voice), 0x3FFF); // VOLL
++                engine.setParam(voiceEntry(0x01, 1, voice), 0x3FFF); // VOLR
++                engine.setParam(voiceEntry(0x02, 1, voice), 0x1000);
++                engine.setParam(voiceEntry(0x03, 1, voice), 0x000F); // ataque inmediato, sostenido al máximo
++                engine.setParam(voiceEntry(0x04, 1, voice), 0x0000);
++                engine.setAddr(voiceEntry(0x20, 1, voice), 0x1000u);
++            }
++            engine.setSwitch(voiceEntry(0x18, 1, 0), 0xFFFFFFu); // VMIXL
++            engine.setSwitch(voiceEntry(0x1A, 1, 0), 0xFFFFFFu); // VMIXR
++            for (uint32_t core = 0; core < 2u; ++core)
++            {
++                engine.setParam((0x09u << 8) | 0x80u | core, 0x3FFF); // MVOLL
++                engine.setParam((0x0Au << 8) | 0x80u | core, 0x3FFF); // MVOLR
++            }
++            engine.setSwitch(voiceEntry(0x15, 1, 0), 0xFFFFFFu); // KON de las 24 voces
++            engine.advanceTo(256u * SoundEngine::CyclesPerSample);
++            std::vector<int16_t> out(512u);
++            const size_t frames = engine.drainOutput(out.data(), 256u);
++            t.IsTrue(frames > 64u, "the mix should produce frames");
++            t.IsTrue(out[(frames - 1u) * 2u] > 0, "24 voices at full positive scale must not wrap to a negative output");
++        });
++
+         tc.Run("PS2 path parsing is shared and normalizes ISO/module names", [](TestCase &t)
+         {
+             const ps2x::iop::ParsedPs2Path cd = ps2x::iop::parsePs2Path("CDROM0:\\MODULES\\LIBSD.IRX;1");
