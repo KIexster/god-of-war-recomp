@@ -63,8 +63,8 @@ nota = { es = "Vibración nativa del runtime de Waffle565 (XInput, DualShock 4/D
 [[librerias.grupo]]
 nombre = "libmc2"
 inicio = 0x0027C100
-estado = "parcial"
-nota = { es = "Servicio de memory card nativo (sin SIO2); Waffle565 verificó cargar y guardar; aquí no repetido tras la migración", en = "Native memory card service (no SIO2); Waffle565 verified loading and saving; not repeated here after the migration", pt = "Serviço de memory card nativo (sem SIO2); o Waffle565 verificou carregar e salvar; aqui não repetido após a migração" }
+estado = "ok"
+nota = { es = "Servicio de memory card nativo (sin SIO2); cargar, guardar en un altar y volver a cargar verificados aquí (2026-11-06)", en = "Native memory card service (no SIO2); loading, saving at an altar and loading again verified here (2026-11-06)", pt = "Serviço de memory card nativo (sem SIO2); carregar, salvar num altar e carregar de novo verificados aqui (2026-11-06)" }
 
 [[librerias.grupo]]
 nombre = "libscf"
@@ -252,6 +252,6 @@ nombre = "IOP"
   [[hardware.grupo.componente]]
   corto = "MC"
   nombre = { es = "Memory card", en = "Memory card", pt = "Memory card" }
-  estado = "parcial"
+  estado = "ok"
   peso = 2
-  nota = { es = "Servicio nativo (sin SIO2); Waffle565 verificó cargar y guardar; aquí no repetido tras la migración", en = "Native service (no SIO2); Waffle565 verified loading and saving; not repeated here after the migration", pt = "Serviço nativo (sem SIO2); o Waffle565 verificou carregar e salvar; aqui não repetido após a migração" }
+  nota = { es = "Servicio nativo (sin SIO2); cargar, guardar en un altar y volver a cargar verificados aquí (2026-11-06)", en = "Native service (no SIO2); loading, saving at an altar and loading again verified here (2026-11-06)", pt = "Serviço nativo (sem SIO2); carregar, salvar num altar e carregar de novo verificados aqui (2026-11-06)" }

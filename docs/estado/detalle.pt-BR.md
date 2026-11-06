@@ -4,7 +4,7 @@
 
 Gerado por `tools/estado/generar.py` a partir de `docs/estado/datos.toml` e `config/funcmap.csv`. Não edite à mão.
 
-## Bibliotecas do SDK da Sony*: 65.4% (423/647)
+## Bibliotecas do SDK da Sony*: 79.3% (513/647)
 
 | Biblioteca | Funções | Status | Nota |
 |---|---:|---|---|
@@ -16,7 +16,7 @@ Gerado por `tools/estado/generar.py` a partir de `docs/estado/datos.toml` e `con
 | `libdbc` | 11 | 🔧 Parcial | Serviços nativos de controle e cartão em vez do SIO2 emulado |
 | `libpad2` | 13 | 🔧 Parcial | Serviço de controle nativo (teclado e gamepad); pressões 0/255 |
 | `libvib` | 2 | ⏳ Pendente | Vibração nativa do runtime do Waffle565 (XInput, DualShock 4/DualSense); não verificada aqui |
-| `libmc2` | 90 | 🔧 Parcial | Serviço de memory card nativo (sem SIO2); o Waffle565 verificou carregar e salvar; aqui não repetido após a migração |
+| `libmc2` | 90 | ✅ Funciona | Serviço de memory card nativo (sem SIO2); carregar, salvar num altar e carregar de novo verificados aqui (2026-11-06) |
 | `libscf` | 14 | ✅ Funciona |  |
 | `libgcc` | 32 | ✅ Funciona |  |
 | `C++ EH` | 34 | ✅ Funciona |  |
@@ -27,7 +27,7 @@ Gerado por `tools/estado/generar.py` a partir de `docs/estado/datos.toml` e `con
 | `fileio` | 15 | ✅ Funciona |  |
 | `loadfile` | 14 | ✅ Funciona | Heap do IOP e carga de módulos |
 
-## Hardware do PS2: 60.5%
+## Hardware do PS2: 65.1%
 
 | Grupo | Componente | Peso | Status | Nota |
 |---|---|---:|---|---|
@@ -48,6 +48,6 @@ Gerado por `tools/estado/generar.py` a partir de `docs/estado/datos.toml` e `con
 | IOP | SIF: RPC e DMA EE ↔ IOP | 2 | ✅ Funciona |  |
 | IOP | CDVD: arquivos do disco extraído | 2 | ✅ Funciona | Cada arquivo no seu setor original (.disc_layout); a ISO só com GOW_ISO |
 | IOP | Controle DualShock 2 | 2 | 🔧 Parcial | Serviço de controle nativo (teclado e gamepad, sem SIO2); pressões 0/255 |
-| IOP | Memory card | 2 | 🔧 Parcial | Serviço nativo (sem SIO2); o Waffle565 verificou carregar e salvar; aqui não repetido após a migração |
+| IOP | Memory card | 2 | ✅ Funciona | Serviço nativo (sem SIO2); carregar, salvar num altar e carregar de novo verificados aqui (2026-11-06) |
 
 * Funções das bibliotecas estáticas da Sony ligadas em SCUS_973.99 (config/funcmap.csv). Hardware: ponderado por componente.
