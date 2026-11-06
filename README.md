@@ -199,6 +199,8 @@ The game starts in borderless fullscreen; **F11** switches to a window and back 
 windowed). **F1** opens the runtime debugger.
 `GOW_PANORAMICO=ampliado` uses the enhanced widescreen (a wider view instead of cropping top and bottom, an idea by
 nemesis2000 and CRASHARKI); it draws more and costs performance.
+`GOW_ASPECTO=21:9`, `32:9` (or any number, or `auto` for the window's own) sets the picture aspect for ultrawide
+screens: the view widens at the sides like the enhanced widescreen; the HUD is stretched.
 `GOW_HZ=120` (experimental) lets the game logic run above 60 frames per second (up to 120, depending on the scene and
 the computer) and presents up to 120 pictures per second; see [`docs/CONTROLES.md`](docs/CONTROLES.md#120-hz).
 

@@ -9,6 +9,7 @@
 #include "gow_pad2_packet.h"
 #include "gow_gs_replay.h" // GOW-Port: captura opcional y acotada para comparar backends.
 #include "runtime/gs/gs_display.h" // GOW-Port: native display state + GS FINISH handshake (step 5).
+#include "runtime/gs/gs_aspecto.h" // GOW-Port: GOW_ASPECTO (ps2recomp-aspecto)
 #include <ps2_recompiled_functions.h>
 void sub_00110E40_0x110e40(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime); // GOW-Port: pose blend entry, for GOW_BLEND_DIAG
 void sub_0017D778_0x17d778(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime); // GOW-Port: frame time step, for GOW_HZ=120
@@ -293,16 +294,25 @@ namespace
         if (widescreen)
         {
             auto put32 = [rdram](uint32_t addr, uint32_t value) { std::memcpy(rdram + addr, &value, sizeof(value)); };
+            // GOW-Port: GOW_ASPECTO (runtime/gs/gs_aspecto.h, la misma que usa la ventana): 16:9 por defecto (0x3FE38E39);
+            // 21:9, 32:9 o "auto" para pantallas ultrapanorámicas (issue #139).
+            const float aspect = gs_aspecto::actual(static_cast<float>(GetScreenWidth()), static_cast<float>(GetScreenHeight()));
+            const bool defaultAspect = std::fabs(aspect - gs_aspecto::kPorDefecto) < 1e-3f;
+            uint32_t aspectBits = 0x3FE38E39u;
+            if (!defaultAspect)
+                std::memcpy(&aspectBits, &aspect, sizeof(aspectBits));
             put32(0x0029CC90u, 1u);
-            put32(0x002FD930u, 0x3FE38E39u);
-            put32(0x002FD968u, 0x3FE38E39u);
-            put32(0x0032F1B0u, 0x3FE38E39u);
+            put32(0x002FD930u, aspectBits);
+            put32(0x002FD968u, aspectBits);
+            put32(0x0032F1B0u, aspectBits);
             // GOW-Port: factor of the camera's horizontal aperture (instruction patches at 0x1692B8 in
             // config/recomp.template.toml, which multiply it by factor x aspect). GOW_PANORAMICO=ampliado: 0.75, the
             // "enhanced native widescreen" of nemesis2000 and CRASHARKI (wider view, no vertical crop; it draws more
             // and costs frame time). Otherwise 9/16, which leaves the game's own widescreen as it was.
+            // Con un aspecto distinto de 16:9 (GOW_ASPECTO) siempre 0.75: la apertura queda en 0.75 x aspecto (Hor+, más
+            // vista a los lados); con 9/16 una pantalla 32:9 recortaría la imagen arriba y abajo a la mitad.
             static const bool wide = [] { const char *v = std::getenv("GOW_PANORAMICO"); return v && std::strcmp(v, "ampliado") == 0; }();
-            put32(0x000FFFF0u, wide ? 0x3F400000u : 0x3F100000u);
+            put32(0x000FFFF0u, wide || !defaultAspect ? 0x3F400000u : 0x3F100000u);
         }
         auto *buffer = padBuffer(rdram, GPR_U32(ctx, 5), 18);
         const auto *socket = padSocket(ctx);

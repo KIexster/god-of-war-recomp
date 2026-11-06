@@ -200,6 +200,8 @@ El juego empieza en pantalla completa sin bordes; **F11** cambia a ventana y vue
 en ventana). **F1** abre el depurador del runtime.
 `GOW_PANORAMICO=ampliado` usa el panorámico ampliado (vista más ancha en lugar de recortada arriba y abajo, idea de
 nemesis2000 y CRASHARKI); dibuja más y cuesta rendimiento.
+`GOW_ASPECTO=21:9`, `32:9` (o cualquier número, o `auto` para la de la ventana) fija la relación de aspecto para
+pantallas ultrapanorámicas: la vista se ensancha a los lados como en el panorámico ampliado; el marcador se estira.
 `GOW_HZ=120` (experimental) hace que la lógica del juego pueda ir a más de 60 cuadros por segundo (hasta 120, según la
 escena y el equipo) y presenta hasta 120 imágenes por segundo; ver [`docs/CONTROLES.md`](docs/CONTROLES.md#120-hz).
 

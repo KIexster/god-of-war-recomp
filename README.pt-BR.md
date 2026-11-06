@@ -200,6 +200,8 @@ O jogo começa em tela cheia sem bordas; **F11** alterna para janela e volta (`G
 janela). **F1** abre o depurador do runtime.
 `GOW_PANORAMICO=ampliado` usa o widescreen ampliado (vista mais larga em vez de cortada em cima e embaixo, ideia de
 nemesis2000 e CRASHARKI); desenha mais e custa desempenho.
+`GOW_ASPECTO=21:9`, `32:9` (ou qualquer número, ou `auto` para a da janela) define a proporção para telas
+ultrawide: a vista se alarga nas laterais como no widescreen ampliado; o HUD fica esticado.
 `GOW_HZ=120` (experimental) deixa a lógica do jogo passar de 60 quadros por segundo (até 120, conforme a cena e o
 computador) e apresenta até 120 imagens por segundo; veja [`docs/CONTROLES.md`](docs/CONTROLES.md#120-hz).
 
