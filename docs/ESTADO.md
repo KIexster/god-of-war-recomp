@@ -8018,3 +8018,18 @@ compartido con la ventana y después sin compartir, como antes); los contextos d
 versión; el registro dice `[gs-gl] contexto OpenGL 4.x núcleo`. `PS2X_GS_GL_MAX_MINOR=<3..6>` empieza más abajo.
 Probado en esta RX 5700 XT forzando 4.3: el juego se ve igual que con 4.6 (capturas del combate) y va a 60. Sin prueba
 en `ps2xTest` (hace falta una GPU).
+
+### Teclado y mando a la vez (2026-11-06)
+
+Idea de `danielalves96/gow-pc-port` (commit 4605f7a3, su issue #12), reimplementada: con cualquier mando listado por
+GLFW, `PSPadBackend::readState` dejaba de leer el teclado y `gow_overrides.cpp` solo ponía las palancas del teclado sin
+ningún mando. Un dispositivo que aparece como mando pero nunca envía nada (un receptor sin mando, un mando virtual de
+Steam) dejaba el juego sin control.
+
+- `patches/ps2recomp-teclado-con-mando.patch`: los botones del teclado se leen siempre; son activos a nivel bajo, así
+  que teclado y mando se suman.
+- `src/gow_overrides.cpp`: con un mando presente, una tecla de palanca (WASD, IJKL) sustituye solo el eje que mueve; sin
+  mando, como antes. Un mando que funciona no queda anulado.
+
+Probado con el guion de combate (menús y partida normales, 60 FPS). Sin prueba en `ps2xTest`: depende de raylib y del
+teclado real.

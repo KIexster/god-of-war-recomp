@@ -150,6 +150,8 @@ $spu2EnvolventePatch = Join-Path $RepoRoot 'patches\ps2recomp-spu2-envolvente.pa
 $sprCadenaStrPatch = Join-Path $RepoRoot 'patches\ps2recomp-spr-cadena-str.patch'
 # GOW-Port: el contexto OpenGL del GS baja de 4.6 hasta 4.3 si el controlador no llega.
 $gl43Patch = Join-Path $RepoRoot 'patches\ps2recomp-gl43.patch'
+# GOW-Port: el teclado se lee también con un mando conectado.
+$tecladoConMandoPatch = Join-Path $RepoRoot 'patches\ps2recomp-teclado-con-mando.patch'
 # GOW-Port: contexto OpenGL del GS en Linux con EGL (antes solo WGL: en Linux la ventana quedaba magenta).
 $gsEglLinuxPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-egl-linux.patch'
 # GOW-Port: GOW_VU1_CAPTURA también con la VU1 nativa activa (antes solo guardaba con GOW_VU1_NATIVE_OFF=1, a ~6 FPS).
@@ -245,6 +247,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $vibracionAsincronaPatch
 Run $git @('apply', '--ignore-whitespace', '--verbose', $spu2EnvolventePatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $sprCadenaStrPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gl43Patch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $tecladoConMandoPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
