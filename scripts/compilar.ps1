@@ -146,6 +146,8 @@ $gsIrqPendientePatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-irq-pendiente.p
 $vibracionAsincronaPatch = Join-Path $RepoRoot 'patches\ps2recomp-vibracion-asincrona.patch'
 # GOW-Port: la envolvente exponencial de la SPU2 llega al silencio y la mezcla maestra va en 64 bits.
 $spu2EnvolventePatch = Join-Path $RepoRoot 'patches\ps2recomp-spu2-envolvente.patch'
+# GOW-Port: CHCR de un DMA del scratchpad en cadena queda con STR a 0 al terminar.
+$sprCadenaStrPatch = Join-Path $RepoRoot 'patches\ps2recomp-spr-cadena-str.patch'
 # GOW-Port: contexto OpenGL del GS en Linux con EGL (antes solo WGL: en Linux la ventana quedaba magenta).
 $gsEglLinuxPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-egl-linux.patch'
 # GOW-Port: GOW_VU1_CAPTURA también con la VU1 nativa activa (antes solo guardaba con GOW_VU1_NATIVE_OFF=1, a ~6 FPS).
@@ -239,6 +241,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $pgoPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsIrqPendientePatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vibracionAsincronaPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $spu2EnvolventePatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $sprCadenaStrPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner

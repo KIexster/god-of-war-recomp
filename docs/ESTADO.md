@@ -7994,3 +7994,14 @@ Arreglos de `danielalves96/gow-pc-port` (commits 67b5b4c6 y 77c09c2b), reimpleme
   ese desbordamiento; es un detector para MSVC).
 
 `patches/ps2recomp-spu2-envolvente.patch`.
+
+### DMA del scratchpad en cadena: CHCR sin STR al terminar (2026-11-06)
+
+Arreglo de `danielalves96/gow-pc-port` (commit f92933c0), reimplementado: `eeDmaStore` guarda CHCR con STR (bit 8) a 0
+porque la transferencia termina en el acto, pero pasa el valor original a `processScratchpadChain`, que al acabar la
+cadena reescribía CHCR con `& 0xFFFF` y dejaba STR a 1 hasta la siguiente escritura. Un bucle del juego que sondeara el
+bit no saldría. God of War no parece sondearlo (no se cuelga), pero el registro quedaba mal. Ahora `& 0xFEFF`: se
+conservan modo, dirección, ASP y TTE/TIE, y STR queda a 0.
+
+`patches/ps2recomp-spr-cadena-str.patch`. Prueba: "fromSPR destination chain leaves CHCR with STR cleared" (falla sin
+el cambio: comprobado en WSL).
