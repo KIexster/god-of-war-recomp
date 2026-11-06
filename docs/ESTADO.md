@@ -8065,6 +8065,26 @@ los entregaba al principio del vídeo siguiente, lo que desplazaba su PCM respec
 Probado con el juego (vídeo de la intro y partida, `GOW_SKIP_FMV=0`): sin cambios visibles. En esa ejecución solo se
 reprodujo un vídeo, así que el descarte en sí lo comprueba la prueba unitaria.
 
+### Memory card: creación atómica y copia de respaldo (2026-11-06)
+
+Idea de `danielalves96/gow-pc-port`, reimplementada sobre nuestra `MemoryCard` (`ps2xIOP/src/emulator/core/memory_card.cpp`):
+
+- La tarjeta se crea (o se rehace) escribiendo la imagen entera en `<ruta>.tmp` y renombrándola: si el proceso termina a
+  medias ya no queda un archivo truncado.
+- Un archivo más corto que 8 MB (copia o creación interrumpida) se completa entero en la primera escritura; antes se
+  escribía por desplazamiento después del final.
+- Antes de la primera modificación de cada sesión se copia la tarjeta tal como estaba a `<ruta>.bak`.
+- El archivo queda abierto durante la sesión (antes se abría y cerraba en cada página) y se vacía tras cada escritura;
+  un error de escritura se registra una vez (`[SIO2] error al escribir la memory card`).
+
+Pruebas en `ps2xTest` (`ps2_iop_tests.cpp`, fallan sin el arreglo): la copia `.bak` y el archivo truncado. Con el juego,
+`tools/pruebas/guardado.py` (de la PR #107): partida guardada en el altar (153 páginas cambiadas, tarjeta válida),
+recargada después, y `tarjeta.ps2.bak` idéntica a la tarjeta de partida.
+
+Encontrado de paso: `ps2xTest/src/ps2_sio2_tests.cpp` y `ps2_spu2_tests.cpp` no están en `ps2xTest/CMakeLists.txt` y no
+compilan (incluyen `sio2.h` y `spu2.h`, que ya no existen en el runtime): son restos de una versión anterior y no se
+ejecutan en la CI.
+
 ### Reloj del PTS de los vídeos tras un parón (2026-11-06)
 
 Idea de `danielalves96/gow-pc-port`, reimplementada. `sceMpegGetPicture` muestra en el momento una imagen que llega tarde,
