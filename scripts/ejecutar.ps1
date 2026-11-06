@@ -5,7 +5,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'common.ps1')
 
 $work = Get-GowWorkDir
-$bld  = Join-Path $work 'PS2Recomp\out\build'
+$bld  = Join-Path $work ('PS2Recomp\' + (Get-GowBuildSubdir))
 $exe  = $null
 if (Test-Path -LiteralPath $bld) {
     $exe = Get-ChildItem -LiteralPath $bld -Recurse -Filter 'ps2EntryRunner.exe' |

@@ -16,6 +16,13 @@ function Get-GowWorkDir {
     return Join-Path (Split-Path -Qualifier $RepoRoot) 'gowport'
 }
 
+# Carpeta de compilacion dentro de PS2Recomp. Con GOW_LLVM (carpeta bin de un LLVM con clang-cl.exe) se compila
+# con clang-cl en out\build-clang; si no, con MSVC en out\build.
+function Get-GowBuildSubdir {
+    if ($env:GOW_LLVM) { return 'out\build-clang' }
+    return 'out\build'
+}
+
 # Ejecutable del juego (SCUS_973.99). Orden de busqueda:
 #   1. variable de entorno GOW_ELF
 #   2. game\SCUS_973.99 dentro del repositorio

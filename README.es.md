@@ -174,6 +174,11 @@ El script clona PS2Recomp en `<unidad>:\gowport` (ruta corta para esquivar el l�
 configurable con `GOW_WORK`), fija el commit `c5a9d02`, aplica los parches de `patches/`, genera el C++ y compila
 `ps2EntryRunner.exe`. El registro queda en `logs\2_compilar.log`.
 
+Para compilar con clang en lugar de MSVC (unos 4 minutos frente a 45–60, con la VU1 idéntica bit a bit),
+descarga un LLVM para Windows (`clang+llvm-*-x86_64-pc-windows-msvc`) y apunta `GOW_LLVM` a su carpeta `bin`
+antes de compilar: `set GOW_LLVM=C:\llvm\bin`. Se compila en `out\build-clang`; Visual Studio sigue haciendo falta
+por sus encabezados y bibliotecas.
+
 Las compilaciones Release desactivan por defecto las trazas de funciones y RPC del IOP. Para
 investigar, usa `scripts\2_compilar.cmd -Trazas`. Para medir las llamadas a `vid::Flip` del juego
 por separado del refresco de la ventana, ejecuta `powershell -File scripts\probar_rendimiento.ps1`;
