@@ -152,7 +152,9 @@ $sprCadenaStrPatch = Join-Path $RepoRoot 'patches\ps2recomp-spr-cadena-str.patch
 $gl43Patch = Join-Path $RepoRoot 'patches\ps2recomp-gl43.patch'
 # GOW-Port: el teclado se lee también con un mando conectado.
 $tecladoConMandoPatch = Join-Path $RepoRoot 'patches\ps2recomp-teclado-con-mando.patch'
-# memory card: creación atómica y copia de respaldo
+# GOW-Port: audio rechazado de un vídeo anterior.
+$mpegAudioPendientePatch = Join-Path $RepoRoot 'patches\ps2recomp-mpeg-audio-pendiente.patch'
+# GOW-Port: memory card: creación atómica y copia de respaldo.
 $memcardSeguraPatch = Join-Path $RepoRoot 'patches\ps2recomp-memcard-segura.patch'
 # GOW-Port: contexto OpenGL del GS en Linux con EGL (antes solo WGL: en Linux la ventana quedaba magenta).
 $gsEglLinuxPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-egl-linux.patch'
@@ -250,6 +252,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $spu2EnvolventePatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $sprCadenaStrPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gl43Patch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $tecladoConMandoPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $mpegAudioPendientePatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $memcardSeguraPatch)
 Pop-Location
 
