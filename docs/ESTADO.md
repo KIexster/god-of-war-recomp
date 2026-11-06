@@ -7886,3 +7886,34 @@ Capturas del menú, la elección de dificultad, el vídeo inicial y la entrada a
 Cargas de zona con `GOW_WARP` y el cambio activo: 11 correctas (ATHN04B, SEWR02, DEST00, HDES01F, OLYMP02, ATHN02A,
 ATHN05A, SEWR01, DEST02, HDES01A, ATHN07). El salto de HDES01F a ARENA09 deja el juego parado (0 cuadros, la ventana
 sigue) también sin el cambio: es anterior y queda pendiente.
+
+### Compilar con clang-cl (2026-11-06)
+
+`danielalves96/gow-pc-port` compila con clang (llvm-mingw) y menciona ~10 min frente a más de una hora con MSVC. Aquí
+se probó `clang-cl` 23.1.4 (LLVM portátil, ABI de MSVC: mismas bibliotecas y encabezados de Visual Studio).
+
+- Compilación completa del runtime y del juego: 4 min 15 s (292 unidades, `-j 6`) frente a ~45-60 min con MSVC. Con
+  clang, ninja sí sigue las dependencias de cabeceras (`/showIncludes` en inglés).
+- Primer intento: la VU1 nativa difería del motor exacto en ~15 % de las ejecuciones (`GOW_VU1N_VERIFY`, último bit de
+  valores que acaban en FTOI) y la reproducción grabada daba 261 de 4000 registros distintos. No era el redondeo
+  (`-frounding-math`), ni el modelo estricto (`-ffp-model=strict`), ni el alias por tipos, ni los bloques generados
+  (los objetos de MSVC de `vu1n_part*` enlazados en el ejecutable de clang daban lo mismo). Enlazando objetos de MSVC
+  archivo a archivo: `ps2_vu1_lower.cpp` (261 -> 19) y `ps2_vu1_upper.cpp`. Causa: esos archivos usan
+  `#pragma float_control(precise, on)` + `#pragma fp_contract(off)` de MSVC; clang-cl acepta el primero (que en clang
+  permite contraer `a*b+c` en FMA) pero no aplica el segundo, así que fusionaba los polinomios de la EFU, `x*x+y*y+z*z`
+  de ELENG, etc. Con `#pragma clang fp contract(off)` en los 7 archivos de la VU: 0 de 4000 en la reproducción y 0 de
+  20 000 en `GOW_VU1N_VERIFY`.
+- `patches/ps2recomp-clang.patch`: ese pragma (solo con `__clang__`) y, en `ReleaseMode.cmake`, sin `/Qspectre-` ni
+  `/fp:fast` con clang (su `/fp:fast` es `-ffast-math`, que supone que no hay NaN ni infinitos) y con
+  `-fno-strict-aliasing`. MSVC y GCC compilan lo mismo que antes.
+- `scripts/compilar.ps1`: con `GOW_LLVM=<carpeta bin de LLVM>` compila con clang-cl en `out\build-clang`
+  (`ejecutar.ps1` y `2_recompilar_rapido.cmd` usan esa carpeta). Sin la variable, todo sigue con MSVC en `out\build`.
+- Rendimiento con el mismo código (`bin\wef` MSVC, `bin\wclang` clang): reproducción de la VU1 ~380 ms con MSVC y
+  357 ms con clang (-6 %), pero en el juego (combate, ns por ciclo de VU1, 2 rondas alternas) 3,333/3,340 con MSVC y
+  3,262/3,377 con clang: sin diferencia. Trabajo por cuadro a 120 Hz (3 rondas) dominado por la escena (una a favor de
+  clang, dos de MSVC). Se ofrece como opción para compilar rápido; MSVC sigue por defecto.
+- La prueba de punta a punta (`scripts\2_compilar.cmd` con `GOW_LLVM`, carpeta de trabajo nueva) aplicó todos los
+  parches, configuró con clang-cl, generó el C++ y llevaba 170 de 379 unidades cuando Claude Code la paró por falta
+  de memoria: `cmake --build` sin límite lanzaba un compilador por núcleo (18 en este equipo de 16 GB).
+  `compilar.ps1` limita ahora los compiladores a uno por cada 2,5 GB de RAM (como mucho uno por núcleo; 6 aquí);
+  `GOW_JOBS` fija otro número.

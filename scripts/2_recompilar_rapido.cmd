@@ -14,6 +14,8 @@ set VSCMD_SKIP_SENDTELEMETRY=1
 call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat" > logs\vcvars.log 2>&1
 rem Misma carpeta de trabajo que scripts\common.ps1 (Get-GowWorkDir)
 if defined GOW_WORK (set "WORK=%GOW_WORK%") else (set "WORK=%~d0\gowport")
+rem Misma carpeta de compilacion que Get-GowBuildSubdir: con GOW_LLVM (clang-cl), out\build-clang
+if defined GOW_LLVM (set "BLD=%WORK%\PS2Recomp\out\build-clang") else (set "BLD=%WORK%\PS2Recomp\out\build")
 copy /y "src\gow_overrides.cpp" "%WORK%\PS2Recomp\ps2xRuntime\src\runner\gow_overrides.cpp" >nul
 if errorlevel 1 exit /b 1
 copy /y "src\*.h" "%WORK%\PS2Recomp\ps2xRuntime\src\runner\" >nul
@@ -21,9 +23,9 @@ if errorlevel 1 exit /b 1
 rem Con MSVC en espanol ("Nota: inclusion del archivo:") ninja no registra las dependencias de /showIncludes,
 rem asi que un cambio en gow_overrides.cpp (incluido desde un archivo unity) no recompila nada.
 rem Tocamos el archivo unity que lo incluye para forzarlo.
-powershell -NoProfile -Command "$unityDir = Join-Path $env:WORK 'PS2Recomp\out\build\ps2xRuntime\CMakeFiles\ps2EntryRunner.dir\Unity'; Get-ChildItem -LiteralPath $unityDir -Filter '*.cxx' -File | Where-Object { Select-String -LiteralPath $_.FullName -SimpleMatch 'gow_overrides.cpp' -Quiet } | ForEach-Object { $_.LastWriteTime = Get-Date }"
+powershell -NoProfile -Command "$unityDir = Join-Path $env:BLD 'ps2xRuntime\CMakeFiles\ps2EntryRunner.dir\Unity'; Get-ChildItem -LiteralPath $unityDir -Filter '*.cxx' -File | Where-Object { Select-String -LiteralPath $_.FullName -SimpleMatch 'gow_overrides.cpp' -Quiet } | ForEach-Object { $_.LastWriteTime = Get-Date }"
 if errorlevel 1 exit /b 1
-cmake --build "%WORK%\PS2Recomp\out\build" --target ps2EntryRunner > logs\2_recompilar_rapido.log 2>&1
+cmake --build "%BLD%" --target ps2EntryRunner > logs\2_recompilar_rapido.log 2>&1
 set "RC=%errorlevel%"
 echo [codigo final %RC%] >> logs\2_recompilar_rapido.log
 echo Termino (codigo %RC%). Revisa logs\2_recompilar_rapido.log

@@ -174,6 +174,11 @@ The script clones PS2Recomp into `<drive>:\gowport` (a short path to avoid the 2
 configurable with `GOW_WORK`), pins commit `c5a9d02`, applies the patches in `patches/`, generates the C++ code and builds
 `ps2EntryRunner.exe`. The log is written to `logs\2_compilar.log`.
 
+To build with clang instead of MSVC (about 4 minutes instead of 45–60, with bit-identical VU1 results), download
+an LLVM for Windows (`clang+llvm-*-x86_64-pc-windows-msvc`) and point `GOW_LLVM` at its `bin` folder before
+building: `set GOW_LLVM=C:\llvm\bin`. It builds in `out\build-clang`; Visual Studio is still needed for its headers
+and libraries.
+
 Release builds disable function and IOP RPC traces by default. For diagnostics, use
 `scripts\2_compilar.cmd -Trazas`. To measure game `vid::Flip` calls separately from window refreshes,
 run `powershell -File scripts\probar_rendimiento.ps1`; see [the profiling notes](docs/ESTADO.md#medicion-de-rendimiento-2026-10-05).

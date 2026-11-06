@@ -9,7 +9,21 @@ $work = Get-GowWorkDir
 New-Item -ItemType Directory -Force -Path $work | Out-Null
 $rec  = Join-Path $work 'PS2Recomp'
 $gen  = Join-Path $work 'generado'
-$bld  = Join-Path $rec 'out\build'
+$bld  = Join-Path $rec (Get-GowBuildSubdir)
+# GOW-Port: GOW_LLVM=<carpeta bin de LLVM> compila con clang-cl (unos 4 min en lugar de 45-60 con MSVC; mismo
+# resultado de la VU1 bit a bit). Los encabezados y bibliotecas siguen siendo los de Visual Studio (vcvars64).
+$clangArgs = @()
+# GOW-Port: compiladores en paralelo limitados por la memoria (uno por cada 2,5 GB de RAM, como mucho uno por núcleo):
+# sin límite, ninja lanza uno por núcleo y las unidades grandes del código del juego agotan la memoria. GOW_JOBS lo fija.
+$ram = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory
+$jobs = if ($env:GOW_JOBS) { [int]$env:GOW_JOBS } else { [math]::Max(1, [math]::Min([Environment]::ProcessorCount, [math]::Floor($ram / 2.5GB))) }
+if ($env:GOW_LLVM) {
+    $clangCl = Join-Path $env:GOW_LLVM 'clang-cl.exe'
+    if (-not (Test-Path -LiteralPath $clangCl)) { throw "GOW_LLVM no contiene clang-cl.exe: $env:GOW_LLVM" }
+    $llvm = $env:GOW_LLVM -replace '\\', '/'
+    $clangArgs = @("-DCMAKE_C_COMPILER=$llvm/clang-cl.exe", "-DCMAKE_CXX_COMPILER=$llvm/clang-cl.exe",
+                   "-DCMAKE_LINKER=$llvm/lld-link.exe", "-DCMAKE_AR=$llvm/llvm-lib.exe")
+}
 
 $template  = Join-Path $RepoRoot 'config\recomp.template.toml'
 $funcmap   = Join-Path $RepoRoot 'config\funcmap.csv'
@@ -95,6 +109,8 @@ $vu1ClipSinSaltosPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-clip-sinsalt
 $vu1MaddSaturadoPatch = Join-Path $RepoRoot 'patches\ps2recomp-vu1-madd-saturado.patch'
 # GOW-Port: FINISH anticipado: el EE prepara el cuadro siguiente mientras el trabajador dibuja el actual.
 $gsFinishAnticipadoPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-finish-anticipado.patch'
+# GOW-Port: compila también con clang-cl (GOW_LLVM): opciones de ReleaseMode y FMA desactivada en la VU como con MSVC.
+$clangPatch = Join-Path $RepoRoot 'patches\ps2recomp-clang.patch'
 # GOW-Port: contexto OpenGL del GS en Linux con EGL (antes solo WGL: en Linux la ventana quedaba magenta).
 $gsEglLinuxPatch = Join-Path $RepoRoot 'patches\ps2recomp-gs-egl-linux.patch'
 # GOW-Port: GOW_VU1_CAPTURA también con la VU1 nativa activa (antes solo guardaba con GOW_VU1_NATIVE_OFF=1, a ~6 FPS).
@@ -182,6 +198,7 @@ Run $git @('apply', '--ignore-whitespace', '--verbose', $gsCuadrosEnVueloPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1ClipSinSaltosPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $vu1MaddSaturadoPatch)
 Run $git @('apply', '--ignore-whitespace', '--verbose', $gsFinishAnticipadoPatch)
+Run $git @('apply', '--ignore-whitespace', '--verbose', $clangPatch)
 Pop-Location
 
 # El codigo generado incluye <ps2_recompiled_functions.h> desde src/runner
@@ -207,9 +224,9 @@ if ($env:GOW_IOP_MODULOS -and (Test-Path -LiteralPath (Join-Path $env:GOW_IOP_MO
 Paso 'Configurando CMake'
 # Las trazas por función vacían el archivo en cada entrada/salida. Activarlas solo para investigar.
 $logsEnabled = if ($Trazas) { 'ON' } else { 'OFF' }
-Run 'cmake' @('-S', $rec, '-B', $bld, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF',
+Run 'cmake' (@('-S', $rec, '-B', $bld, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF',
               "-DPS2X_ENABLE_RUNTIME_LOGS=$logsEnabled", "-DPS2X_ENABLE_AGRESSIVE_LOGS=$logsEnabled", "-DPS2X_ENABLE_IOP_RPC_TRACE=$logsEnabled",
-              '-DPS2X_ENABLE_RUNNER_UNITY_BUILD=ON', '-DPS2X_ENABLE_RUNNER_PCH=ON')
+              '-DPS2X_ENABLE_RUNNER_UNITY_BUILD=ON', '-DPS2X_ENABLE_RUNNER_PCH=ON') + $clangArgs)
 # VU1 compilada (opcional): GOW_VU1_MICROCODIGO es una carpeta local con micromemorias capturadas con
 # GOW_VU1_CAPTURA. Sin ella (o vacía) el juego usa el intérprete. Ver docs\RENDIMIENTO.md.
 $vu1Micro = if ($env:GOW_VU1_MICROCODIGO) { (Resolve-Path -LiteralPath $env:GOW_VU1_MICROCODIGO).Path -replace '\\', '/' } else { '' }
@@ -220,7 +237,7 @@ $vu1nHeads = if ($vu1Micro) { (Join-Path $RepoRoot 'tools\vu1\vu1n_heads.txt') -
 Run 'cmake' @('-S', $rec, '-B', $bld, "-DPS2X_VU1_MICROCODE_DIR=$vu1Micro", "-DPS2X_VU1_GENERATOR_SOURCE=$vu1Gen", "-DPS2X_VU1N_GEN_OVERRIDE=$vu1nGen", "-DPS2X_VU1N_HEADS_FILE=$vu1nHeads")
 
 Paso 'Compilando el recompilador'
-Run 'cmake' @('--build', $bld, '--target', 'ps2_recomp')
+Run 'cmake' @('--build', $bld, '--target', 'ps2_recomp', '--parallel', "$jobs")
 
 Paso 'Generando C++ desde SCUS_973.99'
 if (Test-Path $gen) { Remove-Item $gen -Recurse -Force }
@@ -276,7 +293,7 @@ if (Test-Path -LiteralPath $vu1ObjectDir) { Get-ChildItem -LiteralPath $vu1Objec
 Run 'cmake' @('-S', $rec, '-B', $bld)
 
 Paso 'Compilando el juego optimizado en paralelo'
-Run 'cmake' @('--build', $bld, '--target', 'ps2EntryRunner')
+Run 'cmake' @('--build', $bld, '--target', 'ps2EntryRunner', '--parallel', "$jobs")
 
 $exe = Get-ChildItem $bld -Recurse -Filter 'ps2EntryRunner.exe' | Select-Object -First 1
 Paso "OK: $($exe.FullName)"
