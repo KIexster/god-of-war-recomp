@@ -7977,3 +7977,20 @@ aplica (solo cuenta el último; los intermedios no llegan a los motores). En est
 ranuras cuestan ~0,05 ms, así que aquí no había parón; el cambio importa con mandos Sony o equipos más lentos. Sin
 prueba en `ps2xTest`: el archivo solo se compila en Windows y la suite corre en Linux; compilado y probado en combate
 (sin cuadros de más de 50 ms).
+
+### SPU2: la envolvente exponencial llega al silencio; mezcla maestra en 64 bits (2026-11-06)
+
+Arreglos de `danielalves96/gow-pc-port` (commits 67b5b4c6 y 77c09c2b), reimplementados en nuestro `sound_engine.cpp`:
+
+- La bajada exponencial (liberación o caída) calculaba el paso con `step * envelope / 0x8000`, que trunca a 0 los pasos
+  pequeños: la envolvente se quedaba parada por encima de 0 (cerca de 0x0FFF con desplazamiento 11 o más). Una voz
+  liberada nunca llegaba a 0, así que nunca quedaba libre, y una caída con nivel de sostenido bajo no llegaba al
+  sostenido. Ahora `(step * envelope) >> 15`, desplazamiento aritmético como el hardware, que siempre baja al menos 1.
+  Prueba: "SPU2 exponential release falls to silence and frees the voice" (falla sin el cambio: comprobado en WSL).
+- La mezcla multiplicaba la salida sumada de cada núcleo por el volumen maestro (hasta 0x3FFF) en `int32`: con 24 voces
+  a toda escala (~690 000) el producto desborda (comportamiento indefinido; en MSVC cambia el signo y la saturación
+  final daba el extremo contrario). Ahora en 64 bits. Es preventivo: una mezcla tan fuerte no se ha visto jugando.
+  Prueba: "SPU2 loud mix keeps its sign through the master volume" (con GCC pasa también sin el cambio: GCC no produce
+  ese desbordamiento; es un detector para MSVC).
+
+`patches/ps2recomp-spu2-envolvente.patch`.
